@@ -137,7 +137,7 @@ export default function NotificationModal({
         {/* Logo */}
         <div className="flex justify-center mb-4">
           <img
-            src="/img/logo333-v2.png"
+            src="/img/logo_comieadepa3.png"
             alt="Gestão Servus"
             className="h-24 object-contain"
           />

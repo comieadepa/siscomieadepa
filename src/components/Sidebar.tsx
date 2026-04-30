@@ -25,7 +25,7 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
       icon: '📝',
       path: '/secretaria',
       submenu: [
-        { id: 'estrutura-hierarquica', label: 'Estrutura Hierárquica', icon: '🏛️', path: '/secretaria/estrutura-hierarquica' },
+        { id: 'estrutura-hierarquica', label: 'Supervisões e Campos', icon: '🗂️', path: '/secretaria/estrutura-hierarquica' },
         { id: 'membros', label: 'Ministros', icon: '👥', path: '/secretaria/membros' },
         { id: 'funcionarios', label: 'Funcionários', icon: '👔', path: '/secretaria/funcionarios' },
         { id: 'consagracao', label: 'Consagração (obreiros)', icon: '🙏', path: '/secretaria/consagracao' },
@@ -78,7 +78,7 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
       {/* LOGO */}
       <div className="p-6 border-b border-white/20 flex items-center justify-center">
         <img
-          src="/img/logo333-v3.png"
+          src="/img/logo_comieadepa2.png"
           alt="SISCOMIEADEPA"
           className="h-16 object-contain"
         />

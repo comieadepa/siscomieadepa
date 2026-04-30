@@ -10,7 +10,6 @@ import { createClient } from '@/lib/supabase-client'
 import { formatCnpj, formatPhone } from '@/lib/mascaras';
 import { formatarPreco } from '@/config/plans';
 import type { SubscriptionPlan } from '@/types/admin';
-import { NOMENCLATURAS_SCHEMA_VERSION, NOMENCLATURAS_SCHEMA_VERSION_KEY } from '@/lib/org-nomenclaturas';
 
 export const dynamic = 'force-dynamic';
 
@@ -1041,9 +1040,7 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
 
   const supabase = createClient();
 
-  const ORG_NOMENCLATURAS_KEY = 'divisoes_organizacionais';
   const CARGOS_MINISTERIAIS_KEY = 'cargos_ministeriais';
-  const ORG_NOMENCLATURAS_SCHEMA_VERSION = 3;
 
   type DivisionKey = 'divisaoPrincipal' | 'divisaoSecundaria' | 'divisaoTerciaria';
   type DivisionConfig = { opcao1: string; custom?: string[] };
@@ -1063,59 +1060,7 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
     divisaoTerciaria: { opcao1: 'NENHUMA', custom: [] }
   });
 
-  const normalizeCustomList = (custom: unknown): string[] => {
-    if (!Array.isArray(custom)) return [];
-    return custom
-      .map(v => (typeof v === 'string' ? v.trim() : ''))
-      .filter(Boolean)
-      .map(v => v.toUpperCase());
-  };
-
-  const normalizeDivision = (key: DivisionKey, value: any, legacyThirdDivision = false): DivisionConfig => {
-    const native = NATIVE_OPTIONS[key];
-    const base = getDefaultNomenclaturas()[key];
-
-    if (!value) return base;
-
-    // Estrutura antiga: string direta
-    if (typeof value === 'string') {
-      const selected = value.trim().toUpperCase() || base.opcao1;
-      if (key === 'divisaoTerciaria') {
-        if (legacyThirdDivision) return { opcao1: 'NENHUMA', custom: [] };
-        return { opcao1: native.includes(selected) ? selected : 'NENHUMA', custom: [] };
-      }
-      const custom = native.includes(selected) ? [] : [selected];
-      return { opcao1: selected, custom };
-    }
-
-    const rawSelected = typeof value.opcao1 === 'string' ? value.opcao1 : base.opcao1;
-    let selected = rawSelected.trim().toUpperCase() || base.opcao1;
-    const custom = normalizeCustomList(value.custom);
-    const customDedup = Array.from(new Set(custom));
-
-    if (key === 'divisaoTerciaria') {
-      if (legacyThirdDivision) return { opcao1: 'NENHUMA', custom: [] };
-      const hasSelectedInCustom = customDedup.some(v => v.toUpperCase() === selected);
-      if (!native.includes(selected) && !hasSelectedInCustom) selected = 'NENHUMA';
-    }
-
-    // Se o selecionado não for nativo nem custom, tratá-lo como custom.
-    const all = new Set([...native, ...customDedup]);
-    if (!all.has(selected) && key !== 'divisaoTerciaria') customDedup.push(selected);
-
-    return { opcao1: selected, custom: Array.from(new Set(customDedup)) };
-  };
-
-  const normalizeNomenclaturas = (raw: any): NomenclaturasState => {
-    const legacyThirdDivision = !!raw?.__legacyThirdDivision;
-    return {
-      divisaoPrincipal: normalizeDivision('divisaoPrincipal', raw?.divisaoPrincipal, legacyThirdDivision),
-      divisaoSecundaria: normalizeDivision('divisaoSecundaria', raw?.divisaoSecundaria, legacyThirdDivision),
-      divisaoTerciaria: normalizeDivision('divisaoTerciaria', raw?.divisaoTerciaria, legacyThirdDivision)
-    };
-  };
-
-  const [nomenclaturas, setNomenclaturasState] = useState<NomenclaturasState>(() => getDefaultNomenclaturas());
+  const nomenclaturas: NomenclaturasState = getDefaultNomenclaturas();
   const [temp, setTemp] = useState<NomenclaturasState>(() => getDefaultNomenclaturas());
   const [novaOpcao, setNovaOpcao] = useState<Record<DivisionKey, string>>({
     divisaoPrincipal: '',
@@ -1126,119 +1071,28 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
   const [cargosMinisteriais, setCargosMinisteriais] = useState<CargoMinisterial[]>(() => getCargosMinisteriais());
   const [novoCargo, setNovoCargo] = useState('');
 
-  const resolveMinistryId = async (): Promise<string | null> => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
-
-      const mu = await supabase
-        .from('ministry_users')
-        .select('ministry_id')
-        .eq('user_id', user.id)
-        .limit(1);
-      const ministryIdFromMu = (mu.data as any)?.[0]?.ministry_id as string | undefined;
-      if (ministryIdFromMu) return ministryIdFromMu;
-
-      const m = await supabase
-        .from('ministries')
-        .select('id')
-        .eq('user_id', user.id)
-        .limit(1);
-      const ministryIdFromOwner = (m.data as any)?.[0]?.id as string | undefined;
-      return ministryIdFromOwner || null;
-    } catch {
-      return null;
-    }
-  };
-
-  const buildOrgNomenclaturasPayload = (state: NomenclaturasState) => {
-    return {
-      schemaVersion: ORG_NOMENCLATURAS_SCHEMA_VERSION,
-      divisaoPrincipal: state.divisaoPrincipal,
-      divisaoSecundaria: state.divisaoSecundaria,
-      divisaoTerciaria: state.divisaoTerciaria,
-    };
-  };
-
-  const upsertOrgNomenclaturas = async (
-    ministryId: string,
-    state: NomenclaturasState,
-    cargos: CargoMinisterial[]
-  ) => {
-    try {
-      const { data: existingRow } = await supabase
-        .from('configurations')
-        .select('nomenclaturas')
-        .eq('ministry_id', ministryId)
-        .maybeSingle();
-
-      const existingNomenclaturas = (existingRow as any)?.nomenclaturas || {};
-      const payload = buildOrgNomenclaturasPayload(state);
-
-      const { error: upsertErr } = await supabase
-        .from('configurations')
-        .upsert({
-          ministry_id: ministryId,
-          nomenclaturas: {
-            ...existingNomenclaturas,
-            [ORG_NOMENCLATURAS_KEY]: payload,
-            [CARGOS_MINISTERIAIS_KEY]: cargos,
-          },
-          updated_at: new Date().toISOString(),
-        } as any, { onConflict: 'ministry_id' });
-
-      if (upsertErr) {
-        console.error('❌ Erro ao salvar nomenclaturas:', upsertErr);
-        throw new Error(upsertErr.message || 'Erro ao salvar nomenclaturas');
-      }
-
-      console.log('✅ Nomenclaturas salvas com sucesso!');
-    } catch (error) {
-      console.error('❌ Erro em upsertOrgNomenclaturas:', error);
-      throw error;
-    }
-  };
-
-  const loadFromSupabaseOrMigrate = async () => {
-    const ministryId = await resolveMinistryId();
-    if (!ministryId) return;
-
-    const { data: configRow, error: configErr } = await supabase
+  const upsertCargos = async (cargos: CargoMinisterial[]) => {
+    const { error } = await supabase
       .from('configurations')
-      .select('nomenclaturas')
-      .eq('ministry_id', ministryId)
+      .upsert({ key: CARGOS_MINISTERIAIS_KEY, value: cargos }, { onConflict: 'key' });
+    if (error) throw new Error(error.message);
+  };
+
+  const loadFromSupabase = async () => {
+    const { data, error } = await supabase
+      .from('configurations')
+      .select('value')
+      .eq('key', CARGOS_MINISTERIAIS_KEY)
       .maybeSingle();
 
-    if (!configErr) {
-      const rawNomenclaturas = (configRow as any)?.nomenclaturas || {};
-      const org = rawNomenclaturas?.[ORG_NOMENCLATURAS_KEY];
-      const cargos = rawNomenclaturas?.[CARGOS_MINISTERIAIS_KEY];
-      if (Array.isArray(cargos)) {
-        setCargosMinisteriais(cargos as CargoMinisterial[]);
-        saveCargosMinisteriais(cargos as CargoMinisterial[]);
-      }
-      if (org) {
-        const schemaVersion = Number(org?.schemaVersion || 0);
-        const normalized = normalizeNomenclaturas({
-          divisaoPrincipal: org?.divisaoPrincipal,
-          divisaoSecundaria: org?.divisaoSecundaria,
-          divisaoTerciaria: org?.divisaoTerciaria,
-          __legacyThirdDivision: schemaVersion < ORG_NOMENCLATURAS_SCHEMA_VERSION,
-        });
-        setNomenclaturasState(normalized);
-        setTemp(normalized);
-        return;
-      }
+    if (!error && data?.value && Array.isArray(data.value)) {
+      setCargosMinisteriais(data.value as CargoMinisterial[]);
+      saveCargosMinisteriais(data.value as CargoMinisterial[]);
     }
-
-    let nextState = getDefaultNomenclaturas();
-    await upsertOrgNomenclaturas(ministryId, nextState, cargosMinisteriais);
-    setNomenclaturasState(nextState);
-    setTemp(nextState);
   };
 
   useEffect(() => {
-    loadFromSupabaseOrMigrate();
+    loadFromSupabase();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1298,32 +1152,12 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
   };
 
   const handleSave = async () => {
-    console.log('💾 handleSave chamado');
-    console.log('📋 Dados a salvar:', temp);
-    setNomenclaturasState(temp);
-
     try {
-      const ministryId = await resolveMinistryId();
-      if (!ministryId) {
-        onNotification('Erro', 'Não foi possível identificar sua instituição.', 'error');
-        return;
-      }
-
-      await upsertOrgNomenclaturas(ministryId, temp, cargosMinisteriais);
-
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem('nomenclaturas', JSON.stringify(temp));
-          localStorage.setItem(NOMENCLATURAS_SCHEMA_VERSION_KEY, NOMENCLATURAS_SCHEMA_VERSION);
-        } catch {
-          // ignore
-        }
-      }
-
+      await upsertCargos(cargosMinisteriais);
       setIsEditing(false);
-      onNotification('Sucesso', 'Nomenclaturas atualizadas com sucesso!', 'success');
+      onNotification('Sucesso', 'Cargos atualizados com sucesso!', 'success');
     } catch (error: any) {
-      console.error('❌ Erro ao salvar nomenclaturas:', error);
+      console.error('❌ Erro ao salvar cargos:', error);
       onNotification('Erro', `Erro ao salvar: ${error?.message || 'Tente novamente'}`, 'error');
     }
   };
@@ -1399,7 +1233,7 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">Nomenclaturas da Organização</h2>
+        <h2 className="text-2xl font-bold text-gray-800">Cargos Ministeriais</h2>
         <button
           onClick={() => setIsEditing(!isEditing)}
           className={`px-6 py-2 rounded-lg transition font-semibold ${isEditing
@@ -1411,14 +1245,8 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
         </button>
       </div>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-        <p className="text-blue-900 text-sm">
-          <strong>ℹ️</strong> Customize os nomes das divisões internas e os cargos ministeriais do seu ministério.
-        </p>
-      </div>
-
-      {/* Seção: Divisões */}
-      <div className="mb-8">
+      {/* Placeholder para manter estrutura - seção removida */}
+      {false && <div className="mb-8">
         <h3 className="text-xl font-bold text-gray-800 mb-4">🏢 Divisões Organizacionais</h3>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {(['divisaoPrincipal', 'divisaoSecundaria', 'divisaoTerciaria'] as DivisionKey[]).map((key, index) => (
@@ -1496,7 +1324,7 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
             </div>
           ))}
         </div>
-      </div>
+      </div>}
 
       {/* Seção: Cargos Ministeriais */}
       <div className="mb-8">

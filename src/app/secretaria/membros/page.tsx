@@ -230,7 +230,7 @@ export default function MembrosPage() {
     return customFields;
   };
 
-  const { members: membersApi, fetchMembers, createMember, updateMember, deleteMember, error: membersError } = useMembers();
+  const { members: membersApi, fetchMembers, createMember, updateMember, deleteMember } = useMembers();
 
   const [membros, setMembros] = useState<Membro[]>([]);
 
@@ -275,7 +275,7 @@ export default function MembrosPage() {
     });
   };
 
-  const [maxMembros, setMaxMembros] = useState<number>(0); // 0 = sem limite
+  const [maxMembros] = useState<number>(0); // 0 = sem limite
   const limiteMembrosAtingido = maxMembros > 0 && membros.length >= maxMembros;
 
   const [showForm, setShowForm] = useState(false);
@@ -457,7 +457,7 @@ export default function MembrosPage() {
   };
 
   // Nomenclaturas dinâmicas para as divisões
-  const [nomenclaturas, setNomenclaturasState] = useState({
+  const [, setNomenclaturasState] = useState({
     divisao1: 'IGREJA',
     divisao2: 'CAMPO',
     divisao3: 'NENHUMA'
@@ -548,9 +548,6 @@ useEffect(() => {
   const camposFromNomenclaturas = ((orgNomenclaturasRaw?.divisaoSecundaria?.custom || []) as string[])
     .map((nome, idx) => ({ id: `cfg-c-${idx}-${nome}`, nome: sanitizeNome(nome) }))
     .filter((opt) => !!opt.nome);
-  const congregacoesFromNomenclaturas = ((orgNomenclaturasRaw?.divisaoTerciaria?.custom || []) as string[])
-    .map((nome, idx) => ({ id: `cfg-g-${idx}-${nome}`, nome: sanitizeNome(nome) }))
-    .filter((opt) => !!opt.nome);
 
   const supervisoesFromMembers = dedupByNome(
     (membersApi || [])
@@ -560,11 +557,6 @@ useEffect(() => {
   const camposFromMembers = dedupByNome(
     (membersApi || [])
       .map((m: any, idx: number) => ({ id: `legacy-c-${idx}`, nome: sanitizeNome((m?.custom_fields as any)?.campo) }))
-      .filter((opt: any) => !!opt.nome)
-  );
-  const congregacoesFromMembers = dedupByNome(
-    (membersApi || [])
-      .map((m: any, idx: number) => ({ id: `legacy-g-${idx}`, nome: sanitizeNome((m?.custom_fields as any)?.congregacao) }))
       .filter((opt: any) => !!opt.nome)
   );
 
@@ -801,10 +793,19 @@ useEffect(() => {
       nomePai: '',
       nomeMae: '',
       rg: '',
+      uf_rg: '',
       orgaoEmissor: '',
       nacionalidade: 'BRASILEIRA',
       naturalidade: '',
       uf: '',
+      tituloEleitoral: '',
+      zonaEleitoral: '',
+      secaoEleitoral: '',
+      municipioEleitoral: '',
+      profissao: '',
+      email2: '',
+      posicaoNoCampo: '',
+      numero_cgadb: '',
       supervisao: '',
       campo: '',
       congregacao: '',
@@ -1063,10 +1064,19 @@ useEffect(() => {
       nomePai: membro.nomePai || '',
       nomeMae: membro.nomeMae || '',
       rg: membro.rg || '',
+      uf_rg: (membro as any).uf_rg || '',
       orgaoEmissor: membro.orgaoEmissor || '',
       nacionalidade: membro.nacionalidade || 'BRASILEIRA',
       naturalidade: membro.naturalidade || '',
       uf: membro.uf || '',
+      tituloEleitoral: (membro as any).tituloEleitoral || '',
+      zonaEleitoral: (membro as any).zonaEleitoral || '',
+      secaoEleitoral: (membro as any).secaoEleitoral || '',
+      municipioEleitoral: (membro as any).municipioEleitoral || '',
+      profissao: (membro as any).profissao || '',
+      email2: (membro as any).email2 || '',
+      posicaoNoCampo: (membro as any).posicaoNoCampo || '',
+      numero_cgadb: (membro as any).numero_cgadb || '',
       supervisao: membro.supervisao || '',
       campo: membro.campo || '',
       congregacao: membro.congregacao || '',
@@ -1235,7 +1245,6 @@ useEffect(() => {
         latitude: Number.isFinite(latitudeNumber) ? latitudeNumber : null,
         longitude: Number.isFinite(longitudeNumber) ? longitudeNumber : null,
         // Aba Ministerial
-        profissao: dadosMinisteriais.qualFuncao || cargoSelecionado || null,
         curso_teologico: dadosMinisteriais.cursoTeologico || null,
         instituicao_teologica: dadosMinisteriais.instituicaoTeologica || null,
         pastor_auxiliar: dadosMinisteriais.pastorAuxiliar ?? false,
@@ -1585,38 +1594,6 @@ useEffect(() => {
         ...camposFromMembers,
         ...camposFromNomenclaturas,
       ]);
-  const congregacoesOptions = congregacoes.length
-    ? dedupByNome([...congregacoes])
-    : dedupByNome([
-        ...congregacoes,
-        ...congregacoesFromMembers,
-        ...congregacoesFromNomenclaturas,
-      ]);
-
-  const isDbOption = (id?: string | null) => !!id && !id.startsWith('legacy-') && !id.startsWith('cfg-');
-
-  // Mapeamento da tela atual:
-  // 1ª Divisão = Congregação, 2ª Divisão = Setor, 3ª Divisão = Regional.
-  const divisao1Options = congregacoesOptions;
-  const divisao2Options = camposOptions;
-  const divisao3Options = supervisoesOptions;
-
-  const divisao1Selecionada = divisao1Options.find((o) => o.nome === dadosPessoais.supervisao) || null;
-  const divisao2Selecionada = divisao2Options.find((o) => o.nome === dadosPessoais.campo) || null;
-
-  const divisao2Filtradas = (divisao1Selecionada?.campo_id && isDbOption(divisao1Selecionada.id))
-    ? divisao2Options.filter((o) => o.id === divisao1Selecionada.campo_id)
-    : divisao2Options;
-
-  const divisao3Filtradas = divisao3Options.filter((o) => {
-    if (divisao2Selecionada?.supervisao_id && isDbOption(divisao2Selecionada.id)) {
-      return o.id === divisao2Selecionada.supervisao_id;
-    }
-    if (divisao1Selecionada?.supervisao_id && isDbOption(divisao1Selecionada.id)) {
-      return o.id === divisao1Selecionada.supervisao_id;
-    }
-    return true;
-  });
 
   return (
     <div className="flex h-screen bg-gray-100">
@@ -2157,10 +2134,19 @@ useEffect(() => {
                           nomePai: ultimoCadastro.nomePai || '',
                           nomeMae: ultimoCadastro.nomeMae || '',
                           rg: '',
+                          uf_rg: '',
                           orgaoEmissor: ultimoCadastro.orgaoEmissor || '',
                           nacionalidade: ultimoCadastro.nacionalidade || 'BRASILEIRA',
                           naturalidade: ultimoCadastro.naturalidade || '',
                           uf: ultimoCadastro.uf || '',
+                          tituloEleitoral: '',
+                          zonaEleitoral: '',
+                          secaoEleitoral: '',
+                          municipioEleitoral: '',
+                          profissao: '',
+                          email2: '',
+                          posicaoNoCampo: '',
+                          numero_cgadb: '',
                           supervisao: ultimoCadastro.supervisao || '',
                           campo: ultimoCadastro.campo || '',
                           congregacao: ultimoCadastro.congregacao || '',
@@ -2929,10 +2915,7 @@ useEffect(() => {
                               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                             >
                               <option value="">Selecione</option>
-                              {(divisao2Selecionada?.supervisao_id && isDbOption(divisao2Selecionada.id)
-                                ? supervisoesOptions.filter((o) => o.id === divisao2Selecionada.supervisao_id)
-                                : supervisoesOptions
-                              ).map((opt) => (
+                              {supervisoesOptions.map((opt) => (
                                 <option key={opt.id} value={opt.nome}>{opt.nome}</option>
                               ))}
                             </select>
@@ -2955,7 +2938,7 @@ useEffect(() => {
                     </div>
                   )}
 
-                  {/* ABA: ENDEREÇO + CONTATO COM GEOLOCALIZAÇÃO */
+                  {/* ABA: ENDEREÇO + CONTATO COM GEOLOCALIZAÇÃO */}
                   {activeTab === 'endereco' && (
                     <div className="space-y-3">
                       {/* Seção: ENDEREÇO */}

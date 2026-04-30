@@ -241,6 +241,7 @@ export type CreateMemberRequest = {
   nome_pai?: string | null
   nome_mae?: string | null
   rg?: string | null
+  uf_rg?: string | null
   orgao_emissor?: string | null
   nacionalidade?: string | null
   naturalidade?: string | null
@@ -248,6 +249,10 @@ export type CreateMemberRequest = {
   titulo_eleitoral?: string | null
   zona_eleitoral?: string | null
   secao_eleitoral?: string | null
+  municipio_eleitoral?: string | null
+  email2?: string | null
+  posicao_no_campo?: string | null
+  numero_cgadb?: string | null
   data_batismo_aguas?: string | null
   data_batismo_espirito_santo?: string | null
   // Aba Endereço
@@ -280,6 +285,31 @@ export type CreateMemberRequest = {
   observacoes_ministeriais?: string | null
   // Aba Foto
   foto_url?: string | null
+  // Dados de Consagração
+  local_batismo?: string | null
+  data_filiacao?: string | null
+  diretoria?: boolean | null
+  ev_autorizado_data?: string | null
+  ev_autorizado_local?: string | null
+  ev_consagrado_data?: string | null
+  ev_consagrado_local?: string | null
+  cons_missionario_data?: string | null
+  cons_missionario_local?: string | null
+  orden_pastor_data?: string | null
+  orden_pastor_local?: string | null
+  // Registro Familiar
+  conjuge_rg?: string | null
+  conjuge_orgao_emissor?: string | null
+  conjuge_nacionalidade?: string | null
+  conjuge_naturalidade?: string | null
+  conjuge_nome_pai?: string | null
+  conjuge_nome_mae?: string | null
+  conjuge_titulo_eleitoral?: string | null
+  conjuge_fone?: string | null
+  conjuge_email?: string | null
+  conjuge_tipo_sanguineo?: string | null
+  primeiro_casamento?: string | null
+  qtd_filhos?: number | null
   // Sistema
   member_since?: string | Date
   role?: string | null

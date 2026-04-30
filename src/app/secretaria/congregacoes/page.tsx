@@ -28,16 +28,27 @@ interface Divisao1 {
 
 interface Divisao2 {
   id: string;
-  ministry_id: string;
   supervisao_id?: string | null;
   nome: string;
   is_sede: boolean;
+  data_fundacao?: string | null;
+  cnpj?: string | null;
+  email?: string | null;
+  telefone?: string | null;
+  observacoes?: string | null;
+  logomarca_url?: string | null;
+  endereco?: string | null;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+  cidade?: string | null;
+  cep?: string | null;
+  uf?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   pastor_member_id?: string | null;
   pastor_nome?: string | null;
   pastor_data_posse?: string | null;
-  cep?: string | null;
-  municipio?: string | null;
-  uf?: string | null;
   is_active: boolean;
   created_at: string;
 }
@@ -147,14 +158,27 @@ export default function CongregacoesPage() {
     supervisao_id: '',
     nome: '',
     is_sede: false,
+    data_fundacao: '',
+    cnpj: '',
+    possui_cnpj: false,
+    email: '',
+    telefone: '',
+    observacoes: '',
+    logomarca_url: '',
     informar_pastor: false,
     pastor_nome_input: '',
     pastor_member_id: '',
     pastor_nome: '',
     pastor_data_posse: '',
     cep: '',
-    municipio: '',
-    uf: ''
+    endereco: '',
+    numero: '',
+    complemento: '',
+    bairro: '',
+    cidade: '',
+    uf: '',
+    latitude: '',
+    longitude: '',
   });
   const [editingD2, setEditingD2] = useState<Divisao2 | null>(null);
   const [showFormD2, setShowFormD2] = useState(false);
@@ -352,7 +376,78 @@ export default function CongregacoesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showFormD3, formD3.cep]);
 
-  // Divisao 02 nao usa geolocalizacao.
+  // Geolocalização D2 — geocodifica automaticamente ao digitar o endereço
+  useEffect(() => {
+    if (!showFormD2) return;
+
+    const enderecoTrim = (formD2.endereco || '').trim();
+    const cidadeTrim = (formD2.cidade || '').trim();
+    const ufTrim = (formD2.uf || '').trim().toUpperCase();
+    const cepDigits = (formD2.cep || '').replace(/\D/g, '');
+
+    const hasEnough = !!(
+      (cepDigits && cepDigits.length === 8) ||
+      (cidadeTrim && ufTrim) ||
+      (enderecoTrim && (cidadeTrim || ufTrim || cepDigits))
+    );
+    if (!hasEnough) return;
+
+    const timer = window.setTimeout(() => {
+      const controller = new AbortController();
+      (async () => {
+        try {
+          // Tenta primeiro com CEP (mais preciso via postalcode= no Nominatim)
+          let coords: { latitude: number; longitude: number } | null = null;
+          if (cepDigits.length === 8) {
+            const res = await fetch(
+              `https://nominatim.openstreetmap.org/search?postalcode=${encodeURIComponent(cepDigits)}&country=Brazil&format=json&limit=1`,
+              { signal: controller.signal }
+            );
+            if (res.ok) {
+              const data = await res.json();
+              if (Array.isArray(data) && data.length > 0) {
+                const lat = Number.parseFloat(data[0]?.lat);
+                const lng = Number.parseFloat(data[0]?.lon);
+                if (Number.isFinite(lat) && Number.isFinite(lng)) coords = { latitude: lat, longitude: lng };
+              }
+            }
+          }
+          // Fallback: busca por endereço completo
+          if (!coords) {
+            const query = [enderecoTrim, cidadeTrim, ufTrim, cepDigits, 'Brasil']
+              .filter(Boolean).join(', ');
+            const res = await fetch(
+              `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`,
+              { signal: controller.signal }
+            );
+            if (res.ok) {
+              const data = await res.json();
+              if (Array.isArray(data) && data.length > 0) {
+                const lat = Number.parseFloat(data[0]?.lat);
+                const lng = Number.parseFloat(data[0]?.lon);
+                if (Number.isFinite(lat) && Number.isFinite(lng)) coords = { latitude: lat, longitude: lng };
+              }
+            }
+          }
+          if (coords) {
+            setFormD2(prev => ({
+              ...prev,
+              latitude: String(coords!.latitude),
+              longitude: String(coords!.longitude),
+            }));
+          }
+        } catch { /* abortado ou erro de rede — silencioso */ }
+      })();
+      (window as any).__geoD2AbortController__ = controller;
+    }, 800);
+
+    return () => {
+      window.clearTimeout(timer);
+      const prev = (window as any).__geoD2AbortController__ as AbortController | undefined;
+      if (prev) { try { prev.abort(); } catch { /* noop */ } }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showFormD2, formD2.endereco, formD2.cidade, formD2.uf, formD2.cep]);
 
   const getNextCodigo = () => {
     const codigos = divisoes1
@@ -371,30 +466,25 @@ export default function CongregacoesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showFormD1, editingD1, divisoes1.length]);
 
-  const nomeD1 = nomenclaturas.divisaoPrincipal?.opcao1 || 'Supervisão';
-  const nomeD2 = nomenclaturas.divisaoSecundaria?.opcao1 || 'Campo';
-  const nomeD3 = nomenclaturas.divisaoTerciaria?.opcao1 || 'Congregação';
+  const nomeD1 = nomenclaturas.divisaoPrincipal?.opcao1 || 'Igreja';
+  const nomeD2 = 'Campo';
+  const nomeD3 = 'Supervisão';
 
   const normalizeLabel = (label: string) => label.trim().toUpperCase();
   const isEnabledDivision = (label: string) => normalizeLabel(label) !== 'NENHUMA';
 
   const d1Enabled = isEnabledDivision(nomeD1);
-  const d2Enabled = isEnabledDivision(nomeD2);
-  const d3Enabled = isEnabledDivision(nomeD3);
+  const d2Enabled = true;
+  const d3Enabled = true;
 
-  const enabledTabIds = [
-    d1Enabled ? 'divisao1' : null,
-    d2Enabled ? 'divisao2' : null,
-    d3Enabled ? 'divisao3' : null
-  ].filter(Boolean) as string[];
+  const enabledTabIds = ['divisao2', 'divisao3'];
 
   useEffect(() => {
-    if (enabledTabIds.length === 0) return;
     if (!enabledTabIds.includes(activeTab)) {
-      setActiveTab(enabledTabIds[0]);
+      setActiveTab('divisao2');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [d1Enabled, d2Enabled, d3Enabled]);
+  }, []);
 
   // Inicializar cliente Supabase (singleton)
   const supabase = createClient();
@@ -874,12 +964,11 @@ export default function CongregacoesPage() {
     }
   };
 
-  const loadDivisoes2 = async (ministryId: string) => {
+  const loadDivisoes2 = async (_ministryId?: string) => {
     try {
       const { data, error } = await supabase
         .from('campos')
         .select('*')
-        .eq('ministry_id', ministryId)
         .order('nome');
 
       if (error) throw error;
@@ -1087,23 +1176,36 @@ export default function CongregacoesPage() {
     }
 
     const payload: any = {
-      ministry_id: ministryId,
-      supervisao_id: d3Enabled ? (formD2.supervisao_id || null) : null,
+      supervisao_id: formD2.supervisao_id || null,
       nome: formD2.nome.trim(),
-      is_sede: d3Enabled ? !!formD2.is_sede : false,
+      is_sede: !!formD2.is_sede,
+      data_fundacao: formD2.data_fundacao || null,
+      cnpj: formD2.possui_cnpj ? (formD2.cnpj || null) : null,
+      email: formD2.email || null,
+      telefone: formD2.telefone || null,
+      observacoes: formD2.observacoes || null,
+      logomarca_url: formD2.logomarca_url || null,
       pastor_member_id: formD2.informar_pastor ? (formD2.pastor_member_id || null) : null,
       pastor_nome: formD2.informar_pastor ? (formD2.pastor_nome || formD2.pastor_nome_input || null) : null,
       pastor_data_posse: formD2.informar_pastor ? (formD2.pastor_data_posse || null) : null,
+      cep: formD2.cep || null,
+      endereco: formD2.endereco || null,
+      numero: formD2.numero || null,
+      complemento: formD2.complemento || null,
+      bairro: formD2.bairro || null,
+      cidade: formD2.cidade || null,
+      uf: formD2.uf || null,
+      latitude: formD2.latitude ? parseFloat(formD2.latitude) : null,
+      longitude: formD2.longitude ? parseFloat(formD2.longitude) : null,
       updated_at: new Date().toISOString()
     };
 
     try {
       // Se marcar como sede, desmarcar os demais da mesma supervisão (best-effort)
-      if (d3Enabled && payload.is_sede && payload.supervisao_id) {
+      if (payload.is_sede && payload.supervisao_id) {
         await supabase
           .from('campos')
           .update({ is_sede: false, updated_at: new Date().toISOString() })
-          .eq('ministry_id', ministryId)
           .eq('supervisao_id', payload.supervisao_id);
       }
 
@@ -1113,8 +1215,7 @@ export default function CongregacoesPage() {
         const { error } = await supabase
           .from('campos')
           .update(payload)
-          .eq('id', editingD2.id)
-          .eq('ministry_id', ministryId);
+          .eq('id', editingD2.id);
         if (error) throw error;
       } else {
         const { data, error } = await supabase
@@ -1178,21 +1279,34 @@ export default function CongregacoesPage() {
         }
       }
 
-      await loadDivisoes2(ministryId);
+      await loadDivisoes2();
       await loadDivisoes3(ministryId);
 
       setFormD2({
         supervisao_id: '',
         nome: '',
         is_sede: false,
+        data_fundacao: '',
+        cnpj: '',
+        possui_cnpj: false,
+        email: '',
+        telefone: '',
+        observacoes: '',
+        logomarca_url: '',
         informar_pastor: false,
         pastor_nome_input: '',
         pastor_member_id: '',
         pastor_nome: '',
         pastor_data_posse: '',
         cep: '',
-        municipio: '',
-        uf: ''
+        endereco: '',
+        numero: '',
+        complemento: '',
+        bairro: '',
+        cidade: '',
+        uf: '',
+        latitude: '',
+        longitude: '',
       });
       setPastorResults([]);
       setPastorStatus('idle');
@@ -1251,10 +1365,9 @@ export default function CongregacoesPage() {
       const { error } = await supabase
         .from('campos')
         .delete()
-        .eq('id', id)
-        .eq('ministry_id', ministryId);
+        .eq('id', id);
       if (error) throw error;
-      await loadDivisoes2(ministryId);
+      await loadDivisoes2();
     } catch (error) {
       console.error('Erro ao deletar divisão 02:', error);
       await dialog.alert({ title: 'Erro', type: 'error', message: 'Erro ao deletar. Tente novamente.' });
@@ -1798,7 +1911,7 @@ export default function CongregacoesPage() {
 
       // Recarregar lista
       await loadDivisoes1(ministryId);
-      await loadDivisoes2(ministryId);
+      await loadDivisoes2();
       
       // Limpar form
       setFormD1({
@@ -1848,31 +1961,17 @@ export default function CongregacoesPage() {
 
   if (loading) return <div className="p-8">Carregando...</div>;
 
-  const hierarchyParts = [
-    d1Enabled ? nomeD1 : null,
-    d2Enabled ? nomeD2 : null,
-    d3Enabled ? nomeD3 : null
-  ].filter(Boolean) as string[];
-
-  const hierarchyLabel = hierarchyParts.length ? hierarchyParts.join('/') : 'Sem divisões';
-
   const tabs = [
-    d1Enabled ? { id: 'divisao1', label: `${nomeD1}s (1ª)`, icon: '1️⃣' } : null,
-    d2Enabled ? { id: 'divisao2', label: `${nomeD2}s (2ª)`, icon: '2️⃣' } : null,
-    d3Enabled ? { id: 'divisao3', label: `${nomeD3}s (3ª)`, icon: '3️⃣' } : null
-  ].filter(Boolean) as { id: string; label: string; icon: string }[];
+    { id: 'divisao2', label: 'Campos', icon: '📍' },
+    { id: 'divisao3', label: 'Supervisões', icon: '🗂️' },
+  ];
 
-  const availableDivisoes3ForCurrentD2 = divisoes3.filter(cg => !cg.campo_id || cg.campo_id === editingD2?.id);
   const availableDivisoes2ForCurrentD1 = divisoes2.filter(c => !c.supervisao_id || c.supervisao_id === editingD1?.id);
 
   return (
     <PageLayout
-      title={`Estrutura Hierárquica - ${hierarchyLabel}`}
-      description={
-        hierarchyParts.length
-          ? `Gerenciar a hierarquia do ministério: ${hierarchyParts.map(p => `${p}s`).join(', ')}`
-          : 'Nenhuma divisão habilitada nas nomenclaturas.'
-      }
+      title="Supervisões e Campos"
+      description="Gerenciar Campos e Supervisões do ministério"
       activeMenu="estrutura-hierarquica"
     >
       <div className="w-full max-w-7xl mx-auto px-1 sm:px-2 lg:px-4">
@@ -2394,8 +2493,8 @@ export default function CongregacoesPage() {
         )}
 
         {/* TAB: 2ª Divisão */}
-        {d2Enabled && activeTab === 'divisao2' && (
-          <Section icon="2️⃣" title={`${nomeD2}s`}>
+        {activeTab === 'divisao2' && (
+          <Section icon="📍" title="Campos">
             <div className="grid grid-cols-1 gap-4 mb-6">
               <div className="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
                 <p className="text-gray-600 text-sm">Total de {nomeD2}s</p>
@@ -2406,193 +2505,258 @@ export default function CongregacoesPage() {
             <>
               {showFormD2 && (
                   <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-                    <h3 className="text-lg font-bold text-gray-800 mb-4">
-                      {editingD2 ? `Editar ${nomeD2}` : `Novo ${nomeD2}`}
+                    <h3 className="text-lg font-bold text-gray-800 mb-6 border-b pb-3">
+                      {editingD2 ? 'Editar Campo' : 'Novo Campo'}
                     </h3>
 
-                    <div className="space-y-4">
+                    {/* Linha 1: Nome, Data Fundação, Logomarca */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          Nome do {nomeD2}
-                        </label>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Nome do Campo *</label>
                         <input
                           type="text"
                           value={formD2.nome}
                           onChange={(e) => setFormD2(prev => ({ ...prev, nome: e.target.value }))}
-                          placeholder={`Ex: ${nomeD2} Baixada Santista`}
-                          className="w-full px-4 py-2 border-2 border-teal-500 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Nome do Campo"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                         />
                       </div>
-
-
                       <div>
-                        <label className="inline-flex items-center gap-3">
-                          <input
-                            type="checkbox"
-                            checked={!!formD2.informar_pastor}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setFormD2(prev => ({
-                                ...prev,
-                                informar_pastor: checked,
-                                pastor_nome_input: checked ? prev.pastor_nome_input : '',
-                                pastor_member_id: checked ? prev.pastor_member_id : '',
-                                pastor_nome: checked ? prev.pastor_nome : '',
-                                pastor_data_posse: checked ? prev.pastor_data_posse : ''
-                              }));
-                              if (!checked) {
-                                setPastorResults([]);
-                                setPastorStatus('idle');
-                                setPastorMsg('');
-                              }
-                            }}
-                            className="h-5 w-5"
-                          />
-                          <span className="text-sm font-semibold text-gray-800">Informar Pastor/Supervisor</span>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Data da Fundação</label>
+                        <input
+                          type="date"
+                          value={formD2.data_fundacao}
+                          onChange={(e) => setFormD2(prev => ({ ...prev, data_fundacao: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Observações</label>
+                        <textarea
+                          value={formD2.observacoes}
+                          onChange={(e) => setFormD2(prev => ({ ...prev, observacoes: e.target.value }))}
+                          placeholder="Inserir Observações aqui..."
+                          rows={2}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Linha 2: CNPJ, Email, Telefone */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                      <div>
+                        <label className="flex items-center gap-2 text-xs font-semibold text-gray-700 mb-1">
+                          <button
+                            type="button"
+                            onClick={() => setFormD2(prev => ({ ...prev, possui_cnpj: !prev.possui_cnpj, cnpj: '' }))}
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${formD2.possui_cnpj ? 'bg-teal-500' : 'bg-gray-300'}`}
+                          >
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${formD2.possui_cnpj ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                          </button>
+                          Possui CNPJ?
                         </label>
+                        <input
+                          type="text"
+                          value={formD2.cnpj}
+                          disabled={!formD2.possui_cnpj}
+                          onChange={(e) => setFormD2(prev => ({ ...prev, cnpj: e.target.value.replace(/\D/g, '').slice(0, 14) }))}
+                          placeholder="Somente Números"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-gray-100 disabled:text-gray-400"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Email do Campo</label>
+                        <input
+                          type="email"
+                          value={formD2.email}
+                          onChange={(e) => setFormD2(prev => ({ ...prev, email: e.target.value }))}
+                          placeholder="email@campo.org"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Telefone do Campo</label>
+                        <input
+                          type="text"
+                          value={formD2.telefone}
+                          onChange={(e) => setFormD2(prev => ({ ...prev, telefone: e.target.value.replace(/\D/g, '').slice(0, 11) }))}
+                          placeholder="Somente Números"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Pastor do Campo */}
+                    <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="flex items-center gap-3 mb-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const checked = !formD2.informar_pastor;
+                            setFormD2(prev => ({
+                              ...prev,
+                              informar_pastor: checked,
+                              pastor_nome_input: checked ? prev.pastor_nome_input : '',
+                              pastor_member_id: checked ? prev.pastor_member_id : '',
+                              pastor_nome: checked ? prev.pastor_nome : '',
+                              pastor_data_posse: checked ? prev.pastor_data_posse : ''
+                            }));
+                            if (!checked) { setPastorResults([]); setPastorStatus('idle'); setPastorMsg(''); }
+                          }}
+                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${formD2.informar_pastor ? 'bg-teal-500' : 'bg-gray-300'}`}
+                        >
+                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${formD2.informar_pastor ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                        </button>
+                        <span className="text-sm font-semibold text-gray-800">Informar Pastor Presidente do Campo?</span>
                       </div>
 
                       {formD2.informar_pastor && (
-                        <div className="bg-white rounded-lg border border-gray-200 p-4">
-                          <p className="text-sm font-semibold text-gray-800 mb-3">Dados do Pastor</p>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="md:col-span-2">
-                              <label className="block text-sm font-semibold text-gray-700 mb-2">Nome</label>
-                              <input
-                                type="text"
-                                value={formD2.pastor_nome_input}
-                                onChange={(e) => {
-                                  const v = e.target.value;
-                                  setFormD2(prev => ({
-                                    ...prev,
-                                    pastor_nome_input: v,
-                                    pastor_member_id: '',
-                                    pastor_nome: ''
-                                  }));
-                                  setPastorStatus('idle');
-                                  setPastorMsg('');
-                                }}
-                                placeholder="Digite para buscar..."
-                                className="w-full px-4 py-2 border-2 border-teal-500 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              />
-                              <p className="text-xs text-gray-600 mt-2">
-                                {pastorStatus === 'loading'
-                                  ? 'Buscando...'
-                                  : pastorMsg || (formD2.pastor_member_id ? 'Pastor selecionado.' : 'Digite pelo menos 2 letras para buscar.')}
-                              </p>
-
-                              {pastorResults.length > 0 && !formD2.pastor_member_id && (
-                                <div className="mt-2 border border-gray-200 rounded-lg bg-white overflow-hidden">
-                                  {pastorResults.map(m => (
-                                    <button
-                                      type="button"
-                                      key={m.id}
-                                      onClick={() => {
-                                        setFormD2(prev => ({
-                                          ...prev,
-                                          pastor_member_id: m.id,
-                                          pastor_nome: m.name,
-                                          pastor_nome_input: m.name
-                                        }));
-                                        setPastorResults([]);
-                                        setPastorStatus('selected');
-                                        setPastorMsg('Pastor selecionado.');
-                                      }}
-                                      className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm"
-                                    >
-                                      <span className="font-semibold text-gray-800">{m.name}</span>
-                                      {m.role ? <span className="text-gray-500"> — {m.role}</span> : null}
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-
-                            <div>
-                              <label className="block text-sm font-semibold text-gray-700 mb-2">Data da posse</label>
-                              <input
-                                type="date"
-                                value={formD2.pastor_data_posse}
-                                onChange={(e) => setFormD2(prev => ({ ...prev, pastor_data_posse: e.target.value }))}
-                                className="w-full px-4 py-2 border-2 border-teal-500 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              />
-                            </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="md:col-span-2">
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Nome</label>
+                            <input
+                              type="text"
+                              value={formD2.pastor_nome_input}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setFormD2(prev => ({ ...prev, pastor_nome_input: v, pastor_member_id: '', pastor_nome: '' }));
+                                setPastorStatus('idle'); setPastorMsg('');
+                              }}
+                              placeholder="Digite para buscar..."
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                              {pastorStatus === 'loading' ? 'Buscando...' : pastorMsg || (formD2.pastor_member_id ? '✓ Pastor selecionado.' : 'Digite pelo menos 2 letras.')}
+                            </p>
+                            {pastorResults.length > 0 && !formD2.pastor_member_id && (
+                              <div className="mt-1 border border-gray-200 rounded-lg bg-white overflow-hidden shadow">
+                                {pastorResults.map(m => (
+                                  <button type="button" key={m.id}
+                                    onClick={() => { setFormD2(prev => ({ ...prev, pastor_member_id: m.id, pastor_nome: m.name, pastor_nome_input: m.name })); setPastorResults([]); setPastorStatus('selected'); setPastorMsg('Pastor selecionado.'); }}
+                                    className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm border-b border-gray-100"
+                                  >
+                                    <span className="font-semibold text-gray-800">{m.name}</span>
+                                    {m.role ? <span className="text-gray-500 ml-1">— {m.role}</span> : null}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Data Posse</label>
+                            <input
+                              type="date"
+                              value={formD2.pastor_data_posse}
+                              onChange={(e) => setFormD2(prev => ({ ...prev, pastor_data_posse: e.target.value }))}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                            />
                           </div>
                         </div>
                       )}
+                    </div>
 
-                      <div className="bg-white rounded-lg border border-gray-200 p-4">
-                        <p className="text-sm font-semibold text-gray-800 mb-2">Adicionar {nomeD1}s (opcional)</p>
-                        <p className="text-xs text-gray-600 mb-3">
-                          Selecionados: {selectedD1IdsForD2.length}
-                        </p>
-                        {availableDivisoes3ForCurrentD2.length === 0 ? (
-                          <p className="text-sm text-gray-600">Nenhuma {nomeD1} disponível para este {nomeD2}.</p>
-                        ) : (
-                          <div className="max-h-48 overflow-auto border border-gray-200 rounded-lg bg-white">
-                            {availableDivisoes3ForCurrentD2.map(cg => {
-                              const checked = selectedD1IdsForD2.includes(cg.id);
-                              return (
-                                <label key={cg.id} className="flex items-center gap-3 px-4 py-2 border-b border-gray-100 text-sm">
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={(e) => {
-                                      const isChecked = e.target.checked;
-                                      setSelectedD1IdsForD2(prev => {
-                                        if (isChecked) return prev.includes(cg.id) ? prev : [...prev, cg.id];
-                                        return prev.filter(id => id !== cg.id);
-                                      });
-                                    }}
-                                    className="h-4 w-4"
-                                  />
-                                  <span className="text-gray-800 font-semibold">{cg.nome}</span>
-                                  <span className="text-gray-500">{`${cg.cidade || '-'} / ${cg.uf || '-'}`}</span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        )}
+                    {/* Endereço */}
+                    <div className="mb-4">
+                      <h4 className="text-sm font-bold text-gray-700 mb-3 border-b pb-2">* Informe o Endereço do Campo:</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-red-600 mb-1">DIGITE O CEP:</label>
+                          <input
+                            type="text"
+                            value={formD2.cep}
+                            onChange={(e) => setFormD2(prev => ({ ...prev, cep: e.target.value.replace(/\D/g, '').slice(0, 8) }))}
+                            onBlur={async () => {
+                              const cep = formD2.cep.replace(/\D/g, '');
+                              if (cep.length !== 8) return;
+                              try {
+                                const r = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+                                const d = await r.json();
+                                if (!d.erro) setFormD2(prev => ({ ...prev, endereco: d.logradouro || '', bairro: d.bairro || '', cidade: d.localidade || '', uf: d.uf || '' }));
+                              } catch {}
+                            }}
+                            placeholder="00000000"
+                            className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Endereço:</label>
+                          <input type="text" value={formD2.endereco}
+                            onChange={(e) => setFormD2(prev => ({ ...prev, endereco: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">N.º:</label>
+                          <input type="text" value={formD2.numero}
+                            onChange={(e) => setFormD2(prev => ({ ...prev, numero: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                          />
+                        </div>
                       </div>
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Complemento:</label>
+                          <input type="text" value={formD2.complemento}
+                            onChange={(e) => setFormD2(prev => ({ ...prev, complemento: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Bairro:</label>
+                          <input type="text" value={formD2.bairro}
+                            onChange={(e) => setFormD2(prev => ({ ...prev, bairro: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Cidade:</label>
+                          <input type="text" value={formD2.cidade}
+                            onChange={(e) => setFormD2(prev => ({ ...prev, cidade: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">UF:</label>
+                          <input type="text" value={formD2.uf} maxLength={2}
+                            onChange={(e) => setFormD2(prev => ({ ...prev, uf: e.target.value.toUpperCase().slice(0, 2) }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                          />
+                        </div>
+                      </div>
+                      <div className="mt-3">
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">
+                          📍 Geo-Localização da Sede:
+                          <span className="ml-1 text-gray-400 font-normal">(preenchido automaticamente pelo endereço)</span>
+                        </label>
+                        <input
+                          type="text"
+                          readOnly
+                          value={formD2.latitude && formD2.longitude ? `${formD2.latitude}, ${formD2.longitude}` : ''}
+                          placeholder="Aguardando endereço..."
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
+                        />
+                      </div>
+                    </div>
 
-                      <div className="flex gap-3 pt-4">
-                        <button
-                          onClick={handleSaveD2}
-                          className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold"
-                        >
-                          {editingD2 ? '💾 Atualizar' : '✓ Salvar'}
-                        </button>
-                        <button
-                          onClick={() => {
-                            setShowFormD2(false);
-                            setEditingD2(null);
-                            setFormD2({
-                              supervisao_id: '',
-                              nome: '',
-                              is_sede: false,
-                              informar_pastor: false,
-                              pastor_nome_input: '',
-                              pastor_member_id: '',
-                              pastor_nome: '',
-                              pastor_data_posse: '',
-                              cep: '',
-                              municipio: '',
-                              uf: ''
-                            });
-                            setPastorResults([]);
-                            setPastorStatus('idle');
-                            setPastorMsg('');
-                            setSelectedD1IdsForD2([]);
-                          }}
-                          className="flex-1 px-4 py-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition font-semibold"
-                        >
-                          ✕ Cancelar
-                        </button>
-                      </div>
+                    <div className="flex gap-3 pt-4">
+                      <button onClick={handleSaveD2}
+                        className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition font-bold text-sm"
+                      >
+                        {editingD2 ? '💾 Atualizar' : '✓ Cadastrar'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowFormD2(false); setEditingD2(null);
+                          setFormD2({ supervisao_id: '', nome: '', is_sede: false, data_fundacao: '', cnpj: '', possui_cnpj: false, email: '', telefone: '', observacoes: '', logomarca_url: '', informar_pastor: false, pastor_nome_input: '', pastor_member_id: '', pastor_nome: '', pastor_data_posse: '', cep: '', endereco: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '', latitude: '', longitude: '' });
+                          setPastorResults([]); setPastorStatus('idle'); setPastorMsg(''); setSelectedD1IdsForD2([]);
+                        }}
+                        className="flex-1 px-4 py-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition font-bold text-sm"
+                      >
+                        ✕ Cancelar
+                      </button>
                     </div>
                   </div>
                 )}
-
                 {!showFormD2 && (
                   <button
                     onClick={() => {
@@ -2600,43 +2764,15 @@ export default function CongregacoesPage() {
                       if (planLimits.max_divisao2 > 0 && divisoes2.length >= planLimits.max_divisao2) return;
                       setShowFormD2(true);
                       setEditingD2(null);
-                      setFormD2({
-                        supervisao_id: '',
-                        nome: '',
-                        is_sede: false,
-                        informar_pastor: false,
-                        pastor_nome_input: '',
-                        pastor_member_id: '',
-                        pastor_nome: '',
-                        pastor_data_posse: '',
-                        cep: '',
-                        municipio: '',
-                        uf: ''
-                      });
+                      setFormD2({ supervisao_id: '', nome: '', is_sede: false, data_fundacao: '', cnpj: '', possui_cnpj: false, email: '', telefone: '', observacoes: '', logomarca_url: '', informar_pastor: false, pastor_nome_input: '', pastor_member_id: '', pastor_nome: '', pastor_data_posse: '', cep: '', endereco: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '', latitude: '', longitude: '' });
                       setPastorResults([]);
                       setPastorStatus('idle');
                       setPastorMsg('');
                       setSelectedD1IdsForD2([]);
                     }}
-                    disabled={planLimits.max_divisao2 === 0 || (planLimits.max_divisao2 > 0 && divisoes2.length >= planLimits.max_divisao2)}
-                    title={
-                      planLimits.max_divisao2 === 0
-                        ? `Plano atual não permite ${nomeD2}`
-                        : planLimits.max_divisao2 > 0 && divisoes2.length >= planLimits.max_divisao2
-                          ? `Limite do plano atingido (${planLimits.max_divisao2})`
-                          : undefined
-                    }
-                    className={`mb-6 w-full px-6 py-3 font-bold rounded-lg transition shadow-md flex items-center justify-center gap-2 ${
-                      planLimits.max_divisao2 === 0 || (planLimits.max_divisao2 > 0 && divisoes2.length >= planLimits.max_divisao2)
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-teal-500 text-white hover:bg-teal-600'
-                    }`}
+                    className="mb-6 w-full px-6 py-3 font-bold rounded-lg transition shadow-md flex items-center justify-center gap-2 bg-teal-500 text-white hover:bg-teal-600"
                   >
-                    + Adicionar {nomeD2}
-                    {planLimits.max_divisao2 > 0 && (
-                      <span className="text-xs opacity-80">({divisoes2.length}/{planLimits.max_divisao2})</span>
-                    )}
-                    {planLimits.max_divisao2 === 0 && <span className="text-xs opacity-80">(bloqueado no plano)</span>}
+                    + Adicionar Campo
                   </button>
                 )}
             </>
@@ -2646,12 +2782,12 @@ export default function CongregacoesPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr>
-                    <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">REGIONAL</th>
+                    <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">SUPERVISÃO</th>
+                    <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">ESTADO</th>
                     <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">NOME</th>
-                    <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">PASTOR/SUPERVISOR</th>
-                    <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">MUNICÍPIO</th>
-                    <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">QTD. {`${nomeD1.toUpperCase()}S`}</th>
-                    <th className="px-4 py-3 text-center font-semibold bg-gray-200 text-gray-800">Ações</th>
+                    <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">PASTOR DO CAMPO</th>
+                    <th className="px-4 py-3 text-center font-semibold bg-gray-200 text-gray-800">CNPJ?</th>
+                    <th className="px-4 py-3 text-center font-semibold bg-gray-200 text-gray-800">AÇÕES</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2663,55 +2799,69 @@ export default function CongregacoesPage() {
                     </tr>
                   ) : (
                     divisoes2.map(c => {
-                      const sup = d3Enabled && c.supervisao_id
-                        ? divisoes1.find(s => s.id === c.supervisao_id) || null
-                        : null;
-                      const qtdCongregacoes = divisoes3.filter(cg => cg.campo_id === c.id).length;
-                      return (
-                        <tr key={c.id} className="border-b border-gray-200 hover:bg-gray-50">
-                          <td className="px-4 py-3 text-gray-700">{sup ? formatSupervisaoLabel(sup) : '-'}</td>
-                          <td className="px-4 py-3 text-gray-700 font-semibold">{c.nome}</td>
-                          <td className="px-4 py-3 text-gray-700">
-                            {c.pastor_nome || '-'}
-                          </td>
-                          <td className="px-4 py-3 text-gray-700">{c.municipio || '-'}</td>
-                          <td className="px-4 py-3 text-gray-700 font-semibold">{qtdCongregacoes}</td>
-                          <td className="px-4 py-3 text-center">
-                            <button
-                              onClick={() => {
-                                setEditingD2(c);
-                                setShowFormD2(true);
-                                setFormD2({
-                                  supervisao_id: (c.supervisao_id as any) || '',
-                                  nome: c.nome || '',
-                                  is_sede: !!c.is_sede,
-                                  informar_pastor: !!c.pastor_member_id,
-                                  pastor_nome_input: c.pastor_nome || '',
-                                  pastor_member_id: c.pastor_member_id || '',
-                                  pastor_nome: c.pastor_nome || '',
-                                  pastor_data_posse: (c.pastor_data_posse as any) || '',
-                                  cep: '',
-                                  municipio: '',
-                                  uf: ''
-                                });
-                                setSelectedD1IdsForD2(divisoes3.filter(cg => cg.campo_id === c.id).map(cg => cg.id));
-                                setPastorResults([]);
-                                setPastorStatus(c.pastor_member_id ? 'selected' : 'idle');
-                                setPastorMsg(c.pastor_member_id ? 'Pastor selecionado.' : '');
-                              }}
-                              className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition text-xs font-semibold"
-                            >
-                              Editar
-                            </button>
-                            <button
-                              onClick={() => handleDeleteD2(c.id)}
-                              className="ml-2 px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition text-xs font-semibold"
-                            >
-                              Deletar
-                            </button>
-                          </td>
-                        </tr>
-                      );
+                              const sup = c.supervisao_id
+                                ? divisoes1.find(s => s.id === c.supervisao_id) || null
+                                : null;
+                              return (
+                                <tr key={c.id} className="border-b border-gray-200 hover:bg-gray-50">
+                                  <td className="px-4 py-3 text-gray-700 text-xs">{sup ? formatSupervisaoLabel(sup) : '-'}</td>
+                                  <td className="px-4 py-3 text-gray-700 text-xs">{c.uf || '-'}</td>
+                                  <td className="px-4 py-3 text-gray-700 font-semibold text-xs">{c.nome}</td>
+                                  <td className="px-4 py-3 text-gray-700 text-xs">{c.pastor_nome || '-'}</td>
+                                  <td className="px-4 py-3 text-center text-xs">
+                                    {c.cnpj
+                                      ? <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded font-semibold">SIM</span>
+                                      : <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded font-semibold">NÃO</span>}
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <button
+                                      onClick={() => {
+                                        setEditingD2(c);
+                                        setShowFormD2(true);
+                                        setFormD2({
+                                          supervisao_id: c.supervisao_id || '',
+                                          nome: c.nome || '',
+                                          is_sede: !!c.is_sede,
+                                          data_fundacao: (c.data_fundacao as any) || '',
+                                          cnpj: c.cnpj || '',
+                                          possui_cnpj: !!c.cnpj,
+                                          email: c.email || '',
+                                          telefone: c.telefone || '',
+                                          observacoes: c.observacoes || '',
+                                          logomarca_url: c.logomarca_url || '',
+                                          informar_pastor: !!c.pastor_member_id,
+                                          pastor_nome_input: c.pastor_nome || '',
+                                          pastor_member_id: c.pastor_member_id || '',
+                                          pastor_nome: c.pastor_nome || '',
+                                          pastor_data_posse: (c.pastor_data_posse as any) || '',
+                                          cep: c.cep || '',
+                                          endereco: c.endereco || '',
+                                          numero: c.numero || '',
+                                          complemento: c.complemento || '',
+                                          bairro: c.bairro || '',
+                                          cidade: c.cidade || '',
+                                          uf: c.uf || '',
+                                          latitude: c.latitude != null ? String(c.latitude) : '',
+                                          longitude: c.longitude != null ? String(c.longitude) : '',
+                                        });
+                                        setSelectedD1IdsForD2(divisoes3.filter(cg => cg.campo_id === c.id).map(cg => cg.id));
+                                        setPastorResults([]);
+                                        setPastorStatus(c.pastor_member_id ? 'selected' : 'idle');
+                                        setPastorMsg(c.pastor_member_id ? 'Pastor selecionado.' : '');
+                                      }}
+                                      className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition text-xs font-semibold mr-1"
+                                    >
+                                      ✏️ Editar
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteD2(c.id)}
+                                      className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition text-xs font-semibold"
+                                    >
+                                      🗑️ Excluir
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
                     })
                   )}
                 </tbody>
@@ -2722,8 +2872,8 @@ export default function CongregacoesPage() {
         )}
 
         {/* TAB: 3ª Divisão (Congregações) */}
-        {d3Enabled && activeTab === 'divisao3' && (
-          <Section icon="3️⃣" title={`${nomeD3}s`}>
+        {activeTab === 'divisao3' && (
+          <Section icon="🗂️" title="Supervisões">
             <div className="grid grid-cols-1 gap-4 mb-6">
               <div className="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
                 <p className="text-gray-600 text-sm">Total de {nomeD3}s</p>
