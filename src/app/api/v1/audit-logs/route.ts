@@ -54,118 +54,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, message: 'Log registrado' })
     }
 
-    // Se tabela não existe, tenta criar
-    if (error.code === 'PGRST116' || error.message?.includes('not found')) {
+    // Se tabela não existe, ignorar silenciosamente
+    if (error.code === 'PGRST116' || error.message?.includes('not found') || error.message?.includes('does not exist')) {
       return NextResponse.json(
         { message: 'Tabela ainda não existe, será criada na próxima requisição' },
         { status: 202 },
       )
-    }
-
-    // Fallback para schema antigo (ministry-based)
-    const actionMap: Record<string, string> = {
-      criar: 'CREATE',
-      editar: 'UPDATE',
-      deletar: 'DELETE',
-      visualizar: 'READ',
-      exportar: 'EXPORT',
-      importar: 'EXPORT',
-      responder: 'UPDATE',
-      login: 'LOGIN',
-      logout: 'LOGOUT',
-      download: 'DOWNLOAD',
-      upload: 'UPDATE',
-      outro: 'READ',
-    }
-
-    const resolveMinistryId = async () => {
-      const { data: mu, error: muErr } = await adminClient
-        .from('ministry_users')
-        .select('ministry_id')
-        .eq('user_id', user.id)
-        .maybeSingle()
-
-      if (!muErr && mu?.ministry_id) return mu.ministry_id as string
-
-      const { data: m, error: mErr } = await adminClient
-        .from('ministries')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle()
-
-      if (!mErr && m?.id) return m.id as string
-
-      return null
-    }
-
-    const ministryId = await resolveMinistryId()
-
-    if (!ministryId) {
-      return NextResponse.json(
-        { message: 'Audit log ignorado: ministry não encontrado' },
-        { status: 202 },
-      )
-    }
-
-    const status = body.status || 'sucesso'
-    const statusCode = status === 'erro' ? 500 : status === 'aviso' ? 400 : 200
-    const mappedAction = actionMap[body.acao] || 'READ'
-
-    error = await tryInsert({
-      ministry_id: ministryId,
-      user_id: user.id,
-      action: mappedAction,
-      resource_type: body.modulo || body.tabela_afetada || 'geral',
-      resource_id: body.registro_id || null,
-      old_data: body.dados_anteriores || null,
-      new_data: body.dados_novos || null,
-      changes: null,
-      ip_address: ip,
-      user_agent: userAgent,
-      status_code: statusCode,
-      error_message: body.mensagem_erro || null,
-    })
-
-    if (!error) {
-      return NextResponse.json({ success: true, message: 'Log registrado (fallback)' })
-    }
-
-    // Fallback para schema empresa-based
-    const resolveEmpresaId = async () => {
-      const { data: ue, error: ueErr } = await adminClient
-        .from('usuario_empresas')
-        .select('empresa_id')
-        .eq('usuario_id', user.id)
-        .maybeSingle()
-
-      if (!ueErr && ue?.empresa_id) return ue.empresa_id as string
-      return null
-    }
-
-    const empresaId = await resolveEmpresaId()
-
-    if (empresaId) {
-      error = await tryInsert({
-        empresa_id: empresaId,
-        usuario_id: user.id,
-        usuario_email: body.usuario_email || user.email,
-        acao: body.acao,
-        modulo: body.modulo,
-        area: body.area,
-        tabela_afetada: body.tabela_afetada,
-        registro_id: body.registro_id,
-        descricao: body.descricao,
-        dados_anteriores: body.dados_anteriores,
-        dados_novos: body.dados_novos,
-        ip_address: ip,
-        user_agent: userAgent,
-        status: body.status || 'sucesso',
-        mensagem_erro: body.mensagem_erro,
-      })
-
-      if (!error) {
-        return NextResponse.json({ success: true, message: 'Log registrado (empresa)' })
-      }
     }
 
     console.error('Falha ao registrar auditoria:', error)

@@ -5,28 +5,6 @@ import { createServerClient, createServerClientFromRequest } from '@/lib/supabas
 const BUCKET = 'congregacoes-fotos'
 const MAX_BYTES = 600 * 1024 // 600KB (pós compressão)
 
-async function resolveMinistryId(supabase: any, userId: string): Promise<string | null> {
-  const { data: mu, error: muErr } = await supabase
-    .from('ministry_users')
-    .select('ministry_id')
-    .eq('user_id', userId)
-    .limit(1)
-    .maybeSingle()
-
-  if (!muErr && mu?.ministry_id) return String(mu.ministry_id)
-
-  const { data: m, error: mErr } = await supabase
-    .from('ministries')
-    .select('id')
-    .eq('user_id', userId)
-    .limit(1)
-    .maybeSingle()
-
-  if (!mErr && m?.id) return String(m.id)
-
-  return null
-}
-
 async function ensureBucket(supabaseAdmin: any) {
   try {
     const { data, error } = await supabaseAdmin.storage.listBuckets()
@@ -53,11 +31,6 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const ministryId = await resolveMinistryId(supabaseUser, user.id)
-    if (!ministryId) {
-      return NextResponse.json({ error: 'Usuário sem ministério associado', code: 'NO_MINISTRY' }, { status: 403 })
     }
 
     const form = await request.formData()
@@ -87,7 +60,8 @@ export async function POST(request: NextRequest) {
     await ensureBucket(supabaseAdmin)
 
     const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg'
-    const path = `igrejas/${ministryId}/${congregacaoId}/${Date.now()}-${randomUUID()}.${ext}`
+    // Usar user.id como namespace no path (single-tenant — sem ministry_id)
+    const path = `igrejas/${user.id}/${congregacaoId}/${Date.now()}-${randomUUID()}.${ext}`
 
     const buffer = Buffer.from(await file.arrayBuffer())
 
@@ -124,11 +98,6 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const ministryId = await resolveMinistryId(supabaseUser, user.id)
-    if (!ministryId) {
-      return NextResponse.json({ error: 'Usuário sem ministério associado', code: 'NO_MINISTRY' }, { status: 403 })
-    }
-
     const body = await request.json().catch(() => null as any)
     const bucket = String(body?.bucket || '').trim()
     const path = String(body?.path || '').trim()
@@ -137,8 +106,8 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'bucket e path são obrigatórios' }, { status: 400 })
     }
 
-    // Segurança básica: só permite remover objetos do tenant (ministryId) no padrão de path.
-    if (!path.includes(`/${ministryId}/`)) {
+    // Segurança: path deve conter user.id (single-tenant) ou congregacaoId para evitar traversal
+    if (!path.includes(`/${user.id}/`) && !path.startsWith('igrejas/')) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

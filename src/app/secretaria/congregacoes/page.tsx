@@ -55,7 +55,7 @@ interface Divisao2 {
 
 interface Divisao3 {
   id: string;
-  ministry_id: string;
+  ministry_id?: string;
   supervisao_id?: string | null;
   campo_id?: string | null;
   nome: string;
@@ -529,84 +529,19 @@ export default function CongregacoesPage() {
         setNomenclaturasState(orgNomenclaturas);
 
         if (user) {
-          let resolvedMinistryId: string | null = null;
+          // Single-tenant: usar user.id como namespace (sem ministry_id/ministries)
+          const resolvedMinistryId = user.id;
+          setMinistryId(resolvedMinistryId);
 
-          // 1) Usuário associado via ministry_users (padrão multi-tenant)
-          const { data: mu, error: muErr } = await supabase
-            .from('ministry_users')
-            .select('ministry_id')
-            .eq('user_id', user.id)
-            .maybeSingle();
+          // Sem limites de plano no single-tenant
+          setPlanLimits({ max_divisao1: 999, max_divisao2: 999, max_divisao3: -1, planName: '' });
 
-          if (!muErr && mu?.ministry_id) {
-            resolvedMinistryId = mu.ministry_id as any;
-          }
-
-          // 2) Fallback: usuário owner na tabela ministries
-          if (!resolvedMinistryId) {
-            const { data: ministries, error: mErr } = await supabase
-              .from('ministries')
-              .select('id')
-              .eq('user_id', user.id)
-              .maybeSingle();
-
-            if (!mErr && ministries?.id) {
-              resolvedMinistryId = ministries.id as any;
-            }
-          }
-
-          if (resolvedMinistryId) {
-            setMinistryId(resolvedMinistryId);
-
-            // Carregar limites do plano
-            const FALLBACK_LIMITS: Record<string, { max_divisao1: number; max_divisao2: number; max_divisao3: number }> = {
-              basic:         { max_divisao1: 5,   max_divisao2: 0,  max_divisao3: 0  },
-              starter:       { max_divisao1: 10,  max_divisao2: 1,  max_divisao3: -1 },
-              intermediario: { max_divisao1: 25,  max_divisao2: 3,  max_divisao3: -1 },
-              profissional:  { max_divisao1: 50,  max_divisao2: 10, max_divisao3: -1 },
-              expert:        { max_divisao1: 100, max_divisao2: 20, max_divisao3: -1 },
-            };
-
-            try {
-              const { data: ministryRow } = await supabase
-                .from('ministries')
-                .select('subscription_plan_id, plan_id')
-                .eq('id', resolvedMinistryId)
-                .maybeSingle();
-
-              let limits = { max_divisao1: 999, max_divisao2: 999, max_divisao3: -1 };
-              let planName = '';
-
-              if ((ministryRow as any)?.subscription_plan_id) {
-                const { data: planRow } = await supabase
-                  .from('subscription_plans')
-                  .select('max_divisao1, max_divisao2, max_divisao3, name')
-                  .eq('id', (ministryRow as any).subscription_plan_id)
-                  .maybeSingle();
-                if (planRow) {
-                  limits = {
-                    max_divisao1: (planRow as any).max_divisao1 ?? 999,
-                    max_divisao2: (planRow as any).max_divisao2 ?? 999,
-                    max_divisao3: (planRow as any).max_divisao3 ?? -1,
-                  };
-                  planName = (planRow as any).name || '';
-                }
-              } else if ((ministryRow as any)?.plan_id) {
-                const slug = String((ministryRow as any).plan_id).toLowerCase();
-                const fb = FALLBACK_LIMITS[slug];
-                if (fb) { limits = fb; planName = (ministryRow as any).plan_id; }
-              }
-
-              setPlanLimits({ ...limits, planName });
-            } catch { /* sem limites adicionais */ }
-
-            // Carregar dados do Supabase
-            await Promise.all([
-              loadDivisoes1(resolvedMinistryId),
-              loadDivisoes2(resolvedMinistryId),
-              loadDivisoes3(resolvedMinistryId),
-            ]);
-          }
+          // Carregar dados do Supabase
+          await Promise.all([
+            loadDivisoes1(),
+            loadDivisoes2(),
+            loadDivisoes3(),
+          ]);
         }
 
         setLoading(false);
@@ -764,7 +699,7 @@ export default function CongregacoesPage() {
       const { data, error } = await supabase
         .from('members')
         .select(selectFields)
-        .eq('ministry_id', ministryId)
+        
         .like('cpf', `${cpfDigits}%`)
         .limit(8)
         .order('cpf');
@@ -820,7 +755,7 @@ export default function CongregacoesPage() {
       const { data: dataDigits, error: errDigits } = await supabase
         .from('members')
         .select(selectFields)
-        .eq('ministry_id', ministryId)
+        
         .eq('cpf', cpfDigits)
         .maybeSingle();
 
@@ -833,7 +768,7 @@ export default function CongregacoesPage() {
           const { data: dataRaw, error: errRaw } = await supabase
             .from('members')
             .select(selectFields)
-            .eq('ministry_id', ministryId)
+            
             .eq('cpf', cpfRaw)
             .maybeSingle();
           if (errRaw) throw errRaw;
@@ -947,12 +882,12 @@ export default function CongregacoesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formD1.supervisor_cpf_input, showFormD1, ministryId]);
 
-  const loadDivisoes1 = async (ministryId: string) => {
+  const loadDivisoes1 = async () => {
     try {
       const { data, error } = await supabase
         .from('supervisoes')
         .select('*')
-        .eq('ministry_id', ministryId)
+        
         .order('nome');
       
       if (error) throw error;
@@ -980,12 +915,12 @@ export default function CongregacoesPage() {
     }
   };
 
-  const loadDivisoes3 = async (ministryId: string) => {
+  const loadDivisoes3 = async () => {
     try {
       const { data, error } = await supabase
         .from('congregacoes')
         .select('*')
-        .eq('ministry_id', ministryId)
+        
         .order('nome');
 
       if (error) throw error;
@@ -1027,7 +962,7 @@ export default function CongregacoesPage() {
       const { data, error } = await supabase
         .from('members')
         .select('id, name, cpf, data_nascimento, role, profissao, phone, custom_fields')
-        .eq('ministry_id', ministryId)
+        
         .ilike('name', `%${q}%`)
         .limit(7);
 
@@ -1084,7 +1019,7 @@ export default function CongregacoesPage() {
       const { data, error } = await supabase
         .from('members')
         .select('id, name, cpf, data_nascimento, role, profissao, phone, custom_fields')
-        .eq('ministry_id', ministryId)
+        
         .ilike('name', `%${q}%`)
         .limit(8);
 
@@ -1251,7 +1186,7 @@ export default function CongregacoesPage() {
           const { error: addErr } = await supabase
             .from('congregacoes')
             .update({ campo_id: campoId, updated_at: nowIso })
-            .eq('ministry_id', ministryId)
+            
             .in('id', toAdd);
           if (addErr) {
             if (isMissingCongregacoesTableError(addErr)) {
@@ -1266,7 +1201,7 @@ export default function CongregacoesPage() {
           const { error: removeErr } = await supabase
             .from('congregacoes')
             .update({ campo_id: null, updated_at: nowIso })
-            .eq('ministry_id', ministryId)
+            
             .eq('campo_id', campoId)
             .in('id', toRemove);
           if (removeErr) {
@@ -1280,7 +1215,7 @@ export default function CongregacoesPage() {
       }
 
       await loadDivisoes2();
-      await loadDivisoes3(ministryId);
+      await loadDivisoes3();
 
       setFormD2({
         supervisao_id: '',
@@ -1425,8 +1360,7 @@ export default function CongregacoesPage() {
     const municipioTrim = (formD3.municipio || '').trim();
 
     const payload: any = {
-      ministry_id: ministryId,
-      nome: formD3.nome.trim(),
+            nome: formD3.nome.trim(),
       dirigente: dirigenteTrim || null,
       dirigente_cpf: dirigenteCpfTrim || null,
       dirigente_cargo: dirigenteCargoTrim || null,
@@ -1563,7 +1497,7 @@ export default function CongregacoesPage() {
             .from('congregacoes')
             .update(payloadToUse)
             .eq('id', editingD3.id)
-            .eq('ministry_id', ministryId);
+            ;
         }
 
         return await supabase
@@ -1577,21 +1511,6 @@ export default function CongregacoesPage() {
       if (saveResult?.error) {
         const missingCol = getMissingColumnFromError(saveResult.error);
         if (missingCol && Object.prototype.hasOwnProperty.call(payload, missingCol)) {
-          // Não permitir salvar sem ministry_id (multi-tenant); isso causará violação de RLS.
-          if (missingCol === 'ministry_id') {
-            await dialog.alert({
-              title: 'Schema do Supabase',
-              type: 'warning',
-              message:
-                `Sua base ainda não reconheceu a coluna "ministry_id" (schema/cache do Supabase).\n\n` +
-                `Não é possível salvar sem "ministry_id" porque o sistema é multi-tenant.\n\n` +
-                `Ações sugeridas:\n` +
-                `- Recarregue a página e aguarde 1-2 minutos; ou\n` +
-                `- No Supabase SQL Editor, rode: select pg_notify('pgrst','reload schema');`,
-            });
-            throw saveResult.error;
-          }
-
           const shouldRetry = await dialog.confirm({
             title: 'Schema do Supabase',
             type: 'warning',
@@ -1647,7 +1566,7 @@ export default function CongregacoesPage() {
             updated_at: nowIso,
           })
           .eq('id', savedId)
-          .eq('ministry_id', ministryId);
+          ;
         if (upErr) throw upErr;
         didChangePhoto = true;
       }
@@ -1663,7 +1582,7 @@ export default function CongregacoesPage() {
             updated_at: nowIso,
           })
           .eq('id', savedId)
-          .eq('ministry_id', ministryId);
+          ;
         if (upErr) throw upErr;
         didChangePhoto = true;
       }
@@ -1672,7 +1591,7 @@ export default function CongregacoesPage() {
         await deleteFotoIgreja(oldBucket, oldPath);
       }
 
-      await loadDivisoes3(ministryId);
+      await loadDivisoes3();
 
       setFormD3({
         supervisao_id: '',
@@ -1719,9 +1638,9 @@ export default function CongregacoesPage() {
         .from('congregacoes')
         .delete()
         .eq('id', id)
-        .eq('ministry_id', ministryId);
+        ;
       if (error) throw error;
-      await loadDivisoes3(ministryId);
+      await loadDivisoes3();
     } catch (error) {
       console.error('Erro ao deletar divisão 03:', error);
       await dialog.alert({ title: 'Erro', type: 'error', message: 'Erro ao deletar. Tente novamente.' });
@@ -1812,7 +1731,7 @@ export default function CongregacoesPage() {
             updated_at: new Date().toISOString()
           })
           .eq('id', editingD1.id)
-          .eq('ministry_id', ministryId);
+          ;
         
         if (error) throw error;
       } else {
@@ -1820,8 +1739,7 @@ export default function CongregacoesPage() {
         const { data: createdRow, error } = await supabase
           .from('supervisoes')
           .insert([{
-            ministry_id: ministryId,
-            codigo: codigoToSave,
+                        codigo: codigoToSave,
             nome: formD1.nome,
             uf,
             ...supervisorPayload,
@@ -1836,13 +1754,12 @@ export default function CongregacoesPage() {
           // Em caso de corrida (código duplicado), recalcular e tentar 1 vez.
           const msg = (error as any)?.message || '';
           if (String(msg).includes('idx_supervisoes_ministry_codigo_unique') || String(msg).includes('duplicate key')) {
-            await loadDivisoes1(ministryId);
+            await loadDivisoes1();
             const retryCodigo = getNextCodigo();
             const { data: retryRow, error: retryErr } = await supabase
               .from('supervisoes')
               .insert([{
-                ministry_id: ministryId,
-                codigo: retryCodigo,
+                                codigo: retryCodigo,
                 nome: formD1.nome,
                 uf,
                 ...supervisorPayload,
@@ -1866,7 +1783,7 @@ export default function CongregacoesPage() {
         // e encontrar pelo (ministry_id, codigo).
         let resolvedId = supervisaoId;
         if (!resolvedId) {
-          await loadDivisoes1(ministryId);
+          await loadDivisoes1();
           const found = divisoes1.find(s => {
             const codigo = typeof s.codigo === 'number' && Number.isFinite(s.codigo) ? s.codigo : null;
             return codigo === codigoToSave && s.nome === formD1.nome;
@@ -1892,7 +1809,7 @@ export default function CongregacoesPage() {
             const { error: addErr } = await supabase
               .from('campos')
               .update({ supervisao_id: resolvedId, updated_at: nowIso })
-              .eq('ministry_id', ministryId)
+              
               .in('id', toAdd);
             if (addErr) throw addErr;
           }
@@ -1901,7 +1818,7 @@ export default function CongregacoesPage() {
             const { error: removeErr } = await supabase
               .from('campos')
               .update({ supervisao_id: null, updated_at: nowIso })
-              .eq('ministry_id', ministryId)
+              
               .eq('supervisao_id', resolvedId)
               .in('id', toRemove);
             if (removeErr) throw removeErr;
@@ -1910,7 +1827,7 @@ export default function CongregacoesPage() {
       }
 
       // Recarregar lista
-      await loadDivisoes1(ministryId);
+      await loadDivisoes1();
       await loadDivisoes2();
       
       // Limpar form
@@ -1948,11 +1865,11 @@ export default function CongregacoesPage() {
         .from('supervisoes')
         .delete()
         .eq('id', id)
-        .eq('ministry_id', ministryId);
+        ;
       
       if (error) throw error;
       
-      await loadDivisoes1(ministryId);
+      await loadDivisoes1();
     } catch (error) {
       console.error('Erro ao deletar:', error);
       await dialog.alert({ title: 'Erro', type: 'error', message: 'Erro ao deletar. Tente novamente.' });

@@ -64,6 +64,7 @@ export async function requireFlowAuth(request: NextRequest): Promise<FlowAuthCon
 
   await ensureTrialAccess(userId);
 
+  // Tentar resolver via ministry_users (schema multi-tenant, usado pelo painel admin)
   const resolvedMuFromRequest = await resolveMinistryUserFromRequest(supabase, userId, token);
   const resolvedMu = resolvedMuFromRequest || await resolveMinistryUser(userId);
   if (resolvedMu?.ministry_id) {
@@ -84,24 +85,25 @@ export async function requireFlowAuth(request: NextRequest): Promise<FlowAuthCon
     };
   }
 
-  const { data: ministry } = await supabase
-    .from('ministries')
-    .select('id')
-    .eq('user_id', userId)
-    .limit(1)
+  // Fallback single-tenant: buscar role na tabela public.users
+  const { data: publicUser } = await supabase
+    .from('users')
+    .select('role, is_active')
+    .eq('id', userId)
     .maybeSingle();
 
-  if (!ministry?.id) {
-    throw new Error('NO_MINISTRY');
+  if (publicUser) {
+    const isAdmin = ['admin', 'manager'].includes(String(publicUser.role || ''));
+    return {
+      supabase,
+      userId,
+      ministryId: 'single-tenant',
+      roles: isAdmin ? ['ADMINISTRADOR'] : [mapBaseRole(publicUser.role)[0] || 'OPERADOR'],
+      congregacaoId: null,
+    };
   }
 
-  return {
-    supabase,
-    userId,
-    ministryId: String(ministry.id),
-    roles: ['ADMINISTRADOR'],
-    congregacaoId: null,
-  };
+  throw new Error('NO_MINISTRY');
 }
 
 async function ensureTrialAccess(userId: string) {

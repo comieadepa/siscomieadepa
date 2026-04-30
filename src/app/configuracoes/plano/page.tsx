@@ -41,60 +41,13 @@ export default function PlanoPage() {
   };
 
   useEffect(() => {
-    const supabase = createClient();
-
-    const resolveMinistryId = async () => {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) return null;
-
-        const mu = await supabase
-          .from('ministry_users')
-          .select('ministry_id')
-          .eq('user_id', user.id)
-          .limit(1);
-
-        const ministryIdFromMu = (mu.data as any)?.[0]?.ministry_id as string | undefined;
-        if (ministryIdFromMu) return ministryIdFromMu;
-
-        const m = await supabase.from('ministries').select('id').eq('user_id', user.id).limit(1);
-        const ministryIdFromOwner = (m.data as any)?.[0]?.id as string | undefined;
-        return ministryIdFromOwner || null;
-      } catch {
-        return null;
-      }
-    };
-
-    const normalizePlanId = (value: string | null | undefined): PlanType => {
-      const normalized = String(value || '').toLowerCase();
-      if (normalized in PLANOS_DISPONIBLES) return normalized as PlanType;
-      if (normalized.includes('profissional') || normalized.includes('professional')) return 'profissional';
-      if (normalized.includes('intermediario') || normalized.includes('intermediate')) return 'intermediario';
-      if (normalized.includes('expert') || normalized.includes('enterprise') || normalized.includes('empresarial')) return 'expert';
-      return 'starter';
-    };
-
     const loadPlanoAtual = async () => {
       try {
-        const ministryId = await resolveMinistryId();
-        if (!ministryId) return;
-
-        const { data } = await supabase
-          .from('ministries')
-          .select('plan, subscription_status, subscription_start_date, subscription_end_date, created_at')
-          .eq('id', ministryId)
-          .maybeSingle();
-
-        const planId = normalizePlanId(data?.plan);
-        setPlanoAtualId(planId);
-        setPlanoStatus(String(data?.subscription_status || 'ativo'));
-
-        const inicio = data?.subscription_start_date || data?.created_at || '';
-        const renovacao = data?.subscription_end_date || '';
-        setPlanoInicio(inicio);
-        setPlanoRenovacao(renovacao);
+        // Single-tenant: plano fixo (sem sistema de assinaturas)
+        setPlanoAtualId('profissional');
+        setPlanoStatus('ativo');
+        setPlanoInicio('');
+        setPlanoRenovacao('');
       } finally {
         setLoading(false);
       }
@@ -123,33 +76,6 @@ export default function PlanoPage() {
         return;
       }
 
-      // Obter informações do ministry
-      const muResult = await supabase
-        .from('ministry_users')
-        .select('ministry_id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      const ministryIdFromMu = (muResult.data as any)?.ministry_id as string | undefined;
-      let ministryId = ministryIdFromMu;
-
-      if (!ministryId) {
-        const mResult = await supabase
-          .from('ministries')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-        ministryId = (mResult.data as any)?.id as string | undefined;
-      }
-
-      if (!ministryId) {
-        await dialog.alert({
-          title: 'Erro',
-          type: 'error',
-          message: 'Ministério não encontrado'
-        });
-        return;
-      }
 
       // Montar dados do novo ticket
       const novoPlano = planoSelecionado ? PLANOS_DISPONIBLES[planoSelecionado] : null;
@@ -162,8 +88,7 @@ export default function PlanoPage() {
       const { error: ticketError } = await supabase
         .from('support_tickets')
         .insert([{
-          ministry_id: ministryId,
-          user_id: user.id,
+                    user_id: user.id,
           subject: titulo,
           description: descricao,
           category: 'Upgrade de Plano',

@@ -42,7 +42,6 @@ function isMissingEmployeesViewError(error: any): boolean {
 
 async function listEmployeesFallback(
   supabase: any,
-  ministryId: string,
   page: number,
   limit: number,
   status: string | null,
@@ -53,7 +52,6 @@ async function listEmployeesFallback(
   let employeesQuery = supabase
     .from('employees')
     .select('*', { count: 'exact' })
-    .eq('ministry_id', ministryId)
 
   if (status) employeesQuery = employeesQuery.eq('status', status)
   if (grupo) employeesQuery = employeesQuery.eq('grupo', grupo)
@@ -73,7 +71,6 @@ async function listEmployeesFallback(
     const { data: membersRows, error: membersErr } = await supabase
       .from('members')
       .select('id,name,cpf,phone,birth_date')
-      .eq('ministry_id', ministryId)
       .in('id', memberIds)
 
     if (!membersErr) {
@@ -95,28 +92,6 @@ async function listEmployeesFallback(
   return { data: enriched, count: count || 0 }
 }
 
-async function resolveMinistryId(supabase: any, userId: string): Promise<string | null> {
-  const { data: mu, error: muErr } = await supabase
-    .from('ministry_users')
-    .select('ministry_id')
-    .eq('user_id', userId)
-    .limit(1)
-    .maybeSingle()
-
-  if (!muErr && mu?.ministry_id) return String(mu.ministry_id)
-
-  const { data: m, error: mErr } = await supabase
-    .from('ministries')
-    .select('id')
-    .eq('user_id', userId)
-    .limit(1)
-    .maybeSingle()
-
-  if (!mErr && m?.id) return String(m.id)
-
-  return null
-}
-
 export async function GET(request: NextRequest) {
   try {
     const supabase = createServerClientFromRequest(request)
@@ -127,14 +102,6 @@ export async function GET(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const ministryId = await resolveMinistryId(supabase, user.id)
-    if (!ministryId) {
-      return NextResponse.json(
-        { error: 'Usuário sem ministério associado', code: 'NO_MINISTRY' },
-        { status: 403 }
-      )
     }
 
     // Extrair query params
@@ -150,7 +117,6 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from('employees_with_member_info')
       .select('*', { count: 'exact' })
-      .eq('ministry_id', ministryId)
 
     // Aplicar filtros
     if (status) {
@@ -172,7 +138,7 @@ export async function GET(request: NextRequest) {
     if (error) {
       if (isMissingEmployeesViewError(error)) {
         try {
-          const fallback = await listEmployeesFallback(supabase, ministryId, page, limit, status, grupo)
+          const fallback = await listEmployeesFallback(supabase, page, limit, status, grupo)
           return NextResponse.json({
             data: fallback.data,
             count: fallback.count,
@@ -220,14 +186,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const ministryId = await resolveMinistryId(supabase, user.id)
-    if (!ministryId) {
-      return NextResponse.json(
-        { error: 'Usuário sem ministério associado', code: 'NO_MINISTRY' },
-        { status: 403 }
-      )
-    }
-
     const body = await request.json()
     const normalizedBody = normalizePayloadToUppercase(body, {
       preserveKeys: ['data_admissao'],
@@ -268,7 +226,6 @@ export async function POST(request: NextRequest) {
       .from('employees')
       .insert([
         {
-          ministry_id: ministryId,
           member_id,
           grupo,
           funcao,

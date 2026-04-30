@@ -21,7 +21,6 @@ type UsuarioCreateBody = {
   congregacao_id?: string | null;
 };
 
-
 type UsuarioUpdateBody = {
   user_id: string;
   nome: string;
@@ -32,16 +31,11 @@ type UsuarioUpdateBody = {
   senha?: string | null;
 };
 
-function mapNivel(role: string | null | undefined, permissions: any): UsuarioResponse['nivel'] {
+function mapNivel(role: string | null | undefined): UsuarioResponse['nivel'] {
   const base = String(role || '').toLowerCase();
-  const perms = Array.isArray(permissions) ? permissions : [];
-  const permSet = new Set(perms.map((p: any) => String(p || '').toUpperCase()));
-
-  if (permSet.has('ADMINISTRADOR') || ['admin'].includes(base)) return 'administrador';
-  if (permSet.has('FINANCEIRO') || ['financeiro', 'financial'].includes(base)) return 'financeiro';
-  if (permSet.has('SUPERVISOR') || ['supervisor', 'manager'].includes(base)) return 'supervisor';
-  if (permSet.has('OPERADOR') || ['operador', 'operator'].includes(base)) return 'operador';
-
+  if (['admin'].includes(base)) return 'administrador';
+  if (['financeiro', 'financial'].includes(base)) return 'financeiro';
+  if (['supervisor', 'manager'].includes(base)) return 'supervisor';
   return 'operador';
 }
 
@@ -60,98 +54,78 @@ function resolveEmailConfirmed(user: any): boolean {
   return Boolean(user?.email_confirmed_at || user?.confirmed_at);
 }
 
+// Mapeia nivel → role para a tabela public.users
+function mapRoleFromNivel(nivel: UsuarioResponse['nivel']): string {
+  switch (nivel) {
+    case 'administrador': return 'admin';
+    case 'financeiro': return 'financeiro';
+    case 'supervisor': return 'manager';
+    default: return 'operator';
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
-    const { ministryId, roles } = await requireFlowAuth(request);
+    const { roles } = await requireFlowAuth(request);
     if (!hasRole(roles, ['ADMINISTRADOR'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const admin = createServerClient();
 
-    const { data: muRows, error: muError } = await admin
-      .from('ministry_users')
-      .select('user_id, role, permissions, congregacao_id')
-      .eq('ministry_id', ministryId);
+    // Buscar todos os usuários de public.users
+    const { data: usersRows, error: usersError } = await admin
+      .from('users')
+      .select('id, email, name, role, is_active, last_activity');
 
-    if (muError) {
-      return NextResponse.json({ error: muError.message }, { status: 400 });
+    if (usersError) {
+      return NextResponse.json({ error: usersError.message }, { status: 400 });
     }
 
-    const rows = muRows || [];
-    if (rows.length === 0) {
-      return NextResponse.json({ data: [] });
-    }
+    const rows = usersRows || [];
 
-    const congregacaoIds = Array.from(
-      new Set(rows.map((row: any) => row.congregacao_id).filter(Boolean))
-    ).map(String);
-
-    const congregacaoMap = new Map<string, string>();
-    if (congregacaoIds.length > 0) {
-      const { data: congregacoes, error: congError } = await admin
-        .from('congregacoes')
-        .select('id, nome')
-        .in('id', congregacaoIds);
-
-      if (!congError && congregacoes) {
-        congregacoes.forEach((c: any) => {
-          congregacaoMap.set(String(c.id), String(c.nome || ''));
-        });
-      }
-    }
-
+    // Buscar dados de auth para saber email_confirmed e banned_until
     const authResults = await Promise.all(
       rows.map(async (row: any) => {
-        const { data, error } = await admin.auth.admin.getUserById(row.user_id);
+        const { data, error } = await admin.auth.admin.getUserById(row.id);
         return { row, user: data?.user || null, error };
       })
     );
 
-    const usuarios: UsuarioResponse[] = authResults.map(({ row, user }) => {
-      const congregacaoId = row.congregacao_id ? String(row.congregacao_id) : '';
-      return {
-        id: String(row.user_id),
-        nome: resolveNome(user),
-        email: String(user?.email || ''),
-        email_confirmed: resolveEmailConfirmed(user),
-        nivel: mapNivel(row.role, row.permissions),
-        congregacao: congregacaoMap.get(congregacaoId) || undefined,
-        congregacao_id: row.congregacao_id ?? null,
-        status: resolveStatus(user),
-      };
-    });
+    // Buscar congregação de cada usuário (se tiver congregacao_id em algum lugar futuro)
+    const congregacaoIds: string[] = [];
+    const congregacaoMap = new Map<string, string>();
+    if (congregacaoIds.length > 0) {
+      const { data: congregacoes } = await admin
+        .from('congregacoes')
+        .select('id, nome')
+        .in('id', congregacaoIds);
+      (congregacoes || []).forEach((c: any) => congregacaoMap.set(String(c.id), String(c.nome || '')));
+    }
+
+    const usuarios: UsuarioResponse[] = authResults.map(({ row, user }) => ({
+      id: String(row.id),
+      nome: resolveNome(user) || String(row.name || row.email || ''),
+      email: String(user?.email || row.email || ''),
+      email_confirmed: resolveEmailConfirmed(user),
+      nivel: mapNivel(row.role),
+      congregacao: undefined,
+      congregacao_id: null,
+      status: row.is_active === false ? 'inativo' : resolveStatus(user),
+    }));
 
     return NextResponse.json({ data: usuarios });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Erro interno do servidor';
-    if (message === 'TRIAL_EXPIRED') {
-      return NextResponse.json({ error: 'Expirado' }, { status: 403 });
-    }
-    if (message === 'NO_MINISTRY') {
-      return NextResponse.json({ error: 'Usuario sem vinculo com ministerio' }, { status: 403 });
-    }
+    if (message === 'TRIAL_EXPIRED') return NextResponse.json({ error: 'Expirado' }, { status: 403 });
     const status = message === 'UNAUTHORIZED' ? 401 : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }
 
-function mapRoleAndPermissions(nivel: UsuarioResponse['nivel']) {
-  switch (nivel) {
-    case 'administrador':
-      return { role: 'admin', permissions: ['ADMINISTRADOR'] };
-    case 'financeiro':
-      return { role: 'financeiro', permissions: ['FINANCEIRO'] };
-    case 'supervisor':
-      return { role: 'supervisor', permissions: ['SUPERVISOR'] };
-    default:
-      return { role: 'operator', permissions: ['OPERADOR'] };
-  }
-}
-
 export async function POST(request: NextRequest) {
   try {
-    const { ministryId, roles } = await requireFlowAuth(request);
+    const { roles } = await requireFlowAuth(request);
     if (!hasRole(roles, ['ADMINISTRADOR'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
@@ -171,36 +145,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Senha muito curta' }, { status: 400 });
     }
 
-    if (nivel === 'operador' && !congregacaoId) {
-      return NextResponse.json({ error: 'Congregacao obrigatoria para este nivel' }, { status: 400 });
-    }
-
     const admin = createServerClient();
 
-    // Verificar limite de usuários do plano via subscription_plans.max_users
-    const { data: ministryData } = await admin
-      .from('ministries')
-      .select('name, subscription_plan_id, subscription_plans(name, max_users)')
-      .eq('id', ministryId)
-      .maybeSingle();
-
-    const planData = (ministryData as any)?.subscription_plans;
-    const limite: number = planData?.max_users ?? 3;
-    const planoNome: string = planData?.name || 'seu plano';
-
+    // Verificar limite de usuários (máximo 10 no single-tenant)
     const { count: totalUsuarios } = await admin
-      .from('ministry_users')
-      .select('*', { count: 'exact', head: true })
-      .eq('ministry_id', ministryId);
+      .from('users')
+      .select('*', { count: 'exact', head: true });
 
-    if ((totalUsuarios ?? 0) >= limite) {
+    if ((totalUsuarios ?? 0) >= 10) {
       return NextResponse.json(
-        { error: `Limite de usuários atingido para o plano ${planoNome} (máximo: ${limite}). Faça upgrade para adicionar mais usuários.` },
+        { error: 'Limite de usuários atingido (máximo: 10).' },
         { status: 403 }
       );
     }
-
-    const roleConfig = mapRoleAndPermissions(nivel);
 
     const { data: authUser, error: authError } = await admin.auth.admin.createUser({
       email,
@@ -213,30 +170,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: authError?.message || 'Erro ao criar usuario' }, { status: 400 });
     }
 
-    const { error: linkError } = await admin
-      .from('ministry_users')
+    // Inserir em public.users
+    const { error: insertError } = await admin
+      .from('users')
       .insert({
-        ministry_id: ministryId,
-        user_id: authUser.user.id,
-        role: roleConfig.role,
-        permissions: roleConfig.permissions,
-        congregacao_id: congregacaoId,
+        id: authUser.user.id,
+        email,
+        name: nome,
+        role: mapRoleFromNivel(nivel),
+        is_active: true,
       } as any);
 
-    if (linkError) {
+    if (insertError) {
       await admin.auth.admin.deleteUser(authUser.user.id);
-      return NextResponse.json({ error: linkError.message }, { status: 400 });
+      return NextResponse.json({ error: insertError.message }, { status: 400 });
     }
+
+    void congregacaoId; // reservado para uso futuro
 
     return NextResponse.json({ success: true, id: authUser.user.id });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Erro interno do servidor';
-    if (message === 'TRIAL_EXPIRED') {
-      return NextResponse.json({ error: 'Expirado' }, { status: 403 });
-    }
-    if (message === 'NO_MINISTRY') {
-      return NextResponse.json({ error: 'Usuario sem vinculo com ministerio' }, { status: 403 });
-    }
+    if (message === 'TRIAL_EXPIRED') return NextResponse.json({ error: 'Expirado' }, { status: 403 });
     const status = message === 'UNAUTHORIZED' ? 401 : 500;
     return NextResponse.json({ error: message }, { status });
   }
@@ -252,7 +207,7 @@ function resolveBannedUntil(status: UsuarioResponse['status'] | undefined) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const { ministryId, roles } = await requireFlowAuth(request);
+    const { roles } = await requireFlowAuth(request);
     if (!hasRole(roles, ['ADMINISTRADOR'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
@@ -274,12 +229,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Senha muito curta' }, { status: 400 });
     }
 
-    if (nivel === 'operador' && !congregacaoId) {
-      return NextResponse.json({ error: 'Congregacao obrigatoria para este nivel' }, { status: 400 });
-    }
-
     const admin = createServerClient();
-    const roleConfig = mapRoleAndPermissions(nivel);
     const banned_until = resolveBannedUntil(status);
 
     const { data: existingUser, error: existingUserError } = await admin.auth.admin.getUserById(userId);
@@ -307,55 +257,27 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: authError.message }, { status: 400 });
     }
 
-    const { data: existing, error: existingError } = await admin
-      .from('ministry_users')
-      .select('id')
-      .eq('ministry_id', ministryId)
-      .eq('user_id', userId)
-      .maybeSingle();
+    // Atualizar public.users
+    const { error: updateError } = await admin
+      .from('users')
+      .update({
+        name: nome,
+        email,
+        role: mapRoleFromNivel(nivel),
+        is_active: status ? status === 'ativo' : undefined,
+      })
+      .eq('id', userId);
 
-    if (existingError) {
-      return NextResponse.json({ error: existingError.message }, { status: 400 });
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 400 });
     }
 
-    if (existing?.id) {
-      const { error: updateError } = await admin
-        .from('ministry_users')
-        .update({
-          role: roleConfig.role,
-          permissions: roleConfig.permissions,
-          congregacao_id: congregacaoId,
-        })
-        .eq('id', existing.id);
-
-      if (updateError) {
-        return NextResponse.json({ error: updateError.message }, { status: 400 });
-      }
-    } else {
-      const { error: insertError } = await admin
-        .from('ministry_users')
-        .insert({
-          ministry_id: ministryId,
-          user_id: userId,
-          role: roleConfig.role,
-          permissions: roleConfig.permissions,
-          congregacao_id: congregacaoId,
-        } as any);
-
-      if (insertError) {
-        return NextResponse.json({ error: insertError.message }, { status: 400 });
-      }
-    }
+    void congregacaoId; // reservado para uso futuro
 
     return NextResponse.json({ success: true });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Erro interno do servidor';
-    if (message === 'TRIAL_EXPIRED') {
-      return NextResponse.json({ error: 'Expirado' }, { status: 403 });
-    }
-    if (message === 'NO_MINISTRY') {
-      return NextResponse.json({ error: 'Usuario sem vinculo com ministerio' }, { status: 403 });
-    }
+    if (message === 'TRIAL_EXPIRED') return NextResponse.json({ error: 'Expirado' }, { status: 403 });
     const status = message === 'UNAUTHORIZED' ? 401 : 500;
     return NextResponse.json({ error: message }, { status });
   }
@@ -363,7 +285,7 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { ministryId, roles, userId: currentUserId } = await requireFlowAuth(request);
+    const { roles, userId: currentUserId } = await requireFlowAuth(request);
     if (!hasRole(roles, ['ADMINISTRADOR'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
@@ -379,41 +301,28 @@ export async function DELETE(request: NextRequest) {
 
     const admin = createServerClient();
 
-    // Impede deletar o dono do tenant (ministry.user_id) — causaria cascade e apagaria tudo
-    const { data: ministry } = await admin
-      .from('ministries')
-      .select('user_id')
-      .eq('id', ministryId)
-      .single();
-
-    if (ministry?.user_id === userId) {
-      return NextResponse.json(
-        { error: 'Não é possível remover o proprietário do tenant. Transfira a titularidade antes.' },
-        { status: 403 }
-      );
-    }
-
+    // Verificar se o usuário existe em public.users
     const { data: existing, error: checkError } = await admin
-      .from('ministry_users')
-      .select('user_id')
-      .eq('ministry_id', ministryId)
-      .eq('user_id', userId)
-      .single();
+      .from('users')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle();
 
     if (checkError || !existing) {
-      return NextResponse.json({ error: 'Usuário não encontrado neste ministério' }, { status: 404 });
+      return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 });
     }
 
-    const { error: deleteRelError } = await admin
-      .from('ministry_users')
+    // Deletar de public.users (CASCADE para auth.users via FK)
+    const { error: deleteError } = await admin
+      .from('users')
       .delete()
-      .eq('ministry_id', ministryId)
-      .eq('user_id', userId);
+      .eq('id', userId);
 
-    if (deleteRelError) {
-      return NextResponse.json({ error: deleteRelError.message }, { status: 400 });
+    if (deleteError) {
+      return NextResponse.json({ error: deleteError.message }, { status: 400 });
     }
 
+    // Deletar de auth.users
     const { error: deleteAuthError } = await admin.auth.admin.deleteUser(userId);
     if (deleteAuthError) {
       return NextResponse.json({ error: deleteAuthError.message }, { status: 400 });
@@ -422,12 +331,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Erro interno do servidor';
-    if (message === 'TRIAL_EXPIRED') {
-      return NextResponse.json({ error: 'Expirado' }, { status: 403 });
-    }
-    if (message === 'NO_MINISTRY') {
-      return NextResponse.json({ error: 'Usuario sem vinculo com ministerio' }, { status: 403 });
-    }
+    if (message === 'TRIAL_EXPIRED') return NextResponse.json({ error: 'Expirado' }, { status: 403 });
     const status = message === 'UNAUTHORIZED' ? 401 : 500;
     return NextResponse.json({ error: message }, { status });
   }

@@ -89,12 +89,13 @@ export default function FluxosOperacaoPage() {
 
       setUserId(sessionUserId);
 
-      const { data: mu } = await supabase
-        .from('ministry_users')
-        .select('role, permissions, congregacao_id')
-        .eq('user_id', sessionUserId)
-        .limit(1)
+      const { data: publicUser } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', sessionUserId)
         .maybeSingle();
+
+      const mu = { role: publicUser?.role || 'operator', permissions: [] as string[], congregacao_id: null as string | null };
 
       const role = String(mu?.role || '').toLowerCase();
       const perms = Array.isArray(mu?.permissions) ? mu?.permissions : [];

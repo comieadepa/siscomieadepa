@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import PageLayout from '@/components/PageLayout';
@@ -7,7 +7,6 @@ import Section from '@/components/Section';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useMembers } from '@/hooks/useMembers';
 import { createClient } from '@/lib/supabase-client';
-import { resolveMinistryId } from '@/lib/cartoes-templates-sync';
 import { loadOrgNomenclaturasFromSupabaseOrMigrate, type OrgNomenclaturasState } from '@/lib/org-nomenclaturas';
 import { getCargosMinisteriais, type CargoMinisterial } from '@/lib/cargos-utils';
 import { formatCpf, formatPhone } from '@/lib/mascaras';
@@ -30,11 +29,11 @@ const STATUS_LABELS: Record<string, string> = {
 
 const TIPO_REGISTRO_LABELS: Record<string, string> = {
   chegada: 'Candidato (Novo cadastro)',
-  progressao: 'Progressão (já cadastrado)',
-  filiacao: 'Filiação (consagrado em outra instituição)',
+  progressao: 'Progress�o (j� cadastrado)',
+  filiacao: 'Filia��o (consagrado em outra institui��o)',
   novo: 'Candidato (Novo cadastro)',
-  existente: 'Progressão (já cadastrado)',
-  ministro: 'Progressão (já cadastrado)'
+  existente: 'Progress�o (j� cadastrado)',
+  ministro: 'Progress�o (j� cadastrado)'
 };
 
 const TIPO_REGISTRO_OPTIONS: Array<{ value: 'chegada' | 'progressao' | 'filiacao'; label: string }> = [
@@ -44,14 +43,14 @@ const TIPO_REGISTRO_OPTIONS: Array<{ value: 'chegada' | 'progressao' | 'filiacao
 ];
 
 const CATEGORIA_REGISTRO_OPTIONS = [
-  'AUTORIZAÇÃO',
-  'AUTORIZAÇÃO - NOVO APRESENTADOR',
-  'CONSAGRAÇÃO',
-  'ORDENAÇÃO',
-  'ENTRADA NO PROBATÓRIO',
-  'SAÍDA DO PROBATÓRIO',
-  'INTEGRAÇÃO',
-  'REINTEGRAÇÃO',
+  'AUTORIZA��O',
+  'AUTORIZA��O - NOVO APRESENTADOR',
+  'CONSAGRA��O',
+  'ORDENA��O',
+  'ENTRADA NO PROBAT�RIO',
+  'SA�DA DO PROBAT�RIO',
+  'INTEGRA��O',
+  'REINTEGRA��O',
 ];
 
 const normalizeTipoRegistro = (value: string) => {
@@ -75,7 +74,7 @@ export default function ConsagracaoPage() {
   const suppressNextSearchRef = useRef(false);
 
   const [activeTab, setActiveTab] = useState('cadastro');
-  const [ministryId, setMinistryId] = useState<string | null>(null);
+  const [ministryId] = useState<string>('single-tenant');
   const [loadingData, setLoadingData] = useState(true);
 
   const [nomenclaturas, setNomenclaturas] = useState<OrgNomenclaturasState | null>(null);
@@ -138,8 +137,8 @@ export default function ConsagracaoPage() {
   });
 
   const tabs = [
-    { id: 'cadastro', label: 'Cadastro de Processos', icon: '📝' },
-    { id: 'registros', label: 'Registros', icon: '📑' }
+    { id: 'cadastro', label: 'Cadastro de Processos', icon: '??' },
+    { id: 'registros', label: 'Registros', icon: '??' }
   ];
 
   const getNextProcessNumber = async () => {
@@ -148,13 +147,13 @@ export default function ConsagracaoPage() {
     const { data, error } = await supabase
       .from('consagracao_registros')
       .select('numero_processo')
-      .eq('ministry_id', ministryId)
+      
       .like('numero_processo', `%/${year}`);
 
     if (error) {
       if (isConsagracaoTableMissing(error)) {
         setConsagracaoModuleReady(false);
-        setStatusMensagem('Módulo Consagração indisponível: tabela public.consagracao_registros não encontrada. Aplique as migrations de Consagração no Supabase.');
+        setStatusMensagem('M�dulo Consagra��o indispon�vel: tabela public.consagracao_registros n�o encontrada. Aplique as migrations de Consagra��o no Supabase.');
       }
       return '';
     }
@@ -174,23 +173,19 @@ export default function ConsagracaoPage() {
 
   const loadInitialData = async () => {
     setLoadingData(true);
-    const resolvedMinistryId = await resolveMinistryId(supabase);
-    setMinistryId(resolvedMinistryId);
 
     const orgNomes = await loadOrgNomenclaturasFromSupabaseOrMigrate(supabase, { syncLocalStorage: false });
     setNomenclaturas(orgNomes);
 
-    if (resolvedMinistryId) {
-      const [supRes, camposRes, congRes] = await Promise.all([
-        supabase.from('supervisoes').select('id, nome').eq('ministry_id', resolvedMinistryId).order('nome'),
-        supabase.from('campos').select('id, nome, supervisao_id').eq('ministry_id', resolvedMinistryId).order('nome'),
-        supabase.from('congregacoes').select('id, nome, supervisao_id, campo_id').eq('ministry_id', resolvedMinistryId).order('nome')
-      ]);
+    const [supRes, camposRes, congRes] = await Promise.all([
+      supabase.from('supervisoes').select('id, nome').order('nome'),
+      supabase.from('campos').select('id, nome, supervisao_id').order('nome'),
+      supabase.from('congregacoes').select('id, nome, supervisao_id, campo_id').order('nome')
+    ]);
 
-      if (!supRes.error) setSupervisoes((supRes.data as SimpleOption[]) || []);
-      if (!camposRes.error) setCampos((camposRes.data as SimpleOption[]) || []);
-      if (!congRes.error) setCongregacoes((congRes.data as SimpleOption[]) || []);
-    }
+    if (!supRes.error) setSupervisoes((supRes.data as SimpleOption[]) || []);
+    if (!camposRes.error) setCampos((camposRes.data as SimpleOption[]) || []);
+    if (!congRes.error) setCongregacoes((congRes.data as SimpleOption[]) || []);
 
     const { data, error } = await supabase
       .from('consagracao_registros')
@@ -199,7 +194,7 @@ export default function ConsagracaoPage() {
     if (error) {
       if (isConsagracaoTableMissing(error)) {
         setConsagracaoModuleReady(false);
-        setStatusMensagem('Módulo Consagração indisponível: tabela public.consagracao_registros não encontrada. Aplique as migrations de Consagração no Supabase.');
+        setStatusMensagem('M�dulo Consagra��o indispon�vel: tabela public.consagracao_registros n�o encontrada. Aplique as migrations de Consagra��o no Supabase.');
         setRegistros([]);
       }
     } else if (data) {
@@ -487,7 +482,7 @@ export default function ConsagracaoPage() {
       .maybeSingle();
 
     if (existingMemberError) {
-      console.error('Erro ao carregar membro para sincronizar status de consagração:', existingMemberError);
+      console.error('Erro ao carregar membro para sincronizar status de consagra��o:', existingMemberError);
       return;
     }
 
@@ -513,18 +508,18 @@ export default function ConsagracaoPage() {
       .eq('id', memberId);
 
     if (updateMemberError) {
-      console.error('Erro ao sincronizar status de consagração no membro:', updateMemberError);
+      console.error('Erro ao sincronizar status de consagra��o no membro:', updateMemberError);
     }
   };
 
   const handleSaveRegistro = async () => {
     if (!consagracaoModuleReady) {
-      setStatusMensagem('Não foi possível salvar: a tabela de Consagração não existe no banco. Aplique as migrations do módulo.');
+      setStatusMensagem('N�o foi poss�vel salvar: a tabela de Consagra��o n�o existe no banco. Aplique as migrations do m�dulo.');
       return;
     }
 
     if (!ministryId) {
-      setStatusMensagem('Erro ao salvar: ministério não identificado para este usuário. Recarregue a página ou verifique o vínculo de acesso.');
+      setStatusMensagem('Erro ao salvar: minist�rio n�o identificado para este usu�rio. Recarregue a p�gina ou verifique o v�nculo de acesso.');
       return;
     }
 
@@ -532,7 +527,7 @@ export default function ConsagracaoPage() {
     const nextErrors: Record<string, string> = {};
 
     if (!formRegistro.nome.trim()) {
-      nextErrors.nome = 'Nome completo é obrigatório.';
+      nextErrors.nome = 'Nome completo � obrigat�rio.';
     }
 
     if (!formRegistro.cargo_pretendido) {
@@ -541,7 +536,7 @@ export default function ConsagracaoPage() {
 
     if (tipoRegistro === 'progressao') {
       if (!formRegistro.member_id) {
-        nextErrors.member_id = 'Selecione um ministro da busca para progressão.';
+        nextErrors.member_id = 'Selecione um ministro da busca para progress�o.';
       }
       if (!formRegistro.cargo_ocupa) {
         nextErrors.cargo_ocupa = 'Informe o cargo que ocupa.';
@@ -549,20 +544,19 @@ export default function ConsagracaoPage() {
     }
 
     if (tipoRegistro === 'filiacao' && !formRegistro.origem_instituicao.trim()) {
-      nextErrors.origem_instituicao = 'Instituição de origem é obrigatória para filiação.';
+      nextErrors.origem_instituicao = 'Institui��o de origem � obrigat�ria para filia��o.';
     }
 
     if (Object.keys(nextErrors).length > 0) {
       setFieldErrors(nextErrors);
-      setStatusMensagem('Preencha os campos obrigatórios destacados em vermelho.');
+      setStatusMensagem('Preencha os campos obrigat�rios destacados em vermelho.');
       return;
     }
 
     setFieldErrors({});
 
     const payload = {
-      ministry_id: ministryId,
-      member_id: tipoRegistro === 'progressao' ? formRegistro.member_id || null : null,
+            member_id: tipoRegistro === 'progressao' ? formRegistro.member_id || null : null,
       tipo_registro: tipoRegistro,
       regiao: formRegistro.categoria_registro || null,
       numero_processo: formRegistro.numero_processo || null,
@@ -612,7 +606,7 @@ export default function ConsagracaoPage() {
       if (error) {
         if (isConsagracaoTableMissing(error)) {
           setConsagracaoModuleReady(false);
-          setStatusMensagem('Módulo Consagração indisponível: tabela public.consagracao_registros não encontrada. Aplique as migrations de Consagração no Supabase.');
+          setStatusMensagem('M�dulo Consagra��o indispon�vel: tabela public.consagracao_registros n�o encontrada. Aplique as migrations de Consagra��o no Supabase.');
           return;
         }
         setStatusMensagem(`Erro ao atualizar registro: ${error.message}`);
@@ -625,7 +619,7 @@ export default function ConsagracaoPage() {
       if (error) {
         if (isConsagracaoTableMissing(error)) {
           setConsagracaoModuleReady(false);
-          setStatusMensagem('Módulo Consagração indisponível: tabela public.consagracao_registros não encontrada. Aplique as migrations de Consagração no Supabase.');
+          setStatusMensagem('M�dulo Consagra��o indispon�vel: tabela public.consagracao_registros n�o encontrada. Aplique as migrations de Consagra��o no Supabase.');
           return;
         }
         setStatusMensagem(`Erro ao criar registro: ${error.message}`);
@@ -655,7 +649,7 @@ export default function ConsagracaoPage() {
 
   const handleDeleteRegistro = async (id: string) => {
     if (!consagracaoModuleReady) {
-      setStatusMensagem('Módulo Consagração indisponível: tabela de registros não encontrada no banco.');
+      setStatusMensagem('M�dulo Consagra��o indispon�vel: tabela de registros n�o encontrada no banco.');
       return;
     }
 
@@ -666,7 +660,7 @@ export default function ConsagracaoPage() {
     if (error) {
       if (isConsagracaoTableMissing(error)) {
         setConsagracaoModuleReady(false);
-        setStatusMensagem('Módulo Consagração indisponível: tabela public.consagracao_registros não encontrada. Aplique as migrations de Consagração no Supabase.');
+        setStatusMensagem('M�dulo Consagra��o indispon�vel: tabela public.consagracao_registros n�o encontrada. Aplique as migrations de Consagra��o no Supabase.');
         return;
       }
       setStatusMensagem('Erro ao remover registro.');
@@ -677,7 +671,7 @@ export default function ConsagracaoPage() {
 
   const handleUpdateStatus = async (status: string) => {
     if (!consagracaoModuleReady) {
-      setStatusMensagem('Módulo Consagração indisponível: tabela de registros não encontrada no banco.');
+      setStatusMensagem('M�dulo Consagra��o indispon�vel: tabela de registros n�o encontrada no banco.');
       return;
     }
 
@@ -689,7 +683,7 @@ export default function ConsagracaoPage() {
     if (error) {
       if (isConsagracaoTableMissing(error)) {
         setConsagracaoModuleReady(false);
-        setStatusMensagem('Módulo Consagração indisponível: tabela public.consagracao_registros não encontrada. Aplique as migrations de Consagração no Supabase.');
+        setStatusMensagem('M�dulo Consagra��o indispon�vel: tabela public.consagracao_registros n�o encontrada. Aplique as migrations de Consagra��o no Supabase.');
         return;
       }
       setStatusMensagem('Erro ao atualizar status.');
@@ -715,9 +709,9 @@ export default function ConsagracaoPage() {
 
   if (loading || loadingData) return <div className="p-8">Carregando...</div>;
 
-  const labelCongregacao = nomenclaturas?.divisaoPrincipal?.opcao1 || 'Congregação';
+  const labelCongregacao = nomenclaturas?.divisaoPrincipal?.opcao1 || 'Congrega��o';
   const labelCampo = nomenclaturas?.divisaoSecundaria?.opcao1 || 'Campo';
-  const labelSupervisao = nomenclaturas?.divisaoTerciaria?.opcao1 || 'Supervisão';
+  const labelSupervisao = nomenclaturas?.divisaoTerciaria?.opcao1 || 'Supervis�o';
 
   const showCongregacao = labelCongregacao !== 'NENHUMA';
   const showCampo = labelCampo !== 'NENHUMA';
@@ -728,12 +722,12 @@ export default function ConsagracaoPage() {
   const homologadosCount = registros.filter((r) => r.status_processo === 'homologar').length;
   const isProgressao = formRegistro.tipo_registro === 'progressao';
   const isFiliacao = formRegistro.tipo_registro === 'filiacao';
-  const statusIsError = /(erro|preencha|obrigat|nao foi possivel|não foi possível)/i.test(statusMensagem);
+  const statusIsError = /(erro|preencha|obrigat|nao foi possivel|n�o foi poss�vel)/i.test(statusMensagem);
 
   return (
     <PageLayout
-      title="Consagração"
-      description="Separação de ministros: chegadas, progressão e filiação"
+      title="Consagra��o"
+      description="Separa��o de ministros: chegadas, progress�o e filia��o"
       activeMenu="consagracao"
     >
       <div className="max-w-7xl mx-auto w-full">
@@ -762,9 +756,9 @@ export default function ConsagracaoPage() {
 
       <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab}>
         {activeTab === 'cadastro' && (
-          <Section icon="📝" title="Cadastro de Processos">
+          <Section icon="??" title="Cadastro de Processos">
             <div className="flex items-center justify-between gap-4 mb-6">
-              <p className="text-gray-500">Cadastre processos de chegada, progressão e filiação ministerial.</p>
+              <p className="text-gray-500">Cadastre processos de chegada, progress�o e filia��o ministerial.</p>
               <button
                 className={`text-white px-4 py-2 rounded-lg transition shadow-md ${consagracaoModuleReady ? 'bg-teal-500 hover:bg-teal-600' : 'bg-gray-400 cursor-not-allowed'}`}
                 onClick={() => {
@@ -774,7 +768,7 @@ export default function ConsagracaoPage() {
                       ensureNumeroProcesso();
                 }}
                 disabled={!consagracaoModuleReady}
-                title={!consagracaoModuleReady ? 'Aplique as migrations do módulo de Consagração no Supabase' : 'Novo Registro'}
+                title={!consagracaoModuleReady ? 'Aplique as migrations do m�dulo de Consagra��o no Supabase' : 'Novo Registro'}
               >
                 + Novo Registro
               </button>
@@ -788,7 +782,7 @@ export default function ConsagracaoPage() {
                       <h4 className="text-sm font-semibold text-teal-700 border-b border-gray-100 pb-2">Dados do Processo</h4>
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">Número do Processo</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">N�mero do Processo</label>
                           <input
                             className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
                             value={formRegistro.numero_processo}
@@ -915,8 +909,8 @@ export default function ConsagracaoPage() {
                           )}
                           <p className="mt-1 text-xs text-gray-500">
                             {isProgressao
-                              ? 'No tipo Progressão, a busca é dinâmica e o cadastro é preenchido automaticamente ao selecionar um ministro.'
-                              : 'No tipo Candidato ou Filiação, o preenchimento é manual.'}
+                              ? 'No tipo Progress�o, a busca � din�mica e o cadastro � preenchido automaticamente ao selecionar um ministro.'
+                              : 'No tipo Candidato ou Filia��o, o preenchimento � manual.'}
                           </p>
                           {(fieldErrors.nome || fieldErrors.member_id) && (
                             <p className="mt-1 text-xs text-red-600">{fieldErrors.member_id || fieldErrors.nome}</p>
@@ -957,7 +951,7 @@ export default function ConsagracaoPage() {
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">Filiação: Pai</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Filia��o: Pai</label>
                           <input
                             className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             value={formRegistro.nome_pai}
@@ -965,7 +959,7 @@ export default function ConsagracaoPage() {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">Filiação: Mãe</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Filia��o: M�e</label>
                           <input
                             className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             value={formRegistro.nome_mae}
@@ -983,15 +977,15 @@ export default function ConsagracaoPage() {
                             <option value="SOLTEIRO">Solteiro(a)</option>
                             <option value="CASADO">Casado(a)</option>
                             <option value="DIVORCIADO">Divorciado(a)</option>
-                            <option value="VIUVO">Viúvo(a)</option>
-                            <option value="UNIAO ESTAVEL">União Estável</option>
+                            <option value="VIUVO">Vi�vo(a)</option>
+                            <option value="UNIAO ESTAVEL">Uni�o Est�vel</option>
                           </select>
                         </div>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">RG/Órgão Emissor</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">RG/�rg�o Emissor</label>
                           <input
                             className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             value={formRegistro.rg}
@@ -1000,7 +994,7 @@ export default function ConsagracaoPage() {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">Órgão Emissor</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">�rg�o Emissor</label>
                           <input
                             className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             value={formRegistro.orgao_emissor}
@@ -1008,7 +1002,7 @@ export default function ConsagracaoPage() {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">Cônjuge</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">C�njuge</label>
                           <input
                             className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             value={formRegistro.nome_conjuge}
@@ -1058,7 +1052,7 @@ export default function ConsagracaoPage() {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">Matrícula</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Matr�cula</label>
                           <input
                             className="mt-1 w-full px-3 py-2 border-2 border-gray-300 rounded-lg bg-gray-50 text-gray-500"
                             value={formRegistro.matricula}
@@ -1078,7 +1072,7 @@ export default function ConsagracaoPage() {
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="md:col-span-2">
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">Indicação</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Indica��o</label>
                           <input
                             className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             value={formRegistro.pastor_solicitante}
@@ -1160,7 +1154,7 @@ export default function ConsagracaoPage() {
                           ) : (
                             <input
                               className="mt-1 w-full px-3 py-2 border-2 border-gray-300 rounded-lg bg-gray-50 text-gray-500"
-                              value="Não se aplica"
+                              value="N�o se aplica"
                               readOnly
                             />
                           )}
@@ -1196,10 +1190,10 @@ export default function ConsagracaoPage() {
 
                     {isFiliacao && (
                       <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-4 shadow-sm">
-                        <h4 className="text-sm font-semibold text-amber-900 border-b border-amber-200 pb-2">Dados de Origem para Filiação</h4>
+                        <h4 className="text-sm font-semibold text-amber-900 border-b border-amber-200 pb-2">Dados de Origem para Filia��o</h4>
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                           <div className="md:col-span-2">
-                            <label className="block text-sm font-semibold text-gray-700 mb-1">Instituição de origem *</label>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1">Institui��o de origem *</label>
                             <input
                               className={`mt-1 w-full px-3 py-2 border-2 rounded-lg focus:outline-none focus:ring-2 ${fieldErrors.origem_instituicao ? 'border-red-500 focus:ring-red-400' : 'border-amber-400 focus:ring-amber-500'}`}
                               value={formRegistro.origem_instituicao}
@@ -1234,7 +1228,7 @@ export default function ConsagracaoPage() {
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-1">Data da consagração de origem</label>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1">Data da consagra��o de origem</label>
                             <input
                               type="date"
                               className="mt-1 w-full px-3 py-2 border-2 border-amber-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
@@ -1247,10 +1241,10 @@ export default function ConsagracaoPage() {
                     )}
 
                     <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4 space-y-4">
-                      <h4 className="text-sm font-semibold text-teal-700 border-b border-gray-100 pb-2">Andamento e Observações</h4>
+                      <h4 className="text-sm font-semibold text-teal-700 border-b border-gray-100 pb-2">Andamento e Observa��es</h4>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">Data Autorização</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Data Autoriza��o</label>
                           <input
                             type="date"
                             className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1274,7 +1268,7 @@ export default function ConsagracaoPage() {
                       </div>
 
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-1">Observações</label>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Observa��es</label>
                         <textarea
                           className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                           rows={3}
@@ -1305,7 +1299,7 @@ export default function ConsagracaoPage() {
                           onClick={() => !fotoBloqueada && fileInputRef.current?.click()}
                           disabled={fotoBloqueada}
                         >
-                          {fotoBloqueada ? 'Foto já cadastrada' : 'Abrir Foto'}
+                          {fotoBloqueada ? 'Foto j� cadastrada' : 'Abrir Foto'}
                         </button>
                         {!fotoBloqueada && formRegistro.foto_url && (
                           <button
@@ -1334,7 +1328,7 @@ export default function ConsagracaoPage() {
                     className={`px-4 py-2 rounded-lg text-white font-semibold transition shadow-md ${ministryId && consagracaoModuleReady ? 'bg-teal-500 hover:bg-teal-600' : 'bg-gray-400 cursor-not-allowed'}`}
                     onClick={handleSaveRegistro}
                     disabled={!ministryId || !consagracaoModuleReady}
-                    title={!consagracaoModuleReady ? 'Aplique as migrations do módulo de Consagração no Supabase' : (!ministryId ? 'Sem ministério associado ao usuário' : 'Salvar registro')}
+                    title={!consagracaoModuleReady ? 'Aplique as migrations do m�dulo de Consagra��o no Supabase' : (!ministryId ? 'Sem minist�rio associado ao usu�rio' : 'Salvar registro')}
                   >
                     Salvar
                   </button>
@@ -1351,7 +1345,7 @@ export default function ConsagracaoPage() {
         )}
 
         {activeTab === 'registros' && (
-          <Section icon="📑" title="Registros">
+          <Section icon="??" title="Registros">
             {registros.length === 0 && (
               <p className="text-gray-500 text-center py-8">Nenhum registro cadastrado.</p>
             )}
@@ -1362,14 +1356,14 @@ export default function ConsagracaoPage() {
                   <thead>
                     <tr className="bg-gray-200 text-gray-800 text-left">
                       <th className="py-2">Foto</th>
-                      <th className="py-2">Nº Processo</th>
+                      <th className="py-2">N� Processo</th>
                       <th className="py-2">Data Proc.</th>
                       <th className="py-2">Nome</th>
                       <th className="py-2">CPF</th>
                       <th className="py-2">Cargo Pretendido</th>
                       <th className="py-2">Tipo</th>
                       <th className="py-2">Registro</th>
-                      <th className="py-2 text-right">Ações</th>
+                      <th className="py-2 text-right">A��es</th>
                     </tr>
                   </thead>
                   <tbody>

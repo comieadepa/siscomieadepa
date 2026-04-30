@@ -1,4 +1,6 @@
-// Utilitário para gerenciar configurações da igreja/ministério
+// Utilitário para gerenciar configurações da igreja — schema single-tenant
+// Todas as configurações são armazenadas em public.configurations (key/value JSONB)
+// Não existe ministry_id, ministries ou ministry_users neste schema.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -15,7 +17,9 @@ export interface ConfiguracaoIgreja {
     logo: string; // Base64 da imagem
 }
 
-// Configuração padrão
+const CHURCH_PROFILE_KEY = 'church_profile';
+const LOGO_KEY = 'logo';
+
 const CONFIGURACAO_PADRAO: ConfiguracaoIgreja = {
     nome: 'Igreja/Ministério',
     endereco: 'Endereço não configurado',
@@ -28,63 +32,36 @@ const CONFIGURACAO_PADRAO: ConfiguracaoIgreja = {
     logo: ''
 };
 
-async function resolveMinistryId(supabase: SupabaseClient): Promise<string | null> {
-    try {
-        const {
-            data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) return null;
-
-        const mu = await supabase
-            .from('ministry_users')
-            .select('ministry_id')
-            .eq('user_id', user.id)
-            .limit(1);
-
-        const ministryIdFromMu = (mu.data as any)?.[0]?.ministry_id as string | undefined;
-        if (ministryIdFromMu) return ministryIdFromMu;
-
-        const m = await supabase.from('ministries').select('id').eq('user_id', user.id).limit(1);
-        const ministryIdFromOwner = (m.data as any)?.[0]?.id as string | undefined;
-        return ministryIdFromOwner || null;
-    } catch {
-        return null;
-    }
-}
-
 export async function fetchConfiguracaoIgrejaFromSupabase(
     supabase: SupabaseClient
 ): Promise<ConfiguracaoIgreja> {
-    const ministryId = await resolveMinistryId(supabase);
-    if (!ministryId) return CONFIGURACAO_PADRAO;
+    const [profileResult, logoResult] = await Promise.all([
+        supabase
+            .from('configurations')
+            .select('value')
+            .eq('key', CHURCH_PROFILE_KEY)
+            .maybeSingle(),
+        supabase
+            .from('configurations')
+            .select('value')
+            .eq('key', LOGO_KEY)
+            .maybeSingle(),
+    ]);
 
-    const { data, error } = await supabase
-        .from('ministries')
-        .select('name, email_admin, cnpj_cpf, phone, website, description, logo_url, created_at')
-        .eq('id', ministryId)
-        .maybeSingle();
-
-    const { data: configRow } = await supabase
-        .from('configurations')
-        .select('church_profile')
-        .eq('ministry_id', ministryId)
-        .maybeSingle();
-
-    const churchProfile = (configRow as any)?.church_profile || {};
-
-    if (error || !data) return CONFIGURACAO_PADRAO;
+    const profile = (profileResult.data?.value as any) || {};
+    const logo = (logoResult.data?.value as any)?.base64 || '';
 
     return {
-        nome: data.name || CONFIGURACAO_PADRAO.nome,
-        endereco: churchProfile.endereco || CONFIGURACAO_PADRAO.endereco,
-        cnpj: data.cnpj_cpf || '',
-        telefone: data.phone || '',
-        email: data.email_admin || '',
-        website: data.website || '',
-        descricao: data.description || '',
-        responsavel: churchProfile.responsavel || CONFIGURACAO_PADRAO.responsavel || '',
-        dataCadastro: data.created_at ? new Date(data.created_at).toISOString().split('T')[0] : '',
-        logo: data.logo_url || ''
+        nome: profile.nome || CONFIGURACAO_PADRAO.nome,
+        endereco: profile.endereco || CONFIGURACAO_PADRAO.endereco,
+        cnpj: profile.cnpj || '',
+        telefone: profile.telefone || '',
+        email: profile.email || '',
+        website: profile.website || '',
+        descricao: profile.descricao || '',
+        responsavel: profile.responsavel || '',
+        dataCadastro: profile.dataCadastro || '',
+        logo,
     };
 }
 
@@ -92,48 +69,47 @@ export async function updateConfiguracaoIgrejaInSupabase(
     supabase: SupabaseClient,
     config: Partial<ConfiguracaoIgreja>
 ): Promise<void> {
-    const ministryId = await resolveMinistryId(supabase);
-    if (!ministryId) return;
+    const updates: PromiseLike<any>[] = [];
 
-    const updateMinistry: Record<string, any> = {};
-    if (typeof config.nome === 'string') updateMinistry.name = config.nome;
-    if (typeof config.email === 'string') updateMinistry.email_admin = config.email;
-    if (typeof config.cnpj === 'string') updateMinistry.cnpj_cpf = config.cnpj;
-    if (typeof config.telefone === 'string') updateMinistry.phone = config.telefone;
-    if (typeof config.website === 'string') updateMinistry.website = config.website;
-    if (typeof config.descricao === 'string') updateMinistry.description = config.descricao;
-    if (typeof config.logo === 'string') updateMinistry.logo_url = config.logo;
+    const profileFields = ['nome', 'endereco', 'cnpj', 'telefone', 'email', 'website', 'descricao', 'responsavel', 'dataCadastro'] as const;
+    const hasProfileUpdate = profileFields.some((k) => typeof (config as any)[k] === 'string');
 
-    if (Object.keys(updateMinistry).length > 0) {
-        await supabase
-            .from('ministries')
-            .update(updateMinistry)
-            .eq('id', ministryId);
+    if (hasProfileUpdate) {
+        const { data: current } = await supabase
+            .from('configurations')
+            .select('value')
+            .eq('key', CHURCH_PROFILE_KEY)
+            .maybeSingle();
+
+        const existing = (current?.value as any) || {};
+        const next: Record<string, any> = { ...existing };
+
+        for (const k of profileFields) {
+            if (typeof (config as any)[k] === 'string') {
+                next[k] = (config as any)[k];
+            }
+        }
+
+        updates.push(
+            supabase
+                .from('configurations')
+                .upsert({ key: CHURCH_PROFILE_KEY, value: next }, { onConflict: 'key' })
+                .then((r) => r)
+        );
     }
 
-    const { data: configRow } = await supabase
-        .from('configurations')
-        .select('church_profile')
-        .eq('ministry_id', ministryId)
-        .maybeSingle();
-
-    const existingProfile = (configRow as any)?.church_profile || {};
-    const nextProfile = {
-        ...existingProfile,
-        ...(typeof config.endereco === 'string' ? { endereco: config.endereco } : {}),
-        ...(typeof config.responsavel === 'string' ? { responsavel: config.responsavel } : {})
-    };
-
-    const { error: upsertErr } = await supabase
-        .from('configurations')
-        .upsert(
-            {
-                ministry_id: ministryId,
-                church_profile: nextProfile,
-                updated_at: new Date().toISOString(),
-            } as any,
-            { onConflict: 'ministry_id' }
+    if (typeof config.logo === 'string') {
+        updates.push(
+            supabase
+                .from('configurations')
+                .upsert({ key: LOGO_KEY, value: { base64: config.logo } }, { onConflict: 'key' })
+                .then((r) => r)
         );
+    }
 
-    if (upsertErr) throw upsertErr;
+    if (updates.length === 0) return;
+
+    const results = await Promise.all(updates);
+    const firstError = results.find((r) => r.error)?.error;
+    if (firstError) throw firstError;
 }

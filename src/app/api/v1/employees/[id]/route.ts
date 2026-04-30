@@ -34,28 +34,6 @@ function isMissingEmployeesViewError(error: any): boolean {
   )
 }
 
-async function resolveMinistryId(supabase: any, userId: string): Promise<string | null> {
-  const { data: mu, error: muErr } = await supabase
-    .from('ministry_users')
-    .select('ministry_id')
-    .eq('user_id', userId)
-    .limit(1)
-    .maybeSingle()
-
-  if (!muErr && mu?.ministry_id) return String(mu.ministry_id)
-
-  const { data: m, error: mErr } = await supabase
-    .from('ministries')
-    .select('id')
-    .eq('user_id', userId)
-    .limit(1)
-    .maybeSingle()
-
-  if (!mErr && m?.id) return String(m.id)
-
-  return null
-}
-
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -73,19 +51,10 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const ministryId = await resolveMinistryId(supabase, user.id)
-    if (!ministryId) {
-      return NextResponse.json(
-        { error: 'Usuário sem ministério associado', code: 'NO_MINISTRY' },
-        { status: 403 }
-      )
-    }
-
     const { data, error } = await supabase
       .from('employees_with_member_info')
       .select('*')
       .eq('id', id)
-      .eq('ministry_id', ministryId)
       .single()
 
     if (error) {
@@ -94,7 +63,6 @@ export async function GET(
           .from('employees')
           .select('*')
           .eq('id', id)
-          .eq('ministry_id', ministryId)
           .single()
 
         if (employeeErr || !employee) {
@@ -109,7 +77,6 @@ export async function GET(
           const { data: m, error: mErr } = await supabase
             .from('members')
             .select('id,name,cpf,phone,birth_date')
-            .eq('ministry_id', ministryId)
             .eq('id', (employee as any).member_id)
             .maybeSingle()
 
@@ -158,19 +125,10 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const ministryId = await resolveMinistryId(supabase, user.id)
-    if (!ministryId) {
-      return NextResponse.json(
-        { error: 'Usuário sem ministério associado', code: 'NO_MINISTRY' },
-        { status: 403 }
-      )
-    }
-
     const { error } = await supabase
       .from('employees')
       .delete()
       .eq('id', id)
-      .eq('ministry_id', ministryId)
 
     if (error) {
       return NextResponse.json(
@@ -216,19 +174,10 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const ministryId = await resolveMinistryId(supabase, user.id)
-    if (!ministryId) {
-      return NextResponse.json(
-        { error: 'Usuário sem ministério associado', code: 'NO_MINISTRY' },
-        { status: 403 }
-      )
-    }
-
     const { data, error } = await supabase
       .from('employees')
       .update(normalizedBody)
       .eq('id', id)
-      .eq('ministry_id', ministryId)
       .select()
 
     if (error) {

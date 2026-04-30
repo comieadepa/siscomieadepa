@@ -47,12 +47,13 @@ export default function AtivarFluxoPage() {
         return;
       }
 
-      const { data: mu } = await supabase
-        .from('ministry_users')
-        .select('role, permissions, congregacao_id')
-        .eq('user_id', userId)
-        .limit(1)
+      const { data: publicUser } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', userId)
         .maybeSingle();
+
+      const mu = { role: publicUser?.role || 'operator', permissions: [] as string[], congregacao_id: null as string | null };
 
       const role = String(mu?.role || '').toLowerCase();
       const perms = Array.isArray(mu?.permissions) ? mu?.permissions : [];

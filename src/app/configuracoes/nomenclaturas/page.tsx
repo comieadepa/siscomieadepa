@@ -98,30 +98,6 @@ export default function NomenclaturaPage() {
     divisaoTerciaria: ''
   });
 
-  const resolveMinistryId = async (): Promise<string | null> => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
-
-      const mu = await supabase
-        .from('ministry_users')
-        .select('ministry_id')
-        .eq('user_id', user.id)
-        .limit(1);
-      const ministryIdFromMu = (mu.data as any)?.[0]?.ministry_id as string | undefined;
-      if (ministryIdFromMu) return ministryIdFromMu;
-
-      const m = await supabase
-        .from('ministries')
-        .select('id')
-        .eq('user_id', user.id)
-        .limit(1);
-      const ministryIdFromOwner = (m.data as any)?.[0]?.id as string | undefined;
-      return ministryIdFromOwner || null;
-    } catch {
-      return null;
-    }
-  };
 
   const buildOrgNomenclaturasPayload = (state: NomenclaturasState) => {
     return {
@@ -132,11 +108,11 @@ export default function NomenclaturaPage() {
     };
   };
 
-  const upsertOrgNomenclaturas = async (ministryId: string, state: NomenclaturasState) => {
+  const upsertOrgNomenclaturas = async (_ministryId: string, state: NomenclaturasState) => {
     const { data: existingRow, error: existingErr } = await supabase
       .from('configurations')
       .select('nomenclaturas')
-      .eq('ministry_id', ministryId)
+      
       .maybeSingle();
 
     if (existingErr) {
@@ -150,10 +126,9 @@ export default function NomenclaturaPage() {
     const { error: upsertErr } = await supabase
       .from('configurations')
       .upsert({
-        ministry_id: ministryId,
-        nomenclaturas: { ...existingNomenclaturas, [ORG_NOMENCLATURAS_KEY]: payload },
+                nomenclaturas: { ...existingNomenclaturas, [ORG_NOMENCLATURAS_KEY]: payload },
         updated_at: new Date().toISOString(),
-      } as any, { onConflict: 'ministry_id' });
+      } as any, { onConflict: 'key' });
 
     if (upsertErr) {
       console.error('❌ Erro ao salvar nomenclaturas:', upsertErr);
@@ -162,17 +137,13 @@ export default function NomenclaturaPage() {
   };
 
   const loadFromSupabaseOrMigrate = async () => {
-    const ministryId = await resolveMinistryId();
-    if (!ministryId) {
-      setLoaded(true);
-      return;
-    }
+    const ministryId = 'single-tenant';
 
     // 1) Carrega do Supabase
     const { data: configRow, error: configErr } = await supabase
       .from('configurations')
       .select('nomenclaturas')
-      .eq('ministry_id', ministryId)
+      
       .maybeSingle();
 
     if (!configErr) {
@@ -315,11 +286,7 @@ export default function NomenclaturaPage() {
     console.log('📋 Dados a salvar:', temp);
 
     try {
-      const ministryId = await resolveMinistryId();
-      if (!ministryId) {
-        alert('Não foi possível identificar sua instituição para salvar as nomenclaturas.');
-        return;
-      }
+      const ministryId = 'single-tenant';
 
       await upsertOrgNomenclaturas(ministryId, temp);
 

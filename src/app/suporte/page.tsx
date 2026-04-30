@@ -45,7 +45,7 @@ export default function SuportePage() {
   const [mostrarFormulario, setMostrarFormulario] = useState(false)
   const [filtroStatus, setFiltroStatus] = useState<TicketStatus | 'todos'>('todos')
   const [selecionado, setSelecionado] = useState<Ticket | null>(null)
-  const [ministryId, setMinistryId] = useState<string | null>(null)
+  const [ministryId] = useState<string>('single-tenant')
   const [mensagens, setMensagens] = useState<Array<{ id: string; user_id: string; message: string; created_at: string }>>([])
   const [carregandoMensagens, setCarregandoMensagens] = useState(false)
   const [resposta, setResposta] = useState('')
@@ -75,57 +75,21 @@ export default function SuportePage() {
     'Outro',
   ]
 
-  const resolveMinistryId = async () => {
-    try {
-      const {
-        data: { user: currentUser },
-      } = await supabase.auth.getUser()
-
-      if (!currentUser) return null
-
-      const { data: mu, error: muErr } = await supabase
-        .from('ministry_users')
-        .select('ministry_id')
-        .eq('user_id', currentUser.id)
-        .maybeSingle()
-
-      if (!muErr && mu?.ministry_id) return mu.ministry_id as string
-
-      const { data: m, error: mErr } = await supabase
-        .from('ministries')
-        .select('id')
-        .eq('user_id', currentUser.id)
-        .maybeSingle()
-
-      if (!mErr && m?.id) return m.id as string
-    } catch {
-      return null
-    }
-    return null
-  }
 
   // Carregar tickets
   useEffect(() => {
-    if (authLoading) return
-    if (!user) return
-    resolveMinistryId().then((resolved) => {
-      setMinistryId(resolved)
-    })
+    if (authLoading || !user) return
+    carregarTickets()
   }, [authLoading, user?.id])
 
   useEffect(() => {
-    if (!user || !ministryId) return
-    carregarTickets()
-  }, [user?.id, ministryId])
-
-  useEffect(() => {
-    if (!user || !ministryId) return
+    if (!user) return
     const intervalId = setInterval(() => {
       carregarTickets()
     }, 20000)
 
     return () => clearInterval(intervalId)
-  }, [user?.id, ministryId])
+  }, [user?.id])
 
   useEffect(() => {
     if (!selecionado) return
@@ -135,14 +99,14 @@ export default function SuportePage() {
   }, [selecionado?.id])
 
   useEffect(() => {
-    if (!selecionado || !user || !ministryId) return
+    if (!selecionado || !user) return
     const intervalId = setInterval(() => {
       carregarMensagens(selecionado.id)
       carregarTickets()
     }, 10000)
 
     return () => clearInterval(intervalId)
-  }, [selecionado?.id, user?.id, ministryId])
+  }, [selecionado?.id, user?.id])
 
   const mapStatusFromDb = (status: string | null): TicketStatus => {
     switch (status) {
@@ -207,7 +171,7 @@ export default function SuportePage() {
   const carregarTickets = async () => {
     try {
       setLoading(true)
-      if (!user || !ministryId) return
+      if (!user) return
 
       // Buscar tickets do usuário
       const { data, error } = await supabase
@@ -410,8 +374,7 @@ export default function SuportePage() {
         .from('support_tickets')
         .insert([
           {
-            ministry_id: ministryId,
-            user_id: user.id,
+                        user_id: user.id,
             subject: novoTicket.titulo,
             description: novoTicket.descricao,
             category: novoTicket.categoria,

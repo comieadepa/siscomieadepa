@@ -30,14 +30,14 @@ export default function DashboardPage() {
           return;
         }
 
-        // Tentar buscar role do usuário no ministério (quando existir)
-        const { data: mu } = await supabase
-          .from('ministry_users')
+        // Buscar role do usuário em public.users
+        const { data: publicUser } = await supabase
+          .from('users')
           .select('role')
-          .eq('user_id', data.user.id)
+          .eq('id', data.user.id)
           .maybeSingle();
 
-        const nivel = mu?.role ? String(mu.role) : 'viewer';
+        const nivel = publicUser?.role ? String(publicUser.role) : 'operator';
 
         setUsuarioLogado({
           nome: data.user.user_metadata?.full_name || data.user.email || 'Usuário',
