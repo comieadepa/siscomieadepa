@@ -12,30 +12,6 @@ import { createServerClientFromRequest } from '@/lib/supabase-server'
 import { normalizePayloadToUppercase } from '@/lib/uppercase-normalizer'
 import { NextRequest, NextResponse } from 'next/server'
 
-async function resolveMinistryId(supabase: any, userId: string): Promise<string | null> {
-  // 1) Preferencial: ministry_users
-  const { data: mu, error: muErr } = await supabase
-    .from('ministry_users')
-    .select('ministry_id')
-    .eq('user_id', userId)
-    .limit(1)
-    .maybeSingle()
-
-  if (!muErr && mu?.ministry_id) return String(mu.ministry_id)
-
-  // 2) Fallback: owner em ministries
-  const { data: m, error: mErr } = await supabase
-    .from('ministries')
-    .select('id')
-    .eq('user_id', userId)
-    .limit(1)
-    .maybeSingle()
-
-  if (!mErr && m?.id) return String(m.id)
-
-  return null
-}
-
 export async function GET(request: NextRequest) {
   try {
     const supabase = createServerClientFromRequest(request)
@@ -48,14 +24,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const ministryId = await resolveMinistryId(supabase, user.id)
-    if (!ministryId) {
-      return NextResponse.json(
-        { error: 'Usuário sem ministério associado', code: 'NO_MINISTRY' },
-        { status: 403 }
-      )
-    }
-
     // Extrair query params
     const searchParams = request.nextUrl.searchParams
     const page = parseInt(searchParams.get('page') || '1')
@@ -66,11 +34,10 @@ export async function GET(request: NextRequest) {
 
     const offset = (page - 1) * limit
 
-    // Construir query - FILTRAR SEMPRE POR MINISTRY_ID
+    // Construir query
     let query = supabase
       .from('members')
       .select('*', { count: 'exact' })
-      .eq('ministry_id', ministryId)
 
     // Aplicar filtros
     if (status) {
@@ -163,47 +130,22 @@ export async function POST(request: NextRequest) {
         'data_consagracao',
         'data_emissao',
         'data_validade_credencial',
+        'data_filiacao',
+        'ev_autorizado_data',
+        'ev_consagrado_data',
+        'cons_missionario_data',
+        'orden_pastor_data',
         'latitude',
         'longitude',
         'cargoMinisterial',
         'cargo_ministerial',
         'procedencia',
         'dados_cargos',
+        'qtd_filhos',
+        'diretoria',
+        'primeiro_casamento',
       ],
     })
-
-    const ministryId = await resolveMinistryId(supabase, user.id)
-    if (!ministryId) {
-      return NextResponse.json(
-        { error: 'Usuário sem ministério associado', code: 'NO_MINISTRY' },
-        { status: 403 }
-      )
-    }
-
-    // Verificar limite de membros do plano via subscription_plans.max_members
-    const { data: ministryData } = await supabase
-      .from('ministries')
-      .select('subscription_plan_id, subscription_plans(name, max_members)')
-      .eq('id', ministryId)
-      .maybeSingle();
-
-    const planData = (ministryData as any)?.subscription_plans;
-    const maxMembers: number = planData?.max_members ?? 0;
-
-    if (maxMembers > 0) {
-      const { count: totalMembers } = await supabase
-        .from('members')
-        .select('*', { count: 'exact', head: true })
-        .eq('ministry_id', ministryId);
-
-      if ((totalMembers ?? 0) >= maxMembers) {
-        const planoNome: string = planData?.name || 'seu plano';
-        return NextResponse.json(
-          { error: `Limite de cadastros atingido para o plano ${planoNome} (máximo: ${maxMembers}). Faça upgrade para adicionar mais cadastros.` },
-          { status: 403 }
-        );
-      }
-    }
 
     // Validar campos obrigatórios
     if (!normalizedBody.name) {
@@ -218,7 +160,6 @@ export async function POST(request: NextRequest) {
       .from('members')
       .insert([
         {
-          ministry_id: ministryId,
           name: normalizedBody.name,
           email: typeof normalizedBody.email === 'string' ? normalizedBody.email.toLowerCase() : normalizedBody.email || null,
           phone: normalizedBody.phone || null,
@@ -241,6 +182,7 @@ export async function POST(request: NextRequest) {
           nome_pai: normalizedBody.nome_pai || null,
           nome_mae: normalizedBody.nome_mae || null,
           rg: normalizedBody.rg || null,
+          uf_rg: normalizedBody.uf_rg || null,
           orgao_emissor: normalizedBody.orgao_emissor || null,
           nacionalidade: normalizedBody.nacionalidade || null,
           naturalidade: normalizedBody.naturalidade || null,
@@ -248,6 +190,10 @@ export async function POST(request: NextRequest) {
           titulo_eleitoral: normalizedBody.titulo_eleitoral || null,
           zona_eleitoral: normalizedBody.zona_eleitoral || null,
           secao_eleitoral: normalizedBody.secao_eleitoral || null,
+          municipio_eleitoral: normalizedBody.municipio_eleitoral || null,
+          email2: typeof normalizedBody.email2 === 'string' ? normalizedBody.email2.toLowerCase() : null,
+          posicao_no_campo: normalizedBody.posicao_no_campo || null,
+          numero_cgadb: normalizedBody.numero_cgadb || null,
           data_batismo_aguas: normalizedBody.data_batismo_aguas || null,
           data_batismo_espirito_santo: normalizedBody.data_batismo_espirito_santo || null,
           // Aba Endereço
@@ -280,6 +226,31 @@ export async function POST(request: NextRequest) {
           observacoes_ministeriais: normalizedBody.observacoes_ministeriais || null,
           // Aba Foto
           foto_url: normalizedBody.foto_url || null,
+          // Dados de Consagração
+          local_batismo: normalizedBody.local_batismo || null,
+          data_filiacao: normalizedBody.data_filiacao || null,
+          diretoria: normalizedBody.diretoria ?? false,
+          ev_autorizado_data: normalizedBody.ev_autorizado_data || null,
+          ev_autorizado_local: normalizedBody.ev_autorizado_local || null,
+          ev_consagrado_data: normalizedBody.ev_consagrado_data || null,
+          ev_consagrado_local: normalizedBody.ev_consagrado_local || null,
+          cons_missionario_data: normalizedBody.cons_missionario_data || null,
+          cons_missionario_local: normalizedBody.cons_missionario_local || null,
+          orden_pastor_data: normalizedBody.orden_pastor_data || null,
+          orden_pastor_local: normalizedBody.orden_pastor_local || null,
+          // Registro Familiar
+          conjuge_rg: normalizedBody.conjuge_rg || null,
+          conjuge_orgao_emissor: normalizedBody.conjuge_orgao_emissor || null,
+          conjuge_nacionalidade: normalizedBody.conjuge_nacionalidade || null,
+          conjuge_naturalidade: normalizedBody.conjuge_naturalidade || null,
+          conjuge_nome_pai: normalizedBody.conjuge_nome_pai || null,
+          conjuge_nome_mae: normalizedBody.conjuge_nome_mae || null,
+          conjuge_titulo_eleitoral: normalizedBody.conjuge_titulo_eleitoral || null,
+          conjuge_fone: normalizedBody.conjuge_fone || null,
+          conjuge_email: typeof normalizedBody.conjuge_email === 'string' ? normalizedBody.conjuge_email.toLowerCase() : null,
+          conjuge_tipo_sanguineo: normalizedBody.conjuge_tipo_sanguineo || null,
+          primeiro_casamento: normalizedBody.primeiro_casamento || 'SIM',
+          qtd_filhos: typeof normalizedBody.qtd_filhos === 'number' ? normalizedBody.qtd_filhos : 0,
           // Sistema
           member_since: normalizedBody.member_since || new Date(),
           role: normalizedBody.role || null,

@@ -313,7 +313,7 @@ export default function MembrosPage() {
   const [dadosPessoais, setDadosPessoais] = useState({
     matricula: '',
     cpf: '',
-    tipoCadastro: 'ministro', // Convenção do projeto
+    tipoCadastro: 'ministro',
     nome: '',
     dataNascimento: '',
     sexo: 'MASCULINO',
@@ -326,16 +326,57 @@ export default function MembrosPage() {
     nomePai: '',
     nomeMae: '',
     rg: '',
+    uf_rg: '',
     orgaoEmissor: '',
     nacionalidade: 'BRASILEIRA',
     naturalidade: '',
     uf: '',
+    tituloEleitoral: '',
+    zonaEleitoral: '',
+    secaoEleitoral: '',
+    municipioEleitoral: '',
+    profissao: '',
     supervisao: '',
     campo: '',
     congregacao: '',
     email: '',
+    email2: '',
     celular: '',
-    whatsapp: ''
+    whatsapp: '',
+    posicaoNoCampo: '',
+    numero_cgadb: '',
+  });
+
+  // Dados do cônjuge (Registro Familiar)
+  const [dadosConjuge, setDadosConjuge] = useState({
+    rg: '',
+    orgao_emissor: '',
+    nacionalidade: 'BRASILEIRA',
+    naturalidade: '',
+    nome_pai: '',
+    nome_mae: '',
+    titulo_eleitoral: '',
+    fone: '',
+    email: '',
+    tipo_sanguineo: '',
+    foto_url: null as string | null,
+  });
+  const [primeirosCasamento, setPrimeirosCasamento] = useState('SIM');
+  const [qtdFilhos, setQtdFilhos] = useState(0);
+
+  // Dados de Consagração (campos fixos)
+  const [dadosConsagracao, setDadosConsagracao] = useState({
+    ev_autorizado_data: '',
+    ev_autorizado_local: '',
+    ev_consagrado_data: '',
+    ev_consagrado_local: '',
+    cons_missionario_data: '',
+    cons_missionario_local: '',
+    orden_pastor_data: '',
+    orden_pastor_local: '',
+    diretoria: false,
+    local_batismo: '',
+    data_filiacao: '',
   });
 
   // Estado para foto (Base64)
@@ -464,51 +505,13 @@ export default function MembrosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const resolveMinistryId = async (): Promise<string | null> => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return null;
-
-      const mu = await supabase
-        .from('ministry_users')
-        .select('ministry_id')
-        .eq('user_id', user.id)
-        .limit(1);
-      const ministryIdFromMu = (mu.data as any)?.[0]?.ministry_id as string | undefined;
-      if (ministryIdFromMu) return ministryIdFromMu;
-
-      const m = await supabase
-        .from('ministries')
-        .select('id')
-        .eq('user_id', user.id)
-        .limit(1);
-      const ministryIdFromOwner = (m.data as any)?.[0]?.id as string | undefined;
-      return ministryIdFromOwner || null;
-    } catch {
-      return null;
-    }
-  };
-
-  useEffect(() => {
+useEffect(() => {
     const loadEstruturaOptions = async () => {
-      const ministryId = await resolveMinistryId();
-      if (!ministryId) return;
-
-      const [s, c, g, minRow] = await Promise.all([
-        supabase.from('supervisoes').select('id,nome,is_active').eq('ministry_id', ministryId).eq('is_active', true).order('nome'),
-        supabase.from('campos').select('id,nome,supervisao_id,is_active').eq('ministry_id', ministryId).eq('is_active', true).order('nome'),
-        supabase.from('congregacoes').select('id,nome,supervisao_id,campo_id,is_active').eq('ministry_id', ministryId).eq('is_active', true).order('nome'),
-        supabase.from('ministries').select('subscription_plan_id, subscription_plans(max_members)').eq('id', ministryId).maybeSingle(),
+      const [s, c, g] = await Promise.all([
+        supabase.from('supervisoes').select('id,nome,is_active').eq('is_active', true).order('nome'),
+        supabase.from('campos').select('id,nome,supervisao_id,is_active').eq('is_active', true).order('nome'),
+        supabase.from('congregacoes').select('id,nome,supervisao_id,campo_id,is_active').eq('is_active', true).order('nome'),
       ]);
-
-      if (s.error) console.warn('Falha ao carregar 1a divisao:', s.error);
-      if (c.error) console.warn('Falha ao carregar 2a divisao:', c.error);
-      if (g.error) console.warn('Falha ao carregar 3a divisao:', g.error);
-
-      const maxM = (minRow.data as any)?.subscription_plans?.max_members;
-      if (typeof maxM === 'number' && maxM > 0) setMaxMembros(maxM);
 
       if (s.error) console.warn('Falha ao carregar 1a divisao:', s.error);
       if (c.error) console.warn('Falha ao carregar 2a divisao:', c.error);
@@ -1201,10 +1204,19 @@ export default function MembrosPage() {
         nome_pai: dadosPessoais.nomePai || null,
         nome_mae: dadosPessoais.nomeMae || null,
         rg: dadosPessoais.rg || null,
+        uf_rg: dadosPessoais.uf_rg || null,
         orgao_emissor: dadosPessoais.orgaoEmissor || null,
         nacionalidade: dadosPessoais.nacionalidade || null,
         naturalidade: dadosPessoais.naturalidade || null,
         uf_naturalidade: dadosPessoais.uf || null,
+        titulo_eleitoral: dadosPessoais.tituloEleitoral || null,
+        zona_eleitoral: dadosPessoais.zonaEleitoral || null,
+        secao_eleitoral: dadosPessoais.secaoEleitoral || null,
+        municipio_eleitoral: dadosPessoais.municipioEleitoral || null,
+        profissao: dadosPessoais.profissao || null,
+        email2: dadosPessoais.email2 || null,
+        posicao_no_campo: dadosPessoais.posicaoNoCampo || null,
+        numero_cgadb: dadosPessoais.numero_cgadb || null,
         data_batismo_aguas: dadosMinisteriais.dataBatismoAguas || null,
         data_batismo_espirito_santo: dadosMinisteriais.dataBatismoEspiritoSanto || null,
         // Aba Endereço
@@ -1241,6 +1253,31 @@ export default function MembrosPage() {
         data_consagracao: dadosMinisteriais.dataConsagracao || null,
         data_emissao: dadosMinisteriais.dataEmissao || null,
         data_validade_credencial: dadosMinisteriais.dataValidadeCredencial || null,
+        // Dados de Consagração
+        local_batismo: dadosConsagracao.local_batismo || null,
+        data_filiacao: dadosConsagracao.data_filiacao || null,
+        diretoria: dadosConsagracao.diretoria ?? false,
+        ev_autorizado_data: dadosConsagracao.ev_autorizado_data || null,
+        ev_autorizado_local: dadosConsagracao.ev_autorizado_local || null,
+        ev_consagrado_data: dadosConsagracao.ev_consagrado_data || null,
+        ev_consagrado_local: dadosConsagracao.ev_consagrado_local || null,
+        cons_missionario_data: dadosConsagracao.cons_missionario_data || null,
+        cons_missionario_local: dadosConsagracao.cons_missionario_local || null,
+        orden_pastor_data: dadosConsagracao.orden_pastor_data || null,
+        orden_pastor_local: dadosConsagracao.orden_pastor_local || null,
+        // Registro Familiar
+        conjuge_rg: dadosConjuge.rg || null,
+        conjuge_orgao_emissor: dadosConjuge.orgao_emissor || null,
+        conjuge_nacionalidade: dadosConjuge.nacionalidade || null,
+        conjuge_naturalidade: dadosConjuge.naturalidade || null,
+        conjuge_nome_pai: dadosConjuge.nome_pai || null,
+        conjuge_nome_mae: dadosConjuge.nome_mae || null,
+        conjuge_titulo_eleitoral: dadosConjuge.titulo_eleitoral || null,
+        conjuge_fone: dadosConjuge.fone || null,
+        conjuge_email: dadosConjuge.email || null,
+        conjuge_tipo_sanguineo: dadosConjuge.tipo_sanguineo || null,
+        primeiro_casamento: primeirosCasamento,
+        qtd_filhos: qtdFilhos,
         // Sistema
         status: uiStatusToDb('ativo'),
         role: 'ministro',
@@ -1288,32 +1325,19 @@ export default function MembrosPage() {
   // Função para resetar todos os dados do formulário
   const resetarFormulario = () => {
     setDadosPessoais({
-      matricula: '',
-      cpf: '',
-      tipoCadastro: 'ministro',
-      nome: '',
-      dataNascimento: '',
-      sexo: 'MASCULINO',
-      tipoSanguineo: '',
-      escolaridade: '',
-      estadoCivil: '',
-      nomeConjuge: '',
-      cpfConjuge: '',
-      dataNascimentoConjuge: '',
-      nomePai: '',
-      nomeMae: '',
-      rg: '',
-      orgaoEmissor: '',
-      nacionalidade: 'BRASILEIRA',
-      naturalidade: '',
-      uf: '',
-      supervisao: '',
-      campo: '',
-      congregacao: '',
-      email: '',
-      celular: '',
-      whatsapp: ''
+      matricula: '', cpf: '', tipoCadastro: 'ministro', nome: '', dataNascimento: '',
+      sexo: 'MASCULINO', tipoSanguineo: '', escolaridade: '', estadoCivil: '',
+      nomeConjuge: '', cpfConjuge: '', dataNascimentoConjuge: '',
+      nomePai: '', nomeMae: '', rg: '', uf_rg: '', orgaoEmissor: '',
+      nacionalidade: 'BRASILEIRA', naturalidade: '', uf: '',
+      tituloEleitoral: '', zonaEleitoral: '', secaoEleitoral: '', municipioEleitoral: '',
+      profissao: '', email2: '', posicaoNoCampo: '', numero_cgadb: '',
+      supervisao: '', campo: '', congregacao: '', email: '', celular: '', whatsapp: '',
     });
+    setDadosConjuge({ rg: '', orgao_emissor: '', nacionalidade: 'BRASILEIRA', naturalidade: '', nome_pai: '', nome_mae: '', titulo_eleitoral: '', fone: '', email: '', tipo_sanguineo: '', foto_url: null });
+    setPrimeirosCasamento('SIM');
+    setQtdFilhos(0);
+    setDadosConsagracao({ ev_autorizado_data: '', ev_autorizado_local: '', ev_consagrado_data: '', ev_consagrado_local: '', cons_missionario_data: '', cons_missionario_local: '', orden_pastor_data: '', orden_pastor_local: '', diretoria: false, local_batismo: '', data_filiacao: '' });
     setEnderecoData({
       cep: '',
       logradouro: '',
@@ -2003,18 +2027,7 @@ export default function MembrosPage() {
             </div>
           </div>
 
-          {membersError && (
-            <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 mb-6">
-              <p className="text-amber-900 font-semibold">{membersError}</p>
-              {membersError === 'Usuário sem ministério associado' && (
-                <p className="text-amber-900 text-sm mt-1">
-                  Seu usuário ainda não está vinculado a um ministério. Se você acabou de se cadastrar, aguarde a liberação/associação do seu acesso.
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Vista - Dashboard */}
+{/* Vista - Dashboard */}
           {dashboardView === 'overview' && (
             <div>
               <MembrosOverview 
@@ -2495,6 +2508,15 @@ export default function MembrosPage() {
                     ⛪ Ministerial
                   </button>
                   <button
+                    onClick={() => setActiveTab('familiar')}
+                    className={`px-4 py-3 font-semibold transition whitespace-nowrap text-sm border-b-3 h-full flex items-center ${activeTab === 'familiar'
+                      ? 'text-teal-700 border-teal-600'
+                      : 'text-gray-600 border-transparent hover:text-teal-600'
+                      }`}
+                  >
+                    👨‍👩‍👧 Familiar
+                  </button>
+                  <button
                     onClick={() => setActiveTab('foto')}
                     className={`px-4 py-3 font-semibold transition whitespace-nowrap text-sm border-b-3 h-full flex items-center ${activeTab === 'foto'
                       ? 'text-teal-700 border-teal-600'
@@ -2731,32 +2753,25 @@ export default function MembrosPage() {
 
 
                       {/* Documentação */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 mb-1">RG</label>
-                          <input
-                            type="text"
-                            value={dadosPessoais.rg}
-                            onChange={(e) => setDadosPessoais({ ...dadosPessoais, rg: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                          />
+                          <input type="text" value={dadosPessoais.rg} onChange={(e) => setDadosPessoais({ ...dadosPessoais, rg: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
                         </div>
                         <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-1">Órgão Emissor</label>
-                          <input
-                            type="text"
-                            value={dadosPessoais.orgaoEmissor}
-                            onChange={(e) => setDadosPessoais({ ...dadosPessoais, orgaoEmissor: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                          />
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Órgão Exp.</label>
+                          <input type="text" value={dadosPessoais.orgaoEmissor} onChange={(e) => setDadosPessoais({ ...dadosPessoais, orgaoEmissor: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">UF RG</label>
+                          <select value={dadosPessoais.uf_rg} onChange={(e) => setDadosPessoais({ ...dadosPessoais, uf_rg: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                            <option value="">UF</option>
+                            {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(u => <option key={u} value={u}>{u}</option>)}
+                          </select>
                         </div>
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 mb-1">Nacionalidade</label>
-                          <select
-                            value={dadosPessoais.nacionalidade}
-                            onChange={(e) => setDadosPessoais({ ...dadosPessoais, nacionalidade: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                          >
+                          <select value={dadosPessoais.nacionalidade} onChange={(e) => setDadosPessoais({ ...dadosPessoais, nacionalidade: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent">
                             <option>BRASILEIRA</option>
                             <option>ESTRANGEIRA</option>
                           </select>
@@ -2844,22 +2859,34 @@ export default function MembrosPage() {
 
 
 
+                      {/* Título Eleitoral / Zona / Seção / Município Eleitoral */}
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                         <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-1">Profissão</label>
-                          <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
-                        </div>
-                        <div>
                           <label className="block text-xs font-semibold text-gray-700 mb-1">Título Eleitoral</label>
-                          <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+                          <input type="text" value={dadosPessoais.tituloEleitoral} onChange={(e) => setDadosPessoais({ ...dadosPessoais, tituloEleitoral: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
                         </div>
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 mb-1">Zona</label>
-                          <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+                          <input type="text" value={dadosPessoais.zonaEleitoral} onChange={(e) => setDadosPessoais({ ...dadosPessoais, zonaEleitoral: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
                         </div>
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 mb-1">Seção</label>
-                          <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+                          <input type="text" value={dadosPessoais.secaoEleitoral} onChange={(e) => setDadosPessoais({ ...dadosPessoais, secaoEleitoral: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Município Eleitoral</label>
+                          <input type="text" value={dadosPessoais.municipioEleitoral} onChange={(e) => setDadosPessoais({ ...dadosPessoais, municipioEleitoral: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+                        </div>
+                      </div>
+                      {/* Profissão e Email 02 */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Profissão</label>
+                          <input type="text" value={dadosPessoais.profissao} onChange={(e) => setDadosPessoais({ ...dadosPessoais, profissao: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Email 02</label>
+                          <input type="email" value={dadosPessoais.email2} onChange={(e) => setDadosPessoais({ ...dadosPessoais, email2: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
                         </div>
                       </div>
 
@@ -2868,72 +2895,44 @@ export default function MembrosPage() {
                       {/* Organização Eclesiástica */}
                       <div className="bg-sky-50 border border-sky-200 p-3 rounded-md mt-3">
                         <h4 className="text-xs font-semibold text-sky-800 mb-3">🏢 Organização Eclesiástica</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1">{nomenclaturas.divisao1} (1ª Divisão)</label>
-                            <select
-                              value={dadosPessoais.supervisao}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                const congregacaoSelecionada = divisao1Options.find((opt) => opt.nome === value) || null;
-                                const setorRelacionado = congregacaoSelecionada?.campo_id
-                                  ? divisao2Options.find((opt) => opt.id === congregacaoSelecionada.campo_id) || null
-                                  : null;
-                                const regionalRelacionado = setorRelacionado?.supervisao_id
-                                  ? divisao3Options.find((opt) => opt.id === setorRelacionado.supervisao_id) || null
-                                  : (congregacaoSelecionada?.supervisao_id
-                                      ? divisao3Options.find((opt) => opt.id === congregacaoSelecionada.supervisao_id) || null
-                                      : null);
-
-                                setDadosPessoais({
-                                  ...dadosPessoais,
-                                  supervisao: value,
-                                  campo: setorRelacionado?.nome || '',
-                                  congregacao: regionalRelacionado?.nome || '',
-                                });
-                              }}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                            >
-                              <option value="">Selecione</option>
-                              {divisao1Options.map((opt) => (
-                                <option key={opt.id} value={opt.nome}>{opt.nome}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1">{nomenclaturas.divisao2} (2ª Divisão)</label>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Campo</label>
                             <select
                               value={dadosPessoais.campo}
                               onChange={(e) => {
                                 const value = e.target.value;
-                                const setorSelecionado = divisao2Options.find((opt) => opt.nome === value) || null;
-                                const regionalRelacionado = setorSelecionado?.supervisao_id
-                                  ? divisao3Options.find((opt) => opt.id === setorSelecionado.supervisao_id) || null
+                                const campoSelecionado = camposOptions.find((opt) => opt.nome === value) || null;
+                                const supervisaoRelacionada = campoSelecionado?.supervisao_id
+                                  ? supervisoesOptions.find((opt) => opt.id === campoSelecionado.supervisao_id) || null
                                   : null;
-
                                 setDadosPessoais({
                                   ...dadosPessoais,
+                                  supervisao: '',
                                   campo: value,
-                                  congregacao: regionalRelacionado?.nome || '',
+                                  congregacao: supervisaoRelacionada?.nome || '',
                                 });
                               }}
                               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                             >
                               <option value="">Selecione</option>
-                              {divisao2Filtradas.map((opt) => (
+                              {camposOptions.map((opt) => (
                                 <option key={opt.id} value={opt.nome}>{opt.nome}</option>
                               ))}
                             </select>
                           </div>
                           <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1">{nomenclaturas.divisao3} (3ª Divisão)</label>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Supervisão</label>
                             <select
                               value={dadosPessoais.congregacao}
                               onChange={(e) => setDadosPessoais({ ...dadosPessoais, congregacao: e.target.value })}
                               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                             >
                               <option value="">Selecione</option>
-                              {divisao3Filtradas.map((opt) => (
+                              {(divisao2Selecionada?.supervisao_id && isDbOption(divisao2Selecionada.id)
+                                ? supervisoesOptions.filter((o) => o.id === divisao2Selecionada.supervisao_id)
+                                : supervisoesOptions
+                              ).map((opt) => (
                                 <option key={opt.id} value={opt.nome}>{opt.nome}</option>
                               ))}
                             </select>
@@ -2941,15 +2940,22 @@ export default function MembrosPage() {
                         </div>
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">Observações</label>
-                        <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+                      {/* Posição no Campo e Nº CGADB */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Posição do Ministro no Campo</label>
+                          <input type="text" value={dadosPessoais.posicaoNoCampo} onChange={(e) => setDadosPessoais({ ...dadosPessoais, posicaoNoCampo: e.target.value })} placeholder="Ex: Pastor Titular, Cooperador..." className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Nº CGADB</label>
+                          <input type="text" value={dadosPessoais.numero_cgadb} onChange={(e) => setDadosPessoais({ ...dadosPessoais, numero_cgadb: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+                        </div>
                       </div>
 
                     </div>
                   )}
 
-                  {/* ABA: ENDEREÇO + CONTATO COM GEOLOCALIZAÇÃO */}
+                  {/* ABA: ENDEREÇO + CONTATO COM GEOLOCALIZAÇÃO */
                   {activeTab === 'endereco' && (
                     <div className="space-y-3">
                       {/* Seção: ENDEREÇO */}
@@ -3198,6 +3204,72 @@ export default function MembrosPage() {
                         </div>
                       </div>
 
+                      {/* Dados Ministeriais fixos */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Local do Batismo</label>
+                          <input type="text" value={dadosConsagracao.local_batismo} onChange={(e) => setDadosConsagracao({ ...dadosConsagracao, local_batismo: e.target.value })} placeholder="Ex: Igreja Central" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Data de Filiação</label>
+                          <input type="date" value={dadosConsagracao.data_filiacao} onChange={(e) => setDadosConsagracao({ ...dadosConsagracao, data_filiacao: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+                        </div>
+                        <div className="flex items-end gap-3">
+                          <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2 cursor-pointer">
+                            <button type="button" onClick={() => setDadosConsagracao(prev => ({ ...prev, diretoria: !prev.diretoria }))}
+                              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${dadosConsagracao.diretoria ? 'bg-teal-500' : 'bg-gray-300'}`}>
+                              <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${dadosConsagracao.diretoria ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                            </button>
+                            Diretoria?
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Dados de Consagração */}
+                      <div className="bg-amber-50 border border-amber-200 p-4 rounded-md">
+                        <h4 className="text-sm font-bold text-amber-800 mb-3">✝️ Dados de Consagração</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Ev. Autorizado — Data</label>
+                            <input type="date" value={dadosConsagracao.ev_autorizado_data} onChange={(e) => setDadosConsagracao({ ...dadosConsagracao, ev_autorizado_data: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Ev. Autorizado — Local</label>
+                            <input type="text" value={dadosConsagracao.ev_autorizado_local} onChange={(e) => setDadosConsagracao({ ...dadosConsagracao, ev_autorizado_local: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Ev. Consagrado — Data</label>
+                            <input type="date" value={dadosConsagracao.ev_consagrado_data} onChange={(e) => setDadosConsagracao({ ...dadosConsagracao, ev_consagrado_data: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Ev. Consagrado — Local</label>
+                            <input type="text" value={dadosConsagracao.ev_consagrado_local} onChange={(e) => setDadosConsagracao({ ...dadosConsagracao, ev_consagrado_local: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Cons. Missionário(a) — Data</label>
+                            <input type="date" value={dadosConsagracao.cons_missionario_data} onChange={(e) => setDadosConsagracao({ ...dadosConsagracao, cons_missionario_data: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Cons. Missionário(a) — Local</label>
+                            <input type="text" value={dadosConsagracao.cons_missionario_local} onChange={(e) => setDadosConsagracao({ ...dadosConsagracao, cons_missionario_local: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Orden. Pastor — Data</label>
+                            <input type="date" value={dadosConsagracao.orden_pastor_data} onChange={(e) => setDadosConsagracao({ ...dadosConsagracao, orden_pastor_data: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Orden. Pastor — Local</label>
+                            <input type="text" value={dadosConsagracao.orden_pastor_local} onChange={(e) => setDadosConsagracao({ ...dadosConsagracao, orden_pastor_local: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                          </div>
+                        </div>
+                      </div>
+
 
 
                       {/* Bloco de Consagração/Recebimento - Aparece quando cargo é selecionado */}
@@ -3306,6 +3378,131 @@ export default function MembrosPage() {
                           className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                         />
                       </div>
+                    </div>
+                  )}
+
+                  {/* ABA: REGISTRO FAMILIAR */}
+                  {activeTab === 'familiar' && (
+                    <div className="space-y-4">
+
+                      {/* Dados do Cônjuge — visível apenas se casado */}
+                      {dadosPessoais.estadoCivil === 'casado' ? (
+                        <div className="bg-blue-50 border border-blue-200 p-4 rounded-md">
+                          <h4 className="text-sm font-bold text-blue-800 mb-3">👥 Registro Familiar — Cônjuge</h4>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                            <div className="md:col-span-2">
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">CÔNJUGE</label>
+                              <input type="text" value={dadosPessoais.nomeConjuge} onChange={(e) => setDadosPessoais({ ...dadosPessoais, nomeConjuge: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">CPF</label>
+                              <input type="text" value={dadosPessoais.cpfConjuge} onChange={(e) => setDadosPessoais({ ...dadosPessoais, cpfConjuge: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">RG / Emissor</label>
+                              <input type="text" value={dadosConjuge.rg} onChange={(e) => setDadosConjuge({ ...dadosConjuge, rg: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">Emissor</label>
+                              <input type="text" value={dadosConjuge.orgao_emissor} onChange={(e) => setDadosConjuge({ ...dadosConjuge, orgao_emissor: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">Nacionalidade</label>
+                              <select value={dadosConjuge.nacionalidade} onChange={(e) => setDadosConjuge({ ...dadosConjuge, nacionalidade: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
+                                <option>BRASILEIRA</option>
+                                <option>ESTRANGEIRA</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">Naturalidade</label>
+                              <input type="text" value={dadosConjuge.naturalidade} onChange={(e) => setDadosConjuge({ ...dadosConjuge, naturalidade: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">Filiação — PAI</label>
+                              <input type="text" value={dadosConjuge.nome_pai} onChange={(e) => setDadosConjuge({ ...dadosConjuge, nome_pai: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">Filiação — MÃE</label>
+                              <input type="text" value={dadosConjuge.nome_mae} onChange={(e) => setDadosConjuge({ ...dadosConjuge, nome_mae: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">Título Eleitor</label>
+                              <input type="text" value={dadosConjuge.titulo_eleitoral} onChange={(e) => setDadosConjuge({ ...dadosConjuge, titulo_eleitoral: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">Fone</label>
+                              <input type="text" value={dadosConjuge.fone} onChange={(e) => setDadosConjuge({ ...dadosConjuge, fone: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">Email</label>
+                              <input type="email" value={dadosConjuge.email} onChange={(e) => setDadosConjuge({ ...dadosConjuge, email: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">T. Sanguíneo</label>
+                              <select value={dadosConjuge.tipo_sanguineo} onChange={(e) => setDadosConjuge({ ...dadosConjuge, tipo_sanguineo: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
+                                <option value="">-</option>
+                                {['O+','O-','A+','A-','B+','B-','AB+','AB-'].map(t => <option key={t}>{t}</option>)}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">Data Nasc. Cônjuge</label>
+                              <input type="date" value={dadosPessoais.dataNascimentoConjuge} onChange={(e) => setDadosPessoais({ ...dadosPessoais, dataNascimentoConjuge: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">1º Casamento?</label>
+                              <select value={primeirosCasamento} onChange={(e) => setPrimeirosCasamento(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
+                                <option>SIM</option>
+                                <option>NÃO</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">QTD. de Filhos</label>
+                              <div className="flex items-center gap-2">
+                                <input type="number" min={0} value={qtdFilhos} onChange={(e) => setQtdFilhos(Number(e.target.value))} className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                                <button type="button" onClick={() => setQtdFilhos(q => q + 1)} className="px-3 py-2 bg-teal-500 text-white rounded-md text-sm font-bold hover:bg-teal-600">+</button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center text-gray-500 py-8 text-sm">
+                          <p>Preencha o Estado Civil como <strong>Casado(a)</strong> na aba <strong>Dados</strong> para habilitar o Registro Familiar.</p>
+                        </div>
+                      )}
+
+                      {dadosPessoais.estadoCivil !== 'casado' && (
+                        <div className="bg-gray-50 border border-gray-200 p-4 rounded-md">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">1º Casamento?</label>
+                              <select value={primeirosCasamento} onChange={(e) => setPrimeirosCasamento(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
+                                <option>SIM</option>
+                                <option>NÃO</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">QTD. de Filhos</label>
+                              <div className="flex items-center gap-2">
+                                <input type="number" min={0} value={qtdFilhos} onChange={(e) => setQtdFilhos(Number(e.target.value))} className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                                <button type="button" onClick={() => setQtdFilhos(q => q + 1)} className="px-3 py-2 bg-teal-500 text-white rounded-md text-sm font-bold hover:bg-teal-600">+</button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 

@@ -9,28 +9,6 @@ import { createServerClientFromRequest } from '@/lib/supabase-server'
 import { normalizePayloadToUppercase } from '@/lib/uppercase-normalizer'
 import { NextRequest, NextResponse } from 'next/server'
 
-async function resolveMinistryId(supabase: any, userId: string): Promise<string | null> {
-  const { data: mu, error: muErr } = await supabase
-    .from('ministry_users')
-    .select('ministry_id')
-    .eq('user_id', userId)
-    .limit(1)
-    .maybeSingle()
-
-  if (!muErr && mu?.ministry_id) return String(mu.ministry_id)
-
-  const { data: m, error: mErr } = await supabase
-    .from('ministries')
-    .select('id')
-    .eq('user_id', userId)
-    .limit(1)
-    .maybeSingle()
-
-  if (!mErr && m?.id) return String(m.id)
-
-  return null
-}
-
 /**
  * GET: Obter um membro pelo ID
  */
@@ -50,19 +28,10 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const ministryId = await resolveMinistryId(supabase, user.id)
-    if (!ministryId) {
-      return NextResponse.json(
-        { error: 'Usuário sem ministério associado', code: 'NO_MINISTRY' },
-        { status: 403 }
-      )
-    }
-
     const { data, error } = await supabase
       .from('members')
       .select('*')
       .eq('id', id)
-      .eq('ministry_id', ministryId)
       .single()
 
     if (error) {
@@ -102,11 +71,19 @@ export async function PUT(
         'data_consagracao',
         'data_emissao',
         'data_validade_credencial',
+        'data_filiacao',
+        'ev_autorizado_data',
+        'ev_consagrado_data',
+        'cons_missionario_data',
+        'orden_pastor_data',
         'dados_cargos',
         'latitude',
         'longitude',
         'cargo_ministerial',
         'procedencia',
+        'qtd_filhos',
+        'diretoria',
+        'primeiro_casamento',
       ],
     })
     const supabase = createServerClientFromRequest(request)
@@ -119,20 +96,11 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const ministryId = await resolveMinistryId(supabase, user.id)
-    if (!ministryId) {
-      return NextResponse.json(
-        { error: 'Usuário sem ministério associado', code: 'NO_MINISTRY' },
-        { status: 403 }
-      )
-    }
-
     // Verificar se membro existe
     const { data: existing } = await supabase
       .from('members')
       .select('id')
       .eq('id', id)
-      .eq('ministry_id', ministryId)
       .single()
 
     if (!existing) {
@@ -162,6 +130,7 @@ export async function PUT(
       nome_pai: normalizedBody.nome_pai ?? null,
       nome_mae: normalizedBody.nome_mae ?? null,
       rg: normalizedBody.rg ?? null,
+      uf_rg: normalizedBody.uf_rg ?? null,
       orgao_emissor: normalizedBody.orgao_emissor ?? null,
       nacionalidade: normalizedBody.nacionalidade ?? null,
       naturalidade: normalizedBody.naturalidade ?? null,
@@ -169,6 +138,10 @@ export async function PUT(
       titulo_eleitoral: normalizedBody.titulo_eleitoral ?? null,
       zona_eleitoral: normalizedBody.zona_eleitoral ?? null,
       secao_eleitoral: normalizedBody.secao_eleitoral ?? null,
+      municipio_eleitoral: normalizedBody.municipio_eleitoral ?? null,
+      email2: typeof normalizedBody.email2 === 'string' ? normalizedBody.email2.toLowerCase() : null,
+      posicao_no_campo: normalizedBody.posicao_no_campo ?? null,
+      numero_cgadb: normalizedBody.numero_cgadb ?? null,
       data_batismo_aguas: normalizedBody.data_batismo_aguas ?? null,
       data_batismo_espirito_santo: normalizedBody.data_batismo_espirito_santo ?? null,
       // Aba Endereço
@@ -202,6 +175,31 @@ export async function PUT(
       data_consagracao: normalizedBody.data_consagracao ?? null,
       data_emissao: normalizedBody.data_emissao ?? null,
       data_validade_credencial: normalizedBody.data_validade_credencial ?? null,
+      // Dados de Consagração
+      local_batismo: normalizedBody.local_batismo ?? null,
+      data_filiacao: normalizedBody.data_filiacao ?? null,
+      diretoria: normalizedBody.diretoria ?? false,
+      ev_autorizado_data: normalizedBody.ev_autorizado_data ?? null,
+      ev_autorizado_local: normalizedBody.ev_autorizado_local ?? null,
+      ev_consagrado_data: normalizedBody.ev_consagrado_data ?? null,
+      ev_consagrado_local: normalizedBody.ev_consagrado_local ?? null,
+      cons_missionario_data: normalizedBody.cons_missionario_data ?? null,
+      cons_missionario_local: normalizedBody.cons_missionario_local ?? null,
+      orden_pastor_data: normalizedBody.orden_pastor_data ?? null,
+      orden_pastor_local: normalizedBody.orden_pastor_local ?? null,
+      // Registro Familiar
+      conjuge_rg: normalizedBody.conjuge_rg ?? null,
+      conjuge_orgao_emissor: normalizedBody.conjuge_orgao_emissor ?? null,
+      conjuge_nacionalidade: normalizedBody.conjuge_nacionalidade ?? null,
+      conjuge_naturalidade: normalizedBody.conjuge_naturalidade ?? null,
+      conjuge_nome_pai: normalizedBody.conjuge_nome_pai ?? null,
+      conjuge_nome_mae: normalizedBody.conjuge_nome_mae ?? null,
+      conjuge_titulo_eleitoral: normalizedBody.conjuge_titulo_eleitoral ?? null,
+      conjuge_fone: normalizedBody.conjuge_fone ?? null,
+      conjuge_email: typeof normalizedBody.conjuge_email === 'string' ? normalizedBody.conjuge_email.toLowerCase() : null,
+      conjuge_tipo_sanguineo: normalizedBody.conjuge_tipo_sanguineo ?? null,
+      primeiro_casamento: normalizedBody.primeiro_casamento ?? 'SIM',
+      qtd_filhos: typeof normalizedBody.qtd_filhos === 'number' ? normalizedBody.qtd_filhos : 0,
       // Aba Foto — só atualiza se o campo foi enviado explicitamente; caso contrário preserva o valor atual
       ...('foto_url' in normalizedBody ? { foto_url: normalizedBody.foto_url ?? null } : {}),
       // Sistema
@@ -218,7 +216,6 @@ export async function PUT(
       .from('members')
       .update(payload)
       .eq('id', id)
-      .eq('ministry_id', ministryId)
       .select()
 
 
@@ -266,20 +263,11 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const ministryId = await resolveMinistryId(supabase, user.id)
-    if (!ministryId) {
-      return NextResponse.json(
-        { error: 'Usuário sem ministério associado', code: 'NO_MINISTRY' },
-        { status: 403 }
-      )
-    }
-
     // Verificar se existe
     const { data: existing } = await supabase
       .from('members')
       .select('id')
       .eq('id', id)
-      .eq('ministry_id', ministryId)
       .single()
 
     if (!existing) {
@@ -294,7 +282,6 @@ export async function DELETE(
       .from('members')
       .delete()
       .eq('id', id)
-      .eq('ministry_id', ministryId)
 
     if (error) {
       return NextResponse.json(
