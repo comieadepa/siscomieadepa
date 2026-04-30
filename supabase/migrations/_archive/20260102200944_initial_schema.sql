@@ -183,6 +183,9 @@ CREATE POLICY "Membros podem ser deletados no seu ministry"
 -- 5. AUDIT_LOGS (Auditoria)
 -- ============================================
 
+-- Drop da versao temporaria criada pela migracao 003 (schema diferente)
+DROP TABLE IF EXISTS public.audit_logs CASCADE;
+
 CREATE TABLE public.audit_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   ministry_id UUID NOT NULL REFERENCES public.ministries(id) ON DELETE CASCADE,

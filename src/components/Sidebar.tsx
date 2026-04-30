@@ -79,7 +79,7 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
       <div className="p-6 border-b border-white/20 flex items-center justify-center">
         <img
           src="/img/logo333-v3.png"
-          alt="GESTAOSERVUS"
+          alt="SISCOMIEADEPA"
           className="h-16 object-contain"
         />
       </div>
@@ -144,7 +144,7 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
         >
           Sair
         </button>
-        <p className="text-center text-xs text-white/60">GESTAOSERVUS v1.0</p>
+        <p className="text-center text-xs text-white/60">SISCOMIEADEPA v1.0</p>
       </div>
     </div>
   );

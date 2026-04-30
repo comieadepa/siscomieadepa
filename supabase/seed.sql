@@ -1,3 +1,1 @@
--- Seed file (optional)
--- Mantido intencionalmente simples.
--- Use migrations em supabase/migrations para definir o schema.
+INSERT INTO public.admin_users (email, password_hash, name, role, status) VALUES ('admin@comieadepa.org.br', '$2b$10$QOEHboQCbYfKb9DXUEZxMO1x7I75QGqpmHJAQ0dDn/QjBla63lvse', 'Administrador COMIEADEPA', 'admin', 'ATIVO');

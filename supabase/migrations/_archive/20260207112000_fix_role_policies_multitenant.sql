@@ -33,13 +33,13 @@ CREATE POLICY "congregacoes_filtered_by_role"
 -- Members / Membros (compat)
 -- =========================
 
-DO $$
+DO $outer$
 BEGIN
   IF to_regclass('public.members') IS NOT NULL THEN
     EXECUTE 'ALTER TABLE public.members ENABLE ROW LEVEL SECURITY';
     EXECUTE 'DROP POLICY IF EXISTS "members_filtered_by_role" ON public.members';
 
-    EXECUTE $$
+    EXECUTE $sql$
       CREATE POLICY "members_filtered_by_role"
         ON public.members
         AS RESTRICTIVE
@@ -70,14 +70,14 @@ BEGIN
               )
           )
         )
-    $$;
+    $sql$;
   END IF;
 
   IF to_regclass('public.membros') IS NOT NULL THEN
     EXECUTE 'ALTER TABLE public.membros ENABLE ROW LEVEL SECURITY';
     EXECUTE 'DROP POLICY IF EXISTS "membros_filtered_by_role" ON public.membros';
 
-    EXECUTE $$
+    EXECUTE $sql2$
       CREATE POLICY "membros_filtered_by_role"
         ON public.membros
         AS RESTRICTIVE
@@ -108,7 +108,7 @@ BEGIN
               )
           )
         )
-    $$;
+    $sql2$;
   END IF;
 END
-$$;
+$outer$;

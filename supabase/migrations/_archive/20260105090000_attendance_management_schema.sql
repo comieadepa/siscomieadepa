@@ -3,6 +3,40 @@
 -- Tabelas para gerenciar atendimento de pré-cadastros
 -- ============================================
 
+-- Pre-criar pre_registrations aqui pois é referenciada por FK abaixo.
+-- A migração 20260330090000 também usa IF NOT EXISTS e apenas pulará.
+CREATE TABLE IF NOT EXISTS public.pre_registrations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  ministry_name VARCHAR(255) NOT NULL,
+  pastor_name VARCHAR(255) NOT NULL,
+  responsible_name VARCHAR(255),
+  email VARCHAR(255) NOT NULL,
+  whatsapp VARCHAR(30),
+  phone VARCHAR(30),
+  website VARCHAR(255),
+  cpf_cnpj VARCHAR(20),
+  quantity_temples INTEGER DEFAULT 1,
+  quantity_members INTEGER DEFAULT 0,
+  status VARCHAR(50) DEFAULT 'pending',
+  trial_expires_at TIMESTAMP WITH TIME ZONE,
+  trial_days INTEGER DEFAULT 7,
+  address_street VARCHAR(255),
+  address_number VARCHAR(20),
+  address_complement VARCHAR(255),
+  address_city VARCHAR(100),
+  address_state VARCHAR(2),
+  address_zip VARCHAR(10),
+  description TEXT,
+  plan VARCHAR(50) DEFAULT 'starter',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pre_registrations_status ON public.pre_registrations(status);
+CREATE INDEX IF NOT EXISTS idx_pre_registrations_email ON public.pre_registrations(email);
+CREATE INDEX IF NOT EXISTS idx_pre_registrations_cpf_cnpj ON public.pre_registrations(cpf_cnpj);
+
 -- ============================================
 -- 1. ATTENDANCE_STATUS (Status de Atendimento)
 -- ============================================

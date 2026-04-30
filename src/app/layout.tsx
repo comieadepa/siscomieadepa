@@ -7,7 +7,7 @@ import { UsuarioProvider } from '@/providers/UsuarioContext';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'GESTAOSERVUS - Login',
+  title: 'SISCOMIEADEPA - Acesso ao Sistema',
   description: 'Sistema de Gestão para Instituições',
 };
 
