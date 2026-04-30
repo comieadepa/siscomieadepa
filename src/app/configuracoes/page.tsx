@@ -8,7 +8,6 @@ import { useAppDialog } from '@/providers/AppDialogProvider'
 import { createClient } from '@/lib/supabase-client'
 import { formatCnpj, formatPhone } from '@/lib/mascaras';
 
-
 export const dynamic = 'force-dynamic';
 
 export default function ConfiguracoesPage() {
@@ -36,7 +35,7 @@ export default function ConfiguracoesPage() {
       <div className="flex-1 overflow-auto">
         <div className="p-6">
           {/* Header */}
-          <h1 className="text-3xl font-bold text-gray-800 mb-6">âš™ï¸ ConfiguraÃ§Ãµes da InstituiÃ§Ã£o</h1>
+          <h1 className="text-3xl font-bold text-gray-800 mb-6">⚙️ Configurações da Instituição</h1>
 
           {/* Abas */}
           <div className="flex border-b border-gray-300 bg-white rounded-t-lg overflow-x-auto mb-6">
@@ -47,7 +46,7 @@ export default function ConfiguracoesPage() {
                 : 'text-gray-600 border-transparent hover:text-teal-600'
                 }`}
             >
-              ðŸ›ï¸ Perfil da InstituiÃ§Ã£o
+              🏛️ Perfil da Instituição
             </button>
             <button
               onClick={() => setActiveTab('identidade')}
@@ -56,9 +55,8 @@ export default function ConfiguracoesPage() {
                 : 'text-gray-600 border-transparent hover:text-teal-600'
                 }`}
             >
-              ðŸŽ¨ Identidade Visual
+              🎨 Identidade Visual
             </button>
-
             <button
               onClick={() => setActiveTab('nomenclaturas')}
               className={`px-6 py-3 font-semibold transition whitespace-nowrap text-sm border-b-3 ${activeTab === 'nomenclaturas'
@@ -66,11 +64,11 @@ export default function ConfiguracoesPage() {
                 : 'text-gray-600 border-transparent hover:text-teal-600'
                 }`}
             >
-              ðŸ“ Cargos Ministeriais
+              📝 Nomenclaturas
             </button>
           </div>
 
-          {/* ConteÃºdo das Abas */}
+          {/* Conteúdo das Abas */}
           <div className="bg-white rounded-b-lg shadow-md p-6">
             {/* Aba: Perfil */}
             {activeTab === 'perfil' && (
@@ -81,8 +79,6 @@ export default function ConfiguracoesPage() {
             {activeTab === 'identidade' && (
               <BrandingContent onNotification={(title, message, type) => setNotification({ isOpen: true, title, message, type })} />
             )}
-
-
             {/* Aba: Nomenclaturas */}
             {activeTab === 'nomenclaturas' && (
               <NomenclaturaContent onNotification={(title, message, type) => setNotification({ isOpen: true, title, message, type })} />
@@ -116,7 +112,7 @@ function PerfilContent({ onNotification }: { onNotification: (title: string, mes
     fetchConfiguracaoIgrejaFromSupabase(supabase)
       .then((config: any) => {
         setFormData({
-          nomeMinisterio: config.nome || 'InstituiÃ§Ã£o',
+          nomeMinisterio: config.nome || 'Instituição',
           cnpj: config.cnpj || '',
           email: config.email || '',
           telefone: config.telefone || '',
@@ -154,13 +150,12 @@ function PerfilContent({ onNotification }: { onNotification: (title: string, mes
         endereco: formData.endereco,
         descricao: formData.descricao,
         website: formData.website,
-        responsavel: formData.responsavel,
-        dataCadastro: formData.dataCadastro
+        responsavel: formData.responsavel
       });
-      onNotification('Sucesso', 'Dados da instituiÃ§Ã£o atualizados com sucesso!', 'success');
+      onNotification('Sucesso', 'Dados da instituição atualizados com sucesso!', 'success');
       setIsEditing(false);
     } catch (error: any) {
-      console.error('âŒ Erro ao salvar perfil:', error);
+      console.error('❌ Erro ao salvar perfil:', error);
       onNotification('Erro', error?.message || 'Erro ao salvar. Tente novamente.', 'error');
     }
   };
@@ -168,7 +163,7 @@ function PerfilContent({ onNotification }: { onNotification: (title: string, mes
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">Perfil da InstituiÃ§Ã£o</h2>
+        <h2 className="text-2xl font-bold text-gray-800">Perfil da Instituição</h2>
         <button
           onClick={() => setIsEditing(!isEditing)}
           className={`px-6 py-2 rounded-lg transition font-semibold ${isEditing
@@ -176,14 +171,14 @@ function PerfilContent({ onNotification }: { onNotification: (title: string, mes
             : 'bg-teal-600 text-white hover:bg-teal-700'
             }`}
         >
-          {isEditing ? 'âŒ Cancelar' : 'âœï¸ Editar'}
+          {isEditing ? '❌ Cancelar' : '✏️ Editar'}
         </button>
       </div>
 
       <div className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Nome da InstituiÃ§Ã£o</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Nome da Instituição</label>
             <input
               type="text"
               name="nomeMinisterio"
@@ -256,7 +251,7 @@ function PerfilContent({ onNotification }: { onNotification: (title: string, mes
         </div>
 
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">EndereÃ§o</label>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">Endereço</label>
           <textarea
             name="endereco"
             value={formData.endereco}
@@ -268,20 +263,20 @@ function PerfilContent({ onNotification }: { onNotification: (title: string, mes
         </div>
 
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">DescriÃ§Ã£o</label>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">Descrição</label>
           <textarea
             name="descricao"
             value={formData.descricao}
             onChange={handleChange}
             disabled={!isEditing}
             rows={3}
-            placeholder="InformaÃ§Ãµes sobre sua instituiÃ§Ã£o"
+            placeholder="Informações sobre sua instituição"
             className="w-full px-4 py-2 border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-teal-500"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Data de FundaÃ§Ã£o</label>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">Data de Fundação</label>
           <input
             type="date"
             name="dataCadastro"
@@ -298,13 +293,13 @@ function PerfilContent({ onNotification }: { onNotification: (title: string, mes
               onClick={handleSave}
               className="flex-1 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold"
             >
-              âœ“ Salvar AlteraÃ§Ãµes
+              ✓ Salvar Alterações
             </button>
             <button
               onClick={() => setIsEditing(false)}
               className="flex-1 px-6 py-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition font-semibold"
             >
-              âœ• Descartar
+              ✕ Descartar
             </button>
           </div>
         )}
@@ -335,7 +330,7 @@ function BrandingContent({ onNotification }: { onNotification: (title: string, m
         const img = new Image();
         img.onload = () => {
           if (img.width < 200 || img.height < 200) {
-            onNotification('Aviso', 'A imagem deve ter no mÃ­nimo 200x200 pixels', 'warning');
+            onNotification('Aviso', 'A imagem deve ter no mínimo 200x200 pixels', 'warning');
             return;
           }
           const logoBase64 = event.target?.result as string;
@@ -350,7 +345,7 @@ function BrandingContent({ onNotification }: { onNotification: (title: string, m
   const handleSaveLogo = async () => {
     if (logoPreview) {
       await updateConfiguracaoIgrejaInSupabase(supabase, { logo: logoPreview });
-      onNotification('Sucesso', 'ConfiguraÃ§Ãµes salvas com sucesso!', 'success');
+      onNotification('Sucesso', 'Configurações salvas com sucesso!', 'success');
     }
   };
 
@@ -363,9 +358,9 @@ function BrandingContent({ onNotification }: { onNotification: (title: string, m
           <h3 className="text-lg font-bold text-gray-800 mb-4">Upload da Logomarca</h3>
 
           <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center bg-gray-50 mb-4">
-            <div className="text-5xl mb-3">ðŸ“¤</div>
+            <div className="text-5xl mb-3">📤</div>
             <p className="text-gray-600 text-sm mb-3">Clique ou arraste a imagem aqui</p>
-            <p className="text-gray-500 text-xs mb-4">DimensÃµes recomendadas: 500x500px<br />Formatos: PNG, JPG, SVG | MÃ¡ximo: 5MB</p>
+            <p className="text-gray-500 text-xs mb-4">Dimensões recomendadas: 500x500px<br />Formatos: PNG, JPG, SVG | Máximo: 5MB</p>
             <input
               type="file"
               accept="image/*"
@@ -377,20 +372,20 @@ function BrandingContent({ onNotification }: { onNotification: (title: string, m
               htmlFor="logo-input"
               className="inline-block px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 cursor-pointer font-semibold"
             >
-              ðŸ“ Escolher Imagem
+              📁 Escolher Imagem
             </label>
           </div>
         </div>
 
         <div>
-          <h3 className="text-lg font-bold text-gray-800 mb-4">PrÃ©via da Logomarca</h3>
+          <h3 className="text-lg font-bold text-gray-800 mb-4">Prévia da Logomarca</h3>
 
           <div className="border border-gray-300 rounded-lg p-8 text-center bg-gray-50 mb-4 h-64 flex items-center justify-center">
             {logoPreview ? (
               <img src={logoPreview} alt="Logo Preview" className="max-h-full max-w-full object-contain" />
             ) : (
               <div className="text-gray-400">
-                <div className="text-5xl mb-2">ðŸ–¼ï¸</div>
+                <div className="text-5xl mb-2">🖼️</div>
                 <p>Nenhuma imagem selecionada</p>
               </div>
             )}
@@ -401,7 +396,7 @@ function BrandingContent({ onNotification }: { onNotification: (title: string, m
               onClick={handleSaveLogo}
               className="w-full px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold"
             >
-              âœ“ Salvar Logomarca
+              ✓ Salvar Logomarca
             </button>
           )}
         </div>
@@ -409,7 +404,7 @@ function BrandingContent({ onNotification }: { onNotification: (title: string, m
 
       <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
         <p className="text-sm text-gray-700">
-          ðŸ’¡ <strong>Dica:</strong> As informaÃ§Ãµes da chiesa (nome, endereÃ§o, CNPJ, telefone, email) sÃ£o configuradas na aba <strong>"Perfil da InstituiÃ§Ã£o"</strong> e serÃ£o exibidas automaticamente no cabeÃ§alho dos relatÃ³rios em PDF.
+          💡 <strong>Dica:</strong> As informações da chiesa (nome, endereço, CNPJ, telefone, email) são configuradas na aba <strong>"Perfil da Instituição"</strong> e serão exibidas automaticamente no cabeçalho dos relatórios em PDF.
         </p>
       </div>
     </div>
@@ -429,10 +424,10 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
   type NomenclaturasState = Record<DivisionKey, DivisionConfig>;
 
   const NATIVE_OPTIONS: Record<DivisionKey, string[]> = {
-    // DivisÃ£o 1 agora usa as opÃ§Ãµes que eram da DivisÃ£o 3
-    divisaoPrincipal: ['CONGREGAÃ‡ÃƒO', 'IGREJA', 'TEMPLO', 'NENHUMA'],
-    divisaoSecundaria: ['CAMPO', 'SETOR', 'GRUPO', 'ÃREA', 'NENHUMA'],
-    // DivisÃ£o 3: deixar apenas "NENHUMA" (usuÃ¡rio pode adicionar manualmente)
+    // Divisão 1 agora usa as opções que eram da Divisão 3
+    divisaoPrincipal: ['CONGREGAÇÃO', 'IGREJA', 'TEMPLO', 'NENHUMA'],
+    divisaoSecundaria: ['CAMPO', 'SETOR', 'GRUPO', 'ÁREA', 'NENHUMA'],
+    // Divisão 3: deixar apenas "NENHUMA" (usuário pode adicionar manualmente)
     divisaoTerciaria: ['NENHUMA']
   };
 
@@ -502,7 +497,7 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
     const currentCustom = temp[nivel].custom || [];
     const exists = [...native, ...currentCustom].some(v => v.toUpperCase() === value);
     if (exists) {
-      onNotification('Aviso', 'Essa opÃ§Ã£o jÃ¡ existe.', 'warning');
+      onNotification('Aviso', 'Essa opção já existe.', 'warning');
       return;
     }
 
@@ -539,13 +534,13 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
       setIsEditing(false);
       onNotification('Sucesso', 'Cargos atualizados com sucesso!', 'success');
     } catch (error: any) {
-      console.error('âŒ Erro ao salvar cargos:', error);
+      console.error('❌ Erro ao salvar cargos:', error);
       onNotification('Erro', `Erro ao salvar: ${error?.message || 'Tente novamente'}`, 'error');
     }
   };
 
   const handleCancel = () => {
-    console.log('âŒ Cancelando ediÃ§Ã£o, revertendo para:', nomenclaturas);
+    console.log('❌ Cancelando edição, revertendo para:', nomenclaturas);
     setTemp(nomenclaturas);
     setIsEditing(false);
   };
@@ -561,7 +556,7 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
   const adicionarCargo = () => {
     const nomeNormalizado = novoCargo.trim();
 
-    // ValidaÃ§Ãµes
+    // Validações
     if (!nomeNormalizado) {
       onNotification('Aviso', 'Por favor, digite o nome do cargo.', 'warning');
       return;
@@ -573,7 +568,7 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
     );
 
     if (jaExiste) {
-      onNotification('Aviso', 'Este cargo jÃ¡ existe na lista.', 'warning');
+      onNotification('Aviso', 'Este cargo já existe na lista.', 'warning');
       return;
     }
 
@@ -623,18 +618,18 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
             : 'bg-teal-600 text-white hover:bg-teal-700'
             }`}
         >
-          {isEditing ? 'âŒ Cancelar' : 'âœï¸ Editar'}
+          {isEditing ? '❌ Cancelar' : '✏️ Editar'}
         </button>
       </div>
 
-      {/* Placeholder para manter estrutura - seÃ§Ã£o removida */}
+      {/* Placeholder para manter estrutura - seção removida */}
       {false && <div className="mb-8">
-        <h3 className="text-xl font-bold text-gray-800 mb-4">ðŸ¢ DivisÃµes Organizacionais</h3>
+        <h3 className="text-xl font-bold text-gray-800 mb-4">🏢 Divisões Organizacionais</h3>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {(['divisaoPrincipal', 'divisaoSecundaria', 'divisaoTerciaria'] as DivisionKey[]).map((key, index) => (
             <div key={key} className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
               <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <span>{index + 1}ï¸âƒ£</span> {index === 0 ? 'Primeira' : index === 1 ? 'Segunda' : 'Terceira'} DivisÃ£o
+                <span>{index + 1}️⃣</span> {index === 0 ? 'Primeira' : index === 1 ? 'Segunda' : 'Terceira'} Divisão
               </h3>
               <div className="space-y-3">
                 <div>
@@ -674,13 +669,13 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
                           onClick={() => handleAddCustomOption(key)}
                           className="px-5 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition font-semibold whitespace-nowrap"
                         >
-                          âž• Adicionar
+                          ➕ Adicionar
                         </button>
                       </div>
 
                       {(temp[key].custom || []).length > 0 && (
                         <div className="space-y-2">
-                          <p className="text-xs text-gray-600">OpÃ§Ãµes personalizadas:</p>
+                          <p className="text-xs text-gray-600">Opções personalizadas:</p>
                           <div className="space-y-2">
                             {(temp[key].custom || []).map(option => (
                               <div key={option} className="flex items-center justify-between p-2 border border-gray-200 rounded-lg bg-gray-50">
@@ -688,9 +683,9 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
                                 <button
                                   onClick={() => handleDeleteCustomOption(key, option)}
                                   className="text-red-500 hover:text-red-700 transition"
-                                  title="Remover opÃ§Ã£o personalizada"
+                                  title="Remover opção personalizada"
                                 >
-                                  ðŸ—‘ï¸
+                                  🗑️
                                 </button>
                               </div>
                             ))}
@@ -708,9 +703,9 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
         </div>
       </div>}
 
-      {/* SeÃ§Ã£o: Cargos Ministeriais */}
+      {/* Seção: Cargos Ministeriais */}
       <div className="mb-8">
-        <h3 className="text-xl font-bold text-gray-800 mb-4">â›ª Cargos Ministeriais</h3>
+        <h3 className="text-xl font-bold text-gray-800 mb-4">⛪ Cargos Ministeriais</h3>
         <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {cargosMinisteriais.map(cargo => (
@@ -731,7 +726,7 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
                     className="text-red-500 hover:text-red-700 transition"
                     title="Remover cargo"
                   >
-                    ðŸ—‘ï¸
+                    🗑️
                   </button>
                 )}
               </div>
@@ -741,7 +736,7 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
           {/* Campo para adicionar novo cargo */}
           {isEditing && (
             <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <h4 className="text-sm font-bold text-gray-800 mb-3">âž• Adicionar Novo Cargo</h4>
+              <h4 className="text-sm font-bold text-gray-800 mb-3">➕ Adicionar Novo Cargo</h4>
               <div className="flex gap-3">
                 <input
                   type="text"
@@ -755,17 +750,17 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
                   onClick={adicionarCargo}
                   className="px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition font-semibold whitespace-nowrap"
                 >
-                  âž• Adicionar
+                  ➕ Adicionar
                 </button>
               </div>
               <p className="text-xs text-gray-600 mt-2">
-                ðŸ’¡ Digite o nome do novo cargo e clique em "Adicionar". VocÃª pode remover cargos personalizados clicando no Ã­cone ðŸ—‘ï¸.
+                💡 Digite o nome do novo cargo e clique em "Adicionar". Você pode remover cargos personalizados clicando no ícone 🗑️.
               </p>
             </div>
           )}
 
           <p className="text-xs text-gray-600 mt-4">
-            ðŸ’¡ Marque os cargos que deseja disponibilizar no sistema. Eles aparecerÃ£o no formulÃ¡rio de cadastro de ministros.
+            💡 Marque os cargos que deseja disponibilizar no sistema. Eles aparecerão no formulário de cadastro de ministros.
           </p>
         </div>
       </div>
@@ -776,13 +771,13 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
             onClick={handleSave}
             className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold"
           >
-            âœ“ Salvar
+            ✓ Salvar
           </button>
           <button
             onClick={handleCancel}
             className="flex-1 px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition font-semibold"
           >
-            âœ• Descartar
+            ✕ Descartar
           </button>
         </div>
       )}
