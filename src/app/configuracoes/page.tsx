@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
@@ -7,8 +7,7 @@ import { getCargosMinisteriais, saveCargosMinisteriais, type CargoMinisterial } 
 import { useAppDialog } from '@/providers/AppDialogProvider'
 import { createClient } from '@/lib/supabase-client'
 import { formatCnpj, formatPhone } from '@/lib/mascaras';
-import { formatarPreco } from '@/config/plans';
-import type { SubscriptionPlan } from '@/types/admin';
+
 
 export const dynamic = 'force-dynamic';
 
@@ -37,7 +36,7 @@ export default function ConfiguracoesPage() {
       <div className="flex-1 overflow-auto">
         <div className="p-6">
           {/* Header */}
-          <h1 className="text-3xl font-bold text-gray-800 mb-6">⚙️ Configurações da Instituição</h1>
+          <h1 className="text-3xl font-bold text-gray-800 mb-6">âš™ï¸ ConfiguraÃ§Ãµes da InstituiÃ§Ã£o</h1>
 
           {/* Abas */}
           <div className="flex border-b border-gray-300 bg-white rounded-t-lg overflow-x-auto mb-6">
@@ -48,7 +47,7 @@ export default function ConfiguracoesPage() {
                 : 'text-gray-600 border-transparent hover:text-teal-600'
                 }`}
             >
-              🏛️ Perfil da Instituição
+              ðŸ›ï¸ Perfil da InstituiÃ§Ã£o
             </button>
             <button
               onClick={() => setActiveTab('identidade')}
@@ -57,26 +56,9 @@ export default function ConfiguracoesPage() {
                 : 'text-gray-600 border-transparent hover:text-teal-600'
                 }`}
             >
-              🎨 Identidade Visual
+              ðŸŽ¨ Identidade Visual
             </button>
-            <button
-              onClick={() => setActiveTab('faturas')}
-              className={`px-6 py-3 font-semibold transition whitespace-nowrap text-sm border-b-3 ${activeTab === 'faturas'
-                ? 'text-teal-700 border-teal-600'
-                : 'text-gray-600 border-transparent hover:text-teal-600'
-                }`}
-            >
-              📄 Faturas
-            </button>
-            <button
-              onClick={() => setActiveTab('plano')}
-              className={`px-6 py-3 font-semibold transition whitespace-nowrap text-sm border-b-3 ${activeTab === 'plano'
-                ? 'text-teal-700 border-teal-600'
-                : 'text-gray-600 border-transparent hover:text-teal-600'
-                }`}
-            >
-              📋 Plano
-            </button>
+
             <button
               onClick={() => setActiveTab('nomenclaturas')}
               className={`px-6 py-3 font-semibold transition whitespace-nowrap text-sm border-b-3 ${activeTab === 'nomenclaturas'
@@ -84,11 +66,11 @@ export default function ConfiguracoesPage() {
                 : 'text-gray-600 border-transparent hover:text-teal-600'
                 }`}
             >
-              📝 Nomenclaturas
+              ðŸ“ Cargos Ministeriais
             </button>
           </div>
 
-          {/* Conteúdo das Abas */}
+          {/* ConteÃºdo das Abas */}
           <div className="bg-white rounded-b-lg shadow-md p-6">
             {/* Aba: Perfil */}
             {activeTab === 'perfil' && (
@@ -100,17 +82,6 @@ export default function ConfiguracoesPage() {
               <BrandingContent onNotification={(title, message, type) => setNotification({ isOpen: true, title, message, type })} />
             )}
 
-
-
-            {/* Aba: Faturas */}
-            {activeTab === 'faturas' && (
-              <FaturasContent />
-            )}
-
-            {/* Aba: Plano */}
-            {activeTab === 'plano' && (
-              <PlanoContent onNotification={(title, message, type) => setNotification({ isOpen: true, title, message, type })} />
-            )}
 
             {/* Aba: Nomenclaturas */}
             {activeTab === 'nomenclaturas' && (
@@ -145,7 +116,7 @@ function PerfilContent({ onNotification }: { onNotification: (title: string, mes
     fetchConfiguracaoIgrejaFromSupabase(supabase)
       .then((config: any) => {
         setFormData({
-          nomeMinisterio: config.nome || 'Instituição',
+          nomeMinisterio: config.nome || 'InstituiÃ§Ã£o',
           cnpj: config.cnpj || '',
           email: config.email || '',
           telefone: config.telefone || '',
@@ -183,12 +154,13 @@ function PerfilContent({ onNotification }: { onNotification: (title: string, mes
         endereco: formData.endereco,
         descricao: formData.descricao,
         website: formData.website,
-        responsavel: formData.responsavel
+        responsavel: formData.responsavel,
+        dataCadastro: formData.dataCadastro
       });
-      onNotification('Sucesso', 'Dados da instituição atualizados com sucesso!', 'success');
+      onNotification('Sucesso', 'Dados da instituiÃ§Ã£o atualizados com sucesso!', 'success');
       setIsEditing(false);
     } catch (error: any) {
-      console.error('❌ Erro ao salvar perfil:', error);
+      console.error('âŒ Erro ao salvar perfil:', error);
       onNotification('Erro', error?.message || 'Erro ao salvar. Tente novamente.', 'error');
     }
   };
@@ -196,7 +168,7 @@ function PerfilContent({ onNotification }: { onNotification: (title: string, mes
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">Perfil da Instituição</h2>
+        <h2 className="text-2xl font-bold text-gray-800">Perfil da InstituiÃ§Ã£o</h2>
         <button
           onClick={() => setIsEditing(!isEditing)}
           className={`px-6 py-2 rounded-lg transition font-semibold ${isEditing
@@ -204,14 +176,14 @@ function PerfilContent({ onNotification }: { onNotification: (title: string, mes
             : 'bg-teal-600 text-white hover:bg-teal-700'
             }`}
         >
-          {isEditing ? '❌ Cancelar' : '✏️ Editar'}
+          {isEditing ? 'âŒ Cancelar' : 'âœï¸ Editar'}
         </button>
       </div>
 
       <div className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Nome da Instituição</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Nome da InstituiÃ§Ã£o</label>
             <input
               type="text"
               name="nomeMinisterio"
@@ -284,7 +256,7 @@ function PerfilContent({ onNotification }: { onNotification: (title: string, mes
         </div>
 
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Endereço</label>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">EndereÃ§o</label>
           <textarea
             name="endereco"
             value={formData.endereco}
@@ -296,20 +268,20 @@ function PerfilContent({ onNotification }: { onNotification: (title: string, mes
         </div>
 
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Descrição</label>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">DescriÃ§Ã£o</label>
           <textarea
             name="descricao"
             value={formData.descricao}
             onChange={handleChange}
             disabled={!isEditing}
             rows={3}
-            placeholder="Informações sobre sua instituição"
+            placeholder="InformaÃ§Ãµes sobre sua instituiÃ§Ã£o"
             className="w-full px-4 py-2 border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-teal-500"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Data de Fundação</label>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">Data de FundaÃ§Ã£o</label>
           <input
             type="date"
             name="dataCadastro"
@@ -326,13 +298,13 @@ function PerfilContent({ onNotification }: { onNotification: (title: string, mes
               onClick={handleSave}
               className="flex-1 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold"
             >
-              ✓ Salvar Alterações
+              âœ“ Salvar AlteraÃ§Ãµes
             </button>
             <button
               onClick={() => setIsEditing(false)}
               className="flex-1 px-6 py-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition font-semibold"
             >
-              ✕ Descartar
+              âœ• Descartar
             </button>
           </div>
         )}
@@ -363,7 +335,7 @@ function BrandingContent({ onNotification }: { onNotification: (title: string, m
         const img = new Image();
         img.onload = () => {
           if (img.width < 200 || img.height < 200) {
-            onNotification('Aviso', 'A imagem deve ter no mínimo 200x200 pixels', 'warning');
+            onNotification('Aviso', 'A imagem deve ter no mÃ­nimo 200x200 pixels', 'warning');
             return;
           }
           const logoBase64 = event.target?.result as string;
@@ -378,7 +350,7 @@ function BrandingContent({ onNotification }: { onNotification: (title: string, m
   const handleSaveLogo = async () => {
     if (logoPreview) {
       await updateConfiguracaoIgrejaInSupabase(supabase, { logo: logoPreview });
-      onNotification('Sucesso', 'Configurações salvas com sucesso!', 'success');
+      onNotification('Sucesso', 'ConfiguraÃ§Ãµes salvas com sucesso!', 'success');
     }
   };
 
@@ -391,9 +363,9 @@ function BrandingContent({ onNotification }: { onNotification: (title: string, m
           <h3 className="text-lg font-bold text-gray-800 mb-4">Upload da Logomarca</h3>
 
           <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center bg-gray-50 mb-4">
-            <div className="text-5xl mb-3">📤</div>
+            <div className="text-5xl mb-3">ðŸ“¤</div>
             <p className="text-gray-600 text-sm mb-3">Clique ou arraste a imagem aqui</p>
-            <p className="text-gray-500 text-xs mb-4">Dimensões recomendadas: 500x500px<br />Formatos: PNG, JPG, SVG | Máximo: 5MB</p>
+            <p className="text-gray-500 text-xs mb-4">DimensÃµes recomendadas: 500x500px<br />Formatos: PNG, JPG, SVG | MÃ¡ximo: 5MB</p>
             <input
               type="file"
               accept="image/*"
@@ -405,20 +377,20 @@ function BrandingContent({ onNotification }: { onNotification: (title: string, m
               htmlFor="logo-input"
               className="inline-block px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 cursor-pointer font-semibold"
             >
-              📁 Escolher Imagem
+              ðŸ“ Escolher Imagem
             </label>
           </div>
         </div>
 
         <div>
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Prévia da Logomarca</h3>
+          <h3 className="text-lg font-bold text-gray-800 mb-4">PrÃ©via da Logomarca</h3>
 
           <div className="border border-gray-300 rounded-lg p-8 text-center bg-gray-50 mb-4 h-64 flex items-center justify-center">
             {logoPreview ? (
               <img src={logoPreview} alt="Logo Preview" className="max-h-full max-w-full object-contain" />
             ) : (
               <div className="text-gray-400">
-                <div className="text-5xl mb-2">🖼️</div>
+                <div className="text-5xl mb-2">ðŸ–¼ï¸</div>
                 <p>Nenhuma imagem selecionada</p>
               </div>
             )}
@@ -429,7 +401,7 @@ function BrandingContent({ onNotification }: { onNotification: (title: string, m
               onClick={handleSaveLogo}
               className="w-full px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold"
             >
-              ✓ Salvar Logomarca
+              âœ“ Salvar Logomarca
             </button>
           )}
         </div>
@@ -437,553 +409,12 @@ function BrandingContent({ onNotification }: { onNotification: (title: string, m
 
       <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
         <p className="text-sm text-gray-700">
-          💡 <strong>Dica:</strong> As informações da chiesa (nome, endereço, CNPJ, telefone, email) são configuradas na aba <strong>"Perfil da Instituição"</strong> e serão exibidas automaticamente no cabeçalho dos relatórios em PDF.
+          ðŸ’¡ <strong>Dica:</strong> As informaÃ§Ãµes da chiesa (nome, endereÃ§o, CNPJ, telefone, email) sÃ£o configuradas na aba <strong>"Perfil da InstituiÃ§Ã£o"</strong> e serÃ£o exibidas automaticamente no cabeÃ§alho dos relatÃ³rios em PDF.
         </p>
       </div>
     </div>
   );
 }
-
-// Componente Faturas
-function FaturasContent() {
-  const [filterStatus, setFilterStatus] = useState('TODAS');
-  const [faturas, setFaturas] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [baixandoId, setBaixandoId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const carregarFaturas = async () => {
-      try {
-        const supabase = createClient();
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-
-        if (!session?.access_token) {
-          setFaturas([]);
-          return;
-        }
-
-        // Usar API em vez de acessar Supabase direto (evita RLS issues)
-        const response = await fetch('/api/v1/admin/payments-list', {
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.warn('Falha ao carregar faturas:', errorData.error);
-          setFaturas([]);
-          return;
-        }
-
-        const { payments } = await response.json();
-
-        // Mapear dados
-        const faturasFormatadas = (payments || []).map((payment: any, index: number) => ({
-          id: payment.id,
-          asaas_payment_id: payment.asaas_payment_id ?? null,
-          payment_method: payment.payment_method ?? null,
-          numero: `FAT-${new Date(payment.created_at).getFullYear()}-${String(index + 1).padStart(3, '0')}`,
-          data: payment.created_at,
-          vencimento: payment.due_date,
-          valor: parseFloat(payment.amount),
-          status: mapearStatusPagamento(payment.status),
-          description: payment.description ?? '',
-        }));
-
-        setFaturas(faturasFormatadas);
-      } catch (err) {
-        console.error('Erro ao buscar faturas:', err);
-        setFaturas([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    carregarFaturas();
-  }, []);
-
-  const mapearStatusPagamento = (status: string) => {
-    switch (status) {
-      case 'paid':
-        return 'paga';
-      case 'overdue':
-        return 'vencida';
-      case 'pending':
-        return 'vencer';
-      case 'cancelled':
-      case 'failed':
-        return 'cancelada';
-      default:
-        return 'vencer';
-    }
-  };
-
-  const faturasFiltered = filterStatus === 'TODAS' ? faturas : faturas.filter(f => f.status === filterStatus.toLowerCase());
-
-  const handleBaixar = async (fatura: any) => {
-    setBaixandoId(fatura.id);
-    try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session?.access_token) {
-        alert('Sessão expirada. Faça login novamente.');
-        return;
-      }
-
-      const response = await fetch(`/api/v1/admin/payments-boleto?id=${fatura.id}`, {
-        headers: { 'Authorization': `Bearer ${session.access_token}` },
-      });
-
-      if (!response.ok) {
-        console.error('Erro ao buscar boleto:', await response.text());
-        alert('Não foi possível obter o link do boleto. Tente novamente.');
-        return;
-      }
-
-      const data = await response.json();
-
-      // Abrir link ASAAS se disponível
-      if (data.bankSlipUrl) {
-        window.open(data.bankSlipUrl, '_blank', 'noopener,noreferrer');
-        return;
-      }
-      if (data.invoiceUrl) {
-        window.open(data.invoiceUrl, '_blank', 'noopener,noreferrer');
-        return;
-      }
-      if (data.pixQrCodeUrl) {
-        window.open(data.pixQrCodeUrl, '_blank', 'noopener,noreferrer');
-        return;
-      }
-
-      // Fallback: comprovante local imprimível
-      const win = window.open('', '_blank');
-      if (win) {
-        win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Fatura ${fatura.numero}</title>
-        <style>body{font-family:sans-serif;padding:32px;max-width:600px;margin:0 auto}
-        h2{color:#0d9488}table{width:100%;border-collapse:collapse;margin-top:16px}
-        td{padding:8px 0;border-bottom:1px solid #eee}td:first-child{color:#666;width:140px}
-        .valor{font-size:1.5rem;font-weight:700;color:#0d9488;margin:16px 0}
-        .rodape{margin-top:32px;font-size:0.75rem;color:#999;border-top:1px solid #eee;padding-top:12px}
-        </style></head><body>
-        <h2>Fatura ${fatura.numero}</h2>
-        <table>
-          <tr><td>Descrição</td><td>${fatura.description || 'Assinatura'}</td></tr>
-          <tr><td>Emissão</td><td>${new Date(fatura.data).toLocaleDateString('pt-BR')}</td></tr>
-          <tr><td>Vencimento</td><td>${new Date(fatura.vencimento).toLocaleDateString('pt-BR')}</td></tr>
-          <tr><td>Forma</td><td>${fatura.payment_method || '-'}</td></tr>
-        </table>
-        <div class="valor">R$ ${fatura.valor.toFixed(2).replace('.', ',')}</div>
-        <div class="rodape">Gerado em ${new Date().toLocaleString('pt-BR')}</div>
-        <script>window.print();</script>
-        </body></html>`);
-        win.document.close();
-      }
-    } catch (err) {
-      console.error('Erro ao baixar fatura:', err);
-      alert('Erro ao baixar fatura. Tente novamente.');
-    } finally {
-      setBaixandoId(null);
-    }
-  };
-
-  const totalPago = faturas.filter(f => f.status === 'paga').reduce((sum, f) => sum + f.valor, 0);
-  const totalVencida = faturas.filter(f => f.status === 'vencida').reduce((sum, f) => sum + f.valor, 0);
-  const totalVencer = faturas.filter(f => f.status === 'vencer').reduce((sum, f) => sum + f.valor, 0);
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'paga': return 'bg-green-100 text-green-800';
-      case 'vencida': return 'bg-red-100 text-red-800';
-      case 'vencer': return 'bg-yellow-100 text-yellow-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'paga': return '✓ Paga';
-      case 'vencida': return '✕ Vencida';
-      case 'vencer': return '⏰ A Vencer';
-      default: return status;
-    }
-  };
-
-  return (
-    <div>
-      <h2 className="text-2xl font-bold text-gray-800 mb-6">Faturas</h2>
-
-      {loading ? (
-        <p className="text-sm text-gray-500 mb-4">Carregando faturas...</p>
-      ) : faturas.length === 0 ? (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
-          <p className="text-gray-700 mb-2">Nenhuma fatura encontrada</p>
-          <p className="text-sm text-gray-500">Quando houver faturas lançadas, elas aparecerão aqui.</p>
-        </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-green-600">
-          <p className="text-gray-600 text-sm font-semibold mb-1">FATURAS PAGAS</p>
-          <p className="text-3xl font-bold text-green-600">R$ {totalPago.toFixed(2).replace('.', ',')}</p>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-red-600">
-          <p className="text-gray-600 text-sm font-semibold mb-1">FATURAS VENCIDAS</p>
-          <p className="text-3xl font-bold text-red-600">R$ {totalVencida.toFixed(2).replace('.', ',')}</p>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-yellow-600">
-          <p className="text-gray-600 text-sm font-semibold mb-1">FATURAS A VENCER</p>
-          <p className="text-3xl font-bold text-yellow-600">R$ {totalVencer.toFixed(2).replace('.', ',')}</p>
-        </div>
-      </div>
-
-      <div className="flex gap-2 mb-6">
-        {['TODAS', 'paga', 'vencida', 'vencer'].map(status => (
-          <button
-            key={status}
-            onClick={() => setFilterStatus(status === 'TODAS' ? 'TODAS' : status)}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${filterStatus === (status === 'TODAS' ? 'TODAS' : status)
-              ? 'bg-teal-600 text-white'
-              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-          >
-            {status === 'TODAS' ? 'Todas' : status === 'paga' ? 'Pagas' : status === 'vencida' ? 'Vencidas' : 'A Vencer'}
-          </button>
-        ))}
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="bg-gray-100 border-b border-gray-300">
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Número</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Emissão</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Vencimento</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Valor</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {faturasFiltered.map((fatura) => (
-              <tr key={fatura.id} className="border-b border-gray-200 hover:bg-gray-50">
-                <td className="px-6 py-3 text-sm text-gray-900 font-semibold">{fatura.numero}</td>
-                <td className="px-6 py-3 text-sm text-gray-600">{new Date(fatura.data).toLocaleDateString('pt-BR')}</td>
-                <td className="px-6 py-3 text-sm text-gray-600">{new Date(fatura.vencimento).toLocaleDateString('pt-BR')}</td>
-                <td className="px-6 py-3 text-sm text-gray-900 font-semibold">R$ {fatura.valor.toFixed(2).replace('.', ',')}</td>
-                <td className="px-6 py-3">
-                  <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(fatura.status)}`}>
-                    {getStatusLabel(fatura.status)}
-                  </span>
-                </td>
-                <td className="px-6 py-3 text-sm">
-                  <button
-                    onClick={() => handleBaixar(fatura)}
-                    disabled={baixandoId === fatura.id}
-                    className="text-teal-600 hover:text-teal-800 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {baixandoId === fatura.id ? '⏳ Aguarde...' : '📥 Baixar'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// Componente Plano
-function PlanoContent({ onNotification }: { onNotification: (title: string, message: string, type: 'success' | 'error' | 'warning' | 'info') => void }) {
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [planoSelecionado, setPlanoSelecionado] = useState<SubscriptionPlan | null>(null);
-  const [criandoTicket, setCriandoTicket] = useState(false);
-  const dialog = useAppDialog();
-  const [planosDB, setPlanosDB] = useState<SubscriptionPlan[]>([]);
-  const [planoAtual, setPlanoAtual] = useState<SubscriptionPlan | null>(null);
-  const [planoInicio, setPlanoInicio] = useState<string>('');
-  const [planoRenovacao, setPlanoRenovacao] = useState<string>('');
-  const [planoStatus, setPlanoStatus] = useState<string>('ativo');
-  const [loading, setLoading] = useState(true);
-  // single-tenant: não há ministério
-
-  const buildRecursos = (plan: SubscriptionPlan & { max_divisao1?: number; max_divisao2?: number; max_divisao3?: number }): string[] => {
-    const r: string[] = [];
-    if (plan.max_users > 0) r.push(`Até ${plan.max_users} Usuários Administrativos`);
-    if (plan.max_members > 0) r.push(`Até ${plan.max_members.toLocaleString('pt-BR')} Membros`);
-    if (plan.has_advanced_reports) r.push('Relatórios Avançados');
-    if (plan.has_api_access) r.push('Acesso à API');
-    if (plan.has_priority_support) r.push('Suporte Prioritário');
-    if (plan.has_custom_domain) r.push('Domínio Personalizado');
-    if (plan.has_white_label) r.push('White Label');
-    if (plan.has_automation) r.push('Automação');
-    return r;
-  };
-
-  const buildModulos = (plan: SubscriptionPlan): string[] => {
-    const m: string[] = [];
-    if ((plan as any).has_modulo_financeiro) m.push('Financeiro');
-    if ((plan as any).has_modulo_eventos) m.push('Eventos');
-    if ((plan as any).has_modulo_reunioes) m.push('Reuniões');
-    return m;
-  };
-
-  useEffect(() => {
-    const supabase = createClient();
-
-    const load = async () => {
-      try {
-        // 1) Carregar planos ativos diretamente do banco
-        const { data: plansData } = await supabase
-          .from('subscription_plans')
-          .select('*, has_modulo_financeiro, has_modulo_eventos, has_modulo_reunioes')
-          .eq('is_active', true)
-          .order('price_monthly', { ascending: true });
-
-        const plans = (plansData || []) as SubscriptionPlan[];
-        setPlanosDB(plans);
-
-        // 2) Identificar plano atual (single-tenant: profissional fixo)
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-
-        setPlanoStatus('ativo');
-        setPlanoInicio('');
-        setPlanoRenovacao('');
-
-        // Plano atual fixo: profissional
-        const found = plans.find(p => p.slug?.toLowerCase() === 'profissional') || plans[plans.length - 1] || null;
-        setPlanoAtual(found);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    load();
-  }, []);
-
-  const handleUpgradeClick = (plano: SubscriptionPlan) => {
-    setPlanoSelecionado(plano);
-    setShowUpgradeModal(true);
-  };
-
-  const handleConfirmUpgrade = async () => {
-    try {
-      setCriandoTicket(true);
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (!user) {
-        await dialog.alert({ title: 'Erro', type: 'error', message: 'Você precisa estar logado para solicitar upgrade' });
-        return;
-      }
-
-      const titulo = `Solicitação de Upgrade de Plano: ${planoSelecionado?.name || 'Desconhecido'}`;
-      const descricao = `Solicitação de upgrade do plano "${planoAtual?.name || 'Atual'}" para "${planoSelecionado?.name || 'Desconhecido'}".\n\nNovo plano: ${formatarPreco(planoSelecionado?.price_monthly || 0)}/mês\n\nFavor processar esta solicitação comercial.`;
-
-      const { error: ticketError } = await supabase
-        .from('support_tickets')
-        .insert([{ user_id: user.id, subject: titulo, description: descricao, category: 'Upgrade de Plano', priority: 'high', status: 'open' }])
-        .select();
-
-      if (ticketError) {
-        await dialog.alert({ title: 'Erro', type: 'error', message: 'Erro ao criar ticket: ' + ticketError.message });
-        return;
-      }
-
-      setShowUpgradeModal(false);
-      setPlanoSelecionado(null);
-      onNotification('Sucesso!', 'Ticket comercial enviado com sucesso! Um membro da nossa equipe entrará em contato em breve para processar seu upgrade.', 'success');
-    } catch (error: any) {
-      console.error('Erro ao confirmar upgrade:', error);
-      onNotification('Erro', 'Erro ao processar upgrade: ' + (error?.message || 'Erro desconhecido'), 'error');
-    } finally {
-      setCriandoTicket(false);
-    }
-  };
-
-  // Plano recomendado = próximo nível acima do atual
-  const recommendedPlanId = (() => {
-    if (planosDB.length === 0) return null;
-    if (!planoAtual) return planosDB[Math.floor(planosDB.length / 2)]?.id || null;
-    const idx = planosDB.findIndex(p => p.id === planoAtual.id);
-    return idx >= 0 && idx < planosDB.length - 1 ? planosDB[idx + 1].id : null;
-  })();
-
-  const recursosPlanAtual = planoAtual ? buildRecursos(planoAtual as any) : [];
-  const modulosPlanAtual = planoAtual ? buildModulos(planoAtual) : [];
-
-  return (
-    <div>
-      <h2 className="text-2xl font-bold text-gray-800 mb-6">Plano de Assinatura</h2>
-
-      {loading && <p className="text-sm text-gray-500 mb-4">Carregando dados do plano...</p>}
-
-      {/* Plano não identificado */}
-      {!loading && !planoAtual && (
-        <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-4 mb-6 text-yellow-800 text-sm">
-          Plano atual não identificado. Entre em contato com o suporte para regularizar sua assinatura.
-        </div>
-      )}
-
-      {/* Card plano atual */}
-      {planoAtual && (
-        <div className="bg-gradient-to-r from-teal-600 to-teal-700 text-white rounded-lg shadow-lg p-8 mb-8">
-          <h3 className="text-2xl font-bold mb-2">Seu Plano Atual</h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <div>
-              <p className="text-teal-100 text-sm mb-1">Plano</p>
-              <p className="text-2xl font-bold">{planoAtual.name}</p>
-              <p className="text-teal-100 text-xs">Status: {planoStatus}</p>
-            </div>
-            <div>
-              <p className="text-teal-100 text-sm mb-1">Valor</p>
-              <p className="text-2xl font-bold">{formatarPreco(planoAtual.price_monthly)}</p>
-              {planoAtual.price_annually && (
-                <p className="text-teal-100 text-xs">{formatarPreco(planoAtual.price_annually)}/ano</p>
-              )}
-            </div>
-            <div>
-              <p className="text-teal-100 text-sm mb-1">Ativo desde</p>
-              <p className="text-lg font-semibold">{planoInicio ? new Date(planoInicio).toLocaleDateString('pt-BR') : '—'}</p>
-            </div>
-            <div>
-              <p className="text-teal-100 text-sm mb-1">Próxima renovação</p>
-              <p className="text-lg font-semibold">{planoRenovacao ? new Date(planoRenovacao).toLocaleDateString('pt-BR') : '—'}</p>
-            </div>
-          </div>
-          {(recursosPlanAtual.length > 0 || modulosPlanAtual.length > 0) && (
-            <div className="mt-6">
-              <h4 className="text-lg font-bold mb-3">Seu Plano Inclui:</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {recursosPlanAtual.map((feature, index) => (
-                  <p key={index} className="text-teal-100">✓ {feature}</p>
-                ))}
-              </div>
-              {modulosPlanAtual.length > 0 && (
-                <div className="mt-4">
-                  <p className="text-teal-200 text-xs font-semibold uppercase tracking-widest mb-2">Módulos Incluídos</p>
-                  <div className="flex flex-wrap gap-2">
-                    {modulosPlanAtual.map((m, i) => (
-                      <span key={i} className="px-3 py-1 bg-white/20 text-white text-xs font-semibold rounded-full">✓ {m}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {planoAtual.description && (
-                <p className="text-teal-200 text-sm mt-3 italic">{planoAtual.description}</p>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Lista de planos disponíveis */}
-      {!loading && planosDB.length > 0 && (
-        <>
-          <h3 className="text-xl font-bold text-gray-800 mb-4">Planos Disponíveis</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {planosDB.map((plano) => {
-              const isAtual = plano.id === planoAtual?.id;
-              const isRecomendado = plano.id === recommendedPlanId && !isAtual;
-              const recursos = buildRecursos(plano as any);
-              const modulos = buildModulos(plano);
-              return (
-                <div key={plano.id} className={`rounded-lg shadow-lg overflow-hidden transition transform hover:scale-105 bg-white ${isRecomendado ? 'ring-2 ring-teal-500' : ''} ${isAtual ? 'ring-2 ring-blue-500' : ''}`}>
-                  {isRecomendado && (
-                    <div className="bg-teal-500 text-white px-4 py-2 text-center text-sm font-bold">⭐ RECOMENDADO</div>
-                  )}
-                  {isAtual && (
-                    <div className="bg-blue-600 text-white px-4 py-2 text-center text-sm font-bold">✓ PLANO ATUAL</div>
-                  )}
-                  <div className="p-4">
-                    <h4 className="text-lg font-bold text-gray-800 mb-1">{plano.name}</h4>
-                    {plano.description && <p className="text-gray-500 text-xs mb-3">{plano.description}</p>}
-                    <p className="text-2xl font-bold text-teal-600 mb-1">{formatarPreco(plano.price_monthly)}</p>
-                    <p className="text-gray-600 text-sm">por mês</p>
-                    {plano.price_annually && (
-                      <p className="text-gray-500 text-xs mb-3">{formatarPreco(plano.price_annually)}/ano</p>
-                    )}
-
-                    {recursos.length > 0 && (
-                      <div className="space-y-1 mb-3 mt-2">
-                        {recursos.map((feature, idx) => (
-                          <p key={idx} className="text-xs text-gray-700">✓ {feature}</p>
-                        ))}
-                      </div>
-                    )}
-
-                    {modulos.length > 0 && (
-                      <div className="mb-4">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Módulos</p>
-                        <div className="flex flex-wrap gap-1">
-                          {modulos.map((m, i) => (
-                            <span key={i} className="px-2 py-0.5 bg-teal-50 border border-teal-200 text-teal-700 text-xs font-semibold rounded-full">{m}</span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    <button
-                      onClick={() => { if (!isAtual) handleUpgradeClick(plano); }}
-                      disabled={isAtual}
-                      className={`w-full py-2 rounded-lg font-semibold transition ${
-                        isAtual ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-teal-600 text-white hover:bg-teal-700'
-                      }`}
-                    >
-                      {isAtual ? '✓ Plano Atual' : 'Solicitar Upgrade'}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
-
-      {/* Modal upgrade */}
-      {showUpgradeModal && planoSelecionado && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-2xl max-w-md w-full p-6">
-            <h3 className="text-2xl font-bold text-gray-800 mb-4">Solicitar Upgrade</h3>
-            <p className="text-gray-600 mb-4">
-              Um ticket comercial será criado e nossa equipe de suporte entrará em contato para processar seu upgrade para o plano <strong>{planoSelecionado.name}</strong>.
-            </p>
-            <div className="bg-gray-50 rounded-lg p-4 mb-4 text-sm text-gray-700">
-              <p>📦 <strong>{planoAtual?.name}</strong> → <strong>{planoSelecionado.name}</strong></p>
-              <p className="mt-1">💰 {formatarPreco(planoSelecionado.price_monthly)}/mês</p>
-            </div>
-            <p className="text-sm text-gray-500 mb-6">Você receberá uma resposta por email em breve com os próximos passos.</p>
-            <div className="flex gap-4">
-              <button
-                onClick={() => { setShowUpgradeModal(false); setPlanoSelecionado(null); }}
-                disabled={criandoTicket}
-                className="flex-1 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-semibold disabled:opacity-50"
-              >Cancelar</button>
-              <button
-                onClick={handleConfirmUpgrade}
-                disabled={criandoTicket}
-                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold disabled:opacity-50"
-              >{criandoTicket ? 'Processando...' : 'Abrir Ticket'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-
-
 // Componente Nomenclaturas
 function NomenclaturaContent({ onNotification }: { onNotification: (title: string, message: string, type: 'success' | 'error' | 'warning' | 'info') => void }) {
   const dialog = useAppDialog();
@@ -998,10 +429,10 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
   type NomenclaturasState = Record<DivisionKey, DivisionConfig>;
 
   const NATIVE_OPTIONS: Record<DivisionKey, string[]> = {
-    // Divisão 1 agora usa as opções que eram da Divisão 3
-    divisaoPrincipal: ['CONGREGAÇÃO', 'IGREJA', 'TEMPLO', 'NENHUMA'],
-    divisaoSecundaria: ['CAMPO', 'SETOR', 'GRUPO', 'ÁREA', 'NENHUMA'],
-    // Divisão 3: deixar apenas "NENHUMA" (usuário pode adicionar manualmente)
+    // DivisÃ£o 1 agora usa as opÃ§Ãµes que eram da DivisÃ£o 3
+    divisaoPrincipal: ['CONGREGAÃ‡ÃƒO', 'IGREJA', 'TEMPLO', 'NENHUMA'],
+    divisaoSecundaria: ['CAMPO', 'SETOR', 'GRUPO', 'ÃREA', 'NENHUMA'],
+    // DivisÃ£o 3: deixar apenas "NENHUMA" (usuÃ¡rio pode adicionar manualmente)
     divisaoTerciaria: ['NENHUMA']
   };
 
@@ -1071,7 +502,7 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
     const currentCustom = temp[nivel].custom || [];
     const exists = [...native, ...currentCustom].some(v => v.toUpperCase() === value);
     if (exists) {
-      onNotification('Aviso', 'Essa opção já existe.', 'warning');
+      onNotification('Aviso', 'Essa opÃ§Ã£o jÃ¡ existe.', 'warning');
       return;
     }
 
@@ -1108,13 +539,13 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
       setIsEditing(false);
       onNotification('Sucesso', 'Cargos atualizados com sucesso!', 'success');
     } catch (error: any) {
-      console.error('❌ Erro ao salvar cargos:', error);
+      console.error('âŒ Erro ao salvar cargos:', error);
       onNotification('Erro', `Erro ao salvar: ${error?.message || 'Tente novamente'}`, 'error');
     }
   };
 
   const handleCancel = () => {
-    console.log('❌ Cancelando edição, revertendo para:', nomenclaturas);
+    console.log('âŒ Cancelando ediÃ§Ã£o, revertendo para:', nomenclaturas);
     setTemp(nomenclaturas);
     setIsEditing(false);
   };
@@ -1130,7 +561,7 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
   const adicionarCargo = () => {
     const nomeNormalizado = novoCargo.trim();
 
-    // Validações
+    // ValidaÃ§Ãµes
     if (!nomeNormalizado) {
       onNotification('Aviso', 'Por favor, digite o nome do cargo.', 'warning');
       return;
@@ -1142,7 +573,7 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
     );
 
     if (jaExiste) {
-      onNotification('Aviso', 'Este cargo já existe na lista.', 'warning');
+      onNotification('Aviso', 'Este cargo jÃ¡ existe na lista.', 'warning');
       return;
     }
 
@@ -1192,18 +623,18 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
             : 'bg-teal-600 text-white hover:bg-teal-700'
             }`}
         >
-          {isEditing ? '❌ Cancelar' : '✏️ Editar'}
+          {isEditing ? 'âŒ Cancelar' : 'âœï¸ Editar'}
         </button>
       </div>
 
-      {/* Placeholder para manter estrutura - seção removida */}
+      {/* Placeholder para manter estrutura - seÃ§Ã£o removida */}
       {false && <div className="mb-8">
-        <h3 className="text-xl font-bold text-gray-800 mb-4">🏢 Divisões Organizacionais</h3>
+        <h3 className="text-xl font-bold text-gray-800 mb-4">ðŸ¢ DivisÃµes Organizacionais</h3>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {(['divisaoPrincipal', 'divisaoSecundaria', 'divisaoTerciaria'] as DivisionKey[]).map((key, index) => (
             <div key={key} className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
               <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <span>{index + 1}️⃣</span> {index === 0 ? 'Primeira' : index === 1 ? 'Segunda' : 'Terceira'} Divisão
+                <span>{index + 1}ï¸âƒ£</span> {index === 0 ? 'Primeira' : index === 1 ? 'Segunda' : 'Terceira'} DivisÃ£o
               </h3>
               <div className="space-y-3">
                 <div>
@@ -1243,13 +674,13 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
                           onClick={() => handleAddCustomOption(key)}
                           className="px-5 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition font-semibold whitespace-nowrap"
                         >
-                          ➕ Adicionar
+                          âž• Adicionar
                         </button>
                       </div>
 
                       {(temp[key].custom || []).length > 0 && (
                         <div className="space-y-2">
-                          <p className="text-xs text-gray-600">Opções personalizadas:</p>
+                          <p className="text-xs text-gray-600">OpÃ§Ãµes personalizadas:</p>
                           <div className="space-y-2">
                             {(temp[key].custom || []).map(option => (
                               <div key={option} className="flex items-center justify-between p-2 border border-gray-200 rounded-lg bg-gray-50">
@@ -1257,9 +688,9 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
                                 <button
                                   onClick={() => handleDeleteCustomOption(key, option)}
                                   className="text-red-500 hover:text-red-700 transition"
-                                  title="Remover opção personalizada"
+                                  title="Remover opÃ§Ã£o personalizada"
                                 >
-                                  🗑️
+                                  ðŸ—‘ï¸
                                 </button>
                               </div>
                             ))}
@@ -1277,9 +708,9 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
         </div>
       </div>}
 
-      {/* Seção: Cargos Ministeriais */}
+      {/* SeÃ§Ã£o: Cargos Ministeriais */}
       <div className="mb-8">
-        <h3 className="text-xl font-bold text-gray-800 mb-4">⛪ Cargos Ministeriais</h3>
+        <h3 className="text-xl font-bold text-gray-800 mb-4">â›ª Cargos Ministeriais</h3>
         <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {cargosMinisteriais.map(cargo => (
@@ -1300,7 +731,7 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
                     className="text-red-500 hover:text-red-700 transition"
                     title="Remover cargo"
                   >
-                    🗑️
+                    ðŸ—‘ï¸
                   </button>
                 )}
               </div>
@@ -1310,7 +741,7 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
           {/* Campo para adicionar novo cargo */}
           {isEditing && (
             <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <h4 className="text-sm font-bold text-gray-800 mb-3">➕ Adicionar Novo Cargo</h4>
+              <h4 className="text-sm font-bold text-gray-800 mb-3">âž• Adicionar Novo Cargo</h4>
               <div className="flex gap-3">
                 <input
                   type="text"
@@ -1324,17 +755,17 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
                   onClick={adicionarCargo}
                   className="px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition font-semibold whitespace-nowrap"
                 >
-                  ➕ Adicionar
+                  âž• Adicionar
                 </button>
               </div>
               <p className="text-xs text-gray-600 mt-2">
-                💡 Digite o nome do novo cargo e clique em "Adicionar". Você pode remover cargos personalizados clicando no ícone 🗑️.
+                ðŸ’¡ Digite o nome do novo cargo e clique em "Adicionar". VocÃª pode remover cargos personalizados clicando no Ã­cone ðŸ—‘ï¸.
               </p>
             </div>
           )}
 
           <p className="text-xs text-gray-600 mt-4">
-            💡 Marque os cargos que deseja disponibilizar no sistema. Eles aparecerão no formulário de cadastro de ministros.
+            ðŸ’¡ Marque os cargos que deseja disponibilizar no sistema. Eles aparecerÃ£o no formulÃ¡rio de cadastro de ministros.
           </p>
         </div>
       </div>
@@ -1345,13 +776,13 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
             onClick={handleSave}
             className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold"
           >
-            ✓ Salvar
+            âœ“ Salvar
           </button>
           <button
             onClick={handleCancel}
             className="flex-1 px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition font-semibold"
           >
-            ✕ Descartar
+            âœ• Descartar
           </button>
         </div>
       )}

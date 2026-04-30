@@ -30,7 +30,8 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
         { id: 'funcionarios', label: 'Funcionários', icon: '👔', path: '/secretaria/funcionarios' },
         { id: 'consagracao', label: 'Consagração (obreiros)', icon: '🙏', path: '/secretaria/consagracao' },
         { id: 'cartas', label: 'Cartas ministeriais', icon: '📜', path: '/secretaria/cartas' },
-        { id: 'certificados', label: 'Certificados', icon: '🎓', path: '/secretaria/certificados' }
+        { id: 'certificados', label: 'Certificados', icon: '🎓', path: '/secretaria/certificados' },
+        { id: 'cgadb', label: 'Débitos CGADB', icon: '🔴', path: '/secretaria/cgadb' },
       ]
     },
     { id: 'financeiro', label: 'Financeiro', icon: '💳', path: '/financeiro' },
