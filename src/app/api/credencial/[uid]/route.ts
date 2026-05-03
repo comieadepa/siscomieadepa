@@ -14,9 +14,10 @@ const supabaseAdmin = createClient(
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { uid: string } }
+  { params }: { params: Promise<{ uid: string }> }
 ) {
-  const uid = params.uid?.trim();
+  const { uid: uidRaw } = await params;
+  const uid = uidRaw?.trim();
   if (!uid || uid.length < 8) {
     return NextResponse.json({ error: 'ID inválido' }, { status: 400 });
   }
