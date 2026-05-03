@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Image from 'next/image';
 
 // Prefixo fixo da URL — presente tanto aqui quanto no QR code
 export const CREDENCIAL_URL_PREFIX = '/autentica_qrcode-05985642/';
