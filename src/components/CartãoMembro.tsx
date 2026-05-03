@@ -7,7 +7,7 @@ import jsPDF from 'jspdf';
 import { substituirPlaceholders } from '@/lib/cartoes-utils';
 import { createClient } from '@/lib/supabase-client';
 import { loadOrgNomenclaturasFromSupabaseOrMigrate } from '@/lib/org-nomenclaturas';
-import { loadTemplatesForCurrentUser, loadTemplatesWithLocalCache } from '@/lib/cartoes-templates-sync';
+import { loadTemplatesWithLocalCache } from '@/lib/cartoes-templates-sync';
 import { fetchConfiguracaoIgrejaFromSupabase } from '@/lib/igreja-config-utils';
 
 interface Membro {

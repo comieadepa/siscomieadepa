@@ -49,22 +49,13 @@ interface CartaMudancaProps {
 
 const fmt = (v?: string | null) => v || '';
 
-const fmtDate = (v?: string | null) => {
-  if (!v) return '';
-  const d = new Date(v + (v.length === 10 ? 'T12:00:00' : ''));
-  if (isNaN(d.getTime())) return v;
-  return d.toLocaleDateString('pt-BR');
-};
-
 export default function CartaMudanca({ membro, dadosIgreja }: CartaMudancaProps) {
   const cartaRef = useRef<HTMLDivElement>(null);
   const [emailUsuario, setEmailUsuario] = useState('');
 
   useEffect(() => {
     const sb = createClient();
-    sb.auth.getUser().then(({ data }) => {
-      setEmailUsuario(data?.user?.email || '');
-    });
+    (async () => { const { data } = await sb.auth.getUser(); setEmailUsuario(data?.user?.email || ''); })();
   }, []);
 
   const hoje = new Date();

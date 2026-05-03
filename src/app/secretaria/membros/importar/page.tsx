@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import NotificationModal from '@/components/NotificationModal';
@@ -404,8 +404,8 @@ export default function ImportarMembrosPage() {
     for (const row of rows) {
       const built = buildRow(headers, mapping, row);
       if (!built) { skipped++; continue; }
-      if (built.cpf) {
-        byCpf.set(built.cpf, built); // dedup — mantém o último
+      if ((built as any).cpf) {
+        byCpf.set((built as any).cpf, built); // dedup — mantém o último
       } else {
         semCpf.push(built);
       }

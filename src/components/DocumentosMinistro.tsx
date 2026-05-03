@@ -89,7 +89,7 @@ export default function DocumentosMinistro({ memberId, memberName, matricula, on
     return { Authorization: `Bearer ${token}` };
   }, []);
 
-  const abrirArquivo = useCallback(async (fileId: string, mimeType: string, name: string) => {
+  const abrirArquivo = useCallback(async (fileId: string, mimeType: string, _name: string) => {
     try {
       const headers = await getAuthHeader();
       const res = await fetch(`/api/documentos/${fileId}`, { headers });

@@ -64,9 +64,7 @@ export default function CartaRecomendacao({ membro, dadosIgreja }: CartaRecomend
 
   useEffect(() => {
     const sb = createClient();
-    sb.auth.getUser().then(({ data }) => {
-      setEmailUsuario(data?.user?.email || '');
-    });
+    (async () => { const { data } = await sb.auth.getUser(); setEmailUsuario(data?.user?.email || ''); })();
   }, []);
 
   const hoje = new Date();

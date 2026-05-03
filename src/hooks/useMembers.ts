@@ -21,11 +21,6 @@ function isCacheFresh() {
   return _cache.members.length > 0 && Date.now() - _cache.ts < CACHE_TTL_MS;
 }
 
-function invalidateCache() {
-  _cache.members = [];
-  _cache.ts = 0;
-}
-
 async function getAccessTokenOrThrow() {
   const supabase = createClient()
   const { data } = await supabase.auth.getSession()

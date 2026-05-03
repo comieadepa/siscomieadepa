@@ -129,9 +129,7 @@ export default function DocCasaDoPastor({ membro, dadosIgreja, fotoUrl }: DocCas
 
   useEffect(() => {
     const sb = createClient();
-    sb.auth.getUser().then(({ data }) => {
-      setEmailUsuario(data?.user?.email || '');
-    });
+    (async () => { const { data } = await sb.auth.getUser(); setEmailUsuario(data?.user?.email || ''); })();
   }, []);
 
   const dataPrint = new Date().toLocaleDateString('pt-BR', {
