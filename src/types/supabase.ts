@@ -109,6 +109,7 @@ export type Member = {
   curso_teologico?: string | null
   instituicao_teologica?: string | null
   pastor_auxiliar?: boolean | null
+  pastor_presidente?: boolean | null
   procedencia?: string | null
   procedencia_local?: string | null
   cargo_ministerial?: string | null
@@ -275,6 +276,7 @@ export type CreateMemberRequest = {
   curso_teologico?: string | null
   instituicao_teologica?: string | null
   pastor_auxiliar?: boolean | null
+  pastor_presidente?: boolean | null
   procedencia?: string | null
   procedencia_local?: string | null
   cargo_ministerial?: string | null
@@ -289,6 +291,7 @@ export type CreateMemberRequest = {
   local_batismo?: string | null
   data_filiacao?: string | null
   diretoria?: boolean | null
+  diretoria_cargo?: string | null
   ev_autorizado_data?: string | null
   ev_autorizado_local?: string | null
   ev_consagrado_data?: string | null

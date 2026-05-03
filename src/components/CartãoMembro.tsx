@@ -7,7 +7,7 @@ import jsPDF from 'jspdf';
 import { substituirPlaceholders } from '@/lib/cartoes-utils';
 import { createClient } from '@/lib/supabase-client';
 import { loadOrgNomenclaturasFromSupabaseOrMigrate } from '@/lib/org-nomenclaturas';
-import { loadTemplatesForCurrentUser } from '@/lib/cartoes-templates-sync';
+import { loadTemplatesForCurrentUser, loadTemplatesWithLocalCache } from '@/lib/cartoes-templates-sync';
 import { fetchConfiguracaoIgrejaFromSupabase } from '@/lib/igreja-config-utils';
 
 interface Membro {
@@ -115,7 +115,7 @@ export default function CartãoMembro({ membro, onClose }: CartãoMembroProps) {
 
   useEffect(() => {
     (async () => {
-      const { templates: templatesSalvos } = await loadTemplatesForCurrentUser(supabase, { allowLocalMigration: true });
+      const { templates: templatesSalvos } = await loadTemplatesWithLocalCache(supabase, { allowLocalMigration: true });
 
       // Carregar config da igreja
       try {
@@ -208,16 +208,15 @@ export default function CartãoMembro({ membro, onClose }: CartãoMembroProps) {
       display: 'flex',
       alignItems: 'center',
       justifyContent: elemento.alinhamento === 'right' ? 'flex-end' : elemento.alinhamento === 'center' ? 'center' : 'flex-start',
-      fontFamily: elemento.fonte || 'Arial',
+      fontFamily: (elemento.fonte || 'Arial').replace(' Semibold', ''),
       fontSize: elemento.fontSize ? `${elemento.fontSize}px` : 'inherit',
       color: elemento.cor || '#000',
-      fontWeight: elemento.negrito ? 'bold' : 'normal',
+      fontWeight: (elemento.fonte || '').endsWith(' Semibold') ? 600 : (elemento.negrito ? 'bold' : 'normal'),
       fontStyle: elemento.italico ? 'italic' : 'normal',
       textDecoration: elemento.sublinhado ? 'underline' : 'none',
       textAlign: (elemento.alinhamento || 'left') as any,
       whiteSpace: 'pre-wrap',
       wordBreak: 'break-word',
-      textTransform: 'uppercase',
     };
 
     switch (elemento.tipo) {
@@ -266,7 +265,7 @@ export default function CartãoMembro({ membro, onClose }: CartãoMembroProps) {
         return (
           <div key={elemento.id} style={estilo}>
             <QRCode
-              value={membro.uniqueId || membro.id}
+              value={`${process.env.NEXT_PUBLIC_APP_URL || ''}/autentica_qrcode-05985642/${membro.uniqueId || membro.id}`}
               size={Math.min(elemento.largura, elemento.altura)}
               level="H"
               includeMargin={false}

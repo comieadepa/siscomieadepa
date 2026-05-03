@@ -109,12 +109,11 @@ function sanitizeTemplateForStorage(template: any): any {
 
 export async function fetchCartoesTemplatesFromSupabase(
   supabase: SupabaseClient,
-  ministryId: string
+  _ministryId: string
 ): Promise<any[]> {
   const { data, error } = await supabase
     .from('cartoes_templates')
-    .select('template_key,tipo_cadastro,is_active,template_data,updated_at,created_at')
-    .eq('ministry_id', ministryId)
+    .select('id,name,tipo,is_active,template_data,updated_at,created_at')
     .order('updated_at', { ascending: false });
 
   if (error) {
@@ -132,10 +131,11 @@ export async function fetchCartoesTemplatesFromSupabase(
     .map((r: any) => {
       const t = r?.template_data;
       if (!t) return null;
-      const tipoCadastro = (t.tipoCadastro || r.tipo_cadastro || t.tipo) as string | undefined;
+      const tipoCadastro = (t.tipoCadastro || t.tipo || r.tipo) as string | undefined;
       return {
         ...t,
-        id: t.id || r.template_key,
+        id: t.id || r.id,
+        _dbId: r.id,
         tipoCadastro: tipoCadastro,
         tipo: tipoCadastro,
         ativo: r.is_active === true,
@@ -146,87 +146,28 @@ export async function fetchCartoesTemplatesFromSupabase(
 
 export async function persistTemplatesSnapshotToSupabase(
   supabase: SupabaseClient,
-  ministryId: string,
+  _ministryId: string,
   tipo: TipoCartao,
   templatesSnapshot: any[]
 ): Promise<void> {
-  let templatesDoTipo = templatesSnapshot
+  const templatesDoTipo = templatesSnapshot
     .filter(t => (t?.tipoCadastro || t?.tipo) === tipo)
     .map(sanitizeTemplateForStorage);
 
-  // Garante no máximo um template ativo por tipo para respeitar o índice parcial único.
-  const ativos = templatesDoTipo.filter(t => t?.ativo === true);
-  if (ativos.length > 1) {
-    const keepId = String(ativos[ativos.length - 1]?.id || '');
-    templatesDoTipo = templatesDoTipo.map((t) => ({
-      ...t,
-      ativo: String(t?.id || '') === keepId,
-    }));
-  }
-
-  const { data: existingRows, error: listErr } = await supabase
-    .from('cartoes_templates')
-    .select('template_key')
-    .eq('ministry_id', ministryId)
-    .eq('tipo_cadastro', tipo);
-
-  if (listErr) {
-    const msg = getSupabaseErrorText(listErr);
-    if (isCartoesTemplatesUnavailableError(listErr)) {
-      console.warn('⚠️ Tabela/RLS de cartoes_templates indisponível; persistência ignorada para este ambiente.');
-      return;
-    }
-    console.error('❌ Erro ao listar templates existentes no Supabase:', msg || listErr);
-    return;
-  }
-
-  const existingKeys = new Set(((existingRows as any[]) || []).map(r => r.template_key));
-  const nextKeys = new Set(templatesDoTipo.map(t => String(t.id)));
-
-  const toDelete = Array.from(existingKeys).filter(k => !nextKeys.has(k));
-  if (toDelete.length > 0) {
-    const del = await supabase
-      .from('cartoes_templates')
-      .delete()
-      .eq('ministry_id', ministryId)
-      .eq('tipo_cadastro', tipo)
-      .in('template_key', toDelete);
-
-    if (del.error) console.error('❌ Erro ao deletar templates no Supabase:', del.error);
-  }
-
   if (templatesDoTipo.length === 0) return;
-
-  // Evita violação transitória da constraint unique_active_per_tipo durante upsert em lote.
-  const clearActive = await supabase
-    .from('cartoes_templates')
-    .update({ is_active: false, is_default: false } as any)
-    .eq('ministry_id', ministryId)
-    .eq('tipo_cadastro', tipo)
-    .eq('is_active', true);
-
-  if (clearActive.error) {
-    const msg = getSupabaseErrorText(clearActive.error);
-    if (isCartoesTemplatesUnavailableError(clearActive.error)) {
-      console.warn('⚠️ Persistência de templates ignorada: cartoes_templates indisponível neste ambiente.');
-      return;
-    }
-    console.error('❌ Erro ao limpar template ativo atual no Supabase:', msg || clearActive.error);
-    return;
-  }
 
   const rows = templatesDoTipo.map(t => {
     // preview_url é VARCHAR(500) no banco — data URLs base64 excedem esse limite
     const rawPreview: string | undefined = t.previewImage;
-    const previewUrl = rawPreview && !rawPreview.startsWith('data:') && rawPreview.length <= 500
-      ? rawPreview
-      : null;
+    const previewUrl =
+      rawPreview && !rawPreview.startsWith('data:') && rawPreview.length <= 500
+        ? rawPreview
+        : null;
     return {
-      ministry_id: ministryId,
       template_key: String(t.id),
-      tipo_cadastro: tipo,
+      tipo,
       name: String(t.nome || t.name || t.id),
-      description: null,
+      description: null as any,
       template_data: t,
       preview_url: previewUrl as any,
       is_default: (t.ativo === true) as any,
@@ -234,25 +175,48 @@ export async function persistTemplatesSnapshotToSupabase(
     };
   });
 
-  const up = await supabase
-    .from('cartoes_templates')
-    .upsert(rows as any, { onConflict: 'ministry_id,template_key' });
+  // Estratégia: INSERT primeiro; se 23505 (duplicate key, pois delete pode ser bloqueado por
+  // RLS), faz UPDATE por template_key nos rows conflitantes.
+  const ins = await supabase.from('cartoes_templates').insert(rows as any);
 
-  if (up.error) {
-    const msg = getSupabaseErrorText(up.error);
-    if (isCartoesTemplatesUnavailableError(up.error)) {
-      console.warn('⚠️ Persistência de templates ignorada: cartoes_templates indisponível neste ambiente.');
-      return;
-    }
-    console.error('❌ Erro ao upsert templates no Supabase:', msg || up.error);
+  if (!ins.error) return; // sucesso
+
+  const insMsg = getSupabaseErrorText(ins.error);
+
+  if (isCartoesTemplatesUnavailableError(ins.error)) {
+    console.warn('⚠️ Persistência de templates ignorada: cartoes_templates indisponível neste ambiente.');
+    return;
   }
+
+  if ((ins.error as any)?.code === '23505') {
+    // Linha já existe — atualizar cada template por template_key
+    for (const row of rows) {
+      const { error: updErr } = await supabase
+        .from('cartoes_templates')
+        .update({
+          name: row.name,
+          tipo: row.tipo,
+          template_data: row.template_data,
+          is_default: row.is_default,
+          is_active: row.is_active,
+          preview_url: row.preview_url,
+        })
+        .eq('template_key', row.template_key);
+
+      if (updErr && !isCartoesTemplatesUnavailableError(updErr)) {
+        console.error('❌ Erro ao atualizar template no Supabase:', getSupabaseErrorText(updErr) || updErr);
+      }
+    }
+    return;
+  }
+
+  console.error('❌ Erro ao inserir templates no Supabase:', insMsg || ins.error);
 }
 
-async function canUseCartoesTemplatesTable(supabase: SupabaseClient, ministryId: string): Promise<boolean> {
+async function canUseCartoesTemplatesTable(supabase: SupabaseClient, _ministryId: string): Promise<boolean> {
   const probe = await supabase
     .from('cartoes_templates')
-    .select('template_key', { count: 'exact', head: true })
-    .eq('ministry_id', ministryId)
+    .select('id', { count: 'exact', head: true })
     .limit(1);
 
   if (!probe.error) return true;
@@ -331,4 +295,27 @@ export async function loadTemplatesForCurrentUser(
   }
 
   return { templates: templatesFinal, ministryId };
+}
+
+/**
+ * Versão com cache local: lê cartoes_templates_v3 do localStorage primeiro.
+ * Use esta função nos componentes de impressão/visualização.
+ */
+export async function loadTemplatesWithLocalCache(
+  supabase: SupabaseClient,
+  options?: { allowLocalMigration?: boolean }
+): Promise<{ templates: any[]; ministryId: string | null }> {
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem('cartoes_templates_v3');
+      if (cached) {
+        const parsed = JSON.parse(cached) as any[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // retorna cache imediatamente; ministryId é resolvido em background
+          return { templates: parsed, ministryId: null };
+        }
+      }
+    } catch { /* ignore */ }
+  }
+  return loadTemplatesForCurrentUser(supabase, options);
 }

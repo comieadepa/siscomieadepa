@@ -7,7 +7,7 @@ import { QRCodeSVG as QRCode } from 'qrcode.react';
 import { substituirPlaceholders } from '@/lib/cartoes-utils';
 import { createClient } from '@/lib/supabase-client';
 import { loadOrgNomenclaturasFromSupabaseOrMigrate } from '@/lib/org-nomenclaturas';
-import { loadTemplatesForCurrentUser } from '@/lib/cartoes-templates-sync';
+import { loadTemplatesForCurrentUser, loadTemplatesWithLocalCache } from '@/lib/cartoes-templates-sync';
 import { fetchConfiguracaoIgrejaFromSupabase } from '@/lib/igreja-config-utils';
 
 interface Membro {
@@ -93,7 +93,7 @@ export default function CartaoBatchPrinter({ membros, onComplete }: CartaoBatchP
   const gerarPDFLote = async () => {
     if (!containerRef.current || membros.length === 0) return;
 
-    const { templates } = await loadTemplatesForCurrentUser(supabase, { allowLocalMigration: true });
+    const { templates } = await loadTemplatesWithLocalCache(supabase, { allowLocalMigration: true });
 
     let configIgreja: any = {};
     try {
@@ -210,8 +210,12 @@ export default function CartaoBatchPrinter({ membros, onComplete }: CartaoBatchP
           console.log('🖨️ BatchPrinter - Texto substituído:', content);
           const fontSize = el.fontSize || 10;
           const lift = fontSize > 16 ? '-15px' : '-8px';
+          const rawFonte = el.fonte || 'Arial';
+          const isSemibold = rawFonte.endsWith(' Semibold');
+          const fontFamily = isSemibold ? rawFonte.replace(' Semibold', '') : rawFonte;
+          const fontWeight = isSemibold ? 600 : (el.negrito ? 'bold' : 'normal');
           const style = `position: absolute; left: ${el.x}px; top: ${el.y}px; width: ${el.largura}px; height: ${el.altura}px; display: flex; flex-direction: column; justify-content: center; align-items: stretch; background-color: ${el.backgroundColor || 'transparent'}; border-radius: ${el.borderRadius || 0}px; overflow: visible;`;
-          const textStyle = `width: 100%; position: relative; top: ${lift}; padding-left: ${el.backgroundColor ? '10px' : '0'}; padding-right: ${el.backgroundColor ? '5px' : '0'}; box-sizing: border-box; color: ${el.cor || '#000'}; font-size: ${fontSize}px; font-family: ${el.fonte || 'Arial'}; text-align: ${el.alinhamento || 'left'}; font-weight: ${el.negrito ? 'bold' : 'normal'}; font-style: ${el.italico ? 'italic' : 'normal'}; text-decoration: ${el.sublinhado ? 'underline' : 'none'}; white-space: pre-wrap; word-break: break-word; line-height: 1.2; display: block; ${el.sombreado ? 'text-shadow: 1px 1px 2px rgba(0,0,0,0.5);' : ''}`;
+          const textStyle = `width: 100%; position: relative; top: ${lift}; padding-left: ${el.backgroundColor ? '10px' : '0'}; padding-right: ${el.backgroundColor ? '5px' : '0'}; box-sizing: border-box; color: ${el.cor || '#000'}; font-size: ${fontSize}px; font-family: ${fontFamily}; text-align: ${el.alinhamento || 'left'}; font-weight: ${fontWeight}; font-style: ${el.italico ? 'italic' : 'normal'}; text-decoration: ${el.sublinhado ? 'underline' : 'none'}; white-space: pre-wrap; word-break: break-word; line-height: 1.2; display: block; ${el.sombreado ? 'text-shadow: 1px 1px 2px rgba(0,0,0,0.5);' : ''}`;
           return `<div style="${style}"><div style="${textStyle}">${content}</div></div>`;
         }
         return '';
@@ -348,7 +352,7 @@ export default function CartaoBatchPrinter({ membros, onComplete }: CartaoBatchP
       <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
         {membros.map((membro) => (
           <div key={`qr-${membro.id}`} id={`source-qr-${membro.id}`}>
-            <QRCode value={membro.uniqueId} size={128} level="H" />
+            <QRCode value={`${process.env.NEXT_PUBLIC_APP_URL || ''}/autentica_qrcode-05985642/${membro.uniqueId}`} size={128} level="H" />
           </div>
         ))}
       </div>

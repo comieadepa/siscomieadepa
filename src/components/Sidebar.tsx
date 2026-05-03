@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -31,19 +31,16 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
         { id: 'consagracao', label: 'Consagração (obreiros)', icon: '🙏', path: '/secretaria/consagracao' },
         { id: 'cartas', label: 'Cartas ministeriais', icon: '📜', path: '/secretaria/cartas' },
         { id: 'certificados', label: 'Certificados', icon: '🎓', path: '/secretaria/certificados' },
-        { id: 'cgadb', label: 'Débitos CGADB', icon: '🔴', path: '/secretaria/cgadb' },
       ]
     },
+    { id: 'cgadb', label: 'Débitos CGADB', icon: '🔴', path: '/secretaria/cgadb' },
     { id: 'financeiro', label: 'Financeiro', icon: '💳', path: '/financeiro' },
     { id: 'eventos', label: 'Eventos', icon: '📅', path: '/eventos' },
-    { id: 'presidencia', label: 'Presidência', icon: '👑', path: '/presidencia' },
-    { id: 'reunioes', label: 'Reuniões', icon: '🤝', path: '/reunioes' },
     { id: 'comissao', label: 'Comissão', icon: '👥', path: '/comissao' },
     { id: 'patrimonio', label: 'Patrimônio', icon: '🏢', path: '/patrimonio' },
     { id: 'missoes', label: 'Missões', icon: '✈️', path: '/missoes' },
     { id: 'auditoria', label: 'Auditoria', icon: '✅', path: '/auditoria' },
     { id: 'usuarios', label: 'Usuários', icon: '👤', path: '/usuarios' },
-    { id: 'suporte', label: 'Suporte', icon: '🎫', path: '/suporte' },
     {
       id: 'configuracoes',
       label: 'Configurações',
@@ -51,20 +48,19 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
       path: '/configuracoes',
       submenu: [
         { id: 'config-geral', label: 'Geral', icon: '⚙️', path: '/configuracoes' },
+        { id: 'importar-membros', label: 'Importar Ministros', icon: '📥', path: '/secretaria/membros/importar' },
         { id: 'config-certificados', label: 'Certificados', icon: '🎓', path: '/configuracoes/certificados' },
         { id: 'config-cartoes', label: 'Cartões', icon: '🎫', path: '/configuracoes/cartoes' },
-        { id: 'ativar-fluxo', label: 'Ativar Fluxo', icon: '🔄', path: '/secretaria/ativar-fluxo' },
       ]
     },
   ];
 
   // Filtra menus restritos por plano (enquanto carrega, mantém oculto para não piscar)
   const menuItems = planFeatures.loading
-    ? allMenuItems.filter(i => !['financeiro', 'eventos', 'reunioes'].includes(i.id))
+    ? allMenuItems.filter(i => !['financeiro', 'eventos'].includes(i.id))
     : allMenuItems.filter(i => {
         if (i.id === 'financeiro') return planFeatures.has_modulo_financeiro;
         if (i.id === 'eventos') return planFeatures.has_modulo_eventos;
-        if (i.id === 'reunioes') return planFeatures.has_modulo_reunioes;
         return true;
       });
 
@@ -75,9 +71,9 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
   };
 
   const sidebarContent = (
-    <div className="w-64 bg-[#123b63] text-white shadow-lg flex flex-col h-full">
+    <div className="w-64 bg-[#0D2B4E] text-white shadow-xl flex flex-col h-full">
       {/* LOGO */}
-      <div className="p-6 border-b border-white/20 flex items-center justify-center">
+      <div className="p-6 border-b border-white/20 flex items-center justify-center bg-[#0A1F3A]">
         <img
           src="/img/logo_comieadepa2.png"
           alt="SISCOMIEADEPA"
@@ -98,15 +94,15 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
                     handleNavigate(item.id, item.path);
                   }
                 }}
-                className={`w-full flex items-center gap-3 px-4 py-3 transition ${activeMenu === item.id
-                    ? 'bg-[#4A6FA5] text-white'
-                    : 'text-white/70 hover:bg-white/10 hover:text-white'
+                className={`w-full flex items-center gap-3 px-4 py-3 transition border-l-4 ${activeMenu === item.id
+                    ? 'border-[#F39C12] bg-[#1A5276] text-white font-semibold'
+                    : 'border-transparent text-white/80 hover:bg-[#1A3A5C] hover:text-white'
                   }`}
               >
                 <span className="text-lg w-6 text-center">{item.icon}</span>
                 <span className="text-sm font-medium flex-1 text-left">{item.label}</span>
                 {(item as any).submenu && (
-                  <span className={`text-white/50 transition transform text-xs ${expandedMenu === item.id ? 'rotate-180' : ''}`}>
+                  <span className={`text-[#F39C12] transition transform text-xs ${expandedMenu === item.id ? 'rotate-180' : ''}`}>
                     ▼
                   </span>
                 )}
@@ -114,17 +110,17 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
 
               {/* SUBMENUS */}
               {(item as any).submenu && expandedMenu === item.id && (
-                <div className="bg-[#0f2a45] border-y border-white/10">
+                <div className="bg-[#071527] border-y border-white/10">
                   {(item as any).submenu.map((submenu: any, index: number) => (
                     <button
                       key={submenu.id}
                       onClick={() => handleNavigate(submenu.id, submenu.path)}
-                      className={`w-full flex items-center gap-3 px-4 py-3 transition text-sm text-left ${activeMenu === submenu.id
-                          ? 'bg-white/20 text-white font-semibold'
-                          : 'text-white/60 hover:bg-white/15 hover:text-white'
+                      className={`w-full flex items-center gap-3 px-4 py-3 transition text-sm text-left border-l-4 ${activeMenu === submenu.id
+                          ? 'border-[#F39C12] bg-[#1A5276] text-white font-semibold'
+                          : 'border-transparent text-white/70 hover:bg-[#1A3A5C] hover:text-white'
                         } ${index < (item as any).submenu.length - 1 ? 'border-b border-white/5' : ''}`}
                     >
-                      <span className="text-orange-400 text-lg w-6 text-center">▸</span>
+                      <span className="text-[#F39C12] text-lg w-6 text-center">▸</span>
                       <span className="flex-1">{submenu.label}</span>
                     </button>
                   ))}
@@ -136,12 +132,12 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
       </nav>
 
       {/* FOOTER */}
-      <div className="p-4 border-t border-white/20 space-y-3">
+      <div className="p-4 border-t border-white/20 space-y-3 bg-[#0A1F3A]">
         <button
           onClick={() => {
             supabase.auth.signOut().finally(() => router.push('/'));
           }}
-          className="w-full px-4 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition"
+          className="w-full px-4 py-2 bg-[#C0392B] text-white rounded-lg font-semibold hover:bg-[#a93226] transition"
         >
           Sair
         </button>
@@ -154,7 +150,7 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
     <>
       <button
         onClick={() => setIsMobileMenuOpen((open) => !open)}
-        className="md:hidden fixed left-4 top-4 z-50 p-2 bg-white rounded-lg shadow-md text-[#123b63] hover:bg-gray-100 transition"
+        className="md:hidden fixed left-4 top-4 z-50 p-2 bg-white rounded-lg shadow-md text-[#0D2B4E] hover:bg-gray-100 transition"
         aria-label="Menu"
         aria-expanded={isMobileMenuOpen}
       >

@@ -73,6 +73,8 @@ interface TemplateCartao {
 
 const FONTES_DISPONIVEIS = [
   { valor: 'Arial', label: 'Arial' },
+  { valor: 'Akshar', label: 'Akshar' },
+  { valor: 'Akshar Semibold', label: 'Akshar Semibold' },
   { valor: 'Georgia', label: 'Georgia' },
   { valor: 'Times New Roman', label: 'Times New Roman' },
   { valor: 'Courier New', label: 'Courier New' },
@@ -223,6 +225,36 @@ export default function ConfiguracaoCartoesPage() {
     (async () => {
       if (typeof window === 'undefined') return;
 
+      // 1. Tentar carregar do localStorage (salvo mais recentemente pelo usuário)
+      const localCached = localStorage.getItem('cartoes_templates_v3');
+      if (localCached) {
+        try {
+          const cached = JSON.parse(localCached) as any[];
+          // Verificar se o template nativo ainda é compatível com a versão atual
+          const nativoEmCache = Array.isArray(cached) && cached.find((t: any) => t.id === 'ministro-classico');
+          const nativoAtualizado = !nativoEmCache || nativoEmCache.backgroundUrl === '/img/cred_minf.png';
+          if (!nativoAtualizado) {
+            // Template nativo mudou — limpar cache para forçar rebuild
+            localStorage.removeItem('cartoes_templates_v3');
+          } else if (Array.isArray(cached) && cached.length > 0) {
+            setTemplates(cached);
+            const ativoLocal = cached.find((t: any) => t.ativo && t.tipoCadastro === 'ministro');
+            if (ativoLocal) {
+              setTemplateEmEdicao(ativoLocal);
+              // Sincronizar com DB em background (sem bloquear)
+              loadTemplatesForCurrentUser(supabase, {}).then(({ ministryId: mid }) => {
+                if (mid) setMinistryId(mid);
+              }).catch(() => null);
+              setLoaded(true);
+              return;
+            }
+          }
+        } catch {
+          localStorage.removeItem('cartoes_templates_v3');
+        }
+      }
+
+      // 2. Sem cache local — buscar do DB / defaults
       const { templates: loadedTemplates, ministryId: resolvedMinistryId } = await loadTemplatesForCurrentUser(
         supabase,
         { allowLocalMigration: true }
@@ -650,6 +682,10 @@ export default function ConfiguracaoCartoesPage() {
     });
 
     setTemplates(novasTemplates);
+
+    // Limpar cache local ao resetar para nativo
+    try { localStorage.removeItem('cartoes_templates_v3'); } catch { /* ignore */ }
+
     if (ministryId) {
       persistTemplatesSnapshotToSupabase(supabase, ministryId, (templateEmEdicao.tipoCadastro as TipoCartao) || 'ministro', novasTemplates)
         .catch(() => null);
@@ -728,7 +764,7 @@ export default function ConfiguracaoCartoesPage() {
     const indexExistente = novasTemplates.findIndex(t => t.id === templateCorrigido.id);
 
     // Se for um ID de template oficial/editável (podem ser salvos como branco), remover qualquer versão antiga antes de adicionar a nova
-    const TEMPLATES_EDITABLE = ['ministro-classico', 'ministro-02', 'ministro-branco', 'funcionario-customizado', 'funcionario-branco'];
+    const TEMPLATES_EDITABLE = ['ministro-classico', 'funcionario-customizado', 'funcionario-branco'];
     if (TEMPLATES_EDITABLE.includes(templateCorrigido.id)) {
       if (indexExistente >= 0) {
         console.log('🧹 Removendo versão antiga do template para garantir integridade...');
@@ -767,6 +803,12 @@ export default function ConfiguracaoCartoesPage() {
     // Atualizar estado
     console.log('📦 [SALVAR] Salvando templates no state:', novasTemplates.map(t => ({ id: t.id, tipoCadastro: t.tipoCadastro, ativo: t.ativo })));
     setTemplates(novasTemplates);
+
+    // Cache local confiável (fonte primária ao recarregar)
+    try {
+      localStorage.setItem('cartoes_templates_v3', JSON.stringify(novasTemplates));
+    } catch { /* ignore */ }
+
     if (ministryId) {
       persistTemplatesSnapshotToSupabase(
         supabase,
@@ -865,7 +907,7 @@ export default function ConfiguracaoCartoesPage() {
 
     // Lista de IDs de templates nativos que NÃO podem ser deletados
     const TEMPLATES_NATIVOS = [
-      'ministro-branco', 'ministro-classico', 'ministro-02',
+      'ministro-classico',
       'funcionario-customizado', 'funcionario-branco'
     ];
 

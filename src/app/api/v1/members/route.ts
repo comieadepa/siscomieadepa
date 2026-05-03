@@ -34,47 +34,59 @@ export async function GET(request: NextRequest) {
 
     const offset = (page - 1) * limit
 
-    // Construir query
-    let query = supabase
-      .from('members')
-      .select('*', { count: 'exact' })
+    // Supabase limita 1000 linhas por query. Quando limit > 1000 (ex: "buscar tudo"),
+    // fazemos loop de lotes de 1000 até cobrir o range pedido.
+    const SUPABASE_MAX = 1000
 
-    // Aplicar filtros
-    if (status) {
-      query = query.eq('status', status)
+    const buildQuery = () => {
+      let q = supabase.from('members').select('*', { count: 'exact' })
+      if (status) q = q.eq('status', status)
+      if (search) q = q.ilike('name', `%${search}%`)
+      if (tipoCadastro) q = q.eq('role', String(tipoCadastro).toLowerCase())
+      q = q.order('matricula', { ascending: true, nullsFirst: false })
+      return q
     }
 
-    if (search) {
-      query = query.ilike('name', `%${search}%`)
-    }
+    let allData: unknown[] = []
+    let totalCount = 0
 
-    if (tipoCadastro) {
-      const tipo = String(tipoCadastro).toLowerCase()
-      query = query.eq('role', tipo)
-    }
+    if (limit <= SUPABASE_MAX) {
+      // Caminho normal — paginação simples
+      const { data, error, count } = await buildQuery().range(offset, offset + limit - 1)
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+      allData = data ?? []
+      totalCount = count ?? 0
+    } else {
+      // 1) Buscar o total e o primeiro lote em uma única query
+      const { data: firstData, error: firstError, count } = await buildQuery().range(offset, offset + SUPABASE_MAX - 1)
+      if (firstError) return NextResponse.json({ error: firstError.message }, { status: 400 })
+      totalCount = count ?? 0
+      allData = firstData ?? []
 
-    // Aplicar paginação
-    query = query.range(offset, offset + limit - 1)
-
-    // Ordenar por data de criação (ordenação numérica de matrícula feita no cliente)
-    query = query.order('created_at', { ascending: true })
-
-    const { data, error, count } = await query
-
-    if (error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 400 }
-      )
+      // 2) Calcular quantos lotes faltam e dispará-los em paralelo
+      const remaining = Math.min(limit, totalCount) - allData.length
+      if (remaining > 0) {
+        const extraBatches = Math.ceil(remaining / SUPABASE_MAX)
+        const batchPromises = Array.from({ length: extraBatches }, (_, i) => {
+          const batchStart = offset + SUPABASE_MAX + i * SUPABASE_MAX
+          const batchEnd = batchStart + SUPABASE_MAX - 1
+          return buildQuery().range(batchStart, batchEnd)
+        })
+        const results = await Promise.all(batchPromises)
+        for (const { data, error } of results) {
+          if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+          if (data) allData = allData.concat(data)
+        }
+      }
     }
 
     return NextResponse.json({
-      data,
+      data: allData,
       pagination: {
         page,
         limit,
-        total: count || 0,
-        total_pages: Math.ceil((count || 0) / limit),
+        total: totalCount,
+        total_pages: Math.ceil(totalCount / limit),
       },
     })
   } catch (error) {
@@ -216,6 +228,7 @@ export async function POST(request: NextRequest) {
           curso_teologico: normalizedBody.curso_teologico || null,
           instituicao_teologica: normalizedBody.instituicao_teologica || null,
           pastor_auxiliar: normalizedBody.pastor_auxiliar ?? false,
+          pastor_presidente: normalizedBody.pastor_presidente ?? false,
           procedencia: normalizedBody.procedencia || null,
           procedencia_local: normalizedBody.procedencia_local || null,
           cargo_ministerial: normalizedBody.cargo_ministerial || null,
@@ -230,6 +243,7 @@ export async function POST(request: NextRequest) {
           local_batismo: normalizedBody.local_batismo || null,
           data_filiacao: normalizedBody.data_filiacao || null,
           diretoria: normalizedBody.diretoria ?? false,
+          diretoria_cargo: normalizedBody.diretoria_cargo ?? null,
           ev_autorizado_data: normalizedBody.ev_autorizado_data || null,
           ev_autorizado_local: normalizedBody.ev_autorizado_local || null,
           ev_consagrado_data: normalizedBody.ev_consagrado_data || null,

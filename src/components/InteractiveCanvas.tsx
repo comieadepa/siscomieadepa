@@ -399,8 +399,8 @@ export default function InteractiveCanvas({
                             style={{
                                 width: '100%',
                                 fontSize: `${elemento.fontSize || 12}px`,
-                                fontFamily: elemento.fonte || 'Arial',
-                                fontWeight: elemento.negrito ? 'bold' : 'normal',
+                                fontFamily: (elemento.fonte || 'Arial').replace(' Semibold', ''),
+                                fontWeight: (elemento.fonte || '').endsWith(' Semibold') ? 600 : (elemento.negrito ? 'bold' : 'normal'),
                                 fontStyle: elemento.italico ? 'italic' : 'normal',
                                 textDecoration: elemento.sublinhado ? 'underline' : 'none',
                                 textShadow: elemento.sombreado ? '2px 2px 2px rgba(0,0,0,0.5)' : 'none',

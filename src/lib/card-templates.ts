@@ -147,7 +147,7 @@ export const TEMPLATE_CONGREGADO_MODERNO: CardTemplate = {
 // Modelo 1: Ministro em Branco 01 (Antigo Clássico)
 export const TEMPLATE_MINISTRO_CLASSICO: CardTemplate = {
     id: 'ministro-classico',
-    nome: 'Ministro em Branco 01',
+    nome: 'Credencial de Ministro — Modelo 01',
     tipo: 'ministro',
     variacao: 'branco',
     descricao: 'Layout 100% personalizável (Frente e Verso)',
@@ -324,18 +324,8 @@ export const TEMPLATE_FUNCIONARIO_CUSTOMIZADO: CardTemplate = {
 
 // Array com todos os templates disponíveis
 export const TEMPLATES_DISPONIVEIS: CardTemplate[] = [
-    // Membro
-    TEMPLATE_MEMBRO_CLASSICO,
-    TEMPLATE_MEMBRO_02,
-    TEMPLATE_MEMBRO_BRANCO,
-    // Congregado
-    TEMPLATE_CONGREGADO_01,
-    TEMPLATE_CONGREGADO_02,
-    TEMPLATE_CONGREGADO_BRANCO,
-    // Ministro
+    // Ministro (único modelo)
     TEMPLATE_MINISTRO_CLASSICO,
-    TEMPLATE_MINISTRO_02,
-    TEMPLATE_MINISTRO_BRANCO,
     // Funcionário
     TEMPLATE_FUNCIONARIO_CUSTOMIZADO,
     TEMPLATE_FUNCIONARIO_BRANCO

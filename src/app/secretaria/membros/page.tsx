@@ -4,8 +4,13 @@ import { useState, useEffect, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import NotificationModal from '@/components/NotificationModal';
 import FichaMembro from '@/components/FichaMembro';
+import DocCasaDoPastor from '@/components/DocCasaDoPastor';
 import CartãoMembro from '@/components/CartãoMembro';
 import CartaoBatchPrinter from '@/components/CartaoBatchPrinter';
+import CartaMudanca from '@/components/CartaMudanca';
+import CartaRecomendacao from '@/components/CartaRecomendacao';
+import DocumentosMinistro from '@/components/DocumentosMinistro';
+import HistoricoMinistro from '@/components/HistoricoMinistro';
 import MembrosOverview from '@/components/MembrosOverview';
 import { getCargosMinisteriais, type CargoMinisterial } from '@/lib/cargos-utils';
 import { fetchConfiguracaoIgrejaFromSupabase } from '@/lib/igreja-config-utils';
@@ -27,7 +32,8 @@ interface Membro {
   supervisao: string;
   campo: string;
   congregacao: string;
-  status: 'ativo' | 'inativo';
+  status: 'ativo' | 'inativo' | 'desligado' | 'em_processo' | 'falecido';
+  jubilado?: boolean;
   // Dados pessoais
   dataNascimento?: string;
   sexo?: string;
@@ -68,6 +74,9 @@ interface Membro {
   cursoTeologico?: string;
   instituicaoTeologica?: string;
   pastorAuxiliar?: boolean;
+  pastorPresidente?: boolean;
+  diretoriaCargo?: string;
+  diretoria?: boolean;
   procedencia?: string;
   procedenciaLocal?: string;
   cargoMinisterial?: string;
@@ -107,14 +116,11 @@ export default function MembrosPage() {
     logo: ''
   });
 
-  // Função para gerar UNIQUE ID com 16 caracteres
+  // Função para gerar UNIQUE ID no formato Bubble: timestamp + 'x' + random 18 dígitos
   const gerarUniqueId = (): string => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = '';
-    for (let i = 0; i < 16; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
+    const ts = Date.now().toString();
+    const rand = Array.from({ length: 18 }, () => Math.floor(Math.random() * 10)).join('');
+    return `${ts}x${rand}`;
   };
 
   const onlyDigits = (value: string) => value.replace(/\D/g, '');
@@ -143,11 +149,21 @@ export default function MembrosPage() {
     return 'ministro';
   };
 
-  const dbStatusToUi = (status: Member['status'] | null | undefined): Membro['status'] =>
-    status === 'active' ? 'ativo' : 'inativo';
+  const dbStatusToUi = (status: Member['status'] | string | null | undefined): Membro['status'] => {
+    if (status === 'active' || status === 'ativo') return 'ativo';
+    if (status === 'desligado') return 'desligado';
+    if (status === 'em_processo') return 'em_processo';
+    if (status === 'falecido') return 'falecido';
+    return 'inativo';
+  };
 
-  const uiStatusToDb = (status: Membro['status']): Member['status'] =>
-    status === 'ativo' ? 'active' : 'inactive';
+  const uiStatusToDb = (status: Membro['status']): string => {
+    if (status === 'ativo') return 'active';
+    if (status === 'desligado') return 'desligado';
+    if (status === 'em_processo') return 'em_processo';
+    if (status === 'falecido') return 'falecido';
+    return 'inactive';
+  };
 
   const memberToMembro = (member: Member): Membro => {
     const cf = (member.custom_fields && typeof member.custom_fields === 'object') ? member.custom_fields : {};
@@ -176,6 +192,7 @@ export default function MembrosPage() {
       campo: String((cf as any).campo || ''),
       congregacao: String((cf as any).congregacao || ''),
       status: dbStatusToUi(member.status),
+      jubilado: (member as any).jubilado ?? false,
       dataNascimento: String(member.data_nascimento || (cf as any).dataNascimento || ''),
       sexo: String(member.sexo || (cf as any).sexo || ''),
       tipoSanguineo: String(member.tipo_sanguineo || (cf as any).tipoSanguineo || ''),
@@ -209,6 +226,9 @@ export default function MembrosPage() {
       cursoTeologico: String(member.curso_teologico || (cf as any).cursoTeologico || ''),
       instituicaoTeologica: String(member.instituicao_teologica || (cf as any).instituicaoTeologica || ''),
       pastorAuxiliar: member.pastor_auxiliar ?? (cf as any).pastorAuxiliar ?? false,
+      pastorPresidente: member.pastor_presidente ?? (cf as any).pastorPresidente ?? false,
+      diretoriaCargo: String(member.diretoria_cargo || (cf as any).diretoriaCargo || ''),
+      diretoria: member.diretoria ?? (cf as any).diretoria ?? false,
       temFuncaoIgreja: member.tem_funcao_igreja ?? (cf as any).temFuncaoIgreja ?? false,
       setorDepartamento: String(member.setor_departamento || (cf as any).setorDepartamento || ''),
       observacoesMinisteriais: String(member.observacoes_ministeriais || (cf as any).observacoesMinisteriais || ''),
@@ -236,7 +256,7 @@ export default function MembrosPage() {
 
   // Carregar membros do Supabase (API) ao abrir a tela
   useEffect(() => {
-    fetchMembers(1, 500).catch((e) => {
+    fetchMembers(1, 10000).catch((e) => {
       // Erros já são expostos via membersError; aqui evitamos poluir o console.
       if (e instanceof Error && e.message === 'Usuário sem ministério associado') return;
       if (e instanceof Error && e.message === 'Não autenticado') return; // race condition na hidratação
@@ -249,7 +269,11 @@ export default function MembrosPage() {
     setMembros(
       membersApi
         .map(memberToMembro)
-        .sort((a, b) => (parseInt(a.matricula) || 0) - (parseInt(b.matricula) || 0))
+        .sort((a, b) => {
+          const ma = parseInt(a.matricula) || 999999;
+          const mb = parseInt(b.matricula) || 999999;
+          return ma - mb;
+        })
     );
   }, [membersApi]);
 
@@ -262,6 +286,21 @@ export default function MembrosPage() {
 
   const ensureTemplatesSnapshot = async () => {
     if (templatesSnapshot.length > 0) return templatesSnapshot;
+
+    // Priorizar cache local (salvo pelo editor de cartões)
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('cartoes_templates_v3');
+        if (cached) {
+          const parsed = JSON.parse(cached) as any[];
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setTemplatesSnapshot(parsed);
+            return parsed;
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
     const { templates } = await loadTemplatesForCurrentUser(supabase, { allowLocalMigration: true });
     setTemplatesSnapshot(templates);
     return templates;
@@ -282,10 +321,27 @@ export default function MembrosPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ATIVO');
   const [cargoFilter, setCargoFilter] = useState('TODOS');
+  const [supervisaoFilter, setSupervisaoFilter] = useState('TODOS');
+  const [campoFilter, setCampoFilter] = useState('TODOS');
+  const [pastorPresidenteFilter, setPastorPresidenteFilter] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [membroEditando, setMembroEditando] = useState<Membro | null>(null);
   const [membroDeletando, setMembroDeletando] = useState<Membro | null>(null);
+  const [membroAlterandoStatus, setMembroAlterandoStatus] = useState<Membro | null>(null);
+  const [novoStatus, setNovoStatus] = useState('');
+  const [isJubilado, setIsJubilado] = useState(false);
+  const [motivoStatus, setMotivoStatus] = useState('');
+  const [salvandoStatus, setSalvandoStatus] = useState(false);
   const [membroImprimindo, setMembroImprimindo] = useState<Membro | null>(null);
+  const [fichaAcpStatus, setFichaAcpStatus] = useState<string>('');
+  const [fichaAcpLoading, setFichaAcpLoading] = useState(false);
+  const [membroImprimindoCasaPastor, setMembroImprimindoCasaPastor] = useState<Membro | null>(null);
+  const [membroSelecionandoImpressao, setMembroSelecionandoImpressao] = useState<Membro | null>(null);
+  const [membroSelecionandoCarta, setMembroSelecionandoCarta] = useState<Membro | null>(null);
+  const [membroImprimindoCartaMudanca, setMembroImprimindoCartaMudanca] = useState<Membro | null>(null);
+  const [membroImprimindoCartaRecomendacao, setMembroImprimindoCartaRecomendacao] = useState<Membro | null>(null);
+  const [membroDocumentos, setMembroDocumentos] = useState<Membro | null>(null);
+  const [membroHistorico, setMembroHistorico] = useState<Membro | null>(null);
   const [membroImprimindoCartao, setMembroImprimindoCartao] = useState<Membro | null>(null);
   const [ultimoCadastro, setUltimoCadastro] = useState<Membro | null>(null);
   const [membrosSelecionados, setMembrosSelecionados] = useState<Set<string>>(new Set());
@@ -377,6 +433,7 @@ export default function MembrosPage() {
     diretoria: false,
     local_batismo: '',
     data_filiacao: '',
+    cargo_diretoria: '',
   });
 
   // Estado para foto (Base64)
@@ -418,6 +475,7 @@ export default function MembrosPage() {
     cursoTeologico: '',
     instituicaoTeologica: '',
     pastorAuxiliar: false,
+    pastorPresidente: false,
     procedencia: '',
     procedenciaLocal: '',
     dataConsagracao: '',
@@ -425,6 +483,35 @@ export default function MembrosPage() {
     dataValidadeCredencial: '',
     observacoesMinisteriais: ''
   });
+
+  // Status Casa do Pastor — somente leitura, obtido via API externa
+  const [casaDoPastorStatus, setCasaDoPastorStatus] = useState<'adimplente' | 'inadimplente' | 'nao_encontrado' | null>(null);
+  const [casaDoPastorLoading, setCasaDoPastorLoading] = useState(false);
+
+  const consultarCasaDoPastor = async (cpf: string) => {
+    const cpfLimpo = cpf.replace(/\D/g, '');
+    if (cpfLimpo.length !== 11) return;
+    setCasaDoPastorLoading(true);
+    setCasaDoPastorStatus(null);
+    try {
+      const res = await fetch(`/api/integracao/casa-do-pastor?cpf=${cpfLimpo}`);
+      if (res.ok) {
+        const data = await res.json();
+        const s = data?.status as string;
+        setCasaDoPastorStatus(
+          s === 'adimplente' ? 'adimplente' :
+          s === 'inadimplente' ? 'inadimplente' :
+          'nao_encontrado'
+        );
+      } else {
+        setCasaDoPastorStatus('nao_encontrado');
+      }
+    } catch {
+      setCasaDoPastorStatus(null);
+    } finally {
+      setCasaDoPastorLoading(false);
+    }
+  };
 
   // Estado para rastrear cargo selecionado
   const [cargoSelecionado, setCargoSelecionado] = useState('');
@@ -839,6 +926,7 @@ useEffect(() => {
       dataValidadeCredencial: '',
       observacoesMinisteriais: ''
     });
+    setCasaDoPastorStatus(null);
     setFotoMembro(null);
     setFotoOriginal(null);
     setCargoSelecionado('');
@@ -1077,6 +1165,7 @@ useEffect(() => {
       email2: (membro as any).email2 || '',
       posicaoNoCampo: (membro as any).posicaoNoCampo || '',
       numero_cgadb: (membro as any).numero_cgadb || '',
+      jubilado: membro.jubilado ?? false,
       supervisao: membro.supervisao || '',
       campo: membro.campo || '',
       congregacao: membro.congregacao || '',
@@ -1106,6 +1195,7 @@ useEffect(() => {
       cursoTeologico: membro.cursoTeologico || '',
       instituicaoTeologica: membro.instituicaoTeologica || '',
       pastorAuxiliar: membro.pastorAuxiliar || false,
+      pastorPresidente: membro.pastorPresidente || false,
       procedencia: membro.procedencia || '',
       procedenciaLocal: membro.procedenciaLocal || '',
       dataConsagracao: membro.dataConsagracao || '',
@@ -1115,6 +1205,7 @@ useEffect(() => {
     });
     setCargoSelecionado(resolveCargoValue(membro.cargoMinisterial));
     setDadosCargos(membro.dadosCargos || {});
+    setDadosConsagracao(prev => ({ ...prev, diretoria: membro.diretoria || false, cargo_diretoria: membro.diretoriaCargo || '' }));
     setIsEditando(false);
     setIsAdminMode(true); // Modo admin ativado para edição
     setShowForm(true);
@@ -1227,6 +1318,7 @@ useEffect(() => {
         email2: dadosPessoais.email2 || null,
         posicao_no_campo: dadosPessoais.posicaoNoCampo || null,
         numero_cgadb: dadosPessoais.numero_cgadb || null,
+        jubilado: (dadosPessoais as any).jubilado ?? false,
         data_batismo_aguas: dadosMinisteriais.dataBatismoAguas || null,
         data_batismo_espirito_santo: dadosMinisteriais.dataBatismoEspiritoSanto || null,
         // Aba Endereço
@@ -1248,6 +1340,7 @@ useEffect(() => {
         curso_teologico: dadosMinisteriais.cursoTeologico || null,
         instituicao_teologica: dadosMinisteriais.instituicaoTeologica || null,
         pastor_auxiliar: dadosMinisteriais.pastorAuxiliar ?? false,
+        pastor_presidente: dadosMinisteriais.pastorPresidente ?? false,
         procedencia: dadosMinisteriais.procedencia || null,
         procedencia_local: dadosMinisteriais.procedenciaLocal || null,
         cargo_ministerial: cargoSelecionado || null,
@@ -1266,6 +1359,7 @@ useEffect(() => {
         local_batismo: dadosConsagracao.local_batismo || null,
         data_filiacao: dadosConsagracao.data_filiacao || null,
         diretoria: dadosConsagracao.diretoria ?? false,
+        diretoria_cargo: dadosConsagracao.cargo_diretoria || null,
         ev_autorizado_data: dadosConsagracao.ev_autorizado_data || null,
         ev_autorizado_local: dadosConsagracao.ev_autorizado_local || null,
         ev_consagrado_data: dadosConsagracao.ev_consagrado_data || null,
@@ -1346,7 +1440,7 @@ useEffect(() => {
     setDadosConjuge({ rg: '', orgao_emissor: '', nacionalidade: 'BRASILEIRA', naturalidade: '', nome_pai: '', nome_mae: '', titulo_eleitoral: '', fone: '', email: '', tipo_sanguineo: '', foto_url: null });
     setPrimeirosCasamento('SIM');
     setQtdFilhos(0);
-    setDadosConsagracao({ ev_autorizado_data: '', ev_autorizado_local: '', ev_consagrado_data: '', ev_consagrado_local: '', cons_missionario_data: '', cons_missionario_local: '', orden_pastor_data: '', orden_pastor_local: '', diretoria: false, local_batismo: '', data_filiacao: '' });
+    setDadosConsagracao({ ev_autorizado_data: '', ev_autorizado_local: '', ev_consagrado_data: '', ev_consagrado_local: '', cons_missionario_data: '', cons_missionario_local: '', orden_pastor_data: '', orden_pastor_local: '', diretoria: false, local_batismo: '', data_filiacao: '', cargo_diretoria: '' });
     setEnderecoData({
       cep: '',
       logradouro: '',
@@ -1366,6 +1460,7 @@ useEffect(() => {
       cursoTeologico: '',
       instituicaoTeologica: '',
       pastorAuxiliar: false,
+      pastorPresidente: false,
       procedencia: '',
       procedenciaLocal: '',
       dataConsagracao: '',
@@ -1570,9 +1665,13 @@ useEffect(() => {
     const matchSearch = m.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
       m.cpf.includes(searchTerm) ||
       m.matricula.includes(searchTerm);
-    const matchStatus = statusFilter === 'TODOS' || m.status.toUpperCase() === statusFilter;
+    const matchStatus = statusFilter === 'TODOS'
+      || (statusFilter === 'JUBILADO' ? m.jubilado === true : m.status.toUpperCase() === statusFilter);
     const matchCargo = cargoFilter === 'TODOS' || (m.cargoMinisterial || '').toUpperCase() === cargoFilter.toUpperCase();
-    return matchSearch && matchStatus && matchCargo;
+    const matchSupervisao = supervisaoFilter === 'TODOS' || (m.supervisao || '').toUpperCase() === supervisaoFilter.toUpperCase();
+    const matchCampo = campoFilter === 'TODOS' || (m.campo || '').toUpperCase() === campoFilter.toUpperCase();
+    const matchPastor = !pastorPresidenteFilter || (m.cargoMinisterial || '').toUpperCase().includes('PASTOR PRESIDENTE');
+    return matchSearch && matchStatus && matchCargo && matchSupervisao && matchCampo && matchPastor;
   });
 
   const totalPages = Math.ceil(membrosFiltrados.length / itemsPerPage);
@@ -1580,20 +1679,17 @@ useEffect(() => {
   const endIndex = startIndex + itemsPerPage;
   const membrosPaginados = membrosFiltrados.slice(startIndex, endIndex);
 
-  const supervisoesOptions = supervisoes.length
-    ? dedupByNome([...supervisoes])
-    : dedupByNome([
-        ...supervisoes,
-        ...supervisoesFromMembers,
-        ...supervisoesFromNomenclaturas,
-      ]);
-  const camposOptions = campos.length
-    ? dedupByNome([...campos])
-    : dedupByNome([
-        ...campos,
-        ...camposFromMembers,
-        ...camposFromNomenclaturas,
-      ]);
+  const supervisoesOptions = dedupByNome(
+    supervisoes.length
+      ? [...supervisoes]
+      : [...supervisoes, ...supervisoesFromMembers, ...supervisoesFromNomenclaturas]
+  ).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+  const camposOptions = dedupByNome(
+    campos.length
+      ? [...campos]
+      : [...campos, ...camposFromMembers, ...camposFromNomenclaturas]
+  ).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 
   return (
     <div className="flex h-screen bg-gray-100">
@@ -1815,6 +1911,327 @@ useEffect(() => {
         </div>
       )}
 
+      {/* Modal Alterar Status */}
+      {membroAlterandoStatus && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="bg-blue-900 text-white px-6 py-4 rounded-t-xl flex justify-between items-center">
+              <h2 className="text-lg font-bold">Alterar Status do Membro</h2>
+              <button onClick={() => setMembroAlterandoStatus(null)} className="text-white hover:text-gray-300 text-2xl leading-none">&times;</button>
+            </div>
+            <div className="p-6 flex flex-col gap-4">
+              <p className="text-sm text-gray-600">Membro: <strong>{membroAlterandoStatus.nome}</strong></p>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">SITUAÇÃO:</label>
+                <select
+                  value={novoStatus}
+                  onChange={(e) => setNovoStatus(e.target.value)}
+                  className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                >
+                  <option value="ativo">ATIVO</option>
+                  <option value="desligado">DESLIGADO</option>
+                  <option value="em_processo">EM PROCESSO</option>
+                  <option value="falecido">FALECIDO</option>
+                  <option value="inativo">INATIVO</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-semibold text-gray-700">JUBILADO?</label>
+                <button
+                  type="button"
+                  onClick={() => setIsJubilado(v => !v)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    isJubilado ? 'bg-blue-600' : 'bg-gray-300'
+                  }`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    isJubilado ? 'translate-x-6' : 'translate-x-1'
+                  }`} />
+                </button>
+                {isJubilado && <span className="text-xs text-blue-600 font-semibold">Status permanece ATIVO</span>}
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">OBSERVAÇÃO / MOTIVO:</label>
+                <textarea
+                  value={motivoStatus}
+                  onChange={(e) => setMotivoStatus(e.target.value)}
+                  placeholder="Escreva aqui as Observações..."
+                  rows={4}
+                  className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none"
+                />
+              </div>
+
+              <button
+                disabled={salvandoStatus}
+                onClick={async () => {
+                  setSalvandoStatus(true);
+                  try {
+                    const sb = createClient();
+                    const dbStatus = uiStatusToDb(novoStatus as Membro['status']);
+                    const payload: Record<string, unknown> = {
+                      status: dbStatus,
+                      jubilado: isJubilado,
+                      observacoes: motivoStatus || null,
+                    };
+                    const { error } = await sb
+                      .from('members')
+                      .update(payload)
+                      .eq('id', membroAlterandoStatus.id);
+                    if (error) throw error;
+                    setMembros(prev => prev.map(m =>
+                      m.id === membroAlterandoStatus.id
+                        ? { ...m, status: novoStatus as Membro['status'], jubilado: isJubilado }
+                        : m
+                    ));
+                    setMembroAlterandoStatus(null);
+                  } catch (e) {
+                    alert('Erro ao salvar: ' + (e instanceof Error ? e.message : String(e)));
+                  } finally {
+                    setSalvandoStatus(false);
+                  }
+                }}
+                className="w-full py-2 bg-gray-400 hover:bg-gray-500 disabled:opacity-60 text-white font-bold rounded-lg transition text-sm tracking-widest"
+              >
+                {salvandoStatus ? 'SALVANDO...' : 'ALTERAR'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Histórico do Ministro */}
+      {membroHistorico && (
+        <HistoricoMinistro
+          memberId={membroHistorico.id}
+          memberName={membroHistorico.nome}
+          matricula={membroHistorico.matricula}
+          onClose={() => setMembroHistorico(null)}
+        />
+      )}
+
+      {/* Modal: Documentos do Ministro */}
+      {membroDocumentos && (
+        <DocumentosMinistro
+          memberId={membroDocumentos.id}
+          memberName={membroDocumentos.nome}
+          matricula={membroDocumentos.matricula}
+          onClose={() => setMembroDocumentos(null)}
+        />
+      )}
+
+      {/* Modal: Escolher Carta Convencional */}
+      {membroSelecionandoCarta && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="relative rounded-2xl shadow-2xl overflow-hidden" style={{ background: 'linear-gradient(135deg, #F5C842 0%, #F39C12 100%)', padding: '28px 32px', minWidth: '380px' }}>
+            <button
+              onClick={() => setMembroSelecionandoCarta(null)}
+              className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-full bg-red-500 hover:bg-red-600 text-white font-bold text-lg shadow"
+              title="Fechar"
+            >✕</button>
+            <div className="text-center font-bold text-[#0D2B4E] text-base mb-6 tracking-wide uppercase">
+              Escolha o Documento a ser Impresso:
+            </div>
+            <div className="flex flex-col gap-4">
+              <button
+                onClick={() => { setMembroImprimindoCartaMudanca(membroSelecionandoCarta); setMembroSelecionandoCarta(null); }}
+                className="flex items-center gap-4 rounded-xl px-6 py-4 font-bold text-white text-sm uppercase tracking-wide shadow-lg hover:brightness-110 transition"
+                style={{ background: 'linear-gradient(135deg, #1a73e8 0%, #1558b0 100%)' }}
+              >
+                <svg className="w-10 h-10 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <span>Carta de Mudança</span>
+              </button>
+              <button
+                onClick={() => { setMembroImprimindoCartaRecomendacao(membroSelecionandoCarta); setMembroSelecionandoCarta(null); }}
+                className="flex items-center gap-4 rounded-xl px-6 py-4 font-bold text-white text-sm uppercase tracking-wide shadow-lg hover:brightness-110 transition"
+                style={{ background: 'linear-gradient(135deg, #0D2B4E 0%, #1a4a7a 100%)' }}
+              >
+                <svg className="w-10 h-10 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span>Carta de Recomendação</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Carta de Mudança */}
+      {membroImprimindoCartaMudanca && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full my-8 flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center px-6 py-4 border-b-2 border-green-600 bg-gradient-to-r from-green-700 to-green-800 flex-shrink-0">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <span>✉️</span> Carta de Mudança — {membroImprimindoCartaMudanca.nome}
+              </h2>
+              <button onClick={() => setMembroImprimindoCartaMudanca(null)} className="text-white hover:text-gray-100 text-2xl">✕</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              <CartaMudanca
+                membro={{
+                  matricula: membroImprimindoCartaMudanca.matricula,
+                  id: membroImprimindoCartaMudanca.id,
+                  uniqueId: membroImprimindoCartaMudanca.uniqueId,
+                  nome: membroImprimindoCartaMudanca.nome,
+                  cpf: membroImprimindoCartaMudanca.cpf,
+                  tipoCadastro: membroImprimindoCartaMudanca.tipoCadastro,
+                  cargo: membroImprimindoCartaMudanca.cargoMinisterial || '',
+                  qualFuncao: membroImprimindoCartaMudanca.qualFuncao || '',
+                  status: membroImprimindoCartaMudanca.status || '',
+                  rg: (membroImprimindoCartaMudanca as any).rg || '',
+                  orgaoEmissor: (membroImprimindoCartaMudanca as any).orgaoEmissor || '',
+                  uf_rg: (membroImprimindoCartaMudanca as any).uf_rg || '',
+                  dataNascimento: membroImprimindoCartaMudanca.dataNascimento || '',
+                  numero_cgadb: (membroImprimindoCartaMudanca as any).numero_cgadb || '',
+                  supervisao: membroImprimindoCartaMudanca.supervisao || '',
+                  campo: membroImprimindoCartaMudanca.campo || '',
+                  data_filiacao: (membroImprimindoCartaMudanca as any).data_filiacao || '',
+                  dataConsagracao: membroImprimindoCartaMudanca.dataConsagracao || '',
+                  orden_pastor_data: (membroImprimindoCartaMudanca as any).orden_pastor_data || '',
+                  orden_pastor_local: (membroImprimindoCartaMudanca as any).orden_pastor_local || '',
+                  observacoes: (membroImprimindoCartaMudanca as any).observacoes || '',
+                  naturalidade: (membroImprimindoCartaMudanca as any).naturalidade || '',
+                  cidade: (membroImprimindoCartaMudanca as any).cidade || '',
+                  uf: (membroImprimindoCartaMudanca as any).uf || '',
+                  nomeConjuge: membroImprimindoCartaMudanca.nomeConjuge || '',
+                }}
+                dadosIgreja={{
+                  nomeIgreja: configIgreja.nome || 'COMIEADEPA',
+                  endereco: configIgreja.endereco || 'Belém - PA',
+                  telefone: configIgreja.telefone || '',
+                  email: configIgreja.email || '',
+                  cnpj: (configIgreja as any).cnpj || '',
+                  logoUrl: configIgreja.logo || undefined,
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Carta de Recomendação */}
+      {membroImprimindoCartaRecomendacao && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full my-8 flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center px-6 py-4 border-b-2 border-blue-800 bg-gradient-to-r from-[#0D2B4E] to-[#1a4a7a] flex-shrink-0">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <span>🤝</span> Carta de Recomendação — {membroImprimindoCartaRecomendacao.nome}
+              </h2>
+              <button onClick={() => setMembroImprimindoCartaRecomendacao(null)} className="text-white hover:text-gray-100 text-2xl">✕</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              <CartaRecomendacao
+                membro={{
+                  matricula: membroImprimindoCartaRecomendacao.matricula,
+                  id: membroImprimindoCartaRecomendacao.id,
+                  uniqueId: membroImprimindoCartaRecomendacao.uniqueId,
+                  nome: membroImprimindoCartaRecomendacao.nome,
+                  cpf: membroImprimindoCartaRecomendacao.cpf,
+                  tipoCadastro: membroImprimindoCartaRecomendacao.tipoCadastro,
+                  cargo: membroImprimindoCartaRecomendacao.cargoMinisterial || '',
+                  qualFuncao: membroImprimindoCartaRecomendacao.qualFuncao || '',
+                  status: membroImprimindoCartaRecomendacao.status || '',
+                  rg: (membroImprimindoCartaRecomendacao as any).rg || '',
+                  orgaoEmissor: (membroImprimindoCartaRecomendacao as any).orgaoEmissor || '',
+                  uf_rg: (membroImprimindoCartaRecomendacao as any).uf_rg || '',
+                  dataNascimento: membroImprimindoCartaRecomendacao.dataNascimento || '',
+                  numero_cgadb: (membroImprimindoCartaRecomendacao as any).numero_cgadb || '',
+                  supervisao: membroImprimindoCartaRecomendacao.supervisao || '',
+                  campo: membroImprimindoCartaRecomendacao.campo || '',
+                  data_filiacao: (membroImprimindoCartaRecomendacao as any).data_filiacao || '',
+                  dataConsagracao: membroImprimindoCartaRecomendacao.dataConsagracao || '',
+                  orden_pastor_data: (membroImprimindoCartaRecomendacao as any).orden_pastor_data || '',
+                  orden_pastor_local: (membroImprimindoCartaRecomendacao as any).orden_pastor_local || '',
+                  observacoes: (membroImprimindoCartaRecomendacao as any).observacoes || '',
+                  naturalidade: (membroImprimindoCartaRecomendacao as any).naturalidade || '',
+                  cidade: (membroImprimindoCartaRecomendacao as any).cidade || '',
+                  uf: (membroImprimindoCartaRecomendacao as any).uf || '',
+                  nomeConjuge: membroImprimindoCartaRecomendacao.nomeConjuge || '',
+                  ev_autorizado_data: (membroImprimindoCartaRecomendacao as any).ev_autorizado_data || '',
+                  ev_consagrado_data: (membroImprimindoCartaRecomendacao as any).ev_consagrado_data || '',
+                }}
+                dadosIgreja={{
+                  nomeIgreja: configIgreja.nome || 'COMIEADEPA',
+                  endereco: configIgreja.endereco || 'Belém - PA',
+                  telefone: configIgreja.telefone || '',
+                  email: configIgreja.email || '',
+                  cnpj: (configIgreja as any).cnpj || '',
+                  logoUrl: configIgreja.logo || undefined,
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Seleção de Impressão */}
+      {membroSelecionandoImpressao && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="relative rounded-2xl shadow-2xl overflow-hidden" style={{ background: 'linear-gradient(135deg, #F5C842 0%, #F39C12 100%)', padding: '28px 32px', minWidth: '420px' }}>
+            {/* Fechar */}
+            <button
+              onClick={() => setMembroSelecionandoImpressao(null)}
+              className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-full bg-red-500 hover:bg-red-600 text-white font-bold text-lg shadow"
+              title="Fechar"
+            >
+              ✕
+            </button>
+            <div className="text-center font-bold text-[#0D2B4E] text-lg mb-6 tracking-wide uppercase">
+              Escolha o Documento a ser Impresso:
+            </div>
+            <div className="flex gap-6 justify-center">
+              {/* Ficha Convencional */}
+              <button
+                onClick={async () => {
+                  const m = membroSelecionandoImpressao;
+                  setMembroSelecionandoImpressao(null);
+                  setFichaAcpStatus('carregando');
+                  setFichaAcpLoading(true);
+                  setMembroImprimindo(m);
+                  if (m?.cpf) {
+                    const cpfLimpo = m.cpf.replace(/\D/g, '');
+                    try {
+                      const res = await fetch(`/api/integracao/casa-do-pastor?cpf=${cpfLimpo}`);
+                      const data = await res.json();
+                      if (res.ok && data?.status) {
+                        setFichaAcpStatus(data.status);
+                      } else {
+                        setFichaAcpStatus('erro');
+                      }
+                    } catch {
+                      setFichaAcpStatus('erro');
+                    } finally {
+                      setFichaAcpLoading(false);
+                    }
+                  } else {
+                    setFichaAcpStatus('sem_cpf');
+                    setFichaAcpLoading(false);
+                  }
+                }}
+                className="flex flex-col items-center gap-2 rounded-xl px-6 py-4 font-bold text-white text-sm uppercase tracking-wide shadow-lg hover:brightness-110 transition"
+                style={{ background: 'linear-gradient(135deg, #1a73e8 0%, #1558b0 100%)', minWidth: '140px' }}
+              >
+                <span className="text-4xl">👥</span>
+                Ficha Convencional
+              </button>
+              {/* Doc. Casa do Pastor */}
+              <button
+                onClick={() => { setMembroImprimindoCasaPastor(membroSelecionandoImpressao); setMembroSelecionandoImpressao(null); }}
+                className="flex flex-col items-center gap-2 rounded-xl px-6 py-4 font-bold text-white text-sm uppercase tracking-wide shadow-lg hover:brightness-110 transition"
+                style={{ background: 'linear-gradient(135deg, #0D2B4E 0%, #1a4a7a 100%)', minWidth: '140px' }}
+              >
+                <span className="text-4xl">🏠</span>
+                Doc. Casa do Pastor
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Impressão - Ficha do Ministro */}
       {membroImprimindo && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
@@ -1866,7 +2283,39 @@ useEffect(() => {
                   celular: membroImprimindo.celular || '',
                   whatsapp: membroImprimindo.whatsapp || '',
                   qualFuncao: membroImprimindo.qualFuncao || '',
-                  setorDepartamento: membroImprimindo.setorDepartamento || ''
+                  setorDepartamento: membroImprimindo.setorDepartamento || '',
+                  cargo: membroImprimindo.cargoMinisterial || '',
+                  numero_cgadb: (membroImprimindo as any).numero_cgadb || '',
+                  posicaoNoCampo: (membroImprimindo as any).posicaoNoCampo || '',
+                  casaDoPastorAcp: fichaAcpLoading ? 'carregando' : (fichaAcpStatus || undefined),
+                  supervisao: membroImprimindo.supervisao || '',
+                  campo: membroImprimindo.campo || '',
+                  cursoTeologico: membroImprimindo.cursoTeologico || '',
+                  instituicaoTeologica: (membroImprimindo as any).instituicaoTeologica || '',
+                  profissao: (membroImprimindo as any).profissao || '',
+                  dataBatismoAguas: membroImprimindo.dataBatismoAguas || '',
+                  dataConsagracao: membroImprimindo.dataConsagracao || '',
+                  data_filiacao: (membroImprimindo as any).data_filiacao || '',
+                  ev_autorizado_data: (membroImprimindo as any).ev_autorizado_data || '',
+                  ev_autorizado_local: (membroImprimindo as any).ev_autorizado_local || '',
+                  ev_consagrado_data: (membroImprimindo as any).ev_consagrado_data || '',
+                  ev_consagrado_local: (membroImprimindo as any).ev_consagrado_local || '',
+                  cons_missionario_data: (membroImprimindo as any).cons_missionario_data || '',
+                  cons_missionario_local: (membroImprimindo as any).cons_missionario_local || '',
+                  orden_pastor_data: (membroImprimindo as any).orden_pastor_data || '',
+                  orden_pastor_local: (membroImprimindo as any).orden_pastor_local || '',
+                  conjuge_rg: (membroImprimindo as any).conjuge_rg || '',
+                  conjuge_naturalidade: (membroImprimindo as any).conjuge_naturalidade || '',
+                  conjuge_nome_pai: (membroImprimindo as any).conjuge_nome_pai || '',
+                  conjuge_nome_mae: (membroImprimindo as any).conjuge_nome_mae || '',
+                  conjuge_tipo_sanguineo: (membroImprimindo as any).conjuge_tipo_sanguineo || '',
+                  conjuge_titulo_eleitoral: (membroImprimindo as any).conjuge_titulo_eleitoral || '',
+                  conjuge_fone: (membroImprimindo as any).conjuge_fone || '',
+                  conjuge_email: (membroImprimindo as any).conjuge_email || '',
+                  qtd_filhos: (membroImprimindo as any).qtd_filhos ?? 0,
+                  observacoes: (membroImprimindo as any).observacoes || '',
+                  orgaoEmissor: membroImprimindo.orgaoEmissor || '',
+                  uf_rg: (membroImprimindo as any).uf_rg || '',
                 }}
                 dadosIgreja={(() => {
                   return {
@@ -1874,6 +2323,7 @@ useEffect(() => {
                     endereco: configIgreja.endereco || '',
                     telefone: configIgreja.telefone || '',
                     email: configIgreja.email || '',
+                    cnpj: (configIgreja as any).cnpj || '',
                     logoUrl: configIgreja.logo || undefined
                   };
                 })()}
@@ -1885,6 +2335,88 @@ useEffect(() => {
             <div className="flex gap-4 px-6 py-4 border-t border-gray-300 bg-gray-50 flex-shrink-0">
               <button
                 onClick={() => setMembroImprimindo(null)}
+                className="flex-1 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition font-semibold text-sm"
+              >
+                ✕ Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Impressão - Cartão do Membro */}
+      {membroImprimindoCasaPastor && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full my-8 flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center px-6 py-4 border-b-2 border-blue-800 bg-gradient-to-r from-blue-900 to-blue-800 flex-shrink-0">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <span>🏠</span> Doc. Casa do Pastor
+              </h2>
+              <button
+                onClick={() => setMembroImprimindoCasaPastor(null)}
+                className="text-white hover:text-gray-100 text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              <DocCasaDoPastor
+                membro={{
+                  matricula: membroImprimindoCasaPastor.matricula,
+                  id: membroImprimindoCasaPastor.id,
+                  uniqueId: membroImprimindoCasaPastor.uniqueId,
+                  nome: membroImprimindoCasaPastor.nome,
+                  cpf: membroImprimindoCasaPastor.cpf,
+                  tipoCadastro: membroImprimindoCasaPastor.tipoCadastro,
+                  dataNascimento: membroImprimindoCasaPastor.dataNascimento || '',
+                  sexo: membroImprimindoCasaPastor.sexo || '',
+                  tipoSanguineo: membroImprimindoCasaPastor.tipoSanguineo || '',
+                  escolaridade: membroImprimindoCasaPastor.escolaridade || '',
+                  estadoCivil: membroImprimindoCasaPastor.estadoCivil || '',
+                  rg: membroImprimindoCasaPastor.rg || '',
+                  orgaoEmissor: membroImprimindoCasaPastor.orgaoEmissor || '',
+                  uf_rg: (membroImprimindoCasaPastor as any).uf_rg || '',
+                  nacionalidade: membroImprimindoCasaPastor.nacionalidade || '',
+                  naturalidade: membroImprimindoCasaPastor.naturalidade || '',
+                  uf: membroImprimindoCasaPastor.uf || '',
+                  nomeConjuge: membroImprimindoCasaPastor.nomeConjuge || '',
+                  cpfConjuge: membroImprimindoCasaPastor.cpfConjuge || '',
+                  dataNascimentoConjuge: membroImprimindoCasaPastor.dataNascimentoConjuge || '',
+                  nomePai: membroImprimindoCasaPastor.nomePai || '',
+                  nomeMae: membroImprimindoCasaPastor.nomeMae || '',
+                  email: membroImprimindoCasaPastor.email || '',
+                  celular: membroImprimindoCasaPastor.celular || '',
+                  qualFuncao: membroImprimindoCasaPastor.qualFuncao || '',
+                  cargo: membroImprimindoCasaPastor.cargoMinisterial || '',
+                  numero_cgadb: (membroImprimindoCasaPastor as any).numero_cgadb || '',
+                  supervisao: membroImprimindoCasaPastor.supervisao || '',
+                  campo: membroImprimindoCasaPastor.campo || '',
+                  cursoTeologico: membroImprimindoCasaPastor.cursoTeologico || '',
+                  instituicaoTeologica: (membroImprimindoCasaPastor as any).instituicaoTeologica || '',
+                  dataBatismoAguas: membroImprimindoCasaPastor.dataBatismoAguas || '',
+                  data_filiacao: (membroImprimindoCasaPastor as any).data_filiacao || '',
+                  ev_autorizado_data: (membroImprimindoCasaPastor as any).ev_autorizado_data || '',
+                  ev_autorizado_local: (membroImprimindoCasaPastor as any).ev_autorizado_local || '',
+                  ev_consagrado_data: (membroImprimindoCasaPastor as any).ev_consagrado_data || '',
+                  ev_consagrado_local: (membroImprimindoCasaPastor as any).ev_consagrado_local || '',
+                  orden_pastor_data: (membroImprimindoCasaPastor as any).orden_pastor_data || '',
+                  orden_pastor_local: (membroImprimindoCasaPastor as any).orden_pastor_local || '',
+                  observacoes: (membroImprimindoCasaPastor as any).observacoes || '',
+                }}
+                dadosIgreja={{
+                  nomeIgreja: configIgreja.nome || 'Igreja',
+                  endereco: configIgreja.endereco || '',
+                  telefone: configIgreja.telefone || '',
+                  email: configIgreja.email || '',
+                  cnpj: (configIgreja as any).cnpj || '',
+                  logoUrl: configIgreja.logo || undefined,
+                }}
+                fotoUrl={membroImprimindoCasaPastor.fotoUrl || undefined}
+              />
+            </div>
+            <div className="flex gap-4 px-6 py-4 border-t border-gray-300 bg-gray-50 flex-shrink-0">
+              <button
+                onClick={() => setMembroImprimindoCasaPastor(null)}
                 className="flex-1 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition font-semibold text-sm"
               >
                 ✕ Fechar
@@ -2019,63 +2551,101 @@ useEffect(() => {
           {dashboardView === 'list' && (
             <div>
           {/* Filtro de Busca */}
-          <div className="bg-white rounded-lg p-4 shadow-md mb-6">
-            <div className="flex gap-4 items-end">
-              <div className="flex-1">
-                <label className="block text-sm font-semibold text-teal-700 mb-2">Filtro de Busca</label>
-                <input
-                  type="text"
-                  placeholder="DIGITE SUA BUSCA"
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className="w-full px-4 py-2 border-2 border-teal-300 rounded-lg focus:outline-none focus:border-teal-500"
-                />
-              </div>
-              <div className="w-48">
-                <label className="block text-sm font-semibold text-teal-700 mb-2">CARGO</label>
-                <select
-                  value={cargoFilter}
-                  onChange={(e) => {
-                    setCargoFilter(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className="w-full px-4 py-2 border-2 border-teal-300 rounded-lg bg-teal-50 focus:outline-none focus:border-teal-500"
-                >
-                  <option value="TODOS">TODOS</option>
-                  {getCargosMinisteriais().filter(c => c.ativo).map(c => (
+          <div className="bg-white rounded-lg px-4 py-3 shadow-md mb-4">
+            <div className="flex flex-wrap gap-2 items-center">
+
+              {/* SUPERVISÃO */}
+              <select
+                value={supervisaoFilter}
+                onChange={(e) => { setSupervisaoFilter(e.target.value); setCurrentPage(1); }}
+                className="h-9 px-3 border border-gray-300 rounded-lg text-sm font-semibold text-[#0D2B4E] bg-white focus:outline-none focus:border-[#0D2B4E] min-w-[140px]"
+              >
+                <option value="TODOS">SUPERVISÃO: TODAS</option>
+                {supervisoesOptions.map(s => (
+                  <option key={s.id} value={s.nome}>{s.nome.toUpperCase()}</option>
+                ))}
+              </select>
+
+              {/* CAMPO */}
+              <select
+                value={campoFilter}
+                onChange={(e) => { setCampoFilter(e.target.value); setCurrentPage(1); }}
+                className="h-9 px-3 border border-gray-300 rounded-lg text-sm font-semibold text-[#0D2B4E] bg-white focus:outline-none focus:border-[#0D2B4E] min-w-[140px]"
+              >
+                <option value="TODOS">CAMPO: TODOS</option>
+                {camposOptions
+                  .filter(c => supervisaoFilter === 'TODOS' || (c as any).supervisao_id === supervisoesOptions.find(s => s.nome === supervisaoFilter)?.id)
+                  .map(c => (
                     <option key={c.id} value={c.nome}>{c.nome.toUpperCase()}</option>
                   ))}
-                </select>
+              </select>
+
+              {/* CARGO */}
+              <select
+                value={cargoFilter}
+                onChange={(e) => { setCargoFilter(e.target.value); setCurrentPage(1); }}
+                className="h-9 px-3 border border-gray-300 rounded-lg text-sm font-semibold text-[#0D2B4E] bg-white focus:outline-none focus:border-[#0D2B4E] min-w-[120px]"
+              >
+                <option value="TODOS">CARGO: TODOS</option>
+                {getCargosMinisteriais().filter(c => c.ativo).map(c => (
+                  <option key={c.id} value={c.nome}>{c.nome.toUpperCase()}</option>
+                ))}
+              </select>
+
+              {/* STATUS */}
+              <select
+                value={statusFilter}
+                onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+                className="h-9 px-3 border border-gray-300 rounded-lg text-sm font-semibold text-[#0D2B4E] bg-white focus:outline-none focus:border-[#0D2B4E] min-w-[130px]"
+              >
+                <option value="TODOS">STATUS: TODOS</option>
+                <option value="ativo">ATIVO</option>
+                <option value="desligado">DESLIGADO</option>
+                <option value="em_processo">EM PROCESSO</option>
+                <option value="falecido">FALECIDO</option>
+                <option value="inativo">INATIVO</option>
+                <option value="JUBILADO">JUBILADO</option>
+              </select>
+
+              {/* BUSCA */}
+              <div className="flex-1 min-w-[180px] relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
+                <input
+                  type="text"
+                  placeholder="DIGITE SUA BUSCA..."
+                  value={searchTerm}
+                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                  className="w-full h-9 pl-9 pr-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#0D2B4E]"
+                />
               </div>
-              <div className="w-48">
-                <label className="block text-sm font-semibold text-teal-700 mb-2">STATUS</label>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => {
-                    setStatusFilter(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className="w-full px-4 py-2 border-2 border-teal-300 rounded-lg bg-teal-50 focus:outline-none focus:border-teal-500"
-                >
-                  <option>ATIVO</option>
-                  <option>INATIVO</option>
-                  <option>TODOS</option>
-                </select>
-              </div>
+
+              {/* PASTOR PRESIDENTE */}
+              <label className="flex flex-col items-center gap-0.5 cursor-pointer shrink-0">
+                <span className="text-[9px] font-bold text-[#0D2B4E] uppercase leading-tight text-center">PASTOR<br/>PRESIDENTE</span>
+                <input
+                  type="checkbox"
+                  checked={pastorPresidenteFilter}
+                  onChange={(e) => { setPastorPresidenteFilter(e.target.checked); setCurrentPage(1); }}
+                  className="w-4 h-4 accent-[#0D2B4E]"
+                />
+              </label>
+
+              {/* LIMPAR */}
               <button
-                  onClick={() => {
-                    setSearchTerm('');
-                    setStatusFilter('ATIVO');
-                    setCargoFilter('TODOS');
-                    setCurrentPage(1);
-                  }}
-                  className="mt-[26px] px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition font-semibold text-sm h-[42px]"
-                >
-                  LIMPAR
-                </button>
+                onClick={() => {
+                  setSearchTerm('');
+                  setStatusFilter('ATIVO');
+                  setCargoFilter('TODOS');
+                  setSupervisaoFilter('TODOS');
+                  setCampoFilter('TODOS');
+                  setPastorPresidenteFilter(false);
+                  setCurrentPage(1);
+                }}
+                className="h-9 px-5 bg-[#0D2B4E] text-white rounded-lg hover:bg-[#1A3A5C] transition font-semibold text-sm shrink-0"
+              >
+                LIMPAR
+              </button>
+
             </div>
           </div>
 
@@ -2113,87 +2683,6 @@ useEffect(() => {
                     title={limiteMembrosAtingido ? `Limite de ${maxMembros} cadastros atingido` : 'Novo Cadastro'}
                   >
                     <span>➕</span> Novo Cadastro
-                  </button>
-                  <button
-                    onClick={async () => {
-                      if (ultimoCadastro) {
-                        const novaMatricula = gerarProximaMatricula();
-                        setDadosPessoais({
-                          matricula: novaMatricula,
-                          cpf: '',
-                          tipoCadastro: 'ministro',
-                          nome: '',
-                          dataNascimento: ultimoCadastro.dataNascimento || '',
-                          sexo: ultimoCadastro.sexo || 'MASCULINO',
-                          tipoSanguineo: ultimoCadastro.tipoSanguineo || '',
-                          escolaridade: ultimoCadastro.escolaridade || '',
-                          estadoCivil: ultimoCadastro.estadoCivil || '',
-                          nomeConjuge: '',
-                          cpfConjuge: '',
-                          dataNascimentoConjuge: '',
-                          nomePai: ultimoCadastro.nomePai || '',
-                          nomeMae: ultimoCadastro.nomeMae || '',
-                          rg: '',
-                          uf_rg: '',
-                          orgaoEmissor: ultimoCadastro.orgaoEmissor || '',
-                          nacionalidade: ultimoCadastro.nacionalidade || 'BRASILEIRA',
-                          naturalidade: ultimoCadastro.naturalidade || '',
-                          uf: ultimoCadastro.uf || '',
-                          tituloEleitoral: '',
-                          zonaEleitoral: '',
-                          secaoEleitoral: '',
-                          municipioEleitoral: '',
-                          profissao: '',
-                          email2: '',
-                          posicaoNoCampo: '',
-                          numero_cgadb: '',
-                          supervisao: ultimoCadastro.supervisao || '',
-                          campo: ultimoCadastro.campo || '',
-                          congregacao: ultimoCadastro.congregacao || '',
-                          email: '',
-                          celular: '',
-                          whatsapp: ''
-                        });
-                        setEnderecoData({
-                          cep: ultimoCadastro.cep || '',
-                          logradouro: ultimoCadastro.logradouro || '',
-                          numero: ultimoCadastro.numero || '',
-                          bairro: ultimoCadastro.bairro || '',
-                          complemento: ultimoCadastro.complemento || '',
-                          cidade: ultimoCadastro.cidade || '',
-                          latitude: ultimoCadastro.latitude || '',
-                          longitude: ultimoCadastro.longitude || ''
-                        });
-                        setDadosMinisteriais({
-                          temFuncaoIgreja: ultimoCadastro.temFuncaoIgreja || false,
-                          qualFuncao: ultimoCadastro.qualFuncao || '',
-                          setorDepartamento: ultimoCadastro.setorDepartamento || '',
-                          dataBatismoAguas: ultimoCadastro.dataBatismoAguas || '',
-                          dataBatismoEspiritoSanto: ultimoCadastro.dataBatismoEspiritoSanto || '',
-                          cursoTeologico: ultimoCadastro.cursoTeologico || '',
-                          instituicaoTeologica: ultimoCadastro.instituicaoTeologica || '',
-                          pastorAuxiliar: ultimoCadastro.pastorAuxiliar || false,
-                          procedencia: ultimoCadastro.procedencia || '',
-                          procedenciaLocal: ultimoCadastro.procedenciaLocal || '',
-                          dataConsagracao: ultimoCadastro.dataConsagracao || '',
-                          dataEmissao: ultimoCadastro.dataEmissao || '',
-                          dataValidadeCredencial: ultimoCadastro.dataValidadeCredencial || '',
-                          observacoesMinisteriais: ultimoCadastro.observacoesMinisteriais || ''
-                        });
-                        setCargoSelecionado(resolveCargoValue(ultimoCadastro.cargoMinisterial));
-                        setDadosCargos(ultimoCadastro.dadosCargos || {});
-                        setIsEditando(false);
-                        setShowForm(true);
-                        setActiveTab('dados');
-                      }
-                    }}
-                    disabled={!ultimoCadastro}
-                    className={`px-4 py-2 rounded-lg transition font-semibold text-sm ${ultimoCadastro
-                      ? 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer'
-                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                      }`}
-                  >
-                    📋 Cadastrar Semelhante
                   </button>
                   <button
                     onClick={gerarPDFListagem}
@@ -2275,7 +2764,7 @@ useEffect(() => {
                     <th className="border-2 border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Nome</th>
                     <th className="border-2 border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">CPF</th>
                     <th className="border-2 border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Cargo</th>
-                    <th className="border-2 border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Data Consagração</th>
+                    <th className="border-2 border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Campo</th>
                     <th className="border-2 border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Status</th>
                     <th className="border-2 border-gray-300 px-4 py-3 text-center font-semibold text-gray-700">Controles</th>
                   </tr>
@@ -2312,24 +2801,26 @@ useEffect(() => {
                       <td className="border border-gray-300 px-4 py-3 text-gray-700">{membro.nome}</td>
                       <td className="border border-gray-300 px-4 py-3 text-gray-600">{membro.cpf}</td>
                       <td className="border border-gray-300 px-4 py-3 text-gray-600">{membro.cargoMinisterial || '-'}</td>
-                      <td className="border border-gray-300 px-4 py-3 text-gray-600">
-                        {membro.dataConsagracao
-                          ? new Date(membro.dataConsagracao + 'T00:00:00').toLocaleDateString('pt-BR')
-                          : '-'}
+                      <td className="border border-gray-300 px-4 py-3 text-gray-600">{membro.campo || '-'}</td>
+                      <td className="border border-gray-300 px-4 py-3">
+                        {membro.jubilado
+                          ? <span className="px-3 py-1 rounded text-sm font-semibold bg-blue-100 text-blue-800">JUBILADO</span>
+                          : <span className={`px-3 py-1 rounded text-sm font-semibold ${
+                              membro.status === 'ativo' ? 'bg-green-100 text-green-800'
+                              : membro.status === 'falecido' ? 'bg-gray-200 text-gray-600'
+                              : membro.status === 'em_processo' ? 'bg-yellow-100 text-yellow-800'
+                              : membro.status === 'desligado' ? 'bg-orange-100 text-orange-800'
+                              : 'bg-red-100 text-red-800'
+                            }`}>
+                              {membro.status === 'em_processo' ? 'EM PROCESSO' : membro.status.toUpperCase()}
+                            </span>
+                        }
                       </td>
                       <td className="border border-gray-300 px-4 py-3">
-                        <span className={`px-3 py-1 rounded text-sm font-semibold ${membro.status === 'ativo'
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-red-100 text-red-800'
-                          }`}>
-                          {membro.status.toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="border border-gray-300 px-4 py-3">
-                        <div className="flex justify-center gap-2">
+                        <div className="flex justify-center gap-0">
                           <button
-                            onClick={() => setMembroImprimindo(membro)}
-                            className="p-2 text-gray-600 hover:bg-gray-200 rounded-lg transition"
+                            onClick={() => setMembroSelecionandoImpressao(membro)}
+                            className="p-1.5 text-gray-600 hover:bg-gray-200 rounded-lg transition"
                             title="Imprimir Ficha"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2350,8 +2841,8 @@ useEffect(() => {
                               }
                               setMembroImprimindoCartao(membro);
                             }}
-                            className="p-2 text-purple-600 hover:bg-purple-100 rounded-lg transition"
-                            title="Imprimir Cartão"
+                            className="p-1.5 text-purple-600 hover:bg-purple-100 rounded-lg transition"
+                            title="Imprimir Credencial"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
@@ -2359,7 +2850,7 @@ useEffect(() => {
                           </button>
                           <button
                             onClick={() => abrirEdicao(membro)}
-                            className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition"
+                            className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition"
                             title="Editar"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2367,14 +2858,47 @@ useEffect(() => {
                             </svg>
                           </button>
                           <button
-                            onClick={() => abrirConfirmacaoDeletar(membro)}
-                            className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition"
-                            title="Deletar"
+                            onClick={() => {
+                              setMembroAlterandoStatus(membro);
+                              setNovoStatus(membro.status || 'ativo');
+                              setIsJubilado(false);
+                              setMotivoStatus('');
+                            }}
+                            className="p-1.5 text-amber-600 hover:bg-amber-100 rounded-lg transition"
+                            title="Alterar Status"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                           </button>
+                          <button
+                            onClick={() => setMembroSelecionandoCarta(membro)}
+                            className="p-1.5 text-green-700 hover:bg-green-100 rounded-lg transition"
+                            title="Cartas Convencionais"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => setMembroDocumentos(membro)}
+                            className="p-1.5 text-indigo-600 hover:bg-indigo-100 rounded-lg transition"
+                            title="Documentos"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => setMembroHistorico(membro)}
+                            className="p-1.5 text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                            title="Histórico"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </button>
+
                         </div>
                       </td>
                     </tr>
@@ -2518,35 +3042,99 @@ useEffect(() => {
                   {/* ABA: DADOS CADASTRAIS */}
                   {activeTab === 'dados' && (
                     <div className="space-y-3">
-                      {/* Linha 0: Matrícula */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
+                      {/* Linha 0: Matrícula + Editar Matrícula + Jubilado */}
+                      <div className="flex flex-wrap items-center gap-6">
+                        <div className="flex-1 min-w-[160px]">
                           <label className="block text-xs font-semibold text-gray-700 mb-1">Matrícula</label>
                           <input
                             type="text"
                             placeholder="Automática"
                             value={dadosPessoais.matricula}
-                            onChange={(e) => isAdminMode ? setDadosPessoais({ ...dadosPessoais, matricula: e.target.value }) : null}
-                            disabled={!isAdminMode}
-                            className={`w-full px-3 py-2 border border-gray-300 rounded-md text-sm ${isAdminMode
-                              ? 'focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent'
-                              : 'bg-gray-100 text-gray-600 cursor-not-allowed'
-                              }`}
+                            onChange={(e) => setDadosPessoais({ ...dadosPessoais, matricula: e.target.value })}
+                            disabled={!isEditando}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-md text-sm ${
+                              isEditando
+                                ? 'focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent'
+                                : 'bg-gray-100 text-gray-600 cursor-not-allowed'
+                            }`}
                           />
                         </div>
-                        {isAdminMode && (
-                          <div className="flex items-end">
-                            <label className="flex items-center gap-2 text-xs text-gray-600">
-                              <input
-                                type="checkbox"
-                                checked={isEditando}
-                                onChange={(e) => setIsEditando(e.target.checked)}
-                                className="w-4 h-4 rounded border-gray-300"
-                              />
-                              Editar Matrícula
-                            </label>
+                        <div className="flex items-center gap-2 mt-4">
+                          <label className="text-xs font-semibold text-gray-700 whitespace-nowrap">Editar Matrícula</label>
+                          <button
+                            type="button"
+                            onClick={() => setIsEditando(!isEditando)}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              isEditando ? 'bg-teal-500' : 'bg-gray-300'
+                            }`}
+                          >
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                              isEditando ? 'translate-x-6' : 'translate-x-1'
+                            }`} />
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2 mt-4">
+                          <label className="text-xs font-semibold text-gray-700 whitespace-nowrap">JUBILADO?</label>
+                          <button
+                            type="button"
+                            onClick={() => setDadosPessoais({ ...dadosPessoais, jubilado: !(dadosPessoais as any).jubilado })}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              (dadosPessoais as any).jubilado ? 'bg-blue-600' : 'bg-gray-300'
+                            }`}
+                          >
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                              (dadosPessoais as any).jubilado ? 'translate-x-6' : 'translate-x-1'
+                            }`} />
+                          </button>
+                          {(dadosPessoais as any).jubilado && (
+                            <span className="text-xs text-blue-600 font-semibold">Ativo</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Organização Eclesiástica */}
+                      <div className="bg-sky-50 border border-sky-200 p-3 rounded-md">
+                        <h4 className="text-xs font-semibold text-sky-800 mb-3">🏢 Organização Eclesiástica</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Campo</label>
+                            <select
+                              value={dadosPessoais.campo}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                const campoSelecionado = camposOptions.find((opt) => opt.nome === value) || null;
+                                const supervisaoRelacionada = campoSelecionado?.supervisao_id
+                                  ? supervisoesOptions.find((opt) => opt.id === campoSelecionado.supervisao_id) || null
+                                  : null;
+                                setDadosPessoais({
+                                  ...dadosPessoais,
+                                  supervisao: '',
+                                  campo: value,
+                                  congregacao: supervisaoRelacionada?.nome || '',
+                                });
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                            >
+                              <option value="">Selecione</option>
+                              {camposOptions.map((opt) => (
+                                <option key={opt.id} value={opt.nome}>{opt.nome}</option>
+                              ))}
+                            </select>
                           </div>
-                        )}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Supervisão</label>
+                            <select
+                              value={dadosPessoais.supervisao}
+                              onChange={(e) => setDadosPessoais({ ...dadosPessoais, supervisao: e.target.value })}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                            >
+                              <option value="">Selecione</option>
+                              {supervisoesOptions.map((opt) => (
+                                <option key={opt.id} value={opt.nome}>{opt.nome}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
                       </div>
 
                       {/* Linha 1: CPF e Tipo de Cadastro */}
@@ -2878,52 +3466,7 @@ useEffect(() => {
 
 
 
-                      {/* Organização Eclesiástica */}
-                      <div className="bg-sky-50 border border-sky-200 p-3 rounded-md mt-3">
-                        <h4 className="text-xs font-semibold text-sky-800 mb-3">🏢 Organização Eclesiástica</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1">Campo</label>
-                            <select
-                              value={dadosPessoais.campo}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                const campoSelecionado = camposOptions.find((opt) => opt.nome === value) || null;
-                                const supervisaoRelacionada = campoSelecionado?.supervisao_id
-                                  ? supervisoesOptions.find((opt) => opt.id === campoSelecionado.supervisao_id) || null
-                                  : null;
-                                setDadosPessoais({
-                                  ...dadosPessoais,
-                                  supervisao: '',
-                                  campo: value,
-                                  congregacao: supervisaoRelacionada?.nome || '',
-                                });
-                              }}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                            >
-                              <option value="">Selecione</option>
-                              {camposOptions.map((opt) => (
-                                <option key={opt.id} value={opt.nome}>{opt.nome}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1">Supervisão</label>
-                            <select
-                              value={dadosPessoais.congregacao}
-                              onChange={(e) => setDadosPessoais({ ...dadosPessoais, congregacao: e.target.value })}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                            >
-                              <option value="">Selecione</option>
-                              {supervisoesOptions.map((opt) => (
-                                <option key={opt.id} value={opt.nome}>{opt.nome}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Posição no Campo e Nº CGADB */}
+                      {/* Posição no Campo, Nº CGADB e Jubilado */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 mb-1">Posição do Ministro no Campo</label>
@@ -3090,18 +3633,29 @@ useEffect(() => {
                             className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                           />
                         </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-1">Pastor Auxiliar?</label>
-                          <input
-                            type="checkbox"
-                            checked={!!dadosMinisteriais.pastorAuxiliar}
-                            onChange={(e) => setDadosMinisteriais({ ...dadosMinisteriais, pastorAuxiliar: e.target.checked })}
-                            className="w-5 h-5 mt-2"
-                          />
+                        <div className="flex gap-6">
+                          <label className="flex flex-col gap-1 text-xs font-semibold text-gray-700 cursor-pointer">
+                            Pastor Auxiliar?
+                            <input
+                              type="checkbox"
+                              checked={!!dadosMinisteriais.pastorAuxiliar}
+                              onChange={(e) => setDadosMinisteriais({ ...dadosMinisteriais, pastorAuxiliar: e.target.checked })}
+                              className="w-5 h-5 mt-1"
+                            />
+                          </label>
+                          <label className="flex flex-col gap-1 text-xs font-semibold text-gray-700 cursor-pointer">
+                            Pastor Presidente?
+                            <input
+                              type="checkbox"
+                              checked={!!dadosMinisteriais.pastorPresidente}
+                              onChange={(e) => setDadosMinisteriais({ ...dadosMinisteriais, pastorPresidente: e.target.checked })}
+                              className="w-5 h-5 mt-1"
+                            />
+                          </label>
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 mb-1">Procedência</label>
                           <select
@@ -3123,6 +3677,31 @@ useEffect(() => {
                             onChange={(e) => setDadosMinisteriais({ ...dadosMinisteriais, procedenciaLocal: e.target.value })}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                           />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Status Casa do Pastor</label>
+                          <div className="flex items-center gap-2 h-[38px]">
+                            {casaDoPastorLoading ? (
+                              <span className="text-xs text-gray-400 italic">Consultando...</span>
+                            ) : casaDoPastorStatus === 'adimplente' ? (
+                              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-300">&#10003; ADIMPLENTE</span>
+                            ) : casaDoPastorStatus === 'inadimplente' ? (
+                              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-300">&#10007; INADIMPLENTE</span>
+                            ) : casaDoPastorStatus === 'nao_encontrado' ? (
+                              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-700 border border-yellow-300">&#8212; NÃO ENCONTRADO</span>
+                            ) : (
+                              <span className="text-xs text-gray-400 italic">Não consultado</span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => consultarCasaDoPastor(dadosPessoais.cpf)}
+                              disabled={casaDoPastorLoading || !dadosPessoais.cpf}
+                              className="ml-auto px-2 py-1 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                              title="Consultar status na Casa do Pastor"
+                            >
+                              Consultar
+                            </button>
+                          </div>
                         </div>
                       </div>
 
@@ -3188,23 +3767,32 @@ useEffect(() => {
                       </div>
 
                       {/* Dados Ministeriais fixos */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 md:grid-cols-[1fr_140px_auto_1fr] gap-3 items-end">
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 mb-1">Local do Batismo</label>
                           <input type="text" value={dadosConsagracao.local_batismo} onChange={(e) => setDadosConsagracao({ ...dadosConsagracao, local_batismo: e.target.value })} placeholder="Ex: Igreja Central" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
                         </div>
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 mb-1">Data de Filiação</label>
-                          <input type="date" value={dadosConsagracao.data_filiacao} onChange={(e) => setDadosConsagracao({ ...dadosConsagracao, data_filiacao: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+                          <input type="date" value={dadosConsagracao.data_filiacao} onChange={(e) => setDadosConsagracao({ ...dadosConsagracao, data_filiacao: e.target.value })} className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
                         </div>
-                        <div className="flex items-end gap-3">
-                          <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2 cursor-pointer">
-                            <button type="button" onClick={() => setDadosConsagracao(prev => ({ ...prev, diretoria: !prev.diretoria }))}
-                              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${dadosConsagracao.diretoria ? 'bg-teal-500' : 'bg-gray-300'}`}>
-                              <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${dadosConsagracao.diretoria ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                            </button>
-                            Diretoria?
-                          </label>
+                        <div className="flex flex-col items-start gap-1 pb-1">
+                          <label className="text-xs font-semibold text-gray-700">Diretoria?</label>
+                          <button type="button" onClick={() => setDadosConsagracao(prev => ({ ...prev, diretoria: !prev.diretoria }))}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${dadosConsagracao.diretoria ? 'bg-teal-500' : 'bg-gray-300'}`}>
+                            <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${dadosConsagracao.diretoria ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                          </button>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Cargo Diretoria</label>
+                          <input
+                            type="text"
+                            value={dadosConsagracao.cargo_diretoria}
+                            onChange={(e) => setDadosConsagracao({ ...dadosConsagracao, cargo_diretoria: e.target.value })}
+                            placeholder={dadosConsagracao.diretoria ? 'Ex: Secretário, Tesoureiro...' : '—'}
+                            disabled={!dadosConsagracao.diretoria}
+                            className={`w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent ${dadosConsagracao.diretoria ? 'border-gray-300 bg-white' : 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'}`}
+                          />
                         </div>
                       </div>
 

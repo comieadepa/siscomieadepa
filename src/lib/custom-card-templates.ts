@@ -728,47 +728,42 @@ export const TEMPLATE_MEMBRO_02_CUSTOMIZADO: TemplateCartaoCustomizado = {
 // Template MINISTRO CLASSICO (Modelo 01) com frente e verso completos
 export const TEMPLATE_MINISTRO_CLASSICO_CUSTOMIZADO: TemplateCartaoCustomizado = {
   id: 'ministro-classico',
-  nome: 'Ministro em Branco 01',
+  nome: 'Credencial de Ministro — Modelo 01',
   tipoCadastro: 'ministro',
-  corTitulo: '#d97706',
+  corTitulo: '#A00C0C',
   temVerso: true,
   descricao: 'Credencial ministerial com frente e verso',
-  backgroundUrl: '/img/card_ministro1f.png',
-  backgroundUrlVerso: '/img/card_ministro1c.png',
-  previewImage: '/img/card1o.jpg',
+  backgroundUrl: '/img/cred_minf.png',
+  backgroundUrlVerso: '/img/cred_minc.png',
   elementos: [
-    { id: '1735670001000', tipo: 'logo', x: 15, y: 15, largura: 90, altura: 90, fontSize: 10, cor: '#000', fonte: 'Arial', transparencia: 1, alinhamento: 'left', negrito: false, italico: false, sublinhado: false, visivel: true },
-    { id: '1735670002000', tipo: 'texto', x: 104, y: 15, largura: 345, altura: 53, fontSize: 20, cor: '#000', fonte: 'Verdana', texto: 'NOME<div>DA IGREJA</div>', alinhamento: 'center', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1735670003000', tipo: 'texto', x: 104, y: 67, largura: 345, altura: 38, fontSize: 10, cor: '#d97706', fonte: 'Arial', texto: 'ENDEREÇO DA IGREJA<div>DADOS DE CONTATO</div><div>SITE/EMAIL</div>', alinhamento: 'center', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1735670004000', tipo: 'texto', x: 15, y: 122, largura: 295, altura: 45, fontSize: 20, cor: '#000', fonte: 'Verdana', texto: 'CREDENCIAL DE MINISTRO', alinhamento: 'center', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1735670005000', tipo: 'foto-membro', x: 319, y: 112, largura: 130, altura: 165, fontSize: 10, cor: '#000', fonte: 'Arial', alinhamento: 'left', negrito: false, italico: false, sublinhado: false, visivel: true },
-    { id: '1735670006000', tipo: 'texto', x: 15, y: 245, largura: 295, altura: 30, fontSize: 13, cor: '#000000', backgroundColor: '', borderRadius: 6, fonte: 'Arial', texto: 'NOME: <font color="#cccccc">{nome}</font>', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1735670007000', tipo: 'texto', x: 15, y: 188, largura: 295, altura: 30, fontSize: 13, cor: '#000', backgroundColor: '', borderRadius: 6, fonte: 'Arial', texto: 'MATRÍCULA: <font color="#cccccc">{matricula}</font>', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1735670008000', tipo: 'texto', x: 15, y: 217, largura: 295, altura: 30, fontSize: 13, cor: '#000', backgroundColor: '', borderRadius: 6, fonte: 'Arial', texto: 'CARGO: <font color="#cccccc">{cargo_ministerial}</font>', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true }
+    {"id":"1735670001000","tipo":"logo","x":4,"y":2,"largura":124,"altura":144,"fontSize":10,"cor":"#000","fonte":"Arial","transparencia":1,"alinhamento":"left","negrito":false,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"1735670002000","tipo":"texto","x":110,"y":13,"largura":334,"altura":53,"fontSize":13,"cor":"#000","fonte":"Georgia","texto":"CONVENÇÃO INTERESTADUAL DE MINISTROS E IGREJAS EVANGÉLICAS ASSEMBLEIAS DE DEUS NO PARÁ","alinhamento":"center","negrito":true,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"1735670003000","tipo":"texto","x":108,"y":86,"largura":345,"altura":38,"fontSize":25,"cor":"#A00C0C","fonte":"Akshar Semibold","texto":"MINISTRO DO EVANGELHO","alinhamento":"center","negrito":true,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"1735670005000","tipo":"foto-membro","x":355,"y":138,"largura":99,"altura":110,"fontSize":10,"cor":"#000","fonte":"Arial","alinhamento":"left","negrito":false,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"1735670006000","tipo":"texto","x":15,"y":226,"largura":295,"altura":30,"fontSize":14,"cor":"#000000","backgroundColor":"","borderRadius":6,"fonte":"Akshar Semibold","texto":"CARGO:&nbsp;<font color=\"#a00c0c\">{cargo_ministerial}</font>","alinhamento":"left","negrito":true,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"1735670007000","tipo":"texto","x":15,"y":188,"largura":295,"altura":30,"fontSize":14,"cor":"#000","backgroundColor":"","borderRadius":6,"fonte":"Akshar Semibold","texto":"REG.: <font color=\"#a00c0c\">{matricula}</font>","alinhamento":"left","negrito":true,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"1735670008000","tipo":"texto","x":15,"y":207,"largura":295,"altura":30,"fontSize":14,"cor":"#000","backgroundColor":"","borderRadius":6,"fonte":"Akshar Semibold","texto":"NOME: <font color=\"#a00c0c\">{nome}</font>","alinhamento":"left","negrito":true,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"3bb32cd1-0acb-4eeb-a4b8-782cfb3d3efa","tipo":"texto","x":9,"y":252,"largura":446,"altura":33,"fontSize":10,"cor":"#ffffff","fonte":"Akshar","texto":"O portador está devidamente inscrito nesta CONVENÇÃO, podendo realizar as atividades ministeriais inerentes ao cargo, segundo as Sagradas Escrituras e com amparo no Art. 5º Inciso VI e VII da Constituição Federal","alinhamento":"center","negrito":false,"italico":false,"sublinhado":false,"visivel":true}
   ],
   elementosVerso: [
-    { id: '1735670013000', tipo: 'texto', x: 35, y: 156, largura: 180, altura: 40, fontSize: 10, cor: '#000', fonte: 'Arial', texto: '____________________________<div>Pastor Presidente</div>', alinhamento: 'center', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1735670014000', tipo: 'texto', x: 250, y: 156, largura: 180, altura: 40, fontSize: 10, cor: '#000', fonte: 'Arial', texto: '____________________________<div>Secretário(a)</div>', alinhamento: 'center', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1767201628647ujz9v1ry9', tipo: 'texto', x: 237, y: 91, largura: 90, altura: 18, fontSize: 10, cor: '#000', fonte: 'Arial', texto: 'Data de Batismo', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '17672016286477ygtl2bbk', tipo: 'texto', x: 29, y: 22, largura: 303, altura: 24, fontSize: 10, cor: '#000', fonte: 'Arial', texto: '<font color="#ef4444">Pai: {nomePai} / Mãe: {nomeMae}</font>', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1767201628647xky8db3ph', tipo: 'texto', x: 29, y: 12, largura: 90, altura: 18, fontSize: 10, cor: '#000', fonte: 'Arial', texto: 'Filiação', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1767201628647bpwv852t2', tipo: 'texto', x: 29, y: 52, largura: 90, altura: 18, fontSize: 10, cor: '#000', fonte: 'Arial', texto: 'RG', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1767201628647apu3djicw', tipo: 'texto', x: 29, y: 66, largura: 119, altura: 20, fontSize: 10, cor: '#000', fonte: 'Arial', texto: '<font color="#ef4444">{rg}</font>', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1767201628647d0gc06nvo', tipo: 'texto', x: 29, y: 91, largura: 90, altura: 18, fontSize: 10, cor: '#000', fonte: 'Arial', texto: 'CPF', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1767201628647fq9z1jes4', tipo: 'texto', x: 30, y: 105, largura: 117, altura: 20, fontSize: 10, cor: '#000', fonte: 'Arial', texto: '<font color="#ef4444">{cpf}</font>', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1767201628647pnolof1f5', tipo: 'texto', x: 155, y: 52, largura: 90, altura: 18, fontSize: 10, cor: '#000', fonte: 'Arial', texto: 'Naturalidade', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1767201628647qt9ju3p9i', tipo: 'texto', x: 157, y: 66, largura: 177, altura: 20, fontSize: 10, cor: '#000', fonte: 'Arial', texto: '<font color="#ef4444">{naturalidade}</font>', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1767201628647s2zj5ezkd', tipo: 'texto', x: 155, y: 105, largura: 75, altura: 20, fontSize: 10, cor: '#000', fonte: 'Arial', texto: '<font color="#ef4444">{nacionalidade}</font>', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '17672016286474hra4jt61', tipo: 'texto', x: 155, y: 91, largura: 77, altura: 18, fontSize: 10, cor: '#000', fonte: 'Arial', texto: 'Nacionalidade', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1767201628647dl196i039', tipo: 'texto', x: 236, y: 105, largura: 99, altura: 20, fontSize: 10, cor: '#000', fonte: 'Arial', texto: '<font color="#ef4444">{dataBatismo}</font>', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1767201628647p4xvc6ktk', tipo: 'texto', x: 342, y: 91, largura: 90, altura: 18, fontSize: 10, cor: '#000', fonte: 'Arial', texto: 'Estadi Civil', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1767201628647xddwjscdz', tipo: 'texto', x: 343, y: 106, largura: 99, altura: 20, fontSize: 10, cor: '#000', fonte: 'Arial', texto: '<font color="#ef4444">{estadoCivil}</font>', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '17672016286475ydb1iqsn', tipo: 'texto', x: 341, y: 52, largura: 102, altura: 18, fontSize: 10, cor: '#000', fonte: 'Arial', texto: 'Data de Nascimento', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1767201628647xlmjs086e', tipo: 'texto', x: 343, y: 66, largura: 90, altura: 20, fontSize: 10, cor: '#000', fonte: 'Arial', texto: '<font color="#ef4444">{dataNascimento}</font>', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1767201628647shug4a1n3', tipo: 'texto', x: 342, y: 12, largura: 90, altura: 18, fontSize: 10, cor: '#000', fonte: 'Arial', texto: 'Data de Validade', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1767201628647omyzf59wf', tipo: 'texto', x: 343, y: 26, largura: 99, altura: 22, fontSize: 10, cor: '#000', fonte: 'Arial', texto: '<font color="#ef4444">{validade}</font>', alinhamento: 'left', negrito: true, italico: false, sublinhado: false, visivel: true },
-    { id: '1767201628647sys6lhlln', tipo: 'qrcode', x: 30, y: 197, largura: 80, altura: 80, fontSize: 10, cor: '#000', fonte: 'Arial', alinhamento: 'left', negrito: false, italico: false, sublinhado: false, visivel: true },
-    { id: '1767202091623ynvnv6j45', tipo: 'texto', x: 119, y: 210, largura: 322, altura: 62, fontSize: 12, cor: '#000', fonte: 'Arial', texto: '<font color="#ef4444">Ide por todo o mundo e pregai o evangelho a toda a criatura. MC 16:15</font><div>Válido somente enquanto o portador se manter fiel a Deus e a doutrina desta Igreja.</div>', alinhamento: 'center', negrito: true, italico: false, sublinhado: false, visivel: true }
+    {"id":"1735670013000","tipo":"texto","x":0,"y":213,"largura":162,"altura":27,"fontSize":8,"cor":"#000","fonte":"Akshar","texto":"WASHINGTON ALVES GOMES<br>1º Secretário","alinhamento":"center","negrito":true,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"1767201628647bpwv852t2","tipo":"texto","x":27,"y":53,"largura":261,"altura":20,"fontSize":13,"cor":"#000","fonte":"Akshar Semibold","texto":"RG:&nbsp;<font color=\"#a00c0c\">{rg}</font>","alinhamento":"left","negrito":true,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"1767201628647sys6lhlln","tipo":"qrcode","x":311,"y":60,"largura":121,"altura":122,"fontSize":10,"cor":"#000","fonte":"Arial","alinhamento":"left","negrito":false,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"1767202091623ynvnv6j45","tipo":"texto","x":12,"y":0,"largura":438,"altura":47,"fontSize":13,"cor":"#000","fonte":"Akshar","texto":"<div>Solicitamos às autoridades que prestem todo apoio e auxílio necessário ao desempenho das atribuições de Ministro do Evangelho.</div>","alinhamento":"center","negrito":true,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"1777756774935wtwb1tl70","tipo":"texto","x":165,"y":213,"largura":162,"altura":27,"fontSize":8,"cor":"#000","fonte":"Akshar","texto":"OCELIO NAUAR DE ARAUJO<br>Presidente","alinhamento":"center","negrito":true,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"6cd41de3-e39f-4b82-8834-2112e5261a42","tipo":"imagem","x":51,"y":180,"largura":59,"altura":40,"fontSize":10,"cor":"#000","fonte":"Arial","transparencia":1,"alinhamento":"left","negrito":false,"italico":false,"sublinhado":false,"visivel":true,"imagemUrl":"/img/assinatura_secretario.png"},
+    {"id":"17777568765992qb0h74qo","tipo":"imagem","x":180,"y":188,"largura":124,"altura":42,"fontSize":10,"cor":"#000","fonte":"Arial","transparencia":1,"alinhamento":"left","negrito":false,"italico":false,"sublinhado":false,"visivel":true,"imagemUrl":"/img/assinatura_presidente.png"},
+    {"id":"1777756906786chq5g6ueu","tipo":"texto","x":158,"y":236,"largura":173,"altura":22,"fontSize":16,"cor":"#ffffff","fonte":"Akshar Semibold","texto":"WWW.COMIEADEPA.ORG","alinhamento":"right","negrito":false,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"17777569562636f8zsvs99","tipo":"texto","x":17,"y":254,"largura":428,"altura":31,"fontSize":11,"cor":"#ffffff","fonte":"Akshar Semibold","texto":"<div>Rod. Mário Covas, 2500 - Ananindeua - Pará - CEP 67.110-000 - Fone: (91) 3245-1115<br>CNPJ: 04.760.047/0001-04</div>","alinhamento":"center","negrito":false,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"6eec0efa-8111-48a5-97d5-f4cf2b45141c","tipo":"imagem","x":390,"y":202,"largura":49,"altura":52,"fontSize":10,"cor":"#000","fonte":"Arial","transparencia":1,"alinhamento":"left","negrito":false,"italico":false,"sublinhado":false,"visivel":true,"imagemUrl":"/img/logo_cgadb.png"},
+    {"id":"17777571028966ts4a85jk","tipo":"texto","x":311,"y":184,"largura":121,"altura":21,"fontSize":11,"cor":"#000","fonte":"Akshar Semibold","texto":"VALIDADE:&nbsp;<font color=\"#a00c0c\">{validade}</font>","alinhamento":"center","negrito":false,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"1777757238895q2sn1gxml","tipo":"texto","x":27,"y":67,"largura":261,"altura":20,"fontSize":13,"cor":"#000","fonte":"Akshar Semibold","texto":"CPF:&nbsp;<font color=\"#a00c0c\">{cpf}</font>","alinhamento":"left","negrito":true,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"1777757272566sc4kykrtj","tipo":"texto","x":27,"y":94,"largura":261,"altura":20,"fontSize":13,"cor":"#000","fonte":"Akshar Semibold","texto":"NATURALIDADE:<font color=\"#a00c0c\">&nbsp;{naturalidade}</font>","alinhamento":"left","negrito":true,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"17777572725668rh5q2649","tipo":"texto","x":27,"y":80,"largura":261,"altura":20,"fontSize":13,"cor":"#000","fonte":"Akshar Semibold","texto":"DATA DE NASCIMENTO:&nbsp;<font color=\"#a00c0c\">{dataNascimento}</font>","alinhamento":"left","negrito":true,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"17777572943580y7bte3zo","tipo":"texto","x":27,"y":109,"largura":261,"altura":20,"fontSize":13,"cor":"#000","fonte":"Akshar Semibold","texto":"REG. CGADB:&nbsp;{matricula}","alinhamento":"left","negrito":true,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"1777757294358vu6u0di8o","tipo":"texto","x":27,"y":124,"largura":261,"altura":20,"fontSize":13,"cor":"#000","fonte":"Akshar Semibold","texto":"CONSAGRAÇÃO:&nbsp;<font color=\"#a00c0c\">{dataConsagracao}</font>","alinhamento":"left","negrito":true,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"17777572943580gowkt8cz","tipo":"texto","x":27,"y":139,"largura":261,"altura":20,"fontSize":13,"cor":"#000","fonte":"Akshar Semibold","texto":"TIPO SANGUÍNEO:&nbsp;<font color=\"#a00c0c\">{tipoSanguineo}</font>","alinhamento":"left","negrito":true,"italico":false,"sublinhado":false,"visivel":true},
+    {"id":"17777572943587u2rcugr0","tipo":"texto","x":27,"y":152,"largura":261,"altura":38,"fontSize":13,"cor":"#000","fonte":"Akshar Semibold","texto":"<div>FILIAÇÃO:&nbsp;<font color=\"#a00c0c\">{nomePai}</font></div><div><font color=\"#a00c0c\">&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&nbsp;</font><font color=\"#a00c0c\">{nomeMae}</font></div>","alinhamento":"left","negrito":true,"italico":false,"sublinhado":false,"visivel":true}
   ]
 } as TemplateCartaoCustomizado;
 
@@ -956,9 +951,9 @@ export const TEMPLATE_FUNCIONARIO_CUSTOMIZADO: TemplateCartaoCustomizado = {
 
 // Array com todos os templates customizados
 export const TEMPLATES_CUSTOMIZADOS: TemplateCartaoCustomizado[] = [
-    TEMPLATE_MEMBRO_02_CUSTOMIZADO,
+    // Ministro (único modelo)
     TEMPLATE_MINISTRO_CLASSICO_CUSTOMIZADO,
-    TEMPLATE_MINISTRO_02_CUSTOMIZADO,
+    // Funcionário
     TEMPLATE_FUNCIONARIO_BRANCO,
     TEMPLATE_FUNCIONARIO_CUSTOMIZADO
 ];

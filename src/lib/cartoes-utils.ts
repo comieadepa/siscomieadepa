@@ -80,7 +80,7 @@ export function substituirPlaceholders(texto: string, membro: any, nomenclaturas
   const valorSupervisao = membro.supervisao || '';
   
   // Primeiro: substituir valor {divisao1_valor}
-  resultado = resultado.replace(/\{divisao1_valor\}/g, valorSupervisao);
+  resultado = resultado.replace(/\{divisao1_valor\}/g, valorSupervisao.toUpperCase());
   
   // Depois: substituir rótulo {divisao1}
   resultado = resultado.replace(/\{divisao1\}(?!_)/g, divisao1Label);
@@ -94,7 +94,7 @@ export function substituirPlaceholders(texto: string, membro: any, nomenclaturas
   const valorRegiao = membro.campo || '';
   
   // Primeiro: substituir valor {divisao2_valor}
-  resultado = resultado.replace(/\{divisao2_valor\}/g, valorRegiao);
+  resultado = resultado.replace(/\{divisao2_valor\}/g, valorRegiao.toUpperCase());
   
   // Depois: substituir rótulo {divisao2}
   resultado = resultado.replace(/\{divisao2\}(?!_)/g, divisao2Label);
@@ -108,7 +108,7 @@ export function substituirPlaceholders(texto: string, membro: any, nomenclaturas
   const valorCongregacao = membro.congregacao || '';
   
   // Primeiro: substituir valor {divisao3_valor}
-  resultado = resultado.replace(/\{divisao3_valor\}/g, valorCongregacao);
+  resultado = resultado.replace(/\{divisao3_valor\}/g, valorCongregacao.toUpperCase());
   
   // Depois: substituir rótulo {divisao3}
   resultado = resultado.replace(/\{divisao3\}(?!_)/g, divisao3Label);
@@ -211,7 +211,7 @@ export function substituirPlaceholders(texto: string, membro: any, nomenclaturas
         .join(', ');
     }
 
-    resultado = resultado.replace(regex, String(valor));
+    resultado = resultado.replace(regex, String(valor).toUpperCase());
   });
 
 

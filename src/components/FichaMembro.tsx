@@ -1,9 +1,10 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { QRCodeSVG as QRCode } from 'qrcode.react';
-import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+import { createClient } from '@/lib/supabase-client';
 
 interface DadosMembro {
   matricula: string;
@@ -20,6 +21,8 @@ interface DadosMembro {
   escolaridade?: string;
   estadoCivil?: string;
   rg?: string;
+  orgaoEmissor?: string;
+  uf_rg?: string;
   nacionalidade?: string;
   naturalidade?: string;
   uf?: string;
@@ -39,6 +42,39 @@ interface DadosMembro {
   nomeMae?: string;
   qualFuncao?: string;
   setorDepartamento?: string;
+  numero_cgadb?: string;
+  posicaoNoCampo?: string;
+  supervisao?: string;
+  campo?: string;
+  cursoTeologico?: string;
+  instituicaoTeologica?: string;
+  profissao?: string;
+  dataBatismoAguas?: string;
+  dataConsagracao?: string;
+  dataEmissao?: string;
+  dataValidadeCredencial?: string;
+  data_filiacao?: string;
+  ev_autorizado_data?: string;
+  ev_autorizado_local?: string;
+  ev_consagrado_data?: string;
+  ev_consagrado_local?: string;
+  cons_missionario_data?: string;
+  cons_missionario_local?: string;
+  orden_pastor_data?: string;
+  orden_pastor_local?: string;
+  conjuge_rg?: string;
+  conjuge_naturalidade?: string;
+  conjuge_nome_pai?: string;
+  conjuge_nome_mae?: string;
+  conjuge_tipo_sanguineo?: string;
+  conjuge_titulo_eleitoral?: string;
+  conjuge_fone?: string;
+  conjuge_email?: string;
+  conjuge_foto_url?: string;
+  qtd_filhos?: number;
+  numero_aemadepa?: string;
+  observacoes?: string;
+  casaDoPastorAcp?: string;
 }
 
 interface DadosIgreja {
@@ -46,6 +82,7 @@ interface DadosIgreja {
   endereco: string;
   telefone: string;
   email: string;
+  cnpj?: string;
   logoUrl?: string;
 }
 
@@ -55,451 +92,374 @@ interface FichaMembroProps {
   fotoUrl?: string;
 }
 
+const fmt = (v?: string | null) => v || '';
+
+const fmtDate = (v?: string | null) => {
+  if (!v) return '';
+  const d = new Date(v + (v.length === 10 ? 'T12:00:00' : ''));
+  if (isNaN(d.getTime())) return v;
+  return d.toLocaleDateString('pt-BR');
+};
+
+const cell: React.CSSProperties = {
+  border: '1px solid #bbb',
+  padding: '3px 6px',
+  fontSize: '10px',
+  verticalAlign: 'middle',
+};
+const lbl: React.CSSProperties = {
+  ...cell,
+  background: '#f0f0f0',
+  fontWeight: 'bold',
+  whiteSpace: 'nowrap',
+  width: '1%',
+};
+const secHead = (color = '#003d7a'): React.CSSProperties => ({
+  background: color,
+  color: '#fff',
+  fontWeight: 'bold',
+  fontSize: '10px',
+  padding: '3px 8px',
+  textAlign: 'right',
+  letterSpacing: '0.5px',
+});
+
 export default function FichaMembro({ membro, dadosIgreja, fotoUrl }: FichaMembroProps) {
   const fichaRef = useRef<HTMLDivElement>(null);
-  const sectionTitleStyle: React.CSSProperties = {
-    background: 'transparent',
-    color: '#003d7a',
-    padding: '6px 10px',
-    fontWeight: 'bold',
-    fontSize: '12px',
-    border: '1px solid #003d7a',
-  };
+  const [emailUsuario, setEmailUsuario] = useState('');
+
+  useEffect(() => {
+    const sb = createClient();
+    sb.auth.getUser().then(({ data }) => {
+      setEmailUsuario(data?.user?.email || '');
+    });
+  }, []);
+
+  const dataPrint = new Date().toLocaleDateString('pt-BR', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
+  const dataCapit = dataPrint.charAt(0).toUpperCase() + dataPrint.slice(1);
 
   const imprimirFicha = () => {
-    if (fichaRef.current) {
-      const printWindow = window.open('', '', 'height=1000,width=900');
-      if (printWindow) {
-        const html = fichaRef.current.innerHTML;
-        printWindow.document.write(`
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <meta charset="UTF-8">
-              <title>Ficha do Ministro - ${membro.nome}</title>
-              <style>
-                * { margin: 0; padding: 0; }
-                body { 
-                  font-family: Arial, sans-serif; 
-                  padding: 0;
-                  background: white;
-                }
-              </style>
-            </head>
-            <body>
-              ${html}
-            </body>
-          </html>
-        `);
-        printWindow.document.close();
-        setTimeout(() => {
-          printWindow.print();
-        }, 250);
-      }
-    }
+    if (!fichaRef.current) return;
+    const pw = window.open('', '', 'height=1100,width=800');
+    if (!pw) return;
+    pw.document.write(`<!DOCTYPE html><html><head>
+      <meta charset="UTF-8">
+      <title>Ficha Convencional - ${membro.nome}</title>
+      <style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;background:#fff;}@media print{@page{margin:8mm;}}</style>
+    </head><body>${fichaRef.current.innerHTML}</body></html>`);
+    pw.document.close();
+    setTimeout(() => pw.print(), 300);
   };
 
   const gerarPDF = async () => {
-    if (!fichaRef.current) {
-      alert('Erro: Ficha não encontrada.');
-      return;
-    }
-
+    if (!fichaRef.current) return;
     try {
-      await new Promise(resolve => setTimeout(resolve, 500));
-
+      await new Promise(r => setTimeout(r, 400));
       const canvas = await html2canvas(fichaRef.current, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#ffffff',
-        logging: false,
-        windowHeight: fichaRef.current.scrollHeight,
-        windowWidth: fichaRef.current.scrollWidth
+        scale: 2, useCORS: true, allowTaint: true, backgroundColor: '#ffffff', logging: false,
+        windowHeight: fichaRef.current.scrollHeight, windowWidth: fichaRef.current.scrollWidth,
       });
-
-      const imgWidth = 210;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      const imgData = canvas.toDataURL('image/png');
-
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
-        compress: true
-      });
-
-      let heightLeft = imgHeight;
-      let position = 0;
-      const pageHeight = 297;
-
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-      }
-
-      const nomeArquivo = `Ficha_${membro.nome.replace(/\s+/g, '_')}_${membro.matricula}.pdf`;
-      pdf.save(nomeArquivo);
-    } catch (error) {
-      console.error('Erro ao gerar PDF:', error);
-      alert('Erro ao gerar PDF: ' + (error instanceof Error ? error.message : String(error)));
-    }
+      const imgW = 210;
+      const imgH = (canvas.height * imgW) / canvas.width;
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+      let left = imgH; let pos = 0; const ph = 297;
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, pos, imgW, imgH);
+      left -= ph;
+      while (left >= 0) { pos = left - imgH; pdf.addPage(); pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, pos, imgW, imgH); left -= ph; }
+      pdf.save(`Ficha_${membro.nome.replace(/\\s+/g, '_')}_${membro.matricula}.pdf`);
+    } catch (e) { alert('Erro ao gerar PDF: ' + (e instanceof Error ? e.message : String(e))); }
   };
 
+  const cargo = fmt(membro.cargo).toUpperCase() || fmt(membro.qualFuncao).toUpperCase();
+  const acpCarregando = membro.casaDoPastorAcp === 'carregando';
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      <div style={{ display: 'flex', gap: '8px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      {/* Botoes */}
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
         <button
           onClick={gerarPDF}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: '#dc2626',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontWeight: '600',
-            fontSize: '14px'
-          }}
+          disabled={acpCarregando}
+          style={{ padding: '8px 18px', backgroundColor: acpCarregando ? '#f87171' : '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', cursor: acpCarregando ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', opacity: acpCarregando ? 0.6 : 1 }}
         >
-          📥 Baixar PDF
+          Baixar PDF
         </button>
         <button
           onClick={imprimirFicha}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: '#2563eb',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontWeight: '600',
-            fontSize: '14px'
-          }}
+          disabled={acpCarregando}
+          style={{ padding: '8px 18px', backgroundColor: acpCarregando ? '#93c5fd' : '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: acpCarregando ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', opacity: acpCarregando ? 0.6 : 1 }}
         >
-          🖨️ Imprimir Ficha
+          Imprimir Ficha
         </button>
+        {acpCarregando && (
+          <span style={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>
+            Consultando Casa do Pastor...
+          </span>
+        )}
       </div>
 
-      <div
-        ref={fichaRef}
-        style={{
-          width: '210mm',
-          height: '297mm',
-          margin: '0 auto',
-          padding: '15mm',
-          fontFamily: 'Arial, sans-serif',
-          fontSize: '12px',
-          lineHeight: '1.4',
-          display: 'flex',
-          flexDirection: 'column',
-          backgroundColor: '#fff',
-          color: '#333',
-          boxSizing: 'border-box'
-        }}
-      >
-        {/* ===== CABEÇALHO PROFISSIONAL ===== */}
-        <div style={{ marginBottom: '15px' }}>
-          {/* Linha 1: Logo + Nome da Igreja Centralizado */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '15px',
-            paddingBottom: '10px',
-            borderBottom: '3px solid #003d7a',
-            marginBottom: '12px'
-          }}>
-            {dadosIgreja.logoUrl && (
-              <img
-                src={dadosIgreja.logoUrl}
-                alt="Logo"
-                style={{ width: '70px', height: '70px', objectFit: 'contain' }}
-              />
-            )}
-            <div style={{ textAlign: 'center' }}>
-              <h1 style={{
-                fontSize: '20px',
-                fontWeight: 'bold',
-                color: '#003d7a',
-                margin: '0 0 4px 0',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px'
-              }}>
-                {dadosIgreja.nomeIgreja}
-              </h1>
-              <p style={{ margin: '2px 0', fontSize: '11px', color: '#666' }}>
-                {dadosIgreja.endereco}
-              </p>
-              <p style={{ margin: '2px 0', fontSize: '11px', color: '#666' }}>
-                Tel: {dadosIgreja.telefone} | Email: {dadosIgreja.email}
-              </p>
-            </div>
-          </div>
+      <div ref={fichaRef} style={{ width: '210mm', margin: '0 auto', padding: '8mm 10mm', fontFamily: 'Arial, sans-serif', fontSize: '11px', lineHeight: '1.3', backgroundColor: '#fff', color: '#222', boxSizing: 'border-box' }}>
 
-          {/* Linha 2: Matrícula/Nome + Foto/QR */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr auto',
-            gap: '15px',
-            alignItems: 'center'
-          }}>
-            {/* Matrícula e Nome em Caixa Horizontal */}
-            <div style={{
-              background: '#ffffff',
-              border: '1px solid #003d7a',
-              borderRadius: '8px',
-              padding: '12px 16px',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                <div>
-                  <p style={{ margin: '0', fontSize: '10px', color: '#003d7a', fontWeight: '700' }}>
-                    MATRÍCULA
-                  </p>
-                  <p style={{ margin: '2px 0 0 0', fontSize: '18px', color: '#1f2937', fontWeight: 'bold' }}>
-                    {membro.matricula}
-                  </p>
-                </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ margin: '0', fontSize: '10px', color: '#003d7a', fontWeight: '700' }}>
-                    NOME DO MINISTRO
-                  </p>
-                  <p style={{ margin: '2px 0 0 0', fontSize: '16px', color: '#1f2937', fontWeight: 'bold', letterSpacing: '0.5px' }}>
-                    {membro.nome}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Foto e QR Code Lado a Lado */}
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              {/* Foto */}
-              <div style={{
-                width: '100px',
-                height: '120px',
-                border: '3px solid #003d7a',
-                background: '#f5f5f5',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'hidden',
-                borderRadius: '4px'
-              }}>
-                {fotoUrl ? (
-                  <img src={fotoUrl} alt={membro.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  <span style={{ fontSize: '32px', color: '#999' }}>📷</span>
-                )}
-              </div>
-
-              {/* QR Code */}
-              <div style={{
-                border: '2px solid #003d7a',
-                padding: '4px',
-                background: '#fff',
-                borderRadius: '4px'
-              }}>
-                <QRCode
-                  value={membro.uniqueId}
-                  size={80}
-                  level="L"
-                  includeMargin={false}
-                  fgColor="#003d7a"
-                  bgColor="#ffffff"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ===== TABELA DE DADOS ===== */}
-        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '10px', fontSize: '11px' }}>
+        {/* CABECALHO */}
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '4px' }}>
           <tbody>
-            {/* DADOS PESSOAIS */}
             <tr>
-              <td colSpan={4} style={sectionTitleStyle}>
-                DADOS PESSOAIS
+              <td style={{ width: '70px', verticalAlign: 'middle', padding: '0 8px 0 0' }}>
+                {dadosIgreja.logoUrl
+                  ? <img src={dadosIgreja.logoUrl} alt="Logo" style={{ width: '65px', height: '65px', objectFit: 'contain' }} />
+                  : <div style={{ width: '65px', height: '65px', border: '1px dashed #999', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', color: '#999' }}>LOGO</div>
+                }
               </td>
-            </tr>
-            <tr>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px', width: '15%', fontWeight: 'bold', background: '#f9f9f9' }}>CPF:</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px', width: '35%' }}>{membro.cpf}</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px', width: '15%', fontWeight: 'bold', background: '#f9f9f9' }}>RG:</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px', width: '35%' }}>{membro.rg || '—'}</td>
-            </tr>
-            <tr>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Nascimento:</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.dataNascimento || '—'}</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Sexo:</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.sexo || '—'}</td>
-            </tr>
-            <tr>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Estado Civil:</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.estadoCivil || '—'}</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Tipo Sanguíneo:</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.tipoSanguineo || '—'}</td>
-            </tr>
-            <tr>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Nacionalidade:</td>
-              <td colSpan={3} style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.nacionalidade || '—'}</td>
-            </tr>
-
-            {/* DADOS FAMILIARES */}
-            {(membro.nomePai || membro.nomeMae || membro.nomeConjuge) && (
-              <>
-                <tr>
-                  <td colSpan={4} style={{ border: 'none', height: '8px', padding: 0 }}></td>
-                </tr>
-                <tr>
-                  <td colSpan={4} style={sectionTitleStyle}>
-                    DADOS FAMILIARES
-                  </td>
-                </tr>
-                {membro.nomePai && (
-                  <tr>
-                    <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Pai:</td>
-                    <td colSpan={3} style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.nomePai}</td>
-                  </tr>
-                )}
-                {membro.nomeMae && (
-                  <tr>
-                    <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Mãe:</td>
-                    <td colSpan={3} style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.nomeMae}</td>
-                  </tr>
-                )}
-                {membro.nomeConjuge && (
-                  <tr>
-                    <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Cônjuge:</td>
-                    <td style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.nomeConjuge}</td>
-                    <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Nasc. Cônjuge:</td>
-                    <td style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.dataNascimentoConjuge || '—'}</td>
-                  </tr>
-                )}
-              </>
-            )}
-
-            {/* DADOS MINISTERIAIS */}
-            {(membro.tipoCadastro === 'ministro' || membro.cargo) && (
-              <>
-                <tr>
-                  <td colSpan={4} style={{ border: 'none', height: '8px', padding: 0 }}></td>
-                </tr>
-                <tr>
-                  <td colSpan={4} style={sectionTitleStyle}>
-                    DADOS MINISTERIAIS
-                  </td>
-                </tr>
-                <tr>
-                  <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Tipo:</td>
-                  <td style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.tipoCadastro || '—'}</td>
-                  <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Cargo:</td>
-                  <td style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.cargo || '—'}</td>
-                </tr>
-                <tr>
-                  <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Status:</td>
-                  <td style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.status === 'ativo' ? 'ATIVO' : 'INATIVO'}</td>
-                  <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Função:</td>
-                  <td style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.qualFuncao || '—'}</td>
-                </tr>
-                {membro.setorDepartamento && (
-                  <tr>
-                    <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Setor:</td>
-                    <td colSpan={3} style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.setorDepartamento}</td>
-                  </tr>
-                )}
-              </>
-            )}
-
-            {/* ENDEREÇO */}
-            <tr>
-              <td colSpan={4} style={{ border: 'none', height: '8px', padding: 0 }}></td>
-            </tr>
-            <tr>
-              <td colSpan={4} style={sectionTitleStyle}>
-                ENDEREÇO
+              <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                <div style={{ fontSize: '22px', fontWeight: 'bold', letterSpacing: '6px', color: '#0D2B4E' }}>
+                  {dadosIgreja.nomeIgreja.toUpperCase()}
+                </div>
+                {dadosIgreja.endereco && <div style={{ fontSize: '9px', color: '#444', marginTop: '2px' }}>{dadosIgreja.endereco}</div>}
+                <div style={{ fontSize: '9px', color: '#444' }}>
+                  {[dadosIgreja.telefone && `Fone: ${dadosIgreja.telefone}`, dadosIgreja.cnpj && `CNPJ ${dadosIgreja.cnpj}`].filter(Boolean).join(' | ')}
+                </div>
+                <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0D2B4E', marginTop: '4px', letterSpacing: '1px' }}>
+                  Ficha Convencional
+                </div>
               </td>
-            </tr>
-            <tr>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Logradouro:</td>
-              <td colSpan={3} style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.logradouro || '—'}</td>
-            </tr>
-            <tr>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Número:</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.numero || '—'}</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Bairro:</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.bairro || '—'}</td>
-            </tr>
-            <tr>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Complemento:</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.complemento || '—'}</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>CEP:</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.cep || '—'}</td>
-            </tr>
-            <tr>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Cidade:</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.cidade || '—'}</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>UF:</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.uf || '—'}</td>
-            </tr>
-
-            {/* CONTATO */}
-            <tr>
-              <td colSpan={4} style={{ border: 'none', height: '8px', padding: 0 }}></td>
-            </tr>
-            <tr>
-              <td colSpan={4} style={sectionTitleStyle}>
-                CONTATO
+              <td style={{ width: '70px', verticalAlign: 'middle', padding: '0 0 0 8px', textAlign: 'right' }}>
+                <QRCode value={membro.uniqueId || membro.id} size={62} level="L" fgColor="#003d7a" bgColor="#ffffff" />
               </td>
-            </tr>
-            <tr>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Celular:</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.celular || '—'}</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>WhatsApp:</td>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.whatsapp || '—'}</td>
-            </tr>
-            <tr>
-              <td style={{ border: '1px solid #ddd', padding: '5px 8px', fontWeight: 'bold', background: '#f9f9f9' }}>Email:</td>
-              <td colSpan={3} style={{ border: '1px solid #ddd', padding: '5px 8px' }}>{membro.email || '—'}</td>
             </tr>
           </tbody>
         </table>
 
-        {/* ===== ESPAÇO FLEXÍVEL ===== */}
-        <div style={{ flex: 1 }}></div>
+        <div style={{ borderTop: '2px solid #0D2B4E', marginBottom: '5px' }} />
 
-        {/* ===== RODAPÉ ===== */}
-        <div style={{
-          borderTop: '2px solid #003d7a',
-          paddingTop: '10px',
-          fontSize: '11px',
-          color: '#333',
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr',
-          gap: '15px'
-        }}>
-          <div>
-            <p style={{ margin: '0', fontWeight: 'bold', color: '#003d7a' }}>Data:</p>
-            <p style={{ margin: '4px 0 0 0' }}>{new Date().toLocaleDateString('pt-BR')}</p>
-          </div>
-          <div style={{ textAlign: 'center' }}>
-            <p style={{ margin: '0', color: '#666', fontWeight: 'bold' }}>SISCOMIEADEPA</p>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <p style={{ margin: '0', fontWeight: 'bold', color: '#003d7a' }}>Assinatura:</p>
-            <div style={{
-              borderTop: '2px solid #333',
-              marginTop: '12px',
-              width: '100px',
-              marginLeft: 'auto'
-            }}></div>
-          </div>
+        {/* DADOS ECLESIASTICOS */}
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '4px' }}>
+          <tbody>
+            <tr>
+              <td style={{ verticalAlign: 'top', paddingRight: '6px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <tbody>
+                    <tr><td colSpan={4} style={secHead()}>Dados Eclesiasticos</td></tr>
+                    <tr>
+                      <td style={lbl}>Nome</td>
+                      <td colSpan={3} style={{ ...cell, fontWeight: 'bold', fontSize: '11px' }}>{membro.nome.toUpperCase()}</td>
+                    </tr>
+                    <tr>
+                      <td style={lbl}>Data de Filiacao</td>
+                      <td style={cell}>{fmtDate(membro.data_filiacao)}</td>
+                      <td style={lbl}>Status</td>
+                      <td style={{ ...cell, fontWeight: 'bold', color: membro.status === 'ativo' ? '#16a34a' : '#dc2626' }}>
+                        {(membro.status || 'ativo').toUpperCase()}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style={lbl}>Registro No</td>
+                      <td style={cell}>{fmt(membro.matricula)}</td>
+                      <td style={lbl}>Registro CGADB</td>
+                      <td style={cell}>{fmt(membro.numero_cgadb)}</td>
+                    </tr>
+                    <tr>
+                      <td style={lbl}>Batismo nas Aguas</td>
+                      <td style={cell}>{fmtDate(membro.dataBatismoAguas)}</td>
+                      <td style={lbl}>Autorizacao a Evangelista</td>
+                      <td style={cell}>{fmtDate(membro.ev_autorizado_data)}{membro.ev_autorizado_local ? ` - ${membro.ev_autorizado_local}` : ''}</td>
+                    </tr>
+                    <tr>
+                      <td style={lbl}>Consagracao a Evangelista</td>
+                      <td style={cell}>{fmtDate(membro.ev_consagrado_data)}{membro.ev_consagrado_local ? ` - ${membro.ev_consagrado_local}` : ''}</td>
+                      <td style={lbl}>Casa do Pastor</td>
+                      <td style={{
+                        ...cell,
+                        fontWeight: 'bold',
+                        color: membro.casaDoPastorAcp === 'adimplente' ? '#166534'
+                          : membro.casaDoPastorAcp === 'inadimplente' ? '#991b1b'
+                          : undefined
+                      }}>
+                        {membro.casaDoPastorAcp === 'carregando' ? 'Consultando...'
+                          : membro.casaDoPastorAcp === 'adimplente' ? 'ADIMPLENTE'
+                          : membro.casaDoPastorAcp === 'inadimplente' ? 'INADIMPLENTE'
+                          : membro.casaDoPastorAcp === 'nao_encontrado' ? 'NÃO ENCONTRADO'
+                          : membro.casaDoPastorAcp === 'erro' ? 'Indisponível'
+                          : membro.casaDoPastorAcp === 'sem_cpf' ? 'CPF não informado'
+                          : fmt(membro.posicaoNoCampo).toUpperCase()}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style={lbl}>Ordenacao ao Pastorado</td>
+                      <td style={cell}>{fmtDate(membro.orden_pastor_data)}{membro.orden_pastor_local ? ` - ${membro.orden_pastor_local}` : ''}</td>
+                      <td style={lbl}>Profissao</td>
+                      <td style={cell}>{fmt(membro.profissao)}</td>
+                    </tr>
+                    <tr>
+                      <td style={lbl}>Campo</td>
+                      <td style={cell}>{fmt(membro.campo).toUpperCase()}</td>
+                      <td style={lbl}>Cargo</td>
+                      <td style={{ ...cell, fontWeight: 'bold' }}>{cargo}</td>
+                    </tr>
+                    <tr>
+                      <td style={lbl}>Supervisao</td>
+                      <td colSpan={3} style={cell}>{fmt(membro.supervisao).toUpperCase()}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </td>
+              <td style={{ width: '90px', verticalAlign: 'top' }}>
+                <div style={{ width: '88px', height: '110px', border: '2px solid #0D2B4E', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f5f5' }}>
+                  {fotoUrl
+                    ? <img src={fotoUrl} alt={membro.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : <span style={{ fontSize: '28px', color: '#bbb' }}>foto</span>
+                  }
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* DADOS PESSOAIS */}
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '4px' }}>
+          <tbody>
+            <tr><td colSpan={6} style={secHead()}>Dados Pessoais</td></tr>
+            <tr>
+              <td style={lbl}>RG</td>
+              <td style={cell}>{fmt(membro.rg)}{membro.orgaoEmissor ? ` ${membro.orgaoEmissor}` : ''}{membro.uf_rg ? `-${membro.uf_rg}` : ''}</td>
+              <td style={lbl}>CPF</td>
+              <td style={cell}>{fmt(membro.cpf)}</td>
+              <td style={lbl}>Nacionalidade</td>
+              <td style={cell}>{fmt(membro.nacionalidade)}</td>
+            </tr>
+            <tr>
+              <td style={lbl}>Pai</td>
+              <td colSpan={3} style={cell}>{fmt(membro.nomePai).toUpperCase()}</td>
+              <td style={lbl}>Tipo Sanguineo</td>
+              <td style={cell}>{fmt(membro.tipoSanguineo)}</td>
+            </tr>
+            <tr>
+              <td style={lbl}>Mae</td>
+              <td colSpan={5} style={cell}>{fmt(membro.nomeMae).toUpperCase()}</td>
+            </tr>
+            <tr>
+              <td style={lbl}>Nascimento</td>
+              <td style={cell}>{fmtDate(membro.dataNascimento)}</td>
+              <td style={lbl}>Naturalidade</td>
+              <td style={cell}>{fmt(membro.naturalidade)}{membro.uf ? `, ${membro.uf}` : ''}</td>
+              <td style={lbl}>Estado Civil</td>
+              <td style={cell}>{fmt(membro.estadoCivil)}</td>
+            </tr>
+            <tr>
+              <td style={lbl}>Escolaridade</td>
+              <td style={cell}>{fmt(membro.escolaridade).toUpperCase()}</td>
+              <td style={lbl}>Curso Teologico</td>
+              <td colSpan={3} style={cell}>{[fmt(membro.cursoTeologico).toUpperCase(), fmt(membro.instituicaoTeologica)].filter(Boolean).join(' - ')}</td>
+            </tr>
+            <tr>
+              <td style={lbl}>E-Mail</td>
+              <td colSpan={3} style={cell}>{fmt(membro.email)}</td>
+              <td style={lbl}>Fone</td>
+              <td style={cell}>{fmt(membro.celular)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* FAMILIA */}
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '4px' }}>
+          <tbody>
+            <tr>
+              <td colSpan={5} style={secHead()}>Familia</td>
+              <td style={{ ...secHead(), width: '88px', textAlign: 'center' }}>Foto da Esposa</td>
+            </tr>
+            <tr>
+              <td style={lbl}>Conjuge</td>
+              <td colSpan={4} style={{ ...cell, fontWeight: 'bold' }}>{fmt(membro.nomeConjuge).toUpperCase()}</td>
+              <td rowSpan={7} style={{ ...cell, width: '88px', verticalAlign: 'top', padding: '4px', textAlign: 'center' }}>
+                {membro.conjuge_foto_url
+                  ? <img src={membro.conjuge_foto_url} alt="Esposa" style={{ width: '80px', height: '100px', objectFit: 'cover', border: '1px solid #bbb' }} />
+                  : <div style={{ width: '80px', height: '100px', border: '1px dashed #bbb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', color: '#bbb' }}>sem foto</div>
+                }
+              </td>
+            </tr>
+            <tr>
+              <td style={lbl}>Data Nasc. da Esposa</td>
+              <td style={cell}>{fmtDate(membro.dataNascimentoConjuge)}</td>
+              <td style={lbl}>Naturalidade</td>
+              <td colSpan={2} style={cell}>{fmt(membro.conjuge_naturalidade)}</td>
+            </tr>
+            <tr>
+              <td style={lbl}>RG da Esposa</td>
+              <td style={cell}>{fmt(membro.conjuge_rg)}</td>
+              <td style={lbl}>CPF da Esposa</td>
+              <td colSpan={2} style={cell}>{fmt(membro.cpfConjuge)}</td>
+            </tr>
+            <tr>
+              <td style={lbl}>Pai</td>
+              <td style={cell}>{fmt(membro.conjuge_nome_pai)}</td>
+              <td style={lbl}>Mae</td>
+              <td colSpan={2} style={cell}>{fmt(membro.conjuge_nome_mae)}</td>
+            </tr>
+            <tr>
+              <td style={lbl}>Tipo Sanguineo da Esposa</td>
+              <td style={cell}>{fmt(membro.conjuge_tipo_sanguineo)}</td>
+              <td style={lbl}>Titulo de eleitor da Esposa</td>
+              <td colSpan={2} style={cell}>{fmt(membro.conjuge_titulo_eleitoral)}</td>
+            </tr>
+            <tr>
+              <td style={lbl}>Fone da Esposa</td>
+              <td style={cell}>{fmt(membro.conjuge_fone)}</td>
+              <td style={lbl}>E-Mail Esposa</td>
+              <td colSpan={2} style={cell}>{fmt(membro.conjuge_email)}</td>
+            </tr>
+            <tr>
+              <td style={lbl}>Filhos</td>
+              <td style={cell}>{membro.qtd_filhos != null ? String(membro.qtd_filhos) : ''}</td>
+              <td style={lbl}>No AEMADEPA</td>
+              <td colSpan={2} style={cell}>{fmt(membro.numero_aemadepa)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* DADOS RESIDENCIAIS */}
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '4px' }}>
+          <tbody>
+            <tr><td colSpan={6} style={secHead()}>Dados Residenciais</td></tr>
+            <tr>
+              <td style={lbl}>Endereco</td>
+              <td colSpan={3} style={cell}>{[fmt(membro.logradouro), fmt(membro.numero)].filter(Boolean).join(', ').toUpperCase()}</td>
+              <td style={lbl}>CEP</td>
+              <td style={cell}>{fmt(membro.cep)}</td>
+            </tr>
+            <tr>
+              <td style={lbl}>Bairro</td>
+              <td colSpan={2} style={cell}>{fmt(membro.bairro).toUpperCase()}</td>
+              <td style={lbl}>Cidade/UF</td>
+              <td colSpan={2} style={cell}>{[fmt(membro.cidade), fmt(membro.uf)].filter(Boolean).join('/').toUpperCase()}</td>
+            </tr>
+            <tr>
+              <td style={lbl}>Complemento</td>
+              <td colSpan={5} style={cell}>{fmt(membro.complemento).toUpperCase()}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* OBSERVACOES */}
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '6px' }}>
+          <tbody>
+            <tr><td colSpan={2} style={secHead()}>Observacoes</td></tr>
+            <tr>
+              <td style={lbl}>Obs.</td>
+              <td style={{ ...cell, minHeight: '24px', height: '24px' }}>{fmt(membro.observacoes)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* RODAPE */}
+        <div style={{ borderTop: '1px solid #0D2B4E', paddingTop: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: '8px', color: '#555' }}>Secretaria da COMIEADEPA - Belem - PA</span>
+          <span style={{ fontSize: '8px', color: '#555', textAlign: 'right' }}>
+            {emailUsuario && (<><strong>{emailUsuario}</strong> &nbsp;|&nbsp;</>)}
+            {dataCapit}
+          </span>
         </div>
+
       </div>
     </div>
   );
