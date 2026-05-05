@@ -13,10 +13,11 @@ CREATE TABLE IF NOT EXISTS public.member_history (
   created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_member_history_member_id  ON public.member_history(member_id);
-CREATE INDEX idx_member_history_created_at ON public.member_history(created_at);
+CREATE INDEX IF NOT EXISTS idx_member_history_member_id  ON public.member_history(member_id);
+CREATE INDEX IF NOT EXISTS idx_member_history_created_at ON public.member_history(created_at);
 
 ALTER TABLE public.member_history ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "member_history_authenticated" ON public.member_history;
 CREATE POLICY "member_history_authenticated"
   ON public.member_history FOR ALL
   USING (auth.uid() IS NOT NULL);

@@ -20,6 +20,7 @@ CREATE INDEX IF NOT EXISTS idx_hds_membro_id ON public.hds(membro_id);
 -- RLS
 ALTER TABLE public.hds ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Authenticated users can manage hds" ON public.hds;
 CREATE POLICY "Authenticated users can manage hds"
   ON public.hds
   FOR ALL

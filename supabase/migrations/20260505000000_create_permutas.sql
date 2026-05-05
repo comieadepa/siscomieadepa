@@ -24,12 +24,14 @@ CREATE TABLE IF NOT EXISTS public.permutas (
   updated_at            TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX idx_permutas_codigo_ano ON public.permutas(codigo_processo, ano);
-CREATE INDEX idx_permutas_ministro_id ON public.permutas(ministro_id);
-CREATE INDEX idx_permutas_created_at ON public.permutas(created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_permutas_codigo_ano ON public.permutas(codigo_processo, ano);
+CREATE INDEX IF NOT EXISTS idx_permutas_ministro_id ON public.permutas(ministro_id);
+CREATE INDEX IF NOT EXISTS idx_permutas_created_at ON public.permutas(created_at);
 
 ALTER TABLE public.permutas ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "permutas_authenticated" ON public.permutas;
 CREATE POLICY "permutas_authenticated" ON public.permutas FOR ALL USING (auth.uid() IS NOT NULL);
 
+DROP TRIGGER IF EXISTS trg_permutas_updated_at ON public.permutas;
 CREATE TRIGGER trg_permutas_updated_at BEFORE UPDATE ON public.permutas
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
