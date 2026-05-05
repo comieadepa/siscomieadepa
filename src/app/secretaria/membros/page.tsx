@@ -113,7 +113,7 @@ export default function MembrosPage() {
     'Feliz Aniversário, {nome}! 🎉\n\nA COMIEADEPA deseja que Deus te abençoe grandemente neste dia tão especial!\n\nCom carinho,\nSecretaria COMIEADEPA'
   );
   const [anivImagemUrl, setAnivImagemUrl] = useState<string>('');
-  const [anivImagemFile, setAnivImagemFile] = useState<File | null>(null);
+  const [_anivImagemFile, setAnivImagemFile] = useState<File | null>(null); void _anivImagemFile;
   const [anivEnviando, setAnivEnviando] = useState<string | null>(null);
   const anivFileRef = useRef<HTMLInputElement>(null);
   const [templatesSnapshot, setTemplatesSnapshot] = useState<any[]>([]);
