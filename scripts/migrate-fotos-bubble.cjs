@@ -16,6 +16,9 @@
  *   (crie em Storage → New bucket → nome: member-photos → Public: ON)
  */
 
+// Carrega .env.local automaticamente
+try { require('dotenv').config({ path: require('path').resolve(__dirname, '../.env.local') }); } catch {}
+
 const { createClient } = require('@supabase/supabase-js');
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://wtifljxpoinpbzyugrfc.supabase.co';

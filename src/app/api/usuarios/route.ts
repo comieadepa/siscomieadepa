@@ -7,7 +7,7 @@ type UsuarioResponse = {
   nome: string;
   email: string;
   email_confirmed: boolean;
-  nivel: 'administrador' | 'financeiro' | 'operador' | 'supervisor';
+  nivel: 'super' | 'administrador' | 'cgadb' | 'comissao' | 'inscricao' | 'financeiro';
   congregacao?: string;
   congregacao_id?: string | null;
   status: 'ativo' | 'inativo';
@@ -33,10 +33,13 @@ type UsuarioUpdateBody = {
 
 function mapNivel(role: string | null | undefined): UsuarioResponse['nivel'] {
   const base = String(role || '').toLowerCase();
-  if (['admin'].includes(base)) return 'administrador';
+  if (base === 'super') return 'super';
+  if (['admin', 'administrador'].includes(base)) return 'administrador';
+  if (['cgadb'].includes(base)) return 'cgadb';
+  if (['comissao', 'comissão'].includes(base)) return 'comissao';
+  if (['inscricao', 'inscrição', 'inscricão'].includes(base)) return 'inscricao';
   if (['financeiro', 'financial'].includes(base)) return 'financeiro';
-  if (['supervisor', 'manager'].includes(base)) return 'supervisor';
-  return 'operador';
+  return 'administrador';
 }
 
 function resolveStatus(user: any): 'ativo' | 'inativo' {
@@ -57,10 +60,13 @@ function resolveEmailConfirmed(user: any): boolean {
 // Mapeia nivel → role para a tabela public.users
 function mapRoleFromNivel(nivel: UsuarioResponse['nivel']): string {
   switch (nivel) {
+    case 'super': return 'super';
     case 'administrador': return 'admin';
+    case 'cgadb': return 'cgadb';
+    case 'comissao': return 'comissao';
+    case 'inscricao': return 'inscricao';
     case 'financeiro': return 'financeiro';
-    case 'supervisor': return 'manager';
-    default: return 'operator';
+    default: return 'admin';
   }
 }
 
@@ -103,7 +109,7 @@ export async function GET(request: NextRequest) {
       (congregacoes || []).forEach((c: any) => congregacaoMap.set(String(c.id), String(c.nome || '')));
     }
 
-    const usuarios: UsuarioResponse[] = authResults.map(({ row, user }) => ({
+    const usuarios: (UsuarioResponse & { cpf?: string; celular?: string })[] = authResults.map(({ row, user }) => ({
       id: String(row.id),
       nome: resolveNome(user) || String(row.name || row.email || ''),
       email: String(user?.email || row.email || ''),
@@ -112,6 +118,9 @@ export async function GET(request: NextRequest) {
       congregacao: undefined,
       congregacao_id: null,
       status: row.is_active === false ? 'inativo' : resolveStatus(user),
+      cpf: String(user?.user_metadata?.cpf || ''),
+      celular: String(user?.user_metadata?.celular || ''),
+      subcategoria: String(user?.user_metadata?.subcategoria || ''),
     }));
 
     return NextResponse.json({ data: usuarios });
@@ -130,12 +139,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const body = (await request.json()) as Partial<UsuarioCreateBody>;
+    const body = (await request.json()) as Partial<UsuarioCreateBody> & { cpf?: string; celular?: string; subcategoria?: string };
     const nome = String(body?.nome || '').trim();
     const email = String(body?.email || '').trim();
     const senha = String(body?.senha || '').trim();
     const nivel = body?.nivel as UsuarioResponse['nivel'];
     const congregacaoId = body?.congregacao_id ? String(body.congregacao_id) : null;
+    const cpfCreate = body?.cpf ? String(body.cpf).trim() : '';
+    const celularCreate = body?.celular ? String(body.celular).trim() : '';
+    const subcategoriaCreate = body?.subcategoria ? String(body.subcategoria).trim() : '';
 
     if (!nome || !email || !senha || !nivel) {
       return NextResponse.json({ error: 'nome, email, senha e nivel sao obrigatorios' }, { status: 400 });
@@ -147,23 +159,11 @@ export async function POST(request: NextRequest) {
 
     const admin = createServerClient();
 
-    // Verificar limite de usuários (máximo 10 no single-tenant)
-    const { count: totalUsuarios } = await admin
-      .from('users')
-      .select('*', { count: 'exact', head: true });
-
-    if ((totalUsuarios ?? 0) >= 10) {
-      return NextResponse.json(
-        { error: 'Limite de usuários atingido (máximo: 10).' },
-        { status: 403 }
-      );
-    }
-
     const { data: authUser, error: authError } = await admin.auth.admin.createUser({
       email,
       password: senha,
       email_confirm: true,
-      user_metadata: { full_name: nome },
+      user_metadata: { full_name: nome, cpf: cpfCreate, celular: celularCreate, subcategoria: subcategoriaCreate },
     });
 
     if (authError || !authUser?.user) {
@@ -212,7 +212,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const body = (await request.json()) as Partial<UsuarioUpdateBody>;
+    const body = (await request.json()) as Partial<UsuarioUpdateBody> & { cpf?: string; celular?: string; subcategoria?: string };
     const userId = String(body?.user_id || '').trim();
     const nome = String(body?.nome || '').trim();
     const email = String(body?.email || '').trim();
@@ -220,6 +220,9 @@ export async function PUT(request: NextRequest) {
     const congregacaoId = body?.congregacao_id ? String(body.congregacao_id) : null;
     const status = body?.status as UsuarioResponse['status'] | undefined;
     const senha = body?.senha ? String(body.senha).trim() : '';
+    const cpf = body?.cpf ? String(body.cpf).trim() : '';
+    const celular = body?.celular ? String(body.celular).trim() : '';
+    const subcategoria = body?.subcategoria ? String(body.subcategoria).trim() : '';
 
     if (!userId || !nome || !email || !nivel) {
       return NextResponse.json({ error: 'user_id, nome, email e nivel sao obrigatorios' }, { status: 400 });
@@ -245,7 +248,7 @@ export async function PUT(request: NextRequest) {
 
     const updatePayload: Record<string, any> = {
       email,
-      user_metadata: { full_name: nome },
+      user_metadata: { full_name: nome, cpf, celular, subcategoria },
       email_confirm: true,
     };
 

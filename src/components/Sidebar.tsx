@@ -31,6 +31,7 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
         { id: 'consagracao', label: 'Consagração (obreiros)', icon: '🙏', path: '/secretaria/consagracao' },
         { id: 'cartas', label: 'Cartas ministeriais', icon: '📜', path: '/secretaria/cartas' },
         { id: 'certificados', label: 'Certificados', icon: '🎓', path: '/secretaria/certificados' },
+        { id: 'permutas', label: 'Permutas', icon: '🔄', path: '/secretaria/permutas' },
       ]
     },
     { id: 'cgadb', label: 'Débitos CGADB', icon: '🔴', path: '/secretaria/cgadb' },

@@ -11,28 +11,34 @@ export type FlowAuthContext = {
 
 function mapBaseRole(role: string | null | undefined): string[] {
   switch ((role || '').toLowerCase()) {
+    case 'super':
+      return ['ADMINISTRADOR', 'SUPER'];
     case 'admin':
       return ['ADMINISTRADOR'];
-    case 'manager':
-      return ['SUPERVISOR'];
-    case 'supervisor':
-      return ['SUPERVISOR'];
-    case 'superintendent':
-      return ['SUPERINTENDENTE'];
-    case 'superintendente':
-      return ['SUPERINTENDENTE'];
-    case 'coordinator':
-      return ['COORDENADOR'];
-    case 'coordenador':
-      return ['COORDENADOR'];
-    case 'financial':
-      return ['FINANCEIRO'];
+    case 'cgadb':
+      return ['CGADB'];
+    case 'comissao':
+      return ['COMISSAO'];
+    case 'inscricao':
+      return ['INSCRICAO'];
     case 'financeiro':
       return ['FINANCEIRO'];
+    // legados (compatibilidade)
+    case 'manager':
+    case 'supervisor':
+      return ['ADMINISTRADOR'];
+    case 'superintendent':
+    case 'superintendente':
+      return ['ADMINISTRADOR'];
+    case 'coordinator':
+    case 'coordenador':
+      return ['ADMINISTRADOR'];
+    case 'financial':
+      return ['FINANCEIRO'];
     case 'operator':
-      return ['OPERADOR'];
+      return ['ADMINISTRADOR'];
     case 'viewer':
-      return ['LEITURA'];
+      return ['ADMINISTRADOR'];
     default:
       return [];
   }
@@ -93,17 +99,25 @@ export async function requireFlowAuth(request: NextRequest): Promise<FlowAuthCon
     .maybeSingle();
 
   if (publicUser) {
-    const isAdmin = ['admin', 'manager'].includes(String(publicUser.role || ''));
+    const mappedRoles = mapBaseRole(publicUser.role);
     return {
       supabase,
       userId,
       ministryId: 'single-tenant',
-      roles: isAdmin ? ['ADMINISTRADOR'] : [mapBaseRole(publicUser.role)[0] || 'OPERADOR'],
+      roles: mappedRoles.length > 0 ? mappedRoles : ['ADMINISTRADOR'],
       congregacaoId: null,
     };
   }
 
-  throw new Error('NO_MINISTRY');
+  // Usuário autenticado mas sem registro em public.users (ex: dono da conta Supabase)
+  // Concede acesso de Administrador como fallback seguro em ambiente single-tenant
+  return {
+    supabase,
+    userId,
+    ministryId: 'single-tenant',
+    roles: ['ADMINISTRADOR'],
+    congregacaoId: null,
+  };
 }
 
 async function ensureTrialAccess(userId: string) {
@@ -140,9 +154,6 @@ async function resolveMinistryUser(userId: string) {
     .limit(1)
     .maybeSingle();
   if (data) return data;
-  if (process.env.NODE_ENV === 'development' && error) {
-    console.warn('resolveMinistryUser admin error:', error.message);
-  }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -196,9 +207,6 @@ async function resolveMinistryUserFromRequest(
     .maybeSingle();
 
   if (!error && data) return data;
-  if (process.env.NODE_ENV === 'development' && error) {
-    console.warn('resolveMinistryUserFromRequest error:', error.message);
-  }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;

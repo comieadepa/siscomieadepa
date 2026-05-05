@@ -122,11 +122,26 @@ export default function CongregacoesPage() {
     planName: '',
   });
 
+  // ── Busca + Paginação ─────────────────────────────────────────────────────
+  const PAGE_SIZE_CAMPOS = 50;
+  const PAGE_SIZE_SUPS   = 25;
+  const [searchCampos, setSearchCampos]       = useState('');
+  const [filterUfCampos,  setFilterUfCampos]  = useState('');
+  const [filterSupCampos, setFilterSupCampos] = useState('');
+  const [filterCnpjCampos, setFilterCnpjCampos] = useState('');
+  const [pageCampos,   setPageCampos]         = useState(0);
+  const [searchSups,      setSearchSups]      = useState('');
+  const [filterUfSups,    setFilterUfSups]    = useState('');
+  const [pageSups,        setPageSups]        = useState(0);
+  // ── /Busca + Paginação ────────────────────────────────────────────────────
+
   // Associações (seleção múltipla)
   // - D2 (campos) pode receber várias D1 (congregações) via congregacoes.campo_id
   // - D3 (supervisões) pode receber várias D2 (campos) via campos.supervisao_id
   const [selectedD1IdsForD2, setSelectedD1IdsForD2] = useState<string[]>([]);
+  const [expandedSupId, setExpandedSupId] = useState<string | null>(null);
   const [selectedD2IdsForD3, setSelectedD2IdsForD3] = useState<string[]>([]);
+  const [camposLocked, setCamposLocked] = useState(true);
 
   // Form states
   const [formD1, setFormD1] = useState({
@@ -187,6 +202,11 @@ export default function CongregacoesPage() {
   const [pastorStatus, setPastorStatus] = useState<'idle' | 'loading' | 'selected' | 'not_found' | 'error'>('idle');
   const [pastorMsg, setPastorMsg] = useState<string>('');
 
+  // Busca dinâmica supervisor (D1)
+  const [supervisorResults, setSupervisorResults] = useState<MemberLookup[]>([]);
+  const [supervisorSearchInput, setSupervisorSearchInput] = useState('');
+  const [supervisorSearchStatus, setSupervisorSearchStatus] = useState<'idle' | 'loading' | 'selected' | 'not_found'>('idle');
+
   const [dirigenteResults, setDirigenteResults] = useState<MemberLookup[]>([]);
   const [dirigenteStatus, setDirigenteStatus] = useState<'idle' | 'loading' | 'selected' | 'not_found' | 'error'>('idle');
   const [dirigenteMsg, setDirigenteMsg] = useState<string>('');
@@ -210,6 +230,292 @@ export default function CongregacoesPage() {
   });
   const [editingD3, setEditingD3] = useState<Divisao3 | null>(null);
   const [showFormD3, setShowFormD3] = useState(false);
+
+  // ── CSV Import ────────────────────────────────────────────────────────────
+  type CsvImportTab = 'campos' | 'supervisoes';
+
+  interface CsvCampoRow {
+    nome: string;
+    supervisao_nome?: string;
+    data_fundacao?: string;
+    cnpj?: string;
+    tem_cnpj?: string;
+    email?: string;
+    telefone?: string;
+    observacoes?: string;
+    cep?: string;
+    endereco?: string;
+    numero?: string;
+    complemento?: string;
+    bairro?: string;
+    cidade?: string;
+    uf?: string;
+    pastor_nome?: string;
+    presidente_nome?: string;
+    presidente_cpf?: string;
+    presidente_matricula?: string;
+    presidente_data_posse?: string;
+    registro?: string;
+    _error?: string;
+  }
+
+  interface CsvSupervisaoRow {
+    nome: string;
+    codigo?: string;
+    supervisor_nome?: string;
+    supervisor_cpf?: string;
+    supervisor_matricula?: string;
+    uf?: string;
+    _error?: string;
+  }
+
+  const [csvImportTab, setCsvImportTab] = useState<CsvImportTab>('campos');
+  const [csvCamposRows, setCsvCamposRows] = useState<CsvCampoRow[]>([]);
+  const [csvSupRows, setCsvSupRows] = useState<CsvSupervisaoRow[]>([]);
+  const [csvImporting, setCsvImporting] = useState(false);
+  const [csvResult, setCsvResult] = useState<{ ok: number; errors: string[] } | null>(null);
+
+  const parseCsvText = (text: string): string[][] => {
+    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim());
+    if (lines.length === 0) return [];
+    // Detecta delimitador pela linha de cabeçalho: usa ';' se tiver mais ';' que ','
+    const header = lines[0];
+    const countSemi = (header.match(/;/g) || []).length;
+    const countComma = (header.match(/,/g) || []).length;
+    const sep = countSemi >= countComma ? ';' : ',';
+
+    const parseLine = (line: string): string[] => {
+      const row: string[] = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
+          else { inQuotes = !inQuotes; }
+        } else if (ch === sep && !inQuotes) {
+          row.push(cur.trim()); cur = '';
+        } else {
+          cur += ch;
+        }
+      }
+      row.push(cur.trim());
+      return row;
+    };
+
+    return lines.map(parseLine).filter(r => r.some(c => c));
+  };
+
+  const normHeader = (h: string) =>
+    h.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+
+  // Converte datas no formato "Apr 14, 2025 12:00 am" ou "2025-04-14" para "YYYY-MM-DD"
+  const normalizeDateStr = (raw: string): string | null => {
+    if (!raw) return null;
+    const s = raw.trim();
+    // já está em ISO
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    // "Apr 14, 2025 12:00 am" ou "Apr 14, 2025"
+    const match = s.match(/^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})/);
+    if (match) {
+      const months: Record<string, string> = {
+        jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+        jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+      };
+      const m = months[match[1].toLowerCase().slice(0, 3)];
+      if (m) return `${match[3]}-${m}-${match[2].padStart(2, '0')}`;
+    }
+    // DD/MM/YYYY
+    const brMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (brMatch) return `${brMatch[3]}-${brMatch[2].padStart(2,'0')}-${brMatch[1].padStart(2,'0')}`;
+    return null;
+  };
+
+  const parseCsvCampos = (text: string): CsvCampoRow[] => {
+    const rows = parseCsvText(text);
+    if (rows.length < 2) return [];
+    const headers = rows[0].map(normHeader);
+    return rows.slice(1).map(cols => {
+      const get = (keys: string[]) => {
+        for (const k of keys) {
+          const idx = headers.indexOf(k);
+          if (idx >= 0 && cols[idx]) return cols[idx].trim();
+        }
+        return '';
+      };
+      // Aceita tanto nomes originais da planilha quanto nomes normalizados
+      const nome = get(['nome_do_campo', 'nome', 'campo', 'name']);
+      if (!nome) return { nome: '', _error: 'Nome obrigatório' };
+      return {
+        nome,
+        supervisao_nome: get(['supervisao', 'supervisao_nome', 'supervisao_nome_campo', 'regional']),
+        data_fundacao: normalizeDateStr(get(['data_fundacao', 'data_de_fundacao', 'fundacao'])) || undefined,
+        cnpj: get(['cnpj']),
+        tem_cnpj: get(['tem_cnpj', 'possui_cnpj']),
+        email: get(['email_campo', 'email', 'e_mail']),
+        telefone: get(['telefone', 'tel', 'fone']),
+        observacoes: get(['obs', 'observacoes', 'observacao']),
+        cep: get(['cep']),
+        endereco: get(['endereco', 'logradouro', 'rua']),
+        numero: get(['numero_end', 'numero', 'num', 'n']),
+        complemento: get(['complemento', 'compl']),
+        bairro: get(['bairro']),
+        cidade: get(['cidade', 'municipio', 'localidade']),
+        uf: get(['uf', 'estado']),
+        pastor_nome: get(['pastor_supervisor', 'pastor', 'pastor_nome', 'responsavel']),
+        presidente_nome: get(['presidente_nome', 'presidente']),
+        presidente_cpf: get(['presidente_cpf']),
+        presidente_matricula: get(['presidente_matricula']),
+        presidente_data_posse: normalizeDateStr(get(['data_da_posse', 'data_posse', 'posse'])) || undefined,
+        registro: get(['registro_comieadepa', 'registro']),
+      };
+    });
+  };
+
+  const parseCsvSupervisoes = (text: string): CsvSupervisaoRow[] => {
+    const rows = parseCsvText(text);
+    if (rows.length < 2) return [];
+    const headers = rows[0].map(normHeader);
+    return rows.slice(1).map(cols => {
+      const get = (keys: string[]) => {
+        for (const k of keys) {
+          const idx = headers.indexOf(k);
+          if (idx >= 0 && cols[idx]) return cols[idx].trim();
+        }
+        return '';
+      };
+      // Aceita tanto o cabeçalho real da planilha quanto variantes genéricas
+      const nome = get(['nome_da_supervisao', 'nome', 'supervisao', 'name']);
+      if (!nome) return { nome: '', _error: 'Nome obrigatório' };
+      return {
+        nome,
+        codigo: get(['matricula_supervisor', 'matricula', 'codigo', 'cod', 'id']),
+        supervisor_nome: get(['pastor_supervisor', 'supervisor_nome', 'supervisor', 'responsavel', 'pastor']),
+        supervisor_cpf: get(['cpf_do_supervisor', 'cpf_supervisor', 'cpf']),
+        supervisor_matricula: get(['matricula_supervisor', 'matricula', 'supervisor_matricula']),
+        uf: get(['uf', 'estado']),
+      };
+    });
+  };
+
+  const handleCsvFileChange = (e: React.ChangeEvent<HTMLInputElement>, tab: CsvImportTab) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      if (tab === 'campos') {
+        setCsvCamposRows(parseCsvCampos(text));
+        setCsvResult(null);
+      } else {
+        setCsvSupRows(parseCsvSupervisoes(text));
+        setCsvResult(null);
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+    e.target.value = '';
+  };
+
+  const handleCsvImportCampos = async () => {
+    const validRows = csvCamposRows.filter(r => r.nome && !r._error);
+    if (!validRows.length) return;
+    setCsvImporting(true);
+    setCsvResult(null);
+    let ok = 0;
+    const errors: string[] = [];
+
+    for (const row of validRows) {
+      try {
+        // Resolver supervisão pelo nome (best-effort)
+        let supervisao_id: string | null = null;
+        if (row.supervisao_nome) {
+          const sup = divisoes1.find(s => s.nome.toLowerCase() === (row.supervisao_nome || '').toLowerCase());
+          supervisao_id = sup?.id || null;
+        }
+
+        const cnpjDigits = (row.cnpj || '').replace(/\D/g, '').slice(0, 14) || null;
+        // tem_cnpj pode ser 'sim', 'yes', 'true', '1', ou haver cnpj preenchido
+        const temCnpj = cnpjDigits ||
+          ['sim','yes','true','1','s'].includes((row.tem_cnpj || '').toLowerCase().trim());
+
+        const payload: any = {
+          nome: row.nome,
+          supervisao_id,
+          data_fundacao: row.data_fundacao || null,
+          cnpj: temCnpj ? (cnpjDigits || null) : null,
+          email: row.email || null,
+          telefone: (row.telefone || '').replace(/\D/g, '').slice(0, 11) || null,
+          observacoes: row.observacoes || null,
+          cep: (row.cep || '').replace(/\D/g, '').slice(0, 8) || null,
+          endereco: row.endereco || null,
+          numero: row.numero || null,
+          complemento: row.complemento || null,
+          bairro: row.bairro || null,
+          cidade: row.cidade || null,
+          uf: row.uf ? row.uf.toUpperCase().slice(0, 2) : null,
+          pastor_nome: row.pastor_nome || null,
+          presidente_nome: row.presidente_nome || null,
+          presidente_cpf: (row.presidente_cpf || '').replace(/\D/g, '').slice(0, 11) || null,
+          presidente_matricula: row.presidente_matricula || null,
+          presidente_data_posse: row.presidente_data_posse || null,
+          is_sede: false,
+          is_active: true,
+        };
+
+        const { error } = await supabase.from('campos').insert([payload]);
+        if (error) throw error;
+        ok++;
+      } catch (err: any) {
+        errors.push(`"${row.nome}": ${err?.message || String(err)}`);
+      }
+    }
+
+    await loadDivisoes2();
+    setCsvImporting(false);
+    setCsvResult({ ok, errors });
+    if (!errors.length) setCsvCamposRows([]);
+  };
+
+  const handleCsvImportSupervisoes = async () => {
+    const validRows = csvSupRows.filter(r => r.nome && !r._error);
+    if (!validRows.length) return;
+    setCsvImporting(true);
+    setCsvResult(null);
+    let ok = 0;
+    const errors: string[] = [];
+
+    let nextCodigo = getNextCodigo();
+
+    for (const row of validRows) {
+      try {
+        const codigoParsed = row.codigo ? Number.parseInt(row.codigo, 10) : null;
+        const codigo = Number.isFinite(codigoParsed as any) && (codigoParsed as any) > 0 ? codigoParsed : nextCodigo;
+
+        const payload: any = {
+          codigo,
+          nome: row.nome,
+          supervisor_nome: row.supervisor_nome || null,
+          supervisor_cpf: (row.supervisor_cpf || '').replace(/\D/g, '').slice(0, 11) || null,
+          supervisor_matricula: row.supervisor_matricula || null,
+          uf: row.uf ? row.uf.toUpperCase().slice(0, 2) : null,
+          is_active: true,
+        };
+
+        const { error } = await supabase.from('supervisoes').insert([payload]);
+        if (error) throw error;
+        ok++;
+        nextCodigo++;
+      } catch (err: any) {
+        errors.push(`"${row.nome}": ${err?.message || String(err)}`);
+      }
+    }
+
+    await loadDivisoes1();
+    setCsvImporting(false);
+    setCsvResult({ ok, errors });
+    if (!errors.length) setCsvSupRows([]);
+  };
+  // ── /CSV Import ──────────────────────────────────────────────────────────
 
   type FotoIgrejaChange =
     | { kind: 'none' }
@@ -477,7 +783,7 @@ export default function CongregacoesPage() {
   const d2Enabled = true;
   const d3Enabled = true;
 
-  const enabledTabIds = ['divisao2', 'divisao3'];
+  const enabledTabIds = ['divisao2', 'divisao3', 'importar-csv'];
 
   useEffect(() => {
     if (!enabledTabIds.includes(activeTab)) {
@@ -901,13 +1207,21 @@ export default function CongregacoesPage() {
 
   const loadDivisoes2 = async (_ministryId?: string) => {
     try {
-      const { data, error } = await supabase
-        .from('campos')
-        .select('*')
-        .order('nome');
-
-      if (error) throw error;
-      setDivisoes2((data as any) || []);
+      const PAGE = 1000;
+      let all: any[] = [];
+      let from = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from('campos')
+          .select('*')
+          .order('nome')
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        all = all.concat(data || []);
+        if (!data || data.length < PAGE) break;
+        from += PAGE;
+      }
+      setDivisoes2(all as any);
     } catch (error) {
       setDivisoes2([] as any);
       const msg = (error as any)?.message || (error as any)?.error_description || '';
@@ -997,6 +1311,37 @@ export default function CongregacoesPage() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formD2.pastor_nome_input, formD2.informar_pastor, showFormD2, ministryId]);
+
+  const buscarSupervisorPorNome = async (term: string) => {
+    const q = (term || '').trim();
+    if (q.length < 3) {
+      setSupervisorResults([]);
+      setSupervisorSearchStatus('idle');
+      return;
+    }
+    try {
+      setSupervisorSearchStatus('loading');
+      const { data, error } = await supabase
+        .from('members')
+        .select('id, name, cpf, role')
+        .ilike('name', `%${q}%`)
+        .limit(7);
+      if (error) throw error;
+      const results = ((data as any) || []) as MemberLookup[];
+      setSupervisorResults(results);
+      setSupervisorSearchStatus(results.length ? 'idle' : 'not_found');
+    } catch {
+      setSupervisorResults([]);
+      setSupervisorSearchStatus('idle');
+    }
+  };
+
+  useEffect(() => {
+    if (!showFormD1 || !formD1.informar_supervisor) return;
+    const t = setTimeout(() => buscarSupervisorPorNome(supervisorSearchInput), 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supervisorSearchInput, formD1.informar_supervisor, showFormD1]);
 
   const buscarDirigentePorNome = async (term: string) => {
     if (!ministryId) return;
@@ -1213,6 +1558,55 @@ export default function CongregacoesPage() {
           }
         }
       }
+
+      // ── Sync supervisão dos membros deste campo ────────────────────────────
+      // Sempre que um campo é salvo com supervisao_id, todos os membros cujo
+      // custom_fields.campo bate com o nome do campo passam a ter a nova supervisão.
+      if (payload.supervisao_id) {
+        // Busca pelo nome anterior ao edit (se houve rename, mantém coerência)
+        const campoNomeBusca = (editingD2?.nome || formD2.nome).trim();
+        const supNome = divisoes1.find(d => d.id === payload.supervisao_id)?.nome || '';
+
+        try {
+          // Carrega membros em lotes para não exceder limite do Supabase
+          const membrosParaSync: { id: string; custom_fields: any }[] = [];
+          let mFrom = 0;
+          while (true) {
+            const { data: chunk, error: chunkErr } = await supabase
+              .from('members')
+              .select('id, custom_fields')
+              .filter('custom_fields->>campo', 'ilike', campoNomeBusca)
+              .range(mFrom, mFrom + 999);
+            if (chunkErr) throw chunkErr;
+            if (!chunk || chunk.length === 0) break;
+            membrosParaSync.push(...(chunk as any[]));
+            if (chunk.length < 1000) break;
+            mFrom += 1000;
+          }
+
+          if (membrosParaSync.length > 0) {
+            const updates = membrosParaSync.map(m => ({
+              id: m.id,
+              supervisao_id: payload.supervisao_id,
+              custom_fields: { ...(m.custom_fields || {}), supervisao: supNome },
+            }));
+
+            const BATCH = 500;
+            for (let bi = 0; bi < updates.length; bi += BATCH) {
+              const { error: syncErr } = await supabase
+                .from('members')
+                .upsert(updates.slice(bi, bi + BATCH), { onConflict: 'id' });
+              if (syncErr) throw syncErr;
+            }
+
+            console.info(`[Sync] ${updates.length} membro(s) do campo "${campoNomeBusca}" vinculados à supervisão "${supNome}".`);
+          }
+        } catch (syncErr) {
+          // Não bloqueia o fluxo principal — apenas avisa no console
+          console.warn('[Sync] Não foi possível sincronizar supervisão dos membros:', syncErr);
+        }
+      }
+      // ── Fim sync membros ───────────────────────────────────────────────────
 
       await loadDivisoes2();
       await loadDivisoes3();
@@ -1881,9 +2275,105 @@ export default function CongregacoesPage() {
   const tabs = [
     { id: 'divisao2', label: 'Campos', icon: '📍' },
     { id: 'divisao3', label: 'Supervisões', icon: '🗂️' },
+    { id: 'importar-csv', label: 'Importar CSV', icon: '📥' },
   ];
 
-  const availableDivisoes2ForCurrentD1 = divisoes2.filter(c => !c.supervisao_id || c.supervisao_id === editingD1?.id);
+  // Lista dinâmica: reflete desmarcações em tempo real
+  // Campos desmarcados (que estavam na supervisão atual) ficam visíveis como disponíveis
+  const listaDivisoes2ParaModal = divisoes2.filter(c => {
+    // Se pertence à supervisão em edição → sempre aparece (marcado ou desmarcado)
+    if (editingD1 && c.supervisao_id === editingD1.id) return true;
+    // Se pertence a outra supervisão → oculto, a menos que esteja nos selecionados
+    if (c.supervisao_id) return false;
+    // Campo livre → aparece
+    return true;
+  });
+
+  const PRINT_HEADER = `
+    <div class="header">
+      <img class="header-logo" src="${typeof window !== 'undefined' ? window.location.origin : ''}/img/logo_comieadepa.png" alt="COMIEADEPA"/>
+      <div class="header-center">
+        <div class="org">COMIEADEPA - CONVENÇÃO INTERESTADUAL DE MINISTROS E IGREJAS<br/>EVANGÉLICAS ASSEMBLEIA DE DEUS NO PARÁ</div>
+        <div class="contact">Emails: comieadepa@bol.com.br / Site: www.comieadepa.org</div>
+        <div class="address">RODOVIA DO MÁRIO COVAS, 2500, 67115-000 / COQUEIRO, ANANINDEUA - PA</div>
+        <div class="presidente">PRESIDENTE: PR. OCELIO NAUAR</div>
+      </div>
+    </div>`;
+
+  const PRINT_STYLES = `
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; font-size: 10px; color: #000; padding: 16px; }
+    .header { display: flex; align-items: center; justify-content: center; gap: 8px; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
+    .header-logo { width: 60px; height: auto; flex-shrink: 0; }
+    .header-center { text-align: center; }
+    .header-center .org { font-size: 11px; font-weight: bold; line-height: 1.4; }
+    .header-center .contact { font-size: 9px; color: #333; margin-top: 3px; }
+    .header-center .address { font-size: 9px; font-weight: bold; margin-top: 2px; }
+    .header-center .presidente { font-size: 11px; font-weight: bold; color: #0066cc; margin-top: 6px; }
+    .report-title { text-align: center; font-size: 13px; font-weight: bold; margin: 12px 0 10px; border-bottom: 1px solid #000; padding-bottom: 6px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    thead tr { background: #000; color: #fff; }
+    th { padding: 5px 6px; text-align: left; font-size: 9px; font-weight: bold; }
+    td { padding: 4px 6px; font-size: 9px; border-bottom: 1px solid #ddd; vertical-align: top; }
+    tr:nth-child(even) td { background: #f5f5f5; }
+    @media print { body { padding: 8px; } @page { margin: 10mm; size: A4 landscape; } }`;
+
+  function handlePrintCampos(lista: typeof divisoes2) {
+    const filtros: string[] = [];
+    if (filterUfCampos) filtros.push(`Estado: ${filterUfCampos}`);
+    if (filterSupCampos) { const s = divisoes1.find(s => s.id === filterSupCampos); if (s) filtros.push(`Supervisão: ${s.nome}`); }
+    if (filterCnpjCampos) filtros.push(filterCnpjCampos === 'sim' ? 'Com CNPJ' : 'Sem CNPJ');
+    if (searchCampos) filtros.push(`Busca: "${searchCampos}"`);
+    const titulo = `LISTA DE CAMPOS${filtros.length ? ' — ' + filtros.join(' | ') : ''} — QTD.: ${lista.length}`;
+    const rows = lista.map(c => {
+      const sup = divisoes1.find(s => s.id === c.supervisao_id);
+      return `<tr>
+        <td>${sup ? sup.nome : '—'}</td>
+        <td>${c.uf || '—'}</td>
+        <td>${c.nome}</td>
+        <td>${(c as any).presidente_nome || '—'}</td>
+        <td>${c.cnpj ? 'SIM' : 'NÃO'}</td>
+      </tr>`;
+    }).join('');
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>${titulo}</title><style>${PRINT_STYLES}</style></head><body>
+      ${PRINT_HEADER}
+      <div class="report-title">${titulo}</div>
+      <table><thead><tr><th>SUPERVISÃO</th><th>UF</th><th>NOME DO CAMPO</th><th>PRESIDENTE</th><th>CNPJ</th></tr></thead><tbody>${rows}</tbody></table>
+    </body></html>`;
+    const win = window.open('', '_blank', 'width=1100,height=750');
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 600);
+  }
+
+  function handlePrintSupervisoes(lista: typeof divisoes1) {
+    const filtros: string[] = [];
+    if (filterUfSups) filtros.push(`Estado: ${filterUfSups}`);
+    if (searchSups) filtros.push(`Busca: "${searchSups}"`);
+    const titulo = `LISTA DE SUPERVISÕES${filtros.length ? ' — ' + filtros.join(' | ') : ''} — QTD.: ${lista.length}`;
+    const rows = lista.map(d => {
+      const qtd = divisoes2.filter(c => c.supervisao_id === d.id).length;
+      return `<tr>
+        <td>${d.nome}</td>
+        <td>${(d as any).uf || '—'}</td>
+        <td>${d.supervisor_nome || '—'}</td>
+        <td style="text-align:center">${qtd}</td>
+      </tr>`;
+    }).join('');
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>${titulo}</title><style>${PRINT_STYLES.replace('size: A4 landscape', 'size: A4 portrait')}</style></head><body>
+      ${PRINT_HEADER}
+      <div class="report-title">${titulo}</div>
+      <table><thead><tr><th>NOME DA SUPERVISÃO</th><th>UF</th><th>PASTOR/SUPERVISOR</th><th style="text-align:center">QTD CAMPOS</th></tr></thead><tbody>${rows}</tbody></table>
+    </body></html>`;
+    const win = window.open('', '_blank', 'width=1100,height=750');
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 600);
+  }
 
   return (
     <PageLayout
@@ -2257,58 +2747,60 @@ export default function CongregacoesPage() {
             )}
 
             {!showFormD3 && (
-              <button
-                onClick={() => {
-                  if (planLimits.max_divisao3 === 0) return;
-                  if (planLimits.max_divisao3 > 0 && divisoes3.length >= planLimits.max_divisao3) return;
-                  setShowFormD3(true);
-                  setEditingD3(null);
-                  setGeoPreview(null);
-                  setDirigenteResults([]);
-                  setDirigenteStatus('idle');
-                  setDirigenteMsg('');
-                  setDirigenteSelected(null);
-                  setFormD3({
-                    supervisao_id: '',
-                    campo_id: '',
-                    nome: '',
-                    dirigente: '',
-                    dirigente_cpf: '',
-                    dirigente_cargo: '',
-                    dirigente_matricula: '',
-                    endereco: '',
-                    cep: '',
-                    municipio: '',
-                    uf: '',
-                    status_imovel: '' as any,
-                    is_active: true,
-                  });
-                  if (fotoIgrejaChange.kind === 'file') {
-                    try { URL.revokeObjectURL(fotoIgrejaChange.previewUrl); } catch { /* noop */ }
+              <div className="mb-6 flex gap-3">
+                <button
+                  onClick={() => {
+                    if (planLimits.max_divisao3 === 0) return;
+                    if (planLimits.max_divisao3 > 0 && divisoes3.length >= planLimits.max_divisao3) return;
+                    setShowFormD3(true);
+                    setEditingD3(null);
+                    setGeoPreview(null);
+                    setDirigenteResults([]);
+                    setDirigenteStatus('idle');
+                    setDirigenteMsg('');
+                    setDirigenteSelected(null);
+                    setFormD3({
+                      supervisao_id: '',
+                      campo_id: '',
+                      nome: '',
+                      dirigente: '',
+                      dirigente_cpf: '',
+                      dirigente_cargo: '',
+                      dirigente_matricula: '',
+                      endereco: '',
+                      cep: '',
+                      municipio: '',
+                      uf: '',
+                      status_imovel: '' as any,
+                      is_active: true,
+                    });
+                    if (fotoIgrejaChange.kind === 'file') {
+                      try { URL.revokeObjectURL(fotoIgrejaChange.previewUrl); } catch { /* noop */ }
+                    }
+                    setFotoIgrejaChange({ kind: 'none' });
+                    setFotoIgrejaUrlInput('');
+                  }}
+                  disabled={planLimits.max_divisao3 === 0 || (planLimits.max_divisao3 > 0 && divisoes3.length >= planLimits.max_divisao3)}
+                  title={
+                    planLimits.max_divisao3 === 0
+                      ? `Plano atual não permite ${nomeD1}`
+                      : planLimits.max_divisao3 > 0 && divisoes3.length >= planLimits.max_divisao3
+                        ? `Limite do plano atingido (${planLimits.max_divisao3})`
+                        : undefined
                   }
-                  setFotoIgrejaChange({ kind: 'none' });
-                  setFotoIgrejaUrlInput('');
-                }}
-                disabled={planLimits.max_divisao3 === 0 || (planLimits.max_divisao3 > 0 && divisoes3.length >= planLimits.max_divisao3)}
-                title={
-                  planLimits.max_divisao3 === 0
-                    ? `Plano atual não permite ${nomeD1}`
-                    : planLimits.max_divisao3 > 0 && divisoes3.length >= planLimits.max_divisao3
-                      ? `Limite do plano atingido (${planLimits.max_divisao3})`
-                      : undefined
-                }
-                className={`mb-6 w-full px-6 py-3 font-bold rounded-lg transition shadow-md flex items-center justify-center gap-2 ${
-                  planLimits.max_divisao3 === 0 || (planLimits.max_divisao3 > 0 && divisoes3.length >= planLimits.max_divisao3)
-                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    : 'bg-teal-500 text-white hover:bg-teal-600'
-                }`}
-              >
-                + Adicionar {nomeD1}
-                {planLimits.max_divisao3 > 0 && (
-                  <span className="text-xs opacity-80">({divisoes3.length}/{planLimits.max_divisao3})</span>
-                )}
-                {planLimits.max_divisao3 === 0 && <span className="text-xs opacity-80">(bloqueado no plano)</span>}
-              </button>
+                  className={`flex-1 px-6 py-3 font-bold rounded-lg transition shadow-md flex items-center justify-center gap-2 ${
+                    planLimits.max_divisao3 === 0 || (planLimits.max_divisao3 > 0 && divisoes3.length >= planLimits.max_divisao3)
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-teal-500 text-white hover:bg-teal-600'
+                  }`}
+                >
+                  + Adicionar {nomeD1}
+                  {planLimits.max_divisao3 > 0 && (
+                    <span className="text-xs opacity-80">({divisoes3.length}/{planLimits.max_divisao3})</span>
+                  )}
+                  {planLimits.max_divisao3 === 0 && <span className="text-xs opacity-80">(bloqueado no plano)</span>}
+                </button>
+              </div>
             )}
 
             <div className="bg-white rounded-lg shadow-md p-6">
@@ -2412,19 +2904,31 @@ export default function CongregacoesPage() {
         {/* TAB: 2ª Divisão */}
         {activeTab === 'divisao2' && (
           <Section icon="📍" title="Campos">
-            <div className="grid grid-cols-1 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
               <div className="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
                 <p className="text-gray-600 text-sm">Total de {nomeD2}s</p>
                 <p className="text-2xl font-bold text-blue-600">{divisoes2.length}</p>
+              </div>
+              <div className="bg-white p-4 rounded-lg shadow border-l-4 border-orange-400">
+                <p className="text-gray-600 text-sm">Campos sem supervisão</p>
+                <p className="text-2xl font-bold text-orange-500">{divisoes2.filter(c => !c.supervisao_id).length}</p>
               </div>
             </div>
 
             <>
               {showFormD2 && (
-                  <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-                    <h3 className="text-lg font-bold text-gray-800 mb-6 border-b pb-3">
-                      {editingD2 ? 'Editar Campo' : 'Novo Campo'}
-                    </h3>
+                <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 overflow-y-auto">
+                  <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl mt-8 mb-8">
+                    <div className="flex items-center justify-between px-6 py-4 border-b bg-teal-600 rounded-t-xl">
+                      <h3 className="text-lg font-bold text-white">
+                        {editingD2 ? '✏️ Editar Campo' : '➕ Novo Campo'}
+                      </h3>
+                      <button
+                        onClick={() => { setShowFormD2(false); setEditingD2(null); setFormD2({ supervisao_id: '', nome: '', is_sede: false, data_fundacao: '', cnpj: '', possui_cnpj: false, email: '', telefone: '', observacoes: '', logomarca_url: '', informar_pastor: false, pastor_nome_input: '', pastor_member_id: '', pastor_nome: '', pastor_data_posse: '', cep: '', endereco: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '', latitude: '', longitude: '' }); setPastorResults([]); setPastorStatus('idle'); setPastorMsg(''); setSelectedD1IdsForD2([]); }}
+                        className="text-white hover:text-teal-200 text-2xl font-bold leading-none"
+                      >×</button>
+                    </div>
+                    <div className="p-6">
 
                     {/* Linha 1: Nome, Data Fundação, Logomarca */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -2530,7 +3034,7 @@ export default function CongregacoesPage() {
                       {formD2.informar_pastor && (
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div className="md:col-span-2">
-                            <label className="block text-xs font-semibold text-gray-700 mb-1">Nome</label>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Nome do Presidente</label>
                             <input
                               type="text"
                               value={formD2.pastor_nome_input}
@@ -2673,117 +3177,280 @@ export default function CongregacoesPage() {
                       </button>
                     </div>
                   </div>
-                )}
-                {!showFormD2 && (
-                  <button
-                    onClick={() => {
-                      if (planLimits.max_divisao2 === 0) return;
-                      if (planLimits.max_divisao2 > 0 && divisoes2.length >= planLimits.max_divisao2) return;
-                      setShowFormD2(true);
-                      setEditingD2(null);
-                      setFormD2({ supervisao_id: '', nome: '', is_sede: false, data_fundacao: '', cnpj: '', possui_cnpj: false, email: '', telefone: '', observacoes: '', logomarca_url: '', informar_pastor: false, pastor_nome_input: '', pastor_member_id: '', pastor_nome: '', pastor_data_posse: '', cep: '', endereco: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '', latitude: '', longitude: '' });
-                      setPastorResults([]);
-                      setPastorStatus('idle');
-                      setPastorMsg('');
-                      setSelectedD1IdsForD2([]);
-                    }}
-                    className="mb-6 w-full px-6 py-3 font-bold rounded-lg transition shadow-md flex items-center justify-center gap-2 bg-teal-500 text-white hover:bg-teal-600"
-                  >
-                    + Adicionar Campo
-                  </button>
-                )}
+                </div>
+              </div>
+            )}
+                <div className="mb-6 flex gap-3">
+                    <button
+                      onClick={() => {
+                        if (planLimits.max_divisao2 === 0) return;
+                        if (planLimits.max_divisao2 > 0 && divisoes2.length >= planLimits.max_divisao2) return;
+                        setShowFormD2(true);
+                        setEditingD2(null);
+                        setFormD2({ supervisao_id: '', nome: '', is_sede: false, data_fundacao: '', cnpj: '', possui_cnpj: false, email: '', telefone: '', observacoes: '', logomarca_url: '', informar_pastor: false, pastor_nome_input: '', pastor_member_id: '', pastor_nome: '', pastor_data_posse: '', cep: '', endereco: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '', latitude: '', longitude: '' });
+                        setPastorResults([]);
+                        setPastorStatus('idle');
+                        setPastorMsg('');
+                        setSelectedD1IdsForD2([]);
+                      }}
+                      className="flex-1 px-6 py-3 font-bold rounded-lg transition shadow-md flex items-center justify-center gap-2 bg-teal-500 text-white hover:bg-teal-600"
+                    >
+                      + Adicionar Campo
+                    </button>
+                  </div>
             </>
 
             <div className="bg-white rounded-lg shadow-md p-6">
-              <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr>
-                    <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">SUPERVISÃO</th>
-                    <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">ESTADO</th>
-                    <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">NOME</th>
-                    <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">PASTOR DO CAMPO</th>
-                    <th className="px-4 py-3 text-center font-semibold bg-gray-200 text-gray-800">CNPJ?</th>
-                    <th className="px-4 py-3 text-center font-semibold bg-gray-200 text-gray-800">AÇÕES</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {divisoes2.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-6 text-center text-gray-500">
-                        Nenhum {nomeD2} cadastrado
-                      </td>
-                    </tr>
-                  ) : (
-                    divisoes2.map(c => {
-                              const sup = c.supervisao_id
-                                ? divisoes1.find(s => s.id === c.supervisao_id) || null
-                                : null;
-                              return (
-                                <tr key={c.id} className="border-b border-gray-200 hover:bg-gray-50">
-                                  <td className="px-4 py-3 text-gray-700 text-xs">{sup ? formatSupervisaoLabel(sup) : '-'}</td>
-                                  <td className="px-4 py-3 text-gray-700 text-xs">{c.uf || '-'}</td>
-                                  <td className="px-4 py-3 text-gray-700 font-semibold text-xs">{c.nome}</td>
-                                  <td className="px-4 py-3 text-gray-700 text-xs">{c.pastor_nome || '-'}</td>
-                                  <td className="px-4 py-3 text-center text-xs">
-                                    {c.cnpj
-                                      ? <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded font-semibold">SIM</span>
-                                      : <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded font-semibold">NÃO</span>}
-                                  </td>
-                                  <td className="px-4 py-3 text-center">
-                                    <button
-                                      onClick={() => {
-                                        setEditingD2(c);
-                                        setShowFormD2(true);
-                                        setFormD2({
-                                          supervisao_id: c.supervisao_id || '',
-                                          nome: c.nome || '',
-                                          is_sede: !!c.is_sede,
-                                          data_fundacao: (c.data_fundacao as any) || '',
-                                          cnpj: c.cnpj || '',
-                                          possui_cnpj: !!c.cnpj,
-                                          email: c.email || '',
-                                          telefone: c.telefone || '',
-                                          observacoes: c.observacoes || '',
-                                          logomarca_url: c.logomarca_url || '',
-                                          informar_pastor: !!c.pastor_member_id,
-                                          pastor_nome_input: c.pastor_nome || '',
-                                          pastor_member_id: c.pastor_member_id || '',
-                                          pastor_nome: c.pastor_nome || '',
-                                          pastor_data_posse: (c.pastor_data_posse as any) || '',
-                                          cep: c.cep || '',
-                                          endereco: c.endereco || '',
-                                          numero: c.numero || '',
-                                          complemento: c.complemento || '',
-                                          bairro: c.bairro || '',
-                                          cidade: c.cidade || '',
-                                          uf: c.uf || '',
-                                          latitude: c.latitude != null ? String(c.latitude) : '',
-                                          longitude: c.longitude != null ? String(c.longitude) : '',
-                                        });
-                                        setSelectedD1IdsForD2(divisoes3.filter(cg => cg.campo_id === c.id).map(cg => cg.id));
-                                        setPastorResults([]);
-                                        setPastorStatus(c.pastor_member_id ? 'selected' : 'idle');
-                                        setPastorMsg(c.pastor_member_id ? 'Pastor selecionado.' : '');
-                                      }}
-                                      className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition text-xs font-semibold mr-1"
-                                    >
-                                      ✏️ Editar
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteD2(c.id)}
-                                      className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition text-xs font-semibold"
-                                    >
-                                      🗑️ Excluir
-                                    </button>
-                                  </td>
-                                </tr>
-                              );
-                    })
-                  )}
-                </tbody>
-              </table>
+              {/* Filtros */}
+              <div className="flex flex-wrap gap-2 mb-4 items-center">
+                {/* ESTADO */}
+                <select
+                  value={filterUfCampos}
+                  onChange={(e) => { setFilterUfCampos(e.target.value); setPageCampos(0); }}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
+                >
+                  <option value="">DEFINA O ESTADO:</option>
+                  {Array.from(new Set(divisoes2.map(c => c.uf).filter((v): v is string => !!v))).sort().map(uf => (
+                    <option key={uf} value={uf}>{uf}</option>
+                  ))}
+                </select>
+
+                {/* SUPERVISÃO */}
+                <select
+                  value={filterSupCampos}
+                  onChange={(e) => { setFilterSupCampos(e.target.value); setPageCampos(0); }}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
+                >
+                  <option value="">SUPERVISÃO:</option>
+                  {divisoes1.slice().sort((a, b) => a.nome.localeCompare(b.nome)).map(s => (
+                    <option key={s.id} value={s.id}>{s.nome}</option>
+                  ))}
+                </select>
+
+                {/* CNPJ */}
+                <select
+                  value={filterCnpjCampos}
+                  onChange={(e) => { setFilterCnpjCampos(e.target.value); setPageCampos(0); }}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
+                >
+                  <option value="">CNPJ:</option>
+                  <option value="sim">Com CNPJ</option>
+                  <option value="nao">Sem CNPJ</option>
+                </select>
+
+                {/* Busca texto */}
+                <div className="relative flex-1 min-w-[200px]">
+                  <input
+                    type="text"
+                    value={searchCampos}
+                    onChange={(e) => { setSearchCampos(e.target.value); setPageCampos(0); }}
+                    placeholder="DIGITE SUA BUSCA..."
+                    className="w-full pl-4 pr-10 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+                </div>
+
+                {/* LIMPAR */}
+                <button
+                  onClick={() => { setSearchCampos(''); setFilterUfCampos(''); setFilterSupCampos(''); setFilterCnpjCampos(''); setPageCampos(0); }}
+                  className="px-4 py-2 bg-teal-600 text-white text-sm font-semibold rounded-lg hover:bg-teal-700 transition"
+                >
+                  LIMPAR
+                </button>
+                <button
+                  onClick={() => {
+                    const q = searchCampos.toLowerCase();
+                    const lista = divisoes2.filter(c => {
+                      if (filterUfCampos && (c.uf || '') !== filterUfCampos) return false;
+                      if (filterSupCampos && c.supervisao_id !== filterSupCampos) return false;
+                      if (filterCnpjCampos === 'sim' && !c.cnpj) return false;
+                      if (filterCnpjCampos === 'nao' && c.cnpj) return false;
+                      if (q) { const s = divisoes1.find(s => s.id === c.supervisao_id); return c.nome.toLowerCase().includes(q) || (c.cidade||'').toLowerCase().includes(q) || (c.uf||'').toLowerCase().includes(q) || (c.pastor_nome||'').toLowerCase().includes(q) || ((c as any).presidente_nome||'').toLowerCase().includes(q) || (s ? s.nome.toLowerCase().includes(q) : false); }
+                      return true;
+                    });
+                    handlePrintCampos(lista);
+                  }}
+                  className="px-4 py-2 bg-gray-700 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 transition flex items-center gap-1"
+                >
+                  🖨️ Imprimir lista
+                </button>
               </div>
+
+              {/* Info */}
+              {(() => {
+                const q = searchCampos.toLowerCase();
+                const filtered = divisoes2.filter(c => {
+                  if (filterUfCampos && (c.uf || '') !== filterUfCampos) return false;
+                  if (filterSupCampos && c.supervisao_id !== filterSupCampos) return false;
+                  if (filterCnpjCampos === 'sim' && !c.cnpj) return false;
+                  if (filterCnpjCampos === 'nao' && c.cnpj) return false;
+                  if (q) {
+                    const s = divisoes1.find(s => s.id === c.supervisao_id);
+                    return (
+                      c.nome.toLowerCase().includes(q) ||
+                      (c.cidade || '').toLowerCase().includes(q) ||
+                      (c.uf || '').toLowerCase().includes(q) ||
+                      (c.pastor_nome || '').toLowerCase().includes(q) ||
+                      ((c as any).presidente_nome || '').toLowerCase().includes(q) ||
+                      (s ? s.nome.toLowerCase().includes(q) : false)
+                    );
+                  }
+                  return true;
+                });
+                const totalPages = Math.ceil(filtered.length / PAGE_SIZE_CAMPOS) || 1;
+                const safePage = Math.min(pageCampos, totalPages - 1);
+                const paged = filtered.slice(safePage * PAGE_SIZE_CAMPOS, (safePage + 1) * PAGE_SIZE_CAMPOS);
+
+                return (
+                  <>
+                    <p className="text-xs text-gray-500 mb-3 text-right">
+                      {filtered.length > PAGE_SIZE_CAMPOS && <span className="mr-1">página {safePage + 1} de {totalPages} —</span>}
+                      {filtered.length} de {divisoes2.length} campo(s){' '}
+                      <span className="inline-flex items-center justify-center w-9 h-6 bg-blue-600 text-white rounded-full font-bold text-xs">{filtered.length}</span>
+                    </p>
+                    <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr>
+                          <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">SUPERVISÃO</th>
+                          <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">ESTADO</th>
+                          <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">NOME</th>
+                          <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">PRESIDENTE</th>
+                          <th className="px-4 py-3 text-center font-semibold bg-gray-200 text-gray-800">CNPJ?</th>
+                          <th className="px-4 py-3 text-center font-semibold bg-gray-200 text-gray-800">AÇÕES</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paged.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="px-4 py-6 text-center text-gray-500">
+                              {(searchCampos || filterUfCampos || filterSupCampos || filterCnpjCampos) ? 'Nenhum campo encontrado para os filtros aplicados.' : `Nenhum ${nomeD2} cadastrado`}
+                            </td>
+                          </tr>
+                        ) : (
+                          paged.map(c => {
+                            const sup = c.supervisao_id
+                              ? divisoes1.find(s => s.id === c.supervisao_id) || null
+                              : null;
+                            return (
+                              <tr key={c.id} className="border-b border-gray-200 hover:bg-gray-50">
+                                <td className="px-4 py-3 text-gray-700 text-xs">{sup ? sup.nome : '-'}</td>
+                                <td className="px-4 py-3 text-gray-700 text-xs">{c.uf || '-'}</td>
+                                <td className="px-4 py-3 text-gray-700 font-semibold text-xs">{c.nome}</td>
+                                <td className="px-4 py-3 text-gray-700 text-xs">{(c as any).presidente_nome || '-'}</td>
+                                <td className="px-4 py-3 text-center text-xs">
+                                  {c.cnpj
+                                    ? <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded font-semibold">SIM</span>
+                                    : <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded font-semibold">NÃO</span>}
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  <button
+                                    onClick={() => {
+                                      setEditingD2(c);
+                                      setShowFormD2(true);
+                                      setFormD2({
+                                        supervisao_id: c.supervisao_id || '',
+                                        nome: c.nome || '',
+                                        is_sede: !!c.is_sede,
+                                        data_fundacao: (c.data_fundacao as any) || '',
+                                        cnpj: c.cnpj || '',
+                                        possui_cnpj: !!c.cnpj,
+                                        email: c.email || '',
+                                        telefone: c.telefone || '',
+                                        observacoes: c.observacoes || '',
+                                        logomarca_url: c.logomarca_url || '',
+                                        informar_pastor: !!c.pastor_member_id,
+                                        pastor_nome_input: c.pastor_nome || '',
+                                        pastor_member_id: c.pastor_member_id || '',
+                                        pastor_nome: c.pastor_nome || '',
+                                        pastor_data_posse: (c.pastor_data_posse as any) || '',
+                                        cep: c.cep || '',
+                                        endereco: c.endereco || '',
+                                        numero: c.numero || '',
+                                        complemento: c.complemento || '',
+                                        bairro: c.bairro || '',
+                                        cidade: c.cidade || '',
+                                        uf: c.uf || '',
+                                        latitude: c.latitude != null ? String(c.latitude) : '',
+                                        longitude: c.longitude != null ? String(c.longitude) : '',
+                                      });
+                                      setSelectedD1IdsForD2(divisoes3.filter(cg => cg.campo_id === c.id).map(cg => cg.id));
+                                      setPastorResults([]);
+                                      setPastorStatus(c.pastor_member_id ? 'selected' : 'idle');
+                                      setPastorMsg(c.pastor_member_id ? 'Pastor selecionado.' : '');
+                                    }}
+                                    className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition text-xs font-semibold mr-1"
+                                  >
+                                    ✏️ Editar
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteD2(c.id)}
+                                    className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition text-xs font-semibold"
+                                  >
+                                    🗑️ Excluir
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                    </div>
+
+                    {/* Paginação */}
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
+                        <button
+                          onClick={() => setPageCampos(p => Math.max(0, p - 1))}
+                          disabled={safePage === 0}
+                          className="px-4 py-2 text-sm font-semibold rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50 transition"
+                        >
+                          ← Anterior
+                        </button>
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: Math.min(totalPages, 9) }, (_, i) => {
+                            let pg: number;
+                            if (totalPages <= 9) {
+                              pg = i;
+                            } else if (safePage < 5) {
+                              if (i < 7) pg = i;
+                              else if (i === 7) return <span key="e1" className="px-2 text-gray-400">…</span>;
+                              else pg = totalPages - 1;
+                            } else if (safePage > totalPages - 6) {
+                              if (i === 0) pg = 0;
+                              else if (i === 1) return <span key="e1" className="px-2 text-gray-400">…</span>;
+                              else pg = totalPages - (9 - i);
+                            } else {
+                              if (i === 0) pg = 0;
+                              else if (i === 1) return <span key="e1" className="px-2 text-gray-400">…</span>;
+                              else if (i === 7) return <span key="e2" className="px-2 text-gray-400">…</span>;
+                              else if (i === 8) pg = totalPages - 1;
+                              else pg = safePage + (i - 4);
+                            }
+                            return (
+                              <button
+                                key={pg}
+                                onClick={() => setPageCampos(pg)}
+                                className={`w-9 h-9 rounded-lg text-sm font-semibold transition ${pg === safePage ? 'bg-teal-600 text-white' : 'border border-gray-300 hover:bg-gray-50 text-gray-700'}`}
+                              >
+                                {pg + 1}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <button
+                          onClick={() => setPageCampos(p => Math.min(totalPages - 1, p + 1))}
+                          disabled={safePage >= totalPages - 1}
+                          className="px-4 py-2 text-sm font-semibold rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50 transition"
+                        >
+                          Próxima →
+                        </button>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </Section>
         )}
@@ -2791,17 +3458,29 @@ export default function CongregacoesPage() {
         {/* TAB: 3ª Divisão (Congregações) */}
         {activeTab === 'divisao3' && (
           <Section icon="🗂️" title="Supervisões">
-            <div className="grid grid-cols-1 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
               <div className="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
                 <p className="text-gray-600 text-sm">Total de {nomeD3}s</p>
                 <p className="text-2xl font-bold text-blue-600">{divisoes1.length}</p>
               </div>
+              <div className="bg-white p-4 rounded-lg shadow border-l-4 border-orange-400">
+                <p className="text-gray-600 text-sm">Supervisões sem campo</p>
+                <p className="text-2xl font-bold text-orange-500">{divisoes1.filter(s => !divisoes2.some(c => c.supervisao_id === s.id)).length}</p>
+              </div>
             </div>
             {showFormD1 && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-                <h3 className="text-lg font-bold text-gray-800 mb-4">
-                  {editingD1 ? `Editar ${nomeD3}` : `Nova ${nomeD3}`}
-                </h3>
+              <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 overflow-y-auto">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mt-8 mb-8">
+                  <div className="flex items-center justify-between px-6 py-4 border-b bg-teal-600 rounded-t-xl">
+                    <h3 className="text-lg font-bold text-white">
+                      {editingD1 ? `✏️ Editar ${nomeD3}` : `➕ Nova ${nomeD3}`}
+                    </h3>
+                    <button
+                      onClick={() => { setShowFormD1(false); setEditingD1(null); setFormD1({ codigo: '', nome: '', uf: '', informar_supervisor: false, supervisor_cpf_input: '', supervisor_member_id: '', supervisor_matricula: '', supervisor_nome: '', supervisor_cpf: '', supervisor_data_nascimento: '', supervisor_cargo: '', supervisor_celular: '' }); setSupervisorStatus('idle'); setSupervisorMsg(''); setSupervisorSearchInput(''); setSupervisorResults([]); setSupervisorSearchStatus('idle'); setSelectedD2IdsForD3([]); }}
+                      className="text-white hover:text-teal-200 text-2xl font-bold leading-none"
+                    >×</button>
+                  </div>
+                  <div className="p-6">
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">Nome da {nomeD3}</label>
@@ -2850,25 +3529,83 @@ export default function CongregacoesPage() {
                       <label className="block text-sm font-semibold text-gray-700 mb-2">Nome do Supervisor</label>
                       <input
                         type="text"
-                        value={formD1.supervisor_nome}
-                        onChange={(e) => setFormD1(prev => ({ ...prev, supervisor_nome: e.target.value }))}
-                        placeholder="Ex: Pr. João Silva"
+                        value={supervisorSearchInput}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setSupervisorSearchInput(v);
+                          if (!v) { setFormD1(prev => ({ ...prev, supervisor_nome: '', supervisor_member_id: '' })); setSupervisorResults([]); setSupervisorSearchStatus('idle'); }
+                        }}
+                        placeholder="Digite 3+ letras para buscar..."
                         className="w-full px-4 py-2 border-2 border-teal-500 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
+                      <p className="text-xs text-gray-500 mt-1">
+                        {supervisorSearchStatus === 'loading' ? 'Buscando...' : supervisorSearchStatus === 'not_found' ? 'Nenhum membro encontrado.' : formD1.supervisor_member_id ? '✓ Supervisor selecionado.' : supervisorSearchInput.length >= 3 ? '' : 'Digite pelo menos 3 letras.'}
+                      </p>
+                      {supervisorResults.length > 0 && !formD1.supervisor_member_id && (
+                        <div className="mt-1 border border-gray-200 rounded-lg bg-white overflow-hidden shadow z-10 relative">
+                          {supervisorResults.map(m => (
+                            <button type="button" key={m.id}
+                              onClick={() => {
+                                setFormD1(prev => ({ ...prev, supervisor_nome: m.name, supervisor_member_id: m.id }));
+                                setSupervisorSearchInput(m.name);
+                                setSupervisorResults([]);
+                                setSupervisorSearchStatus('selected');
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm border-b border-gray-100"
+                            >
+                              <span className="font-semibold text-gray-800">{m.name}</span>
+                              {m.role ? <span className="text-gray-500 ml-1">— {m.role}</span> : null}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 
                   <div className="bg-white rounded-lg border border-gray-200 p-4">
-                    <p className="text-sm font-semibold text-gray-800 mb-2">Adicionar {nomeD2}s (opcional)</p>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-semibold text-gray-800">Adicionar {nomeD2}s (opcional)</p>
+                      {camposLocked ? (
+                        <button
+                          type="button"
+                          onClick={() => setCamposLocked(false)}
+                          className="flex items-center gap-1 px-3 py-1 text-xs font-semibold bg-yellow-400 hover:bg-yellow-500 text-yellow-900 rounded-lg transition"
+                        >
+                          🔒 Editar campos
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setCamposLocked(true)}
+                          className="flex items-center gap-1 px-3 py-1 text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition"
+                        >
+                          🔓 Travar
+                        </button>
+                      )}
+                    </div>
                     <p className="text-xs text-gray-600 mb-3">Selecionados: {selectedD2IdsForD3.length}</p>
-                    {availableDivisoes2ForCurrentD1.length === 0 ? (
+                    {camposLocked ? (
+                      <div className="relative max-h-48 overflow-hidden rounded-lg border border-gray-200 select-none">
+                        <div className="absolute inset-0 bg-gray-100/70 z-10 flex items-center justify-center rounded-lg">
+                          <span className="text-xs text-gray-500 font-semibold">🔒 Clique em "Editar campos" para modificar</span>
+                        </div>
+                        <div className="opacity-50">
+                          {listaDivisoes2ParaModal.slice(0, 5).map(c => (
+                            <div key={c.id} className="flex items-center gap-3 px-4 py-2 border-b border-gray-100 text-sm">
+                              <input type="checkbox" checked={selectedD2IdsForD3.includes(c.id)} readOnly className="h-4 w-4" />
+                              <span className="text-gray-800 font-semibold">{c.nome}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : listaDivisoes2ParaModal.length === 0 ? (
                       <p className="text-sm text-gray-600">Nenhum {nomeD2} disponível para esta {nomeD3}.</p>
                     ) : (
-                      <div className="max-h-48 overflow-auto border border-gray-200 rounded-lg bg-white">
-                        {availableDivisoes2ForCurrentD1.map(c => {
+                      <div className="max-h-48 overflow-auto border border-yellow-300 rounded-lg bg-white ring-2 ring-yellow-400">
+                        {listaDivisoes2ParaModal.map(c => {
                           const checked = selectedD2IdsForD3.includes(c.id);
                           return (
-                            <label key={c.id} className="flex items-center gap-3 px-4 py-2 border-b border-gray-100 text-sm">
+                            <label key={c.id} className="flex items-center gap-3 px-4 py-2 border-b border-gray-100 text-sm cursor-pointer hover:bg-yellow-50">
                               <input
                                 type="checkbox"
                                 checked={checked}
@@ -2921,102 +3658,450 @@ export default function CongregacoesPage() {
                     </button>
                   </div>
                 </div>
+                  </div>
+                </div>
               </div>
             )}
 
             {!showFormD1 && (
-              <button
-                onClick={() => {
-                  if (planLimits.max_divisao1 === 0) return;
-                  if (planLimits.max_divisao1 > 0 && divisoes1.length >= planLimits.max_divisao1) return;
-                  openNewD1();
-                }}
-                disabled={planLimits.max_divisao1 === 0 || (planLimits.max_divisao1 > 0 && divisoes1.length >= planLimits.max_divisao1)}
-                title={
-                  planLimits.max_divisao1 === 0
-                    ? `Plano atual não permite ${nomeD3}`
-                    : planLimits.max_divisao1 > 0 && divisoes1.length >= planLimits.max_divisao1
-                      ? `Limite do plano atingido (${planLimits.max_divisao1})`
-                      : undefined
-                }
-                className={`mb-6 w-full px-6 py-3 font-bold rounded-lg transition shadow-md flex items-center justify-center gap-2 ${
-                  planLimits.max_divisao1 === 0 || (planLimits.max_divisao1 > 0 && divisoes1.length >= planLimits.max_divisao1)
-                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    : 'bg-teal-500 text-white hover:bg-teal-600'
-                }`}
-              >
-                + Adicionar {nomeD3}
-                {planLimits.max_divisao1 > 0 && planLimits.max_divisao1 < 999 && (
-                  <span className="text-xs opacity-80">({divisoes1.length}/{planLimits.max_divisao1})</span>
-                )}
-                {planLimits.max_divisao1 === 0 && <span className="text-xs opacity-80">(bloqueado no plano)</span>}
-              </button>
+              <div className="mb-6 flex gap-3">
+                <button
+                  onClick={() => {
+                    if (planLimits.max_divisao1 === 0) return;
+                    if (planLimits.max_divisao1 > 0 && divisoes1.length >= planLimits.max_divisao1) return;
+                    openNewD1();
+                  }}
+                  disabled={planLimits.max_divisao1 === 0 || (planLimits.max_divisao1 > 0 && divisoes1.length >= planLimits.max_divisao1)}
+                  title={
+                    planLimits.max_divisao1 === 0
+                      ? `Plano atual não permite ${nomeD3}`
+                      : planLimits.max_divisao1 > 0 && divisoes1.length >= planLimits.max_divisao1
+                        ? `Limite do plano atingido (${planLimits.max_divisao1})`
+                        : undefined
+                  }
+                  className={`flex-1 px-6 py-3 font-bold rounded-lg transition shadow-md flex items-center justify-center gap-2 ${
+                    planLimits.max_divisao1 === 0 || (planLimits.max_divisao1 > 0 && divisoes1.length >= planLimits.max_divisao1)
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-teal-500 text-white hover:bg-teal-600'
+                  }`}
+                >
+                  + Adicionar {nomeD3}
+                  {planLimits.max_divisao1 > 0 && planLimits.max_divisao1 < 999 && (
+                    <span className="text-xs opacity-80">({divisoes1.length}/{planLimits.max_divisao1})</span>
+                  )}
+                  {planLimits.max_divisao1 === 0 && <span className="text-xs opacity-80">(bloqueado no plano)</span>}
+                </button>
+              </div>
             )}
 
             <div className="bg-white rounded-lg shadow-md p-6">
-              <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr>
-                    <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">NOME</th>
-                    <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">PASTOR/SUPERVISOR</th>
-                    <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">QTD DE SETOR</th>
-                    <th className="px-4 py-3 text-center font-semibold bg-gray-200 text-gray-800">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {divisoes1.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="px-4 py-6 text-center text-gray-500">
-                        Nenhuma {nomeD3} cadastrada
-                      </td>
-                    </tr>
-                  ) : (
-                    divisoes1.map(d => {
-                      const qtdSetor = divisoes2.filter(c => c.supervisao_id === d.id).length;
+              {/* Filtros */}
+              <div className="flex flex-wrap gap-2 mb-4 items-center">
+                <select
+                  value={filterUfSups}
+                  onChange={(e) => { setFilterUfSups(e.target.value); setPageSups(0); }}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
+                >
+                  <option value="">DEFINA O ESTADO:</option>
+                  {Array.from(new Set(divisoes1.map(d => (d as any).uf).filter((v): v is string => !!v))).sort().map(uf => (
+                    <option key={uf} value={uf}>{uf}</option>
+                  ))}
+                </select>
 
-                      return (
-                        <tr key={d.id} className="border-b border-gray-200 hover:bg-gray-50">
-                          <td className="px-4 py-3 text-gray-700 font-semibold">{d.nome}</td>
-                          <td className="px-4 py-3 text-gray-700">{d.supervisor_nome || '-'}</td>
-                          <td className="px-4 py-3 text-gray-700 font-semibold">{qtdSetor}</td>
-                          <td className="px-4 py-3 text-center">
-                            <button
-                              onClick={() => {
-                                setEditingD1(d);
-                                setFormD1({
-                                  codigo: d.codigo ? String(d.codigo) : '',
-                                  nome: d.nome || '',
-                                  uf: '',
-                                  informar_supervisor: !!(d.supervisor_nome || d.supervisor_member_id),
-                                  supervisor_cpf_input: '',
-                                  supervisor_member_id: '',
-                                  supervisor_matricula: '',
-                                  supervisor_nome: d.supervisor_nome || '',
-                                  supervisor_cpf: '',
-                                  supervisor_data_nascimento: '',
-                                  supervisor_cargo: '',
-                                  supervisor_celular: ''
-                                });
-                                setSelectedD2IdsForD3(divisoes2.filter(c => c.supervisao_id === d.id).map(c => c.id));
-                                setSupervisorStatus('idle');
-                                setSupervisorMsg('');
-                                setShowFormD1(true);
-                              }}
-                              className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition text-xs font-semibold"
-                            >
-                              Editar
-                            </button>
-                            <button onClick={() => handleDeleteD1(d.id)} className="ml-2 px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition text-xs font-semibold">
-                              Deletar
-                            </button>
-                          </td>
+                <div className="relative flex-1 min-w-[200px]">
+                  <input
+                    type="text"
+                    value={searchSups}
+                    onChange={(e) => { setSearchSups(e.target.value); setPageSups(0); }}
+                    placeholder="DIGITE SUA BUSCA..."
+                    className="w-full pl-4 pr-10 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+                </div>
+
+                <button
+                  onClick={() => { setSearchSups(''); setFilterUfSups(''); setPageSups(0); }}
+                  className="px-4 py-2 bg-teal-600 text-white text-sm font-semibold rounded-lg hover:bg-teal-700 transition"
+                >
+                  LIMPAR BUSCA
+                </button>
+                <button
+                  onClick={() => {
+                    const q = searchSups.toLowerCase();
+                    const lista = divisoes1.filter(d => {
+                      if (filterUfSups && (d as any).uf !== filterUfSups) return false;
+                      if (q) return d.nome.toLowerCase().includes(q) || (d.supervisor_nome || '').toLowerCase().includes(q);
+                      return true;
+                    });
+                    handlePrintSupervisoes(lista);
+                  }}
+                  className="px-4 py-2 bg-gray-700 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 transition flex items-center gap-1"
+                >
+                  🖨️ Imprimir lista
+                </button>
+
+
+              </div>
+
+              {(() => {
+                const q = searchSups.toLowerCase();
+                const filtered = divisoes1.filter(d => {
+                  if (filterUfSups && (d as any).uf !== filterUfSups) return false;
+                  if (q) return d.nome.toLowerCase().includes(q) || (d.supervisor_nome || '').toLowerCase().includes(q);
+                  return true;
+                });
+                const totalPages = Math.ceil(filtered.length / PAGE_SIZE_SUPS) || 1;
+                const safePage = Math.min(pageSups, totalPages - 1);
+                const paged = filtered.slice(safePage * PAGE_SIZE_SUPS, (safePage + 1) * PAGE_SIZE_SUPS);
+
+                return (
+                  <>
+                    <p className="text-xs text-gray-500 mb-3 text-right">
+                      {filtered.length > PAGE_SIZE_SUPS && <span className="mr-1">página {safePage + 1} de {totalPages} —</span>}
+                      {filtered.length} de {divisoes1.length} supervisão(ões){' '}
+                      <span className="inline-flex items-center justify-center w-9 h-6 bg-blue-600 text-white rounded-full font-bold text-xs">{filtered.length}</span>
+                    </p>
+                    <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr>
+                          <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800 w-6"></th>
+                          <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">NOME</th>
+                          <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">PASTOR/SUPERVISOR</th>
+                          <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">QTD DE CAMPOS</th>
+                          <th className="px-4 py-3 text-center font-semibold bg-gray-200 text-gray-800">Ações</th>
                         </tr>
-                      );
-                    })
+                      </thead>
+                      <tbody>
+                        {paged.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="px-4 py-6 text-center text-gray-500">
+                              {(searchSups || filterUfSups) ? 'Nenhuma supervisão encontrada para os filtros aplicados.' : `Nenhuma ${nomeD3} cadastrada`}
+                            </td>
+                          </tr>
+                        ) : (
+                          paged.map(d => {
+                            const camposDaSup = divisoes2.filter(c => c.supervisao_id === d.id);
+                            const qtdSetor = camposDaSup.length;
+                            const isExpanded = expandedSupId === d.id;
+                            return (
+                              <>
+                                <tr key={d.id} className={`border-b border-gray-200 cursor-pointer transition ${isExpanded ? 'bg-teal-50' : 'hover:bg-gray-50'}`}
+                                  onClick={() => setExpandedSupId(isExpanded ? null : d.id)}>
+                                  <td className="px-3 py-3 text-gray-400 text-xs font-bold select-none">
+                                    {isExpanded ? '▾' : '▸'}
+                                  </td>
+                                  <td className="px-4 py-3 text-gray-700 font-semibold">{d.nome}</td>
+                                  <td className="px-4 py-3 text-gray-700">{d.supervisor_nome || '-'}</td>
+                                  <td className="px-4 py-3 text-gray-700 font-semibold">
+                                    <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-bold ${qtdSetor === 0 ? 'bg-orange-100 text-orange-600' : 'bg-teal-100 text-teal-700'}`}>{qtdSetor}</span>
+                                  </td>
+                                  <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
+                                    <button
+                                      onClick={() => {
+                                        setEditingD1(d);
+                                        setFormD1({
+                                          codigo: d.codigo ? String(d.codigo) : '',
+                                          nome: d.nome || '',
+                                          uf: '',
+                                          informar_supervisor: !!(d.supervisor_nome || d.supervisor_member_id),
+                                          supervisor_cpf_input: '',
+                                          supervisor_member_id: '',
+                                          supervisor_matricula: '',
+                                          supervisor_nome: d.supervisor_nome || '',
+                                          supervisor_cpf: '',
+                                          supervisor_data_nascimento: '',
+                                          supervisor_cargo: '',
+                                          supervisor_celular: ''
+                                        });
+                                        setSelectedD2IdsForD3(divisoes2.filter(c => c.supervisao_id === d.id).map(c => c.id));
+                                        setSupervisorStatus('idle');
+                                        setSupervisorMsg('');
+                                        setSupervisorSearchInput(d.supervisor_nome || '');
+                                        setSupervisorResults([]);
+                                        setSupervisorSearchStatus('idle');
+                                        setCamposLocked(true);
+                                        setShowFormD1(true);
+                                      }}
+                                      className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition text-xs font-semibold"
+                                    >
+                                      Editar
+                                    </button>
+                                    <button onClick={() => handleDeleteD1(d.id)} className="ml-2 px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition text-xs font-semibold">
+                                      Deletar
+                                    </button>
+                                  </td>
+                                </tr>
+                                {isExpanded && (
+                                  <tr key={`${d.id}-expand`} className="bg-teal-50 border-b border-teal-200">
+                                    <td colSpan={5} className="px-6 py-3">
+                                      {camposDaSup.length === 0 ? (
+                                        <p className="text-xs text-orange-500 font-semibold py-2">⚠️ Esta supervisão não possui campos vinculados.</p>
+                                      ) : (
+                                        <table className="w-full text-xs border border-teal-200 rounded-lg overflow-hidden">
+                                          <thead>
+                                            <tr className="bg-teal-600 text-white">
+                                              <th className="px-3 py-2 text-left">NOME DO CAMPO</th>
+                                              <th className="px-3 py-2 text-left">UF</th>
+                                              <th className="px-3 py-2 text-left">PRESIDENTE</th>
+                                              <th className="px-3 py-2 text-center">CNPJ?</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {camposDaSup.map((c, idx) => (
+                                              <tr key={c.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-teal-50/50'}>
+                                                <td className="px-3 py-1.5 font-semibold text-gray-800">{c.nome}</td>
+                                                <td className="px-3 py-1.5 text-gray-600">{c.uf || '—'}</td>
+                                                <td className="px-3 py-1.5 text-gray-600">{(c as any).presidente_nome || '—'}</td>
+                                                <td className="px-3 py-1.5 text-center">
+                                                  {c.cnpj
+                                                    ? <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded font-semibold">SIM</span>
+                                                    : <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded font-semibold">NÃO</span>}
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      )}
+                                    </td>
+                                  </tr>
+                                )}
+                              </>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                    </div>
+
+                    {/* Paginação */}
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
+                        <button
+                          onClick={() => setPageSups(p => Math.max(0, p - 1))}
+                          disabled={safePage === 0}
+                          className="px-4 py-2 text-sm font-semibold rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50 transition"
+                        >
+                          ← Anterior
+                        </button>
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: Math.min(totalPages, 9) }, (_, i) => {
+                            let pg: number;
+                            if (totalPages <= 9) {
+                              pg = i;
+                            } else if (safePage < 5) {
+                              if (i < 7) pg = i;
+                              else if (i === 7) return <span key="e1" className="px-2 text-gray-400">…</span>;
+                              else pg = totalPages - 1;
+                            } else if (safePage > totalPages - 6) {
+                              if (i === 0) pg = 0;
+                              else if (i === 1) return <span key="e1" className="px-2 text-gray-400">…</span>;
+                              else pg = totalPages - (9 - i);
+                            } else {
+                              if (i === 0) pg = 0;
+                              else if (i === 1) return <span key="e1" className="px-2 text-gray-400">…</span>;
+                              else if (i === 7) return <span key="e2" className="px-2 text-gray-400">…</span>;
+                              else if (i === 8) pg = totalPages - 1;
+                              else pg = safePage + (i - 4);
+                            }
+                            return (
+                              <button
+                                key={pg}
+                                onClick={() => setPageSups(pg)}
+                                className={`w-9 h-9 rounded-lg text-sm font-semibold transition ${pg === safePage ? 'bg-teal-600 text-white' : 'border border-gray-300 hover:bg-gray-50 text-gray-700'}`}
+                              >
+                                {pg + 1}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <button
+                          onClick={() => setPageSups(p => Math.min(totalPages - 1, p + 1))}
+                          disabled={safePage >= totalPages - 1}
+                          className="px-4 py-2 text-sm font-semibold rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50 transition"
+                        >
+                          Próxima →
+                        </button>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          </Section>
+        )}
+
+        {/* ── ABA: Importar CSV ─────────────────────────────────────────── */}
+        {activeTab === 'importar-csv' && (
+          <Section icon="📥" title="Importar CSV">
+            <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
+              {/* Sub-abas Campos / Supervisões */}
+              <div className="flex border-b">
+              <button
+                onClick={() => { setCsvImportTab('campos'); setCsvCamposRows([]); setCsvResult(null); }}
+                className={`flex-1 py-3 text-sm font-semibold ${csvImportTab === 'campos' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                📍 Campos
+              </button>
+              <button
+                onClick={() => { setCsvImportTab('supervisoes'); setCsvSupRows([]); setCsvResult(null); }}
+                className={`flex-1 py-3 text-sm font-semibold ${csvImportTab === 'supervisoes' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                🗂️ Supervisões
+              </button>
+            </div>
+
+              {/* Instruções e modelo */}
+              {csvImportTab === 'campos' ? (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-900">
+                  <p className="font-semibold mb-1">Colunas do CSV para Campos (cabeçalhos aceitos):</p>
+                  <p className="font-mono text-xs bg-white border border-blue-100 rounded p-2 overflow-x-auto whitespace-nowrap">
+                    NOME DO CAMPO, SUPERVISÃO, DATA FUNDAÇÃO, EMAIL CAMPO, ENDEREÇO, NUMERO END, BAIRRO, CEP, CIDADE, UF, COMPLEMENTO, CNPJ, TEM CNPJ?, OBS, PASTOR SUPERVISOR, DATA DA POSSE, PRESIDENTE NOME, REGISTRO COMIEADEPA
+                  </p>
+                  <p className="mt-2 text-xs text-blue-700">• Separador: vírgula <code>,</code> ou ponto-e-vírgula <code>;</code> • Codificação: UTF-8 • Apenas <strong>NOME DO CAMPO</strong> é obrigatório • Datas aceitas: <code>Apr 14, 2025 12:00 am</code>, <code>2025-04-14</code> ou <code>14/04/2025</code></p>
+                </div>
+              ) : (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-900">
+                  <p className="font-semibold mb-1">Colunas do CSV para Supervisões (cabeçalhos aceitos):</p>
+                  <p className="font-mono text-xs bg-white border border-blue-100 rounded p-2 overflow-x-auto whitespace-nowrap">
+                    NOME DA SUPERVISÃO; MATRICULA SUPERVISOR; PASTOR SUPERVISOR; CPF DO SUPERVISOR; UF
+                  </p>
+                  <p className="mt-2 text-xs text-blue-700">• Separador: vírgula <code>,</code> ou ponto-e-vírgula <code>;</code> • Codificação: UTF-8 • Apenas <strong>NOME DA SUPERVISÃO</strong> é obrigatório • Se <strong>MATRICULA SUPERVISOR</strong> não for informada, será gerada automaticamente</p>
+                </div>
+              )}
+
+              {/* Upload de arquivo */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Selecione o arquivo CSV:</label>
+                <input
+                  type="file"
+                  accept=".csv,text/csv,text/plain"
+                  onChange={(e) => handleCsvFileChange(e, csvImportTab)}
+                  className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-gray-300 rounded-lg cursor-pointer"
+                />
+              </div>
+
+              {/* Resultado da importação */}
+              {csvResult && (
+                <div className={`rounded-lg p-4 text-sm ${csvResult.errors.length === 0 ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-yellow-50 border border-yellow-200 text-yellow-800'}`}>
+                  <p className="font-semibold">
+                    {csvResult.errors.length === 0
+                      ? `✅ ${csvResult.ok} registro(s) importado(s) com sucesso!`
+                      : `⚠️ ${csvResult.ok} importado(s) com sucesso, ${csvResult.errors.length} erro(s).`}
+                  </p>
+                  {csvResult.errors.length > 0 && (
+                    <ul className="mt-2 text-xs space-y-1 list-disc list-inside">
+                      {csvResult.errors.map((e, i) => <li key={i}>{e}</li>)}
+                    </ul>
                   )}
-                </tbody>
-              </table>
+                </div>
+              )}
+
+              {/* Preview dos dados */}
+              {csvImportTab === 'campos' && csvCamposRows.length > 0 && !csvResult && (
+                <div>
+                  <p className="text-sm font-semibold text-gray-700 mb-2">Preview ({csvCamposRows.length} linha(s)):</p>
+                  <div className="overflow-x-auto border border-gray-200 rounded-lg max-h-72 overflow-y-auto">
+                    <table className="w-full text-xs whitespace-nowrap">
+                      <thead className="bg-gray-100 sticky top-0">
+                        <tr>
+                          <th className="px-2 py-1 text-left">Nome do Campo</th>
+                          <th className="px-2 py-1 text-left">Supervisão</th>
+                          <th className="px-2 py-1 text-left">Cidade/UF</th>
+                          <th className="px-2 py-1 text-left">Pastor/Supervisor</th>
+                          <th className="px-2 py-1 text-left">Data Posse</th>
+                          <th className="px-2 py-1 text-left">Endereço</th>
+                          <th className="px-2 py-1 text-center">CNPJ?</th>
+                          <th className="px-2 py-1 text-left">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {csvCamposRows.map((row, i) => (
+                          <tr key={i} className={`border-t ${row._error ? 'bg-red-50' : 'hover:bg-gray-50'}`}>
+                            <td className="px-2 py-1 font-semibold">{row.nome || <span className="text-red-500">(vazio)</span>}</td>
+                            <td className="px-2 py-1 text-gray-600">{row.supervisao_nome || '-'}</td>
+                            <td className="px-2 py-1 text-gray-600">{[row.cidade, row.uf].filter(Boolean).join('/') || '-'}</td>
+                            <td className="px-2 py-1 text-gray-600">{row.pastor_nome || '-'}</td>
+                            <td className="px-2 py-1 text-gray-600">{(row as any).pastor_data_posse || '-'}</td>
+                            <td className="px-2 py-1 text-gray-600 max-w-[160px] truncate">{[row.endereco, row.numero].filter(Boolean).join(', ') || '-'}</td>
+                            <td className="px-2 py-1 text-center">
+                              {(row.cnpj || ['sim','yes','true','1','s'].includes((row.tem_cnpj||'').toLowerCase().trim()))
+                                ? <span className="px-1 bg-green-100 text-green-700 rounded">SIM</span>
+                                : <span className="px-1 bg-gray-100 text-gray-500 rounded">NÃO</span>}
+                            </td>
+                            <td className="px-2 py-1">{row._error ? <span className="text-red-600">⚠ {row._error}</span> : <span className="text-green-600">✓ OK</span>}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {csvCamposRows.filter(r => !r._error && r.nome).length} válidos · {csvCamposRows.filter(r => !!r._error).length} com erro (serão ignorados)
+                  </p>
+                </div>
+              )}
+
+              {csvImportTab === 'supervisoes' && csvSupRows.length > 0 && !csvResult && (
+                <div>
+                  <p className="text-sm font-semibold text-gray-700 mb-2">Preview ({csvSupRows.length} linha(s)):</p>
+                  <div className="overflow-x-auto border border-gray-200 rounded-lg max-h-64 overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-100 sticky top-0">
+                        <tr>
+                          <th className="px-2 py-1 text-left">Matrícula</th>
+                          <th className="px-2 py-1 text-left">Nome da Supervisão</th>
+                          <th className="px-2 py-1 text-left">Pastor Supervisor</th>
+                          <th className="px-2 py-1 text-left">CPF</th>
+                          <th className="px-2 py-1 text-left">UF</th>
+                          <th className="px-2 py-1 text-left">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {csvSupRows.map((row, i) => (
+                          <tr key={i} className={`border-t ${row._error ? 'bg-red-50' : 'hover:bg-gray-50'}`}>
+                            <td className="px-2 py-1 text-gray-600">{row.codigo || '(auto)'}</td>
+                            <td className="px-2 py-1 font-semibold">{row.nome || <span className="text-red-500">(vazio)</span>}</td>
+                            <td className="px-2 py-1 text-gray-600">{row.supervisor_nome || '-'}</td>
+                            <td className="px-2 py-1 text-gray-600">{row.supervisor_cpf || '-'}</td>
+                            <td className="px-2 py-1 text-gray-600">{row.uf || '-'}</td>
+                            <td className="px-2 py-1">{row._error ? <span className="text-red-600">⚠ {row._error}</span> : <span className="text-green-600">✓ OK</span>}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {csvSupRows.filter(r => !r._error && r.nome).length} válidos · {csvSupRows.filter(r => !!r._error).length} com erro (serão ignorados)
+                  </p>
+                </div>
+              )}
+
+              {/* Botões */}
+              <div className="flex gap-3 pt-2">
+                {csvImportTab === 'campos' && csvCamposRows.filter(r => !r._error && r.nome).length > 0 && !csvResult && (
+                  <button
+                    onClick={handleCsvImportCampos}
+                    disabled={csvImporting}
+                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-bold text-sm disabled:opacity-60"
+                  >
+                    {csvImporting ? 'Importando...' : `✓ Importar ${csvCamposRows.filter(r => !r._error && r.nome).length} campo(s)`}
+                  </button>
+                )}
+                {csvImportTab === 'supervisoes' && csvSupRows.filter(r => !r._error && r.nome).length > 0 && !csvResult && (
+                  <button
+                    onClick={handleCsvImportSupervisoes}
+                    disabled={csvImporting}
+                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-bold text-sm disabled:opacity-60"
+                  >
+                    {csvImporting ? 'Importando...' : `✓ Importar ${csvSupRows.filter(r => !r._error && r.nome).length} supervisão(ões)`}
+                  </button>
+                )}
+                <button
+                  onClick={() => { setCsvCamposRows([]); setCsvSupRows([]); setCsvResult(null); }}
+                  className="px-4 py-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition font-bold text-sm"
+                >
+                  Limpar
+                </button>
               </div>
             </div>
           </Section>

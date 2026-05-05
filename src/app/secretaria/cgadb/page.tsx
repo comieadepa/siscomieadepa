@@ -171,6 +171,7 @@ function AbaMinistros({ notify }: { notify: (t: string, m: string, tp: 'success'
 
   // Expandir detalhes de débito por ministro
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [zerandoMin, setZerandoMin] = useState<string | null>(null);
 
   useEffect(() => {
     load();
@@ -264,6 +265,43 @@ function AbaMinistros({ notify }: { notify: (t: string, m: string, tp: 'success'
       notify('Erro', 'Erro ao carregar ministros: ' + (err?.message || ''), 'error');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleDarBaixaMin(debitoId: string, memberId: string) {
+    setZerandoMin(debitoId);
+    try {
+      const { error } = await supabase.from('cgadb_debitos').delete().eq('id', debitoId);
+      if (error) throw error;
+      setMinistros(prev => prev.map(m => {
+        if (m.id !== memberId) return m;
+        const novosDebitos = m.debitos.filter(d => d.id !== debitoId);
+        const novoTotal = novosDebitos.reduce((acc, d) => acc + (d.valor || 0), 0);
+        const novosAnos = novosDebitos.map(d => d.ano!).filter(Boolean).sort((a, b) => b - a);
+        return { ...m, debitos: novosDebitos, totalDevido: novoTotal, anosDebito: novosAnos };
+      }));
+      notify('Baixa realizada', 'Débito removido com sucesso.', 'success');
+    } catch (err: any) {
+      notify('Erro', 'Erro ao dar baixa: ' + (err?.message || ''), 'error');
+    } finally {
+      setZerandoMin(null);
+    }
+  }
+
+  async function handleDarBaixaTodosMin(memberId: string, cpf: string) {
+    const ids = ministros.find(m => m.id === memberId)?.debitos.map(d => d.id) || [];
+    if (ids.length === 0) return;
+    setZerandoMin(`todos_${memberId}`);
+    try {
+      const { error } = await supabase.from('cgadb_debitos').delete().in('id', ids);
+      if (error) throw error;
+      setMinistros(prev => prev.map(m => m.id !== memberId ? m : { ...m, debitos: [], totalDevido: 0, anosDebito: [] }));
+      setExpandedId(null);
+      notify('Baixa realizada', `${ids.length} débito(s) removido(s) com sucesso.`, 'success');
+    } catch (err: any) {
+      notify('Erro', 'Erro ao dar baixa geral: ' + (err?.message || ''), 'error');
+    } finally {
+      setZerandoMin(null);
     }
   }
 
@@ -575,6 +613,7 @@ function AbaMinistros({ notify }: { notify: (t: string, m: string, tp: 'success'
                               <th className="text-center px-3 py-2 font-semibold text-gray-500">Ano</th>
                               <th className="text-right px-3 py-2 font-semibold text-gray-500">Valor</th>
                               <th className="text-center px-3 py-2 font-semibold text-gray-500">Status</th>
+                              <th className="text-center px-3 py-2 font-semibold text-gray-500">Receber</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -586,8 +625,33 @@ function AbaMinistros({ notify }: { notify: (t: string, m: string, tp: 'success'
                                 <td className="px-3 py-2 text-center">
                                   <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs">{d.status || '—'}</span>
                                 </td>
+                                <td className="px-3 py-2 text-center">
+                                  <button
+                                    onClick={e => { e.stopPropagation(); handleDarBaixaMin(d.id, m.id); }}
+                                    disabled={zerandoMin !== null}
+                                    className="px-2.5 py-1 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition disabled:opacity-50"
+                                    title={`Dar baixa no débito de ${d.ano}`}
+                                  >
+                                    {zerandoMin === d.id ? '...' : '✓ Receber'}
+                                  </button>
+                                </td>
                               </tr>
                             ))}
+                            <tr className="bg-gray-100 border-t-2 border-gray-300">
+                              <td colSpan={4} className="px-3 py-2 text-xs font-bold text-gray-600 text-right">
+                                Dar baixa em todos os débitos ({m.debitos.length} ano{m.debitos.length !== 1 ? 's' : ''}):
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <button
+                                  onClick={e => { e.stopPropagation(); handleDarBaixaTodosMin(m.id, m.cpf); }}
+                                  disabled={zerandoMin !== null}
+                                  className="px-2.5 py-1 bg-red-700 hover:bg-red-800 text-white text-xs font-semibold rounded-lg transition disabled:opacity-50"
+                                  title="Dar baixa em todos os débitos deste ministro"
+                                >
+                                  {zerandoMin === `todos_${m.id}` ? '...' : '✓ Baixa Geral'}
+                                </button>
+                              </td>
+                            </tr>
                           </tbody>
                         </table>
                       </td>
@@ -650,6 +714,7 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
   const [apenasNaoCadastrados, setApenasNaoCadastrados] = useState(false);
   const [editCpf, setEditCpf] = useState<{ oldCpf: string; nome: string; value: string } | null>(null);
   const [savingCpf, setSavingCpf] = useState(false);
+  const [zerando, setZerando] = useState<string | null>(null);
 
   async function handleSaveCpf() {
     if (!editCpf) return;
@@ -674,6 +739,37 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
       notify('Erro', 'Erro ao atualizar CPF: ' + (err?.message || ''), 'error');
     } finally {
       setSavingCpf(false);
+    }
+  }
+
+  async function handleDarBaixa(id: string) {
+    setZerando(id);
+    try {
+      const { error } = await supabase.from('cgadb_debitos').delete().eq('id', id);
+      if (error) throw error;
+      setDebitos(prev => prev.filter(d => d.id !== id));
+      notify('Baixa realizada', 'Débito removido com sucesso.', 'success');
+    } catch (err: any) {
+      notify('Erro', 'Erro ao dar baixa: ' + (err?.message || ''), 'error');
+    } finally {
+      setZerando(null);
+    }
+  }
+
+  async function handleDarBaixaTodos(cpfKey: string) {
+    const ids = debitos.filter(d => normalizeCpf(d.cpf) === cpfKey).map(d => d.id);
+    if (ids.length === 0) return;
+    setZerando(`todos_${cpfKey}`);
+    try {
+      const { error } = await supabase.from('cgadb_debitos').delete().in('id', ids);
+      if (error) throw error;
+      setDebitos(prev => prev.filter(d => normalizeCpf(d.cpf) !== cpfKey));
+      setExpandedCpf(null);
+      notify('Baixa realizada', `${ids.length} débito(s) removido(s) com sucesso.`, 'success');
+    } catch (err: any) {
+      notify('Erro', 'Erro ao dar baixa geral: ' + (err?.message || ''), 'error');
+    } finally {
+      setZerando(null);
     }
   }
 
@@ -1120,6 +1216,7 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
                                 <th className="text-center px-3 py-2 font-semibold">Ano</th>
                                 <th className="text-right px-3 py-2 font-semibold">Valor</th>
                                 <th className="text-center px-3 py-2 font-semibold">Status</th>
+                                <th className="text-center px-3 py-2 font-semibold">Receber</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -1138,8 +1235,33 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
                                           : 'bg-yellow-100 text-yellow-700'
                                       }`}>{d.status || '—'}</span>
                                     </td>
+                                    <td className="px-3 py-2 text-center">
+                                      <button
+                                        onClick={e => { e.stopPropagation(); handleDarBaixa(d.id); }}
+                                        disabled={zerando !== null}
+                                        className="px-2.5 py-1 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition disabled:opacity-50"
+                                        title={`Dar baixa no débito de ${d.ano}`}
+                                      >
+                                        {zerando === d.id ? '...' : '✓ Receber'}
+                                      </button>
+                                    </td>
                                   </tr>
                                 ))}
+                              <tr className="bg-gray-100 border-t-2 border-gray-300">
+                                <td colSpan={4} className="px-3 py-2 text-xs font-bold text-gray-600 text-right">
+                                  Dar baixa em todos os débitos ({g.debitos.length} ano{g.debitos.length !== 1 ? 's' : ''}):
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  <button
+                                    onClick={e => { e.stopPropagation(); handleDarBaixaTodos(cpfKey); }}
+                                    disabled={zerando !== null}
+                                    className="px-2.5 py-1 bg-red-700 hover:bg-red-800 text-white text-xs font-semibold rounded-lg transition disabled:opacity-50"
+                                    title="Dar baixa em todos os débitos deste ministro"
+                                  >
+                                    {zerando === `todos_${cpfKey}` ? '...' : '✓ Baixa Geral'}
+                                  </button>
+                                </td>
+                              </tr>
                             </tbody>
                           </table>
                         </td>

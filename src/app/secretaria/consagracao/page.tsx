@@ -1,9 +1,7 @@
-'use client';
+﻿﻿'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import PageLayout from '@/components/PageLayout';
-import Tabs from '@/components/Tabs';
-import Section from '@/components/Section';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useMembers } from '@/hooks/useMembers';
 import { createClient } from '@/lib/supabase-client';
@@ -29,11 +27,11 @@ const STATUS_LABELS: Record<string, string> = {
 
 const TIPO_REGISTRO_LABELS: Record<string, string> = {
   chegada: 'Candidato (Novo cadastro)',
-  progressao: 'Progress�o (j� cadastrado)',
-  filiacao: 'Filia��o (consagrado em outra institui��o)',
+  progressao: 'Progressão (já cadastrado)',
+  filiacao: 'Filiação (consagrado em outra instituição)',
   novo: 'Candidato (Novo cadastro)',
-  existente: 'Progress�o (j� cadastrado)',
-  ministro: 'Progress�o (j� cadastrado)'
+  existente: 'Progressão (já cadastrado)',
+  ministro: 'Progressão (já cadastrado)'
 };
 
 const TIPO_REGISTRO_OPTIONS: Array<{ value: 'chegada' | 'progressao' | 'filiacao'; label: string }> = [
@@ -43,14 +41,14 @@ const TIPO_REGISTRO_OPTIONS: Array<{ value: 'chegada' | 'progressao' | 'filiacao
 ];
 
 const CATEGORIA_REGISTRO_OPTIONS = [
-  'AUTORIZA��O',
-  'AUTORIZA��O - NOVO APRESENTADOR',
-  'CONSAGRA��O',
-  'ORDENA��O',
-  'ENTRADA NO PROBAT�RIO',
-  'SA�DA DO PROBAT�RIO',
-  'INTEGRA��O',
-  'REINTEGRA��O',
+  'AUTORIZAÇÃO',
+  'AUTORIZAÇÃO - NOVO APRESENTADOR',
+  'CONSAGRAÇÃO',
+  'ORDENAÇÃO',
+  'ENTRADA NO PROBATÓRIO',
+  'SAÍDA DO PROBATÓRIO',
+  'INTEGRAÇÃO',
+  'REINTEGRAÇÃO',
 ];
 
 const normalizeTipoRegistro = (value: string) => {
@@ -71,7 +69,14 @@ export default function ConsagracaoPage() {
   const supabase = useMemo(() => createClient(), []);
   const { fetchMembers } = useMembers();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const csvInputRef = useRef<HTMLInputElement>(null);
   const suppressNextSearchRef = useRef(false);
+
+  // CSV Import
+  const [csvRows, setCsvRows] = useState<any[]>([]);
+  const [csvErro, setCsvErro] = useState('');
+  const [csvSucesso, setCsvSucesso] = useState('');
+  const [importing, setImporting] = useState(false);
 
   const [activeTab, setActiveTab] = useState('cadastro');
   const [ministryId] = useState<string>('single-tenant');
@@ -96,6 +101,20 @@ export default function ConsagracaoPage() {
   const [memberResults, setMemberResults] = useState<Member[]>([]);
   const [memberOpen, setMemberOpen] = useState(false);
   const [fotoBloqueada, setFotoBloqueada] = useState(false);
+
+  // Regiões customizadas
+  const REGIOES_PADRAO = ['COMIEADEPA', 'MARABÁ', 'SANTARÉM', 'SEGUNDA CHAMADA'];
+  const [regioesList, setRegioesList] = useState<string[]>(REGIOES_PADRAO);
+  const [novaRegiao, setNovaRegiao] = useState('');
+  const [showNovaRegiao, setShowNovaRegiao] = useState(false);
+
+  // Filtros da aba Lista
+  const [filtroRegiao, setFiltroRegiao] = useState('');
+  const [filtroSupervisao, setFiltroSupervisao] = useState('');
+  const [filtroCampo, setFiltroCampo] = useState('');
+  const [filtroBusca, setFiltroBusca] = useState('');
+  const [filtroStatus, setFiltroStatus] = useState('');
+
   const todayIso = () => new Date().toISOString().slice(0, 10);
 
   const [formRegistro, setFormRegistro] = useState({
@@ -133,13 +152,23 @@ export default function ConsagracaoPage() {
     data_autorizacao: '',
     status_processo: 'em_processo',
     observacoes: '',
-    foto_url: ''
+    foto_url: '',
+    // Endereço
+    endereco: '',
+    numero_endereco: '',
+    bairro: '',
+    complemento: '',
+    cidade: '',
+    uf_endereco: '',
+    cep: '',
+    // Formação e dados extras
+    escolaridade: '',
+    curso_teologico: '',
+    cargo_anterior: '',
+    mat_pr_solicitante: '',
+    doc_pendente: false,
+    data_registro: ''
   });
-
-  const tabs = [
-    { id: 'cadastro', label: 'Cadastro de Processos', icon: '??' },
-    { id: 'registros', label: 'Registros', icon: '??' }
-  ];
 
   const getNextProcessNumber = async () => {
     if (!ministryId || !consagracaoModuleReady) return '';
@@ -153,7 +182,7 @@ export default function ConsagracaoPage() {
     if (error) {
       if (isConsagracaoTableMissing(error)) {
         setConsagracaoModuleReady(false);
-        setStatusMensagem('M�dulo Consagra��o indispon�vel: tabela public.consagracao_registros n�o encontrada. Aplique as migrations de Consagra��o no Supabase.');
+        setStatusMensagem('Módulo Consagração indisponível: tabela public.consagracao_registros não encontrada. Aplique as migrations de Consagração no Supabase.');
       }
       return '';
     }
@@ -194,7 +223,7 @@ export default function ConsagracaoPage() {
     if (error) {
       if (isConsagracaoTableMissing(error)) {
         setConsagracaoModuleReady(false);
-        setStatusMensagem('M�dulo Consagra��o indispon�vel: tabela public.consagracao_registros n�o encontrada. Aplique as migrations de Consagra��o no Supabase.');
+        setStatusMensagem('Módulo Consagração indisponível: tabela public.consagracao_registros não encontrada. Aplique as migrations de Consagração no Supabase.');
         setRegistros([]);
       }
     } else if (data) {
@@ -226,18 +255,12 @@ export default function ConsagracaoPage() {
     let cancelled = false;
     const query = memberQuery.trim();
 
-    if (formRegistro.tipo_registro !== 'progressao') {
-      setMemberResults([]);
-      setMemberOpen(false);
-      return;
-    }
-
     if (suppressNextSearchRef.current) {
       suppressNextSearchRef.current = false;
       setMemberOpen(false);
       return;
     }
-    if (query.length < 2) {
+    if (query.length < 3) {
       setMemberResults([]);
       setMemberOpen(false);
       return;
@@ -345,7 +368,22 @@ export default function ConsagracaoPage() {
       data_autorizacao: '',
       status_processo: 'em_processo',
       observacoes: '',
-      foto_url: ''
+      foto_url: '',
+      // Endereço
+      endereco: '',
+      numero_endereco: '',
+      bairro: '',
+      complemento: '',
+      cidade: '',
+      uf_endereco: '',
+      cep: '',
+      // Formação e dados extras
+      escolaridade: '',
+      curso_teologico: '',
+      cargo_anterior: '',
+      mat_pr_solicitante: '',
+      doc_pendente: false,
+      data_registro: ''
     });
     setEditingRegistro(null);
     setMemberQuery('');
@@ -353,6 +391,179 @@ export default function ConsagracaoPage() {
     setMemberOpen(false);
     setFotoBloqueada(false);
   };
+
+  // ─── CSV IMPORT ─────────────────────────────────────────────
+  const parseCsvDate = (raw: string): string => {
+    if (!raw) return '';
+    // "Apr 1, 1978 12:00 am" or "Jan 10, 1980 12:00 am"
+    const meses: Record<string, string> = {
+      Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
+      Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12'
+    };
+    const m = raw.match(/(\w+)\s+(\d+),\s*(\d{4})/);
+    if (m) {
+      const mes = meses[m[1]] || '01';
+      const dia = m[2].padStart(2, '0');
+      return `${m[3]}-${mes}-${dia}`;
+    }
+    // ISO or dd/mm/yyyy
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+    const dmy = raw.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (dmy) return `${dmy[3]}-${dmy[2].padStart(2,'0')}-${dmy[1].padStart(2,'0')}`;
+    return '';
+  };
+
+  const handleCsvConsagracao = (file: File) => {
+    setCsvErro('');
+    setCsvSucesso('');
+    setCsvRows([]);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        const lines = text.split(/\r?\n/).filter(l => l.trim());
+        if (lines.length < 2) { setCsvErro('Arquivo vazio ou sem dados.'); return; }
+        const sep = lines[0].includes(';') ? ';' : ',';
+        const headers = lines[0].split(sep).map(h => h.trim().replace(/^"|"$/g, '').toUpperCase());
+        const idx = (...names: string[]) => {
+          for (const n of names) {
+            const i = headers.findIndex(h => h.replace(/[\s_]+/g, ' ').includes(n.toUpperCase()));
+            if (i >= 0) return i;
+          }
+          return -1;
+        };
+        const colNprocesso = idx('NPROCESSO', 'NUM PROCESSO', 'NUMERO PROCESSO');
+        const colAno       = idx('ANO DO PROCESSO', 'ANO');
+        const colNome      = idx('NOME CANDIDATO', 'NOME');
+        const colCpf       = idx('CPF');
+        const colRg        = idx('RG');
+        const colSexo      = idx('SEXO');
+        const colNasc      = idx('DNASCIMENTO', 'DATA NASCIMENTO', 'DATA DE NASCIMENTO');
+        const colEstCivil  = idx('ESTADO CIVIL');
+        const colMae       = idx('MÃE', 'MAE', 'NOME MAE');
+        const colPai       = idx('PAI', 'NOME PAI');
+        const colNat       = idx('NATURALIDADE');
+        const colEmail     = idx('EMAIL');
+        const colCelular   = idx('CELULAR', 'TELEFONE');
+        const colMatricula = idx('MATRICULA');
+        const colCargo     = idx('CARGO PR', 'CARGO PRETENDIDO');
+        const colCargAnt   = idx('CARGO ANTERIOR');
+        const colCampo     = idx('CAMPO');
+        const colSup       = idx('SUPERVISAO', 'SUPERVISÃO');
+        const colIndicacao = idx('INDICAÇÃO', 'INDICACAO');
+        const colMatPr     = idx('MAT PR SOLICITANTE');
+        const colCateg     = idx('CATEGORIA DO REGISTRO');
+        const colRegiao    = idx('REGIÃO', 'REGIAO');
+        const colStatus    = idx('STATUS');
+        const colDataProc  = idx('DATA DO PROCESSO');
+        const colDataReg   = idx('DATA DE REGISTRO', 'DATA REGISTRO');
+        const colEndereco  = idx('ENDEREÇO', 'ENDERECO');
+        const colNumEnd    = idx('NUM ENDEREÇO', 'NUM ENDERECO');
+        const colCompl     = idx('COMPLEMENTO END', 'COMPLEMENTO');
+        const colBairro    = idx('BAIRRO END', 'BAIRRO');
+        const colCidade    = idx('CIDADE END', 'CIDADE');
+        const colUfEnd     = idx('UF END');
+        const colCep       = idx('CEP END', 'CEP');
+        const colEscol     = idx('ESCOLARIDADE');
+        const colCurso     = idx('CURSO TEOLOGICO', 'CURSO TEOLÓGICO');
+        const colDoc       = idx('DOC PENDENTE');
+
+        const rows: any[] = [];
+        for (let i = 1; i < lines.length; i++) {
+          const cols = lines[i].split(sep).map(c => c.trim().replace(/^"|"$/g, ''));
+          if (cols.every(c => !c)) continue;
+          const get = (ci: number) => ci >= 0 ? (cols[ci] || '') : '';
+          const nome = get(colNome).toUpperCase();
+          if (!nome) continue; // pula linhas sem nome
+          const ano = get(colAno) || String(new Date().getFullYear());
+          const nproc = get(colNprocesso);
+          rows.push({
+            numero_processo: nproc ? (nproc.includes('/') ? nproc : `${nproc}/${ano}`) : '',
+            nome,
+            cpf: get(colCpf),
+            rg: get(colRg),
+            sexo: get(colSexo).toUpperCase() || 'MASCULINO',
+            data_nascimento: parseCsvDate(get(colNasc)),
+            estado_civil: get(colEstCivil).toUpperCase(),
+            nome_mae: get(colMae).toUpperCase(),
+            nome_pai: get(colPai).toUpperCase(),
+            naturalidade: get(colNat).toUpperCase(),
+            email: get(colEmail).toLowerCase(),
+            telefone: get(colCelular),
+            matricula: get(colMatricula),
+            cargo_pretendido: get(colCargo).toUpperCase(),
+            cargo_anterior: get(colCargAnt).toUpperCase(),
+            campo: get(colCampo),
+            supervisao: get(colSup),
+            pastor_solicitante: get(colIndicacao).toUpperCase(),
+            mat_pr_solicitante: get(colMatPr),
+            categoria_registro: get(colCateg).toUpperCase(),
+            regiao: get(colRegiao).toUpperCase(),
+            status_processo: (() => {
+              const s = get(colStatus).toLowerCase();
+              if (s.includes('deferido') && !s.includes('in')) return 'deferir';
+              if (s.includes('indeferido')) return 'indeferir';
+              if (s.includes('homolog')) return 'homologar';
+              return 'em_processo';
+            })(),
+            data_processo: parseCsvDate(get(colDataProc)),
+            data_registro: parseCsvDate(get(colDataReg)),
+            endereco: get(colEndereco).toUpperCase(),
+            numero_endereco: get(colNumEnd),
+            complemento: get(colCompl).toUpperCase(),
+            bairro: get(colBairro).toUpperCase(),
+            cidade: get(colCidade).toUpperCase(),
+            uf_endereco: get(colUfEnd).toUpperCase().slice(0, 2),
+            cep: get(colCep),
+            escolaridade: get(colEscol).toUpperCase(),
+            curso_teologico: get(colCurso).toUpperCase(),
+            doc_pendente: ['sim','yes','true','1'].includes(get(colDoc).toLowerCase()),
+          });
+        }
+        setCsvRows(rows);
+      } catch { setCsvErro('Erro ao ler o arquivo. Verifique o formato.'); }
+    };
+    reader.readAsText(file, 'UTF-8');
+  };
+
+  const handleImportarCsvConsagracao = async () => {
+    if (csvRows.length === 0 || !ministryId) return;
+    setImporting(true);
+    setCsvErro('');
+    setCsvSucesso('');
+    let importados = 0;
+    const erros: string[] = [];
+    for (const row of csvRows) {
+      const { campo, supervisao, categoria_registro, ...rest } = row;
+      // Resolve campo_id / supervisao_id por nome (best-effort)
+      const campoFound = campos.find(c => c.nome.toUpperCase() === (campo || '').toUpperCase());
+      const supFound = supervisoes.find(s => s.nome.toUpperCase() === (supervisao || '').toUpperCase());
+      const payload: Record<string, any> = {
+        ...rest,
+        // categoria_registro não é coluna do DB — mapeia para regiao (igual ao form)
+        regiao: rest.regiao || categoria_registro || null,
+        campo_id: campoFound?.id || null,
+        supervisao_id: supFound?.id || campoFound?.supervisao_id || null,
+        tipo_registro: 'chegada',
+      };
+      // Limpar strings vazias para null
+      for (const k of Object.keys(payload)) {
+        if (payload[k] === '') payload[k] = null;
+      }
+      const { error } = await supabase.from('consagracao_registros').insert(payload);
+      if (error) erros.push(`${row.nome}: ${error.message}`);
+      else importados++;
+    }
+    setImporting(false);
+    if (erros.length > 0) setCsvErro(`${erros.length} erro(s): ${erros.slice(0, 3).join('; ')}`);
+    if (importados > 0) {
+      setCsvSucesso(`${importados} registro(s) importado(s) com sucesso!`);
+      setCsvRows([]);
+      if (csvInputRef.current) csvInputRef.current.value = '';
+      loadInitialData();
+    }
+  };
+  // ──────────────────────────────────────────────────────────────
 
   const ensureNumeroProcesso = async () => {
     if (editingRegistro) return;
@@ -482,7 +693,7 @@ export default function ConsagracaoPage() {
       .maybeSingle();
 
     if (existingMemberError) {
-      console.error('Erro ao carregar membro para sincronizar status de consagra��o:', existingMemberError);
+      console.error('Erro ao carregar membro para sincronizar status de consagração:', existingMemberError);
       return;
     }
 
@@ -508,18 +719,18 @@ export default function ConsagracaoPage() {
       .eq('id', memberId);
 
     if (updateMemberError) {
-      console.error('Erro ao sincronizar status de consagra��o no membro:', updateMemberError);
+      console.error('Erro ao sincronizar status de consagração no membro:', updateMemberError);
     }
   };
 
   const handleSaveRegistro = async () => {
     if (!consagracaoModuleReady) {
-      setStatusMensagem('N�o foi poss�vel salvar: a tabela de Consagra��o n�o existe no banco. Aplique as migrations do m�dulo.');
+      setStatusMensagem('Não foi possível salvar: a tabela de Consagração não existe no banco. Aplique as migrations do módulo.');
       return;
     }
 
     if (!ministryId) {
-      setStatusMensagem('Erro ao salvar: minist�rio n�o identificado para este usu�rio. Recarregue a p�gina ou verifique o v�nculo de acesso.');
+      setStatusMensagem('Erro ao salvar: ministério não identificado para este usuário. Recarregue a página ou verifique o vínculo de acesso.');
       return;
     }
 
@@ -527,7 +738,7 @@ export default function ConsagracaoPage() {
     const nextErrors: Record<string, string> = {};
 
     if (!formRegistro.nome.trim()) {
-      nextErrors.nome = 'Nome completo � obrigat�rio.';
+      nextErrors.nome = 'Nome completo é obrigatório.';
     }
 
     if (!formRegistro.cargo_pretendido) {
@@ -536,7 +747,7 @@ export default function ConsagracaoPage() {
 
     if (tipoRegistro === 'progressao') {
       if (!formRegistro.member_id) {
-        nextErrors.member_id = 'Selecione um ministro da busca para progress�o.';
+        nextErrors.member_id = 'Selecione um ministro da busca para progressão.';
       }
       if (!formRegistro.cargo_ocupa) {
         nextErrors.cargo_ocupa = 'Informe o cargo que ocupa.';
@@ -544,12 +755,12 @@ export default function ConsagracaoPage() {
     }
 
     if (tipoRegistro === 'filiacao' && !formRegistro.origem_instituicao.trim()) {
-      nextErrors.origem_instituicao = 'Institui��o de origem � obrigat�ria para filia��o.';
+      nextErrors.origem_instituicao = 'Instituição de origem é obrigatória para filiação.';
     }
 
     if (Object.keys(nextErrors).length > 0) {
       setFieldErrors(nextErrors);
-      setStatusMensagem('Preencha os campos obrigat�rios destacados em vermelho.');
+      setStatusMensagem('Preencha os campos obrigatórios destacados em vermelho.');
       return;
     }
 
@@ -590,7 +801,22 @@ export default function ConsagracaoPage() {
       data_autorizacao: formRegistro.data_autorizacao || null,
       status_processo: formRegistro.status_processo || 'em_processo',
       observacoes: formRegistro.observacoes || null,
-      foto_url: formRegistro.foto_url || null
+      foto_url: formRegistro.foto_url || null,
+      // Endereço
+      endereco: formRegistro.endereco || null,
+      numero_endereco: formRegistro.numero_endereco || null,
+      bairro: formRegistro.bairro || null,
+      complemento: formRegistro.complemento || null,
+      cidade: formRegistro.cidade || null,
+      uf_endereco: formRegistro.uf_endereco || null,
+      cep: formRegistro.cep || null,
+      // Formação e dados extras
+      escolaridade: formRegistro.escolaridade || null,
+      curso_teologico: formRegistro.curso_teologico || null,
+      cargo_anterior: formRegistro.cargo_anterior || null,
+      mat_pr_solicitante: formRegistro.mat_pr_solicitante || null,
+      doc_pendente: formRegistro.doc_pendente ?? false,
+      data_registro: formRegistro.data_registro || null
     };
 
     const normalizedPayload = normalizePayloadToUppercase(payload);
@@ -606,7 +832,7 @@ export default function ConsagracaoPage() {
       if (error) {
         if (isConsagracaoTableMissing(error)) {
           setConsagracaoModuleReady(false);
-          setStatusMensagem('M�dulo Consagra��o indispon�vel: tabela public.consagracao_registros n�o encontrada. Aplique as migrations de Consagra��o no Supabase.');
+          setStatusMensagem('Módulo Consagração indisponível: tabela public.consagracao_registros não encontrada. Aplique as migrations de Consagração no Supabase.');
           return;
         }
         setStatusMensagem(`Erro ao atualizar registro: ${error.message}`);
@@ -619,7 +845,7 @@ export default function ConsagracaoPage() {
       if (error) {
         if (isConsagracaoTableMissing(error)) {
           setConsagracaoModuleReady(false);
-          setStatusMensagem('M�dulo Consagra��o indispon�vel: tabela public.consagracao_registros n�o encontrada. Aplique as migrations de Consagra��o no Supabase.');
+          setStatusMensagem('Módulo Consagração indisponível: tabela public.consagracao_registros não encontrada. Aplique as migrations de Consagração no Supabase.');
           return;
         }
         setStatusMensagem(`Erro ao criar registro: ${error.message}`);
@@ -649,7 +875,7 @@ export default function ConsagracaoPage() {
 
   const handleDeleteRegistro = async (id: string) => {
     if (!consagracaoModuleReady) {
-      setStatusMensagem('M�dulo Consagra��o indispon�vel: tabela de registros n�o encontrada no banco.');
+      setStatusMensagem('Módulo Consagração indisponível: tabela de registros não encontrada no banco.');
       return;
     }
 
@@ -660,7 +886,7 @@ export default function ConsagracaoPage() {
     if (error) {
       if (isConsagracaoTableMissing(error)) {
         setConsagracaoModuleReady(false);
-        setStatusMensagem('M�dulo Consagra��o indispon�vel: tabela public.consagracao_registros n�o encontrada. Aplique as migrations de Consagra��o no Supabase.');
+        setStatusMensagem('Módulo Consagração indisponível: tabela public.consagracao_registros não encontrada. Aplique as migrations de Consagração no Supabase.');
         return;
       }
       setStatusMensagem('Erro ao remover registro.');
@@ -671,7 +897,7 @@ export default function ConsagracaoPage() {
 
   const handleUpdateStatus = async (status: string) => {
     if (!consagracaoModuleReady) {
-      setStatusMensagem('M�dulo Consagra��o indispon�vel: tabela de registros n�o encontrada no banco.');
+      setStatusMensagem('Módulo Consagração indisponível: tabela de registros não encontrada no banco.');
       return;
     }
 
@@ -683,7 +909,7 @@ export default function ConsagracaoPage() {
     if (error) {
       if (isConsagracaoTableMissing(error)) {
         setConsagracaoModuleReady(false);
-        setStatusMensagem('M�dulo Consagra��o indispon�vel: tabela public.consagracao_registros n�o encontrada. Aplique as migrations de Consagra��o no Supabase.');
+        setStatusMensagem('Módulo Consagração indisponível: tabela public.consagracao_registros não encontrada. Aplique as migrations de Consagração no Supabase.');
         return;
       }
       setStatusMensagem('Erro ao atualizar status.');
@@ -709,9 +935,9 @@ export default function ConsagracaoPage() {
 
   if (loading || loadingData) return <div className="p-8">Carregando...</div>;
 
-  const labelCongregacao = nomenclaturas?.divisaoPrincipal?.opcao1 || 'Congrega��o';
+  const labelCongregacao = nomenclaturas?.divisaoPrincipal?.opcao1 || 'Congregação';
   const labelCampo = nomenclaturas?.divisaoSecundaria?.opcao1 || 'Campo';
-  const labelSupervisao = nomenclaturas?.divisaoTerciaria?.opcao1 || 'Supervis�o';
+  const labelSupervisao = nomenclaturas?.divisaoTerciaria?.opcao1 || 'Supervisão';
 
   const showCongregacao = labelCongregacao !== 'NENHUMA';
   const showCampo = labelCampo !== 'NENHUMA';
@@ -722,69 +948,126 @@ export default function ConsagracaoPage() {
   const homologadosCount = registros.filter((r) => r.status_processo === 'homologar').length;
   const isProgressao = formRegistro.tipo_registro === 'progressao';
   const isFiliacao = formRegistro.tipo_registro === 'filiacao';
-  const statusIsError = /(erro|preencha|obrigat|nao foi possivel|n�o foi poss�vel)/i.test(statusMensagem);
+  const statusIsError = /(erro|preencha|obrigat|nao foi possivel|não foi possível)/i.test(statusMensagem);
+
+  const registrosFiltrados = registros.filter(r => {
+    if (filtroRegiao && r.regiao !== filtroRegiao) return false;
+    if (filtroSupervisao && r.supervisao_id !== filtroSupervisao) return false;
+    if (filtroCampo && r.campo_id !== filtroCampo) return false;
+    if (filtroStatus && r.status_processo !== filtroStatus) return false;
+    if (filtroBusca) {
+      const q = filtroBusca.toLowerCase();
+      return [(r.nome || ''), (r.cpf || ''), (r.numero_processo || ''), (r.cargo_pretendido || '')]
+        .some(v => v.toLowerCase().includes(q));
+    }
+    return true;
+  });
 
   return (
     <PageLayout
-      title="Consagra��o"
-      description="Separa��o de ministros: chegadas, progress�o e filia��o"
+      title="Consagração"
+      description="Separação de ministros: chegadas, progressão e filiação"
       activeMenu="consagracao"
     >
-      <div className="max-w-7xl mx-auto w-full">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-teal-500">
-          <p className="text-gray-600 text-sm">Em Processo</p>
-          <p className="text-3xl font-bold text-teal-700 mt-2">{emProcessoCount}</p>
+      <div className="w-full max-w-7xl mx-auto">
+
+        {/* Abas */}
+        <div className="mb-6 border-b border-gray-300">
+          <div className="flex gap-4">
+            <button
+              onClick={() => setActiveTab('cadastro')}
+              className={`px-6 py-3 font-semibold border-b-2 transition ${
+                activeTab === 'cadastro'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              ➕ Cadastro de Processos
+            </button>
+            <button
+              onClick={() => setActiveTab('registros')}
+              className={`px-6 py-3 font-semibold border-b-2 transition ${
+                activeTab === 'registros'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              📋 Registros ({registros.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('importar')}
+              className={`px-6 py-3 font-semibold border-b-2 transition ${
+                activeTab === 'importar'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              📥 Importar CSV
+            </button>
+          </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-green-500">
-          <p className="text-gray-600 text-sm">Deferidos</p>
-          <p className="text-3xl font-bold text-green-600 mt-2">{deferidosCount}</p>
-        </div>
+        {/* Alerta global */}
+        {statusMensagem && (
+          <div className={`mb-4 px-4 py-3 rounded border text-sm ${statusIsError ? 'bg-red-50 border-red-200 text-red-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>
+            {statusMensagem}
+          </div>
+        )}
 
-        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-purple-500">
-          <p className="text-gray-600 text-sm">Homologados</p>
-          <p className="text-3xl font-bold text-purple-600 mt-2">{homologadosCount}</p>
-        </div>
-      </div>
-
-      {statusMensagem && (
-        <div className={`mb-6 px-4 py-3 rounded border ${statusIsError ? 'bg-red-50 border-red-200 text-red-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>
-          {statusMensagem}
-        </div>
-      )}
-
-      <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab}>
+        {/* ABA: CADASTRO */}
         {activeTab === 'cadastro' && (
-          <Section icon="??" title="Cadastro de Processos">
-            <div className="flex items-center justify-between gap-4 mb-6">
-              <p className="text-gray-500">Cadastre processos de chegada, progress�o e filia��o ministerial.</p>
-              <button
-                className={`text-white px-4 py-2 rounded-lg transition shadow-md ${consagracaoModuleReady ? 'bg-teal-500 hover:bg-teal-600' : 'bg-gray-400 cursor-not-allowed'}`}
-                onClick={() => {
-                  setStatusMensagem('');
-                  resetForm();
-                  setShowForm(true);
-                      ensureNumeroProcesso();
-                }}
-                disabled={!consagracaoModuleReady}
-                title={!consagracaoModuleReady ? 'Aplique as migrations do m�dulo de Consagra��o no Supabase' : 'Novo Registro'}
-              >
-                + Novo Registro
-              </button>
-            </div>
+        <div className="bg-white rounded-lg shadow-md p-6">
 
-            {showForm && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6 max-w-6xl mx-auto">
+          {/* Cabeçalho */}
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-lg font-bold text-gray-800">
+              {editingRegistro ? 'Editar Registro' : 'Novo Registro de Processo'}
+            </h2>
+            <div className="flex items-center gap-3">
+              {showForm && formRegistro.numero_processo && (
+                <span className="inline-flex items-center px-3 py-1 bg-orange-400 text-white rounded font-bold text-sm">
+                  {formRegistro.numero_processo}
+                </span>
+              )}
+              {!showForm && (
+                <button
+                  className={`text-white px-4 py-2 rounded-lg transition shadow-md font-semibold ${consagracaoModuleReady ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'}`}
+                  onClick={async () => {
+                    setStatusMensagem('');
+                    resetForm();
+                    const next = await getNextProcessNumber();
+                    if (next) {
+                      setFormRegistro((prev) => ({ ...prev, numero_processo: next }));
+                    }
+                    setShowForm(true);
+                  }}
+                  disabled={!consagracaoModuleReady}
+                  title={!consagracaoModuleReady ? 'Aplique as migrations do módulo de Consagração no Supabase' : 'Novo Registro'}
+                >
+                  + Novo Registro
+                </button>
+              )}
+            </div>
+          </div>
+
+          {!showForm && (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+              <span className="text-5xl mb-4">📋</span>
+              <p className="text-sm">Clique em &quot;+ Novo Registro&quot; para iniciar um cadastro de processo.</p>
+            </div>
+          )}
+
+          {showForm && (
+              <div className="max-w-6xl mx-auto">
                 <div className="grid grid-cols-1 lg:grid-cols-[2fr,1fr] gap-6">
                   <div className="space-y-4">
                     <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4 space-y-4">
                       <h4 className="text-sm font-semibold text-teal-700 border-b border-gray-100 pb-2">Dados do Processo</h4>
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(130px,auto)_1fr_1fr_1fr] gap-4 items-start">
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">N�mero do Processo</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Nº do Processo</label>
                           <input
-                            className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg bg-gray-100 text-gray-600 font-bold focus:outline-none"
                             value={formRegistro.numero_processo}
                             readOnly
                           />
@@ -792,7 +1075,7 @@ export default function ConsagracaoPage() {
                         <div>
                           <label className="block text-sm font-semibold text-gray-700 mb-1">Tipo de Registro</label>
                           <select
-                            className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             value={formRegistro.tipo_registro}
                             onChange={(e) => {
                               const value = normalizeTipoRegistro(e.target.value);
@@ -827,7 +1110,7 @@ export default function ConsagracaoPage() {
                         <div>
                           <label className="block text-sm font-semibold text-gray-700 mb-1">Categoria do Registro</label>
                           <select
-                            className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             value={formRegistro.categoria_registro}
                             onChange={(e) => setFormRegistro({ ...formRegistro, categoria_registro: e.target.value })}
                           >
@@ -836,6 +1119,58 @@ export default function ConsagracaoPage() {
                               <option key={categoria} value={categoria}>{categoria}</option>
                             ))}
                           </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Região</label>
+                          <div className="flex items-stretch gap-1">
+                            <select
+                              className="flex-1 min-w-0 px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              value={regioesList.includes(formRegistro.categoria_registro) ? formRegistro.categoria_registro : ''}
+                              onChange={(e) => {
+                                if (e.target.value) setFormRegistro({ ...formRegistro, categoria_registro: e.target.value });
+                              }}
+                            >
+                              <option value="">- Região -</option>
+                              {regioesList.map((r) => (
+                                <option key={r} value={r}>{r}</option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => setShowNovaRegiao(v => !v)}
+                              className="flex-shrink-0 px-3 py-2 bg-teal-500 hover:bg-teal-600 text-white rounded-lg font-bold text-sm"
+                              title="Adicionar nova região"
+                            >+</button>
+                          </div>
+                          {showNovaRegiao && (
+                            <div className="flex gap-1 mt-1">
+                              <input
+                                className="flex-1 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="Nova região..."
+                                value={novaRegiao}
+                                onChange={e => setNovaRegiao(e.target.value.toUpperCase())}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter' && novaRegiao.trim()) {
+                                    setRegioesList(prev => [...prev, novaRegiao.trim()]);
+                                    setFormRegistro(prev => ({ ...prev, categoria_registro: novaRegiao.trim() }));
+                                    setNovaRegiao('');
+                                    setShowNovaRegiao(false);
+                                  }
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!novaRegiao.trim()) return;
+                                  setRegioesList(prev => [...prev, novaRegiao.trim()]);
+                                  setFormRegistro(prev => ({ ...prev, categoria_registro: novaRegiao.trim() }));
+                                  setNovaRegiao('');
+                                  setShowNovaRegiao(false);
+                                }}
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg"
+                              >OK</button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -848,12 +1183,8 @@ export default function ConsagracaoPage() {
                           <input
                             className={`mt-1 w-full px-3 py-2 border-2 rounded-lg focus:outline-none focus:ring-2 ${fieldErrors.nome || fieldErrors.member_id ? 'border-red-500 focus:ring-red-400' : 'border-teal-500 focus:ring-blue-500'}`}
                             value={formRegistro.nome}
-                            autoComplete={!isProgressao ? 'new-password' : 'on'}
-                            autoCorrect={!isProgressao ? 'off' : undefined}
-                            autoCapitalize={!isProgressao ? 'off' : undefined}
-                            spellCheck={!isProgressao ? false : undefined}
+                            autoComplete="off"
                             name="consagracao_nome_completo"
-                            data-lpignore={!isProgressao ? 'true' : undefined}
                             onChange={(e) => {
                               const value = e.target.value;
                               setFieldErrors((prev) => {
@@ -865,34 +1196,18 @@ export default function ConsagracaoPage() {
                               setFormRegistro((prev) => ({
                                 ...prev,
                                 nome: value,
-                                member_id: isProgressao ? '' : prev.member_id,
-                                cpf: isProgressao ? '' : prev.cpf,
-                                data_nascimento: isProgressao ? '' : prev.data_nascimento,
-                                rg: isProgressao ? '' : prev.rg,
-                                estado_civil: isProgressao ? '' : prev.estado_civil,
-                                nacionalidade: isProgressao ? '' : prev.nacionalidade,
-                                naturalidade: isProgressao ? '' : prev.naturalidade,
-                                uf: isProgressao ? '' : prev.uf,
-                                email: isProgressao ? '' : prev.email,
-                                telefone: isProgressao ? '' : prev.telefone,
-                                nome_pai: isProgressao ? '' : prev.nome_pai,
-                                nome_mae: isProgressao ? '' : prev.nome_mae,
-                                nome_conjuge: isProgressao ? '' : prev.nome_conjuge,
-                                matricula: isProgressao ? '' : prev.matricula,
-                                foto_url: isProgressao ? '' : prev.foto_url,
+                                member_id: value !== prev.nome ? '' : prev.member_id,
                               }));
-                              if (isProgressao) {
-                                setMemberQuery(value);
-                                setFotoBloqueada(false);
-                              } else {
-                                setMemberQuery('');
+                              setMemberQuery(value);
+                              if (!value) {
                                 setMemberResults([]);
                                 setMemberOpen(false);
+                                setFotoBloqueada(false);
                               }
                             }}
-                            placeholder={isProgressao ? 'Digite o nome ou CPF para buscar no cadastro' : 'Preenchimento manual'}
+                            placeholder="Digite o nome para buscar no cadastro (a partir de 3 letras)"
                           />
-                          {isProgressao && memberOpen && memberResults.length > 0 && (
+                          {memberOpen && memberResults.length > 0 && (
                             <div className="absolute z-20 mt-2 w-full bg-white border rounded-lg shadow-lg max-h-60 overflow-auto">
                               {memberResults.map((m) => (
                                 <button
@@ -908,9 +1223,7 @@ export default function ConsagracaoPage() {
                             </div>
                           )}
                           <p className="mt-1 text-xs text-gray-500">
-                            {isProgressao
-                              ? 'No tipo Progress�o, a busca � din�mica e o cadastro � preenchido automaticamente ao selecionar um ministro.'
-                              : 'No tipo Candidato ou Filia��o, o preenchimento � manual.'}
+                            Selecione um ministro para preenchimento automático, ou preencha manualmente.
                           </p>
                           {(fieldErrors.nome || fieldErrors.member_id) && (
                             <p className="mt-1 text-xs text-red-600">{fieldErrors.member_id || fieldErrors.nome}</p>
@@ -951,7 +1264,7 @@ export default function ConsagracaoPage() {
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">Filia��o: Pai</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Filiação: Pai</label>
                           <input
                             className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             value={formRegistro.nome_pai}
@@ -959,7 +1272,7 @@ export default function ConsagracaoPage() {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">Filia��o: M�e</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Filiação: Mãe</label>
                           <input
                             className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             value={formRegistro.nome_mae}
@@ -977,32 +1290,32 @@ export default function ConsagracaoPage() {
                             <option value="SOLTEIRO">Solteiro(a)</option>
                             <option value="CASADO">Casado(a)</option>
                             <option value="DIVORCIADO">Divorciado(a)</option>
-                            <option value="VIUVO">Vi�vo(a)</option>
-                            <option value="UNIAO ESTAVEL">Uni�o Est�vel</option>
+                            <option value="VIUVO">Viúvo(a)</option>
+                            <option value="UNIAO ESTAVEL">União Estável</option>
                           </select>
                         </div>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">RG/�rg�o Emissor</label>
-                          <input
-                            className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            value={formRegistro.rg}
-                            onChange={(e) => setFormRegistro({ ...formRegistro, rg: e.target.value })}
-                            placeholder="RG"
-                          />
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">RG / Órgão Emissor</label>
+                          <div className="flex gap-2 mt-1">
+                            <input
+                              className="flex-1 px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              value={formRegistro.rg}
+                              onChange={(e) => setFormRegistro({ ...formRegistro, rg: e.target.value })}
+                              placeholder="RG"
+                            />
+                            <input
+                              className="w-36 px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              value={formRegistro.orgao_emissor}
+                              onChange={(e) => setFormRegistro({ ...formRegistro, orgao_emissor: e.target.value })}
+                              placeholder="Órgão emissor"
+                            />
+                          </div>
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">�rg�o Emissor</label>
-                          <input
-                            className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            value={formRegistro.orgao_emissor}
-                            onChange={(e) => setFormRegistro({ ...formRegistro, orgao_emissor: e.target.value })}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">C�njuge</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Cônjuge</label>
                           <input
                             className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             value={formRegistro.nome_conjuge}
@@ -1040,6 +1353,77 @@ export default function ConsagracaoPage() {
                       </div>
                     </div>
 
+                    {/* Endereço */}
+                    <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4 space-y-4">
+                      <h4 className="text-sm font-semibold text-teal-700 border-b border-gray-100 pb-2">Endereço</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-4">
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Logradouro</label>
+                          <input
+                            className="w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={formRegistro.endereco}
+                            onChange={(e) => setFormRegistro({ ...formRegistro, endereco: e.target.value })}
+                            placeholder="Rua, Av., Travessa..."
+                          />
+                        </div>
+                        <div className="w-24">
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Número</label>
+                          <input
+                            className="w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={formRegistro.numero_endereco}
+                            onChange={(e) => setFormRegistro({ ...formRegistro, numero_endereco: e.target.value })}
+                            placeholder="Nº"
+                          />
+                        </div>
+                        <div className="w-36">
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Complemento</label>
+                          <input
+                            className="w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={formRegistro.complemento}
+                            onChange={(e) => setFormRegistro({ ...formRegistro, complemento: e.target.value })}
+                            placeholder="Apto, Bloco..."
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Bairro</label>
+                          <input
+                            className="w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={formRegistro.bairro}
+                            onChange={(e) => setFormRegistro({ ...formRegistro, bairro: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Cidade</label>
+                          <input
+                            className="w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={formRegistro.cidade}
+                            onChange={(e) => setFormRegistro({ ...formRegistro, cidade: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">UF</label>
+                          <input
+                            className="w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={formRegistro.uf_endereco}
+                            onChange={(e) => setFormRegistro({ ...formRegistro, uf_endereco: e.target.value.toUpperCase().slice(0, 2) })}
+                            maxLength={2}
+                            placeholder="PA"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">CEP</label>
+                          <input
+                            className="w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={formRegistro.cep}
+                            onChange={(e) => setFormRegistro({ ...formRegistro, cep: e.target.value })}
+                            placeholder="00000-000"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4 space-y-4">
                       <h4 className="text-sm font-semibold text-teal-700 border-b border-gray-100 pb-2">Contato e Estrutura Ministerial</h4>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1052,7 +1436,7 @@ export default function ConsagracaoPage() {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">Matr�cula</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Matrícula</label>
                           <input
                             className="mt-1 w-full px-3 py-2 border-2 border-gray-300 rounded-lg bg-gray-50 text-gray-500"
                             value={formRegistro.matricula}
@@ -1072,7 +1456,7 @@ export default function ConsagracaoPage() {
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="md:col-span-2">
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">Indica��o</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Indicação</label>
                           <input
                             className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             value={formRegistro.pastor_solicitante}
@@ -1082,52 +1466,35 @@ export default function ConsagracaoPage() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {showSupervisao && (
-                          <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-1">{labelSupervisao}</label>
-                            <select
-                              className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              value={formRegistro.supervisao_id}
-                              onChange={(e) => setFormRegistro({ ...formRegistro, supervisao_id: e.target.value })}
-                            >
-                              <option value="">Selecione</option>
-                              {supervisoes.map((s) => (
-                                <option key={s.id} value={s.id}>{s.nome}</option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                        {showCampo && (
-                          <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-1">{labelCampo}</label>
-                            <select
-                              className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              value={formRegistro.campo_id}
-                              onChange={(e) => setFormRegistro({ ...formRegistro, campo_id: e.target.value })}
-                            >
-                              <option value="">Selecione</option>
-                              {campos.map((c) => (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Supervisão</label>
+                          <select
+                            className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={formRegistro.supervisao_id}
+                            onChange={(e) => { setFormRegistro({ ...formRegistro, supervisao_id: e.target.value, campo_id: '' }); }}
+                          >
+                            <option value="">Selecione</option>
+                            {supervisoes.map((s) => (
+                              <option key={s.id} value={s.id}>{s.nome}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Campo</label>
+                          <select
+                            className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={formRegistro.campo_id}
+                            onChange={(e) => setFormRegistro({ ...formRegistro, campo_id: e.target.value })}
+                          >
+                            <option value="">Selecione</option>
+                            {campos
+                              .filter(c => !formRegistro.supervisao_id || c.supervisao_id === formRegistro.supervisao_id)
+                              .map((c) => (
                                 <option key={c.id} value={c.id}>{c.nome}</option>
                               ))}
-                            </select>
-                          </div>
-                        )}
-                        {showCongregacao && (
-                          <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-1">{labelCongregacao}</label>
-                            <select
-                              className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              value={formRegistro.congregacao_id}
-                              onChange={(e) => setFormRegistro({ ...formRegistro, congregacao_id: e.target.value })}
-                            >
-                              <option value="">Selecione</option>
-                              {congregacoes.map((c) => (
-                                <option key={c.id} value={c.id}>{c.nome}</option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
+                          </select>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1154,7 +1521,7 @@ export default function ConsagracaoPage() {
                           ) : (
                             <input
                               className="mt-1 w-full px-3 py-2 border-2 border-gray-300 rounded-lg bg-gray-50 text-gray-500"
-                              value="N�o se aplica"
+                              value="Não se aplica"
                               readOnly
                             />
                           )}
@@ -1190,10 +1557,10 @@ export default function ConsagracaoPage() {
 
                     {isFiliacao && (
                       <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-4 shadow-sm">
-                        <h4 className="text-sm font-semibold text-amber-900 border-b border-amber-200 pb-2">Dados de Origem para Filia��o</h4>
+                        <h4 className="text-sm font-semibold text-amber-900 border-b border-amber-200 pb-2">Dados de Origem para Filiação</h4>
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                           <div className="md:col-span-2">
-                            <label className="block text-sm font-semibold text-gray-700 mb-1">Institui��o de origem *</label>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1">Instituição de origem *</label>
                             <input
                               className={`mt-1 w-full px-3 py-2 border-2 rounded-lg focus:outline-none focus:ring-2 ${fieldErrors.origem_instituicao ? 'border-red-500 focus:ring-red-400' : 'border-amber-400 focus:ring-amber-500'}`}
                               value={formRegistro.origem_instituicao}
@@ -1228,7 +1595,7 @@ export default function ConsagracaoPage() {
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-1">Data da consagra��o de origem</label>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1">Data da consagração de origem</label>
                             <input
                               type="date"
                               className="mt-1 w-full px-3 py-2 border-2 border-amber-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
@@ -1240,11 +1607,81 @@ export default function ConsagracaoPage() {
                       </div>
                     )}
 
+                    {/* Formação e Dados Complementares */}
                     <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4 space-y-4">
-                      <h4 className="text-sm font-semibold text-teal-700 border-b border-gray-100 pb-2">Andamento e Observa��es</h4>
+                      <h4 className="text-sm font-semibold text-teal-700 border-b border-gray-100 pb-2">Formação e Dados Complementares</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Escolaridade</label>
+                          <select
+                            className="w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={formRegistro.escolaridade}
+                            onChange={(e) => setFormRegistro({ ...formRegistro, escolaridade: e.target.value })}
+                          >
+                            <option value="">Selecione</option>
+                            {['FUNDAMENTAL INCOMPLETO','FUNDAMENTAL COMPLETO','MÉDIO INCOMPLETO','MÉDIO COMPLETO','SUPERIOR INCOMPLETO','SUPERIOR COMPLETO','PÓS-GRADUAÇÃO','MESTRADO','DOUTORADO'].map(e => (
+                              <option key={e} value={e}>{e}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Curso Teológico</label>
+                          <input
+                            className="w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={formRegistro.curso_teologico}
+                            onChange={(e) => setFormRegistro({ ...formRegistro, curso_teologico: e.target.value })}
+                            placeholder="Nome da instituição / curso"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Data de Registro</label>
+                          <input
+                            type="date"
+                            className="w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={formRegistro.data_registro}
+                            onChange={(e) => setFormRegistro({ ...formRegistro, data_registro: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Cargo Anterior</label>
+                          <input
+                            className="w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={formRegistro.cargo_anterior}
+                            onChange={(e) => setFormRegistro({ ...formRegistro, cargo_anterior: e.target.value })}
+                            placeholder="Cargo exercido anteriormente"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Matrícula do Solicitante (Pastor)</label>
+                          <input
+                            className="w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={formRegistro.mat_pr_solicitante}
+                            onChange={(e) => setFormRegistro({ ...formRegistro, mat_pr_solicitante: e.target.value })}
+                            placeholder="Matrícula do pastor indicante"
+                          />
+                        </div>
+                        <div className="flex items-center gap-3 pt-6">
+                          <input
+                            id="doc_pendente"
+                            type="checkbox"
+                            className="w-4 h-4 accent-teal-500 cursor-pointer"
+                            checked={formRegistro.doc_pendente}
+                            onChange={(e) => setFormRegistro({ ...formRegistro, doc_pendente: e.target.checked })}
+                          />
+                          <label htmlFor="doc_pendente" className="text-sm font-semibold text-gray-700 cursor-pointer">
+                            Documentação Pendente?
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4 space-y-4">
+                      <h4 className="text-sm font-semibold text-teal-700 border-b border-gray-100 pb-2">Andamento e Observações</h4>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">Data Autoriza��o</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Data Autorização</label>
                           <input
                             type="date"
                             className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1268,7 +1705,7 @@ export default function ConsagracaoPage() {
                       </div>
 
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-1">Observa��es</label>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Observações</label>
                         <textarea
                           className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                           rows={3}
@@ -1299,7 +1736,7 @@ export default function ConsagracaoPage() {
                           onClick={() => !fotoBloqueada && fileInputRef.current?.click()}
                           disabled={fotoBloqueada}
                         >
-                          {fotoBloqueada ? 'Foto j� cadastrada' : 'Abrir Foto'}
+                          {fotoBloqueada ? 'Foto já cadastrada' : 'Abrir Foto'}
                         </button>
                         {!fotoBloqueada && formRegistro.foto_url && (
                           <button
@@ -1328,70 +1765,170 @@ export default function ConsagracaoPage() {
                     className={`px-4 py-2 rounded-lg text-white font-semibold transition shadow-md ${ministryId && consagracaoModuleReady ? 'bg-teal-500 hover:bg-teal-600' : 'bg-gray-400 cursor-not-allowed'}`}
                     onClick={handleSaveRegistro}
                     disabled={!ministryId || !consagracaoModuleReady}
-                    title={!consagracaoModuleReady ? 'Aplique as migrations do m�dulo de Consagra��o no Supabase' : (!ministryId ? 'Sem minist�rio associado ao usu�rio' : 'Salvar registro')}
+                    title={!consagracaoModuleReady ? 'Aplique as migrations do módulo de Consagração no Supabase' : (!ministryId ? 'Sem ministério associado ao usuário' : 'Salvar registro')}
                   >
                     Salvar
                   </button>
                 </div>
-
-                {statusMensagem && (
-                  <div className={`mt-4 px-4 py-3 rounded border ${statusIsError ? 'bg-red-50 border-red-200 text-red-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>
-                    {statusMensagem}
-                  </div>
-                )}
               </div>
             )}
-          </Section>
+          </div>
         )}
 
+        {/* ABA: REGISTROS */}
         {activeTab === 'registros' && (
-          <Section icon="??" title="Registros">
-            {registros.length === 0 && (
-              <p className="text-gray-500 text-center py-8">Nenhum registro cadastrado.</p>
-            )}
+        <div className="space-y-4">
 
-            {registros.length > 0 && (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-200 text-gray-800 text-left">
-                      <th className="py-2">Foto</th>
-                      <th className="py-2">N� Processo</th>
-                      <th className="py-2">Data Proc.</th>
-                      <th className="py-2">Nome</th>
-                      <th className="py-2">CPF</th>
-                      <th className="py-2">Cargo Pretendido</th>
-                      <th className="py-2">Tipo</th>
-                      <th className="py-2">Registro</th>
-                      <th className="py-2 text-right">A��es</th>
+          {/* Cards resumo */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white p-4 rounded-lg shadow border-l-4 border-teal-500">
+              <p className="text-gray-600 text-sm">Em Processo</p>
+              <p className="text-2xl font-bold text-teal-700">{emProcessoCount}</p>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow border-l-4 border-green-500">
+              <p className="text-gray-600 text-sm">Deferidos</p>
+              <p className="text-2xl font-bold text-green-600">{deferidosCount}</p>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow border-l-4 border-purple-500">
+              <p className="text-gray-600 text-sm">Homologados</p>
+              <p className="text-2xl font-bold text-purple-600">{homologadosCount}</p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-md p-6">
+
+            {/* Filtros */}
+            <div className="flex flex-wrap items-center gap-3 mb-5">
+              {/* Região/Categoria */}
+              <select
+                value={filtroRegiao}
+                onChange={e => setFiltroRegiao(e.target.value)}
+                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Todas as Categorias</option>
+                {CATEGORIA_REGISTRO_OPTIONS.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+
+              {/* Supervisão */}
+              {showSupervisao && (
+                <select
+                  value={filtroSupervisao}
+                  onChange={e => setFiltroSupervisao(e.target.value)}
+                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Todas as Supervisões</option>
+                  {supervisoes.map(s => (
+                    <option key={s.id} value={s.id}>{s.nome}</option>
+                  ))}
+                </select>
+              )}
+
+              {/* Campo */}
+              {showCampo && (
+                <select
+                  value={filtroCampo}
+                  onChange={e => setFiltroCampo(e.target.value)}
+                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Todos os Campos</option>
+                  {campos
+                    .filter(c => !filtroSupervisao || c.supervisao_id === filtroSupervisao)
+                    .map(c => (
+                      <option key={c.id} value={c.id}>{c.nome}</option>
+                    ))}
+                </select>
+              )}
+
+              {/* Status */}
+              <select
+                value={filtroStatus}
+                onChange={e => setFiltroStatus(e.target.value)}
+                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Todos os Status</option>
+                <option value="em_processo">Em Processo</option>
+                <option value="deferir">Deferido</option>
+                <option value="indeferir">Indeferido</option>
+                <option value="homologar">Homologado</option>
+              </select>
+
+              {/* Busca */}
+              <input
+                type="text"
+                placeholder="Buscar por nome, CPF ou processo..."
+                value={filtroBusca}
+                onChange={e => setFiltroBusca(e.target.value)}
+                className="flex-1 min-w-[200px] border border-gray-300 rounded-lg px-4 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+
+              <button
+                onClick={() => { setFiltroRegiao(''); setFiltroSupervisao(''); setFiltroCampo(''); setFiltroBusca(''); setFiltroStatus(''); }}
+                className="px-4 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-semibold rounded-lg transition"
+              >
+                Limpar
+              </button>
+
+              <span className="text-sm text-gray-500 font-medium ml-auto">
+                {registrosFiltrados.length} registro(s)
+              </span>
+            </div>
+
+            {/* Tabela */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr>
+                    <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800 w-12">Foto</th>
+                    <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800 whitespace-nowrap">Nº Processo</th>
+                    <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800 whitespace-nowrap">Data Proc.</th>
+                    <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800">Nome</th>
+                    <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800">CPF</th>
+                    <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800">Categoria</th>
+                    <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800">Tipo</th>
+                    <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800">Status</th>
+                    <th className="px-3 py-3 text-right font-semibold bg-gray-200 text-gray-800">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {registrosFiltrados.length === 0 && (
+                    <tr>
+                      <td colSpan={9} className="px-4 py-8 text-center text-gray-500">Nenhum registro encontrado.</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {registros.map((reg) => (
-                      <tr key={reg.id} className="border-t">
-                        <td className="py-2">
-                          <div className="w-10 h-10 rounded-full overflow-hidden border border-gray-200 bg-gray-100 flex items-center justify-center">
-                            {reg.foto_url ? (
-                              <img src={reg.foto_url} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                              <span className="text-[10px] text-gray-400">SEM FOTO</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-2">{reg.numero_processo || '-'}</td>
-                        <td className="py-2">{reg.data_processo || '-'}</td>
-                        <td className="py-2">{reg.nome}</td>
-                        <td className="py-2">{reg.cpf || '-'}</td>
-                        <td className="py-2">{reg.cargo_pretendido || '-'}</td>
-                        <td className="py-2">{TIPO_REGISTRO_LABELS[reg.tipo_registro] || reg.tipo_registro || '-'}</td>
-                        <td className="py-2">
-                          <span className="text-xs font-semibold text-blue-600">
-                            {STATUS_LABELS[reg.status_processo] || reg.status_processo}
-                          </span>
-                        </td>
-                        <td className="py-2 text-right space-x-2">
+                  )}
+                  {registrosFiltrados.map((reg) => (
+                    <tr key={reg.id} className="border-b border-gray-200 hover:bg-gray-50">
+                      <td className="px-3 py-2">
+                        <div className="w-9 h-9 rounded-full overflow-hidden border border-gray-200 bg-gray-100 flex items-center justify-center">
+                          {reg.foto_url ? (
+                            <img src={reg.foto_url} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-[8px] text-gray-400 text-center leading-tight">SEM FOTO</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-xs font-bold text-gray-700 whitespace-nowrap">{reg.numero_processo || '—'}</td>
+                      <td className="px-3 py-2 text-xs text-gray-700 whitespace-nowrap">{reg.data_processo ? new Date(reg.data_processo + 'T00:00:00').toLocaleDateString('pt-BR') : '—'}</td>
+                      <td className="px-3 py-2 text-xs font-semibold text-gray-800 uppercase">{reg.nome}</td>
+                      <td className="px-3 py-2 text-xs text-gray-600">{reg.cpf || '—'}</td>
+                      <td className="px-3 py-2 text-xs text-gray-600">{reg.regiao || '—'}</td>
+                      <td className="px-3 py-2 text-xs text-gray-600">{TIPO_REGISTRO_LABELS[reg.tipo_registro] || reg.tipo_registro || '—'}</td>
+                      <td className="px-3 py-2">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                          reg.status_processo === 'em_processo' ? 'bg-teal-100 text-teal-700' :
+                          reg.status_processo === 'deferir' ? 'bg-green-100 text-green-700' :
+                          reg.status_processo === 'indeferir' ? 'bg-red-100 text-red-700' :
+                          reg.status_processo === 'homologar' ? 'bg-purple-100 text-purple-700' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>
+                          {STATUS_LABELS[reg.status_processo] || reg.status_processo}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="flex items-center justify-end gap-1">
                           <button
-                            className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition text-xs font-semibold"
+                            className="px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition text-xs font-semibold"
                             onClick={() => {
                               setEditingRegistro(reg);
                               setFormRegistro({
@@ -1429,7 +1966,22 @@ export default function ConsagracaoPage() {
                                 data_autorizacao: reg.data_autorizacao || '',
                                 status_processo: reg.status_processo || 'em_processo',
                                 observacoes: reg.observacoes || '',
-                                foto_url: reg.foto_url || ''
+                                foto_url: reg.foto_url || '',
+                                // Endereço
+                                endereco: reg.endereco || '',
+                                numero_endereco: reg.numero_endereco || '',
+                                bairro: reg.bairro || '',
+                                complemento: reg.complemento || '',
+                                cidade: reg.cidade || '',
+                                uf_endereco: reg.uf_endereco || '',
+                                cep: reg.cep || '',
+                                // Formação e dados extras
+                                escolaridade: reg.escolaridade || '',
+                                curso_teologico: reg.curso_teologico || '',
+                                cargo_anterior: reg.cargo_anterior || '',
+                                mat_pr_solicitante: reg.mat_pr_solicitante || '',
+                                doc_pendente: reg.doc_pendente ?? false,
+                                data_registro: reg.data_registro || ''
                               });
                               setShowForm(true);
                               setActiveTab('cadastro');
@@ -1438,13 +1990,7 @@ export default function ConsagracaoPage() {
                             Editar
                           </button>
                           <button
-                            className="inline-flex items-center gap-1 px-3 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100 transition text-xs font-semibold"
-                            onClick={() => handleDeleteRegistro(reg.id)}
-                          >
-                            Excluir
-                          </button>
-                          <button
-                            className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-50 text-emerald-700 rounded hover:bg-emerald-100 transition text-xs font-semibold"
+                            className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded hover:bg-emerald-100 transition text-xs font-semibold"
                             onClick={() => {
                               setProcessRegistro(reg);
                               setProcessModalOpen(true);
@@ -1452,16 +1998,110 @@ export default function ConsagracaoPage() {
                           >
                             Processar
                           </button>
+                          <button
+                            className="px-2 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100 transition text-xs font-semibold"
+                            onClick={() => handleDeleteRegistro(reg.id)}
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        )}
+
+        {/* ABA: IMPORTAR CSV */}
+        {activeTab === 'importar' && (
+        <div className="bg-white rounded-lg shadow-md p-6 space-y-4">
+          <h2 className="text-lg font-bold text-gray-800">Importar CSV de Consagração</h2>
+          <p className="text-xs text-gray-500 leading-relaxed">
+            Colunas reconhecidas (case-insensitive, separador <strong>;</strong> ou <strong>,</strong>):<br />
+            <span className="font-mono">
+              NPROCESSO, ANO DO PROCESSO, NOME CANDIDATO, CPF, RG, SEXO, DNASCIMENTO, ESTADO CIVIL, MAE, PAI, NATURALIDADE, EMAIL, CELULAR, MATRICULA,
+              CARGO PR, CARGO ANTERIOR, MAT PR SOLICITANTE, CAMPO, SUPERVISAO, INDICAÇÃO, CATEGORIA DO REGISTRO, REGIÃO, STATUS,
+              DATA DO PROCESSO, DATA DE REGISTRO, ENDEREÇO, NUM ENDEREÇO, COMPLEMENTO END, BAIRRO END, CIDADE END, UF END, CEP END,
+              ESCOLARIDADE, CURSO TEOLOGICO, DOC PENDENTE
+            </span>
+          </p>
+          <div
+            className="border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer hover:border-blue-400 transition-colors"
+            onClick={() => csvInputRef.current?.click()}
+            onDragOver={e => e.preventDefault()}
+            onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleCsvConsagracao(f); }}
+          >
+            <p className="text-gray-400 text-3xl mb-2">📂</p>
+            <p className="text-gray-500 text-sm">Clique ou arraste o arquivo CSV aqui</p>
+            <input
+              ref={csvInputRef}
+              type="file"
+              accept=".csv,.txt"
+              className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleCsvConsagracao(f); }}
+            />
+          </div>
+          {csvErro && <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg px-4 py-3">{csvErro}</p>}
+          {csvSucesso && <p className="text-green-700 text-sm bg-green-50 border border-green-200 rounded-lg px-4 py-3">{csvSucesso}</p>}
+          {csvRows.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-gray-700">{csvRows.length} registro(s) lidos — pré-visualização:</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setCsvRows([]); setCsvErro(''); setCsvSucesso(''); if (csvInputRef.current) csvInputRef.current.value = ''; }}
+                    className="px-4 py-1.5 text-sm border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 transition"
+                  >Cancelar</button>
+                  <button
+                    onClick={handleImportarCsvConsagracao}
+                    disabled={importing}
+                    className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition disabled:opacity-60"
+                  >
+                    {importing ? 'Importando...' : `Importar ${csvRows.length} registros`}
+                  </button>
+                </div>
+              </div>
+              <div className="overflow-x-auto max-h-80 border border-gray-200 rounded-lg">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-200">
+                      {['Nº Processo','Nome','CPF','RG','Status','Categoria','Região','Campo','Supervisão','Cargo Pretendido'].map(h => (
+                        <th key={h} className="px-3 py-2 text-left font-semibold text-gray-800 whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {csvRows.map((r, i) => (
+                      <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="px-3 py-2 font-bold text-gray-700 whitespace-nowrap">{r.numero_processo || '—'}</td>
+                        <td className="px-3 py-2 text-gray-700">{r.nome || '—'}</td>
+                        <td className="px-3 py-2 text-gray-500">{r.cpf || '—'}</td>
+                        <td className="px-3 py-2 text-gray-500">{r.rg || '—'}</td>
+                        <td className="px-3 py-2">
+                          <span className={`px-1.5 py-0.5 rounded text-xs font-semibold ${
+                            r.status_processo === 'deferir' ? 'bg-green-100 text-green-700' :
+                            r.status_processo === 'indeferir' ? 'bg-red-100 text-red-700' :
+                            r.status_processo === 'homologar' ? 'bg-purple-100 text-purple-700' :
+                            'bg-yellow-100 text-yellow-700'
+                          }`}>{r.status_processo}</span>
                         </td>
+                        <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{r.categoria_registro || '—'}</td>
+                        <td className="px-3 py-2 text-gray-500">{r.regiao || '—'}</td>
+                        <td className="px-3 py-2 text-gray-500">{r.campo || '—'}</td>
+                        <td className="px-3 py-2 text-gray-500">{r.supervisao || '—'}</td>
+                        <td className="px-3 py-2 text-gray-500">{r.cargo_pretendido || '—'}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            )}
-          </Section>
+            </div>
+          )}
+        </div>
         )}
-      </Tabs>
       </div>
 
       <input

@@ -103,9 +103,19 @@ interface DivisaoOption {
 export default function MembrosPage() {
   const supabase = createClient();
 
-  const [dashboardView, setDashboardView] = useState<'overview' | 'list'>('overview');
+  const [dashboardView, setDashboardView] = useState<'overview' | 'list' | 'aniversariantes'>('overview');
   const [activeMenu, setActiveMenu] = useState('membros');
   const [activeTab, setActiveTab] = useState('dados');
+
+  // ── Aniversariantes ──────────────────────────────────────────────
+  const [anivMes, setAnivMes] = useState<number>(new Date().getMonth() + 1);
+  const [anivTexto, setAnivTexto] = useState<string>(
+    'Feliz Aniversário, {nome}! 🎉\n\nA COMIEADEPA deseja que Deus te abençoe grandemente neste dia tão especial!\n\nCom carinho,\nSecretaria COMIEADEPA'
+  );
+  const [anivImagemUrl, setAnivImagemUrl] = useState<string>('');
+  const [anivImagemFile, setAnivImagemFile] = useState<File | null>(null);
+  const [anivEnviando, setAnivEnviando] = useState<string | null>(null);
+  const anivFileRef = useRef<HTMLInputElement>(null);
   const [templatesSnapshot, setTemplatesSnapshot] = useState<any[]>([]);
   const [configIgreja, setConfigIgreja] = useState({
     nome: 'Igreja/Ministério',
@@ -2534,6 +2544,16 @@ useEffect(() => {
               >
                 👥 Dados de Ministros
               </button>
+              <button
+                onClick={() => setDashboardView('aniversariantes')}
+                className={`px-6 py-3 rounded-lg font-semibold transition ${
+                  dashboardView === 'aniversariantes'
+                    ? 'bg-teal-600 text-white shadow-lg'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                🎂 Aniversariantes
+              </button>
             </div>
           </div>
 
@@ -4162,7 +4182,241 @@ useEffect(() => {
             </div>
           )}
             </div>
-          )}        </div>
+          )}
+
+          {/* Vista - Aniversariantes */}
+          {dashboardView === 'aniversariantes' && (() => {
+            const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+            const aniversariantes = membros.filter(m => {
+              if (!m.dataNascimento) return false;
+              const parts = m.dataNascimento.split('-');
+              if (parts.length < 2) return false;
+              return parseInt(parts[1], 10) === anivMes;
+            }).sort((a, b) => {
+              const dayA = parseInt((a.dataNascimento || '').split('-')[2] || '0', 10);
+              const dayB = parseInt((b.dataNascimento || '').split('-')[2] || '0', 10);
+              return dayA - dayB;
+            });
+
+            const msgParaMembro = (m: typeof membros[0]) =>
+              anivTexto
+                .replace(/{nome}/g, m.nome)
+                .replace(/{campo}/g, m.campo || '')
+                .replace(/{supervisao}/g, m.supervisao || '');
+
+            const handleWhatsApp = (m: typeof membros[0]) => {
+              const tel = (m.whatsapp || m.celular || '').replace(/\D/g, '');
+              if (!tel) return alert('Ministro sem WhatsApp/celular cadastrado.');
+              const text = encodeURIComponent(msgParaMembro(m));
+              window.open(`https://wa.me/55${tel}?text=${text}`, '_blank');
+            };
+
+            const handleEmail = (m: typeof membros[0]) => {
+              if (!m.email) return alert('Ministro sem e-mail cadastrado.');
+              const subject = encodeURIComponent('Parabéns pelo seu aniversário! 🎉');
+              const body = encodeURIComponent(msgParaMembro(m));
+              window.open(`mailto:${m.email}?subject=${subject}&body=${body}`, '_blank');
+            };
+
+            const handleImagemAniv = (e: React.ChangeEvent<HTMLInputElement>) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              setAnivImagemFile(file);
+              const reader = new FileReader();
+              reader.onload = ev => setAnivImagemUrl(ev.target?.result as string);
+              reader.readAsDataURL(file);
+            };
+
+            return (
+            <div className="space-y-6">
+
+              {/* Cards resumo */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {MESES.map((mes, idx) => {
+                  const qtd = membros.filter(m => {
+                    if (!m.dataNascimento) return false;
+                    return parseInt((m.dataNascimento.split('-')[1] || '0'), 10) === idx + 1;
+                  }).length;
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => setAnivMes(idx + 1)}
+                      className={`p-3 rounded-lg text-left border-l-4 shadow transition ${
+                        anivMes === idx + 1
+                          ? 'border-teal-500 bg-teal-50 ring-2 ring-teal-300'
+                          : 'border-gray-200 bg-white hover:bg-gray-50'
+                      }`}
+                    >
+                      <p className={`text-xs font-semibold ${anivMes === idx + 1 ? 'text-teal-700' : 'text-gray-500'}`}>{mes}</p>
+                      <p className={`text-xl font-bold ${anivMes === idx + 1 ? 'text-teal-700' : 'text-gray-700'}`}>{qtd}</p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
+
+                {/* Lista de aniversariantes */}
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-bold text-gray-800 text-base">
+                      🎂 Aniversariantes de {MESES[anivMes - 1]} ({aniversariantes.length})
+                    </h3>
+                  </div>
+
+                  {aniversariantes.length === 0 ? (
+                    <p className="text-center text-gray-400 py-10">Nenhum aniversariante neste mês.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr>
+                            <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800 whitespace-nowrap">Dia</th>
+                            <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800">Nome</th>
+                            <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800">Campo</th>
+                            <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800">Contato</th>
+                            <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">Enviar</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {aniversariantes.map(m => {
+                            const dia = (m.dataNascimento || '').split('-')[2] || '—';
+                            return (
+                              <tr key={m.id} className="border-b border-gray-200 hover:bg-gray-50">
+                                <td className="px-3 py-2 text-center">
+                                  <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-teal-100 text-teal-700 font-bold text-sm">{dia}</span>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <p className="text-xs font-semibold text-gray-800 uppercase">{m.nome}</p>
+                                  <p className="text-[10px] text-gray-500">{m.tipoCadastro}</p>
+                                </td>
+                                <td className="px-3 py-2 text-xs text-gray-600">{m.campo || '—'}</td>
+                                <td className="px-3 py-2">
+                                  <p className="text-xs text-gray-600">{m.celular || m.whatsapp || '—'}</p>
+                                  <p className="text-[10px] text-gray-400 truncate max-w-[140px]">{m.email || ''}</p>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <div className="flex items-center justify-center gap-2">
+                                    <button
+                                      onClick={() => handleWhatsApp(m)}
+                                      disabled={anivEnviando === m.id}
+                                      className="px-2 py-1 bg-green-500 hover:bg-green-600 text-white text-xs font-semibold rounded transition"
+                                      title="Enviar via WhatsApp"
+                                    >
+                                      WhatsApp
+                                    </button>
+                                    <button
+                                      onClick={() => handleEmail(m)}
+                                      disabled={anivEnviando === m.id}
+                                      className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs font-semibold rounded transition"
+                                      title="Enviar via E-mail"
+                                    >
+                                      E-mail
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Painel de configuração da mensagem */}
+                <div className="space-y-4">
+                  <div className="bg-white rounded-lg shadow-md p-5">
+                    <h3 className="font-bold text-gray-800 text-sm mb-4">✉️ Configurar Mensagem Padrão</h3>
+                    <p className="text-[11px] text-gray-500 mb-3">
+                      Use <code className="bg-gray-100 px-1 rounded">{'{nome}'}</code>, <code className="bg-gray-100 px-1 rounded">{'{campo}'}</code> e <code className="bg-gray-100 px-1 rounded">{'{supervisao}'}</code> como variáveis.
+                    </p>
+                    <textarea
+                      value={anivTexto}
+                      onChange={e => setAnivTexto(e.target.value)}
+                      rows={8}
+                      className="w-full border-2 border-teal-500 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                      placeholder="Digite o texto da mensagem..."
+                    />
+
+                    {/* Imagem */}
+                    <div className="mt-4">
+                      <p className="text-sm font-semibold text-gray-700 mb-2">Imagem da mensagem</p>
+                      {anivImagemUrl ? (
+                        <div className="relative">
+                          <img src={anivImagemUrl} alt="Imagem aniversário" className="w-full rounded-lg object-cover max-h-40 border border-gray-200" />
+                          <button
+                            onClick={() => { setAnivImagemUrl(''); setAnivImagemFile(null); if (anivFileRef.current) anivFileRef.current.value = ''; }}
+                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => anivFileRef.current?.click()}
+                          className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-teal-400 transition"
+                        >
+                          <p className="text-gray-400 text-xs">Clique para adicionar uma imagem</p>
+                          <p className="text-gray-300 text-[10px] mt-1">PNG, JPG, GIF</p>
+                        </div>
+                      )}
+                      <input ref={anivFileRef} type="file" accept="image/*" className="hidden" onChange={handleImagemAniv} />
+                    </div>
+
+                    {/* Pré-visualização */}
+                    <div className="mt-4 border border-gray-200 rounded-lg p-3 bg-gray-50">
+                      <p className="text-[10px] font-semibold text-gray-500 mb-2 uppercase tracking-wide">Pré-visualização</p>
+                      {anivImagemUrl && <img src={anivImagemUrl} alt="" className="w-full rounded mb-2 max-h-32 object-cover" />}
+                      <p className="text-xs text-gray-700 whitespace-pre-line">
+                        {anivTexto.replace(/{nome}/g, 'JOÃO DA SILVA').replace(/{campo}/g, 'Campo Central').replace(/{supervisao}/g, '1ª Supervisão')}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Envio em massa */}
+                  <div className="bg-white rounded-lg shadow-md p-5">
+                    <h3 className="font-bold text-gray-800 text-sm mb-3">📤 Envio em Massa</h3>
+                    <p className="text-xs text-gray-500 mb-4">
+                      Abre o WhatsApp/e-mail individualmente para cada aniversariante do mês selecionado.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          let i = 0;
+                          const next = () => {
+                            if (i >= aniversariantes.length) { setAnivEnviando(null); return; }
+                            const m = aniversariantes[i++];
+                            setAnivEnviando(m.id);
+                            handleWhatsApp(m);
+                            setTimeout(next, 1500);
+                          };
+                          next();
+                        }}
+                        disabled={aniversariantes.length === 0}
+                        className="flex-1 px-3 py-2 bg-green-500 hover:bg-green-600 text-white text-sm font-semibold rounded-lg transition disabled:opacity-50"
+                      >
+                        WhatsApp ({aniversariantes.filter(m => !!(m.whatsapp || m.celular)).length})
+                      </button>
+                      <button
+                        onClick={() => {
+                          aniversariantes.filter(m => !!m.email).forEach((m, i) => {
+                            setTimeout(() => handleEmail(m), i * 1000);
+                          });
+                        }}
+                        disabled={aniversariantes.length === 0}
+                        className="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold rounded-lg transition disabled:opacity-50"
+                      >
+                        E-mail ({aniversariantes.filter(m => !!m.email).length})
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            );
+          })()}
+        </div>
       </div>
     </div>
   );
