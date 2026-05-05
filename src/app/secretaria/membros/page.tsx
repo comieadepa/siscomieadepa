@@ -1396,10 +1396,6 @@ useEffect(() => {
         observacoes_ministeriais: dadosMinisteriais.observacoesMinisteriais || null,
         // Aba Foto
         foto_url: fotoMembro || null,
-        // Datas ministeriais
-        data_consagracao: dadosMinisteriais.dataConsagracao || null,
-        data_emissao: dadosMinisteriais.dataEmissao || null,
-        data_validade_credencial: dadosMinisteriais.dataValidadeCredencial || null,
         // Dados de Consagração
         local_batismo: dadosConsagracao.local_batismo || null,
         data_filiacao: dadosConsagracao.data_filiacao || null,
@@ -3785,15 +3781,6 @@ useEffect(() => {
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-1">Data de Consagração</label>
-                          <input
-                            type="date"
-                            value={dadosMinisteriais.dataConsagracao}
-                            onChange={(e) => setDadosMinisteriais({ ...dadosMinisteriais, dataConsagracao: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                          />
-                        </div>
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 mb-1">Data de Validade (Credencial)</label>
                           <input
