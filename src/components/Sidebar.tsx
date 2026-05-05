@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
 import { usePlanFeatures } from '@/hooks/usePlanFeatures';
@@ -10,12 +10,38 @@ interface SidebarProps {
   setActiveMenu: (id: string) => void;
 }
 
+// Quais menus (por id) cada nível pode ver. 'super' vê tudo.
+const MENU_POR_NIVEL: Record<string, string[]> = {
+  super: ['*'],
+  administrador: ['dashboard', 'secretaria', 'comissao', 'patrimonio', 'missoes', 'configuracoes'],
+  cgadb: ['cgadb'],
+  comissao: ['dashboard', 'secretaria', 'comissao'],
+  inscricao: ['eventos'],
+  financeiro: ['financeiro'],
+};
+
+function menuVisivel(nivel: string | null, menuId: string): boolean {
+  if (!nivel) return false;
+  const permitidos = MENU_POR_NIVEL[nivel];
+  if (!permitidos) return false;
+  if (permitidos.includes('*')) return true;
+  return permitidos.includes(menuId);
+}
+
 export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
   const router = useRouter();
   const supabase = createClient();
   const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [nivelUsuario, setNivelUsuario] = useState<string | null>(null);
   const planFeatures = usePlanFeatures();
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      const nivel = data.session?.user?.user_metadata?.nivel as string | undefined;
+      setNivelUsuario(nivel ?? null);
+    });
+  }, []);
 
   const allMenuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: '📊', path: '/dashboard' },
@@ -56,13 +82,13 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
     },
   ];
 
-  // Filtra menus restritos por plano (enquanto carrega, mantém oculto para não piscar)
+  // Filtra menus restritos por plano e por nível de acesso do usuário
   const menuItems = planFeatures.loading
     ? allMenuItems.filter(i => !['financeiro', 'eventos'].includes(i.id))
     : allMenuItems.filter(i => {
-        if (i.id === 'financeiro') return planFeatures.has_modulo_financeiro;
-        if (i.id === 'eventos') return planFeatures.has_modulo_eventos;
-        return true;
+        if (i.id === 'financeiro' && !planFeatures.has_modulo_financeiro) return false;
+        if (i.id === 'eventos' && !planFeatures.has_modulo_eventos) return false;
+        return menuVisivel(nivelUsuario, i.id);
       });
 
   const handleNavigate = (id: string, path: string) => {
