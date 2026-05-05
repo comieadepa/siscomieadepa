@@ -147,12 +147,13 @@ async function ensureTrialAccess(userId: string) {
 
 async function resolveMinistryUser(userId: string) {
   const admin = createServerClient();
-  const { data, error } = await admin
+  const { data, error: _error } = await admin
     .from('ministry_users')
     .select('ministry_id, role, permissions, congregacao_id')
     .eq('user_id', userId)
     .limit(1)
     .maybeSingle();
+  void _error;
   if (data) return data;
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;

@@ -43,8 +43,8 @@ export default function UsuariosPage() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [usuariosLoading, setUsuariosLoading] = useState(true);
   const [usuariosError, setUsuariosError] = useState('');
-  const [congregacoes, setCongregacoes] = useState<CongregacaoOption[]>([]);
-  const [congregacoesLoading, setCongregacoesLoading] = useState(true);
+  const [_congregacoes, setCongregacoes] = useState<CongregacaoOption[]>([]); void _congregacoes;
+  const [_congregacoesLoading, setCongregacoesLoading] = useState(true); void _congregacoesLoading;
   const [formData, setFormData] = useState({
     nome: '',
     email: '',
@@ -86,7 +86,7 @@ export default function UsuariosPage() {
   });
 
   const [showForm, setShowForm] = useState(false);
-  const [selectedLevel, setSelectedLevel] = useState<string>('');
+  const [_selectedLevel, setSelectedLevel] = useState<string>(''); void _selectedLevel;
   const [currentPage, setCurrentPage] = useState(1);
   const [nomeSugestoes, setNomeSugestoes] = useState<{ name: string; cpf: string; phone: string }[]>([]);
   const [cpfAutoPreenchido, setCpfAutoPreenchido] = useState(false);
