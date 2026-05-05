@@ -331,7 +331,7 @@ export default function MembrosPage() {
 
   const [showForm, setShowForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ATIVO');
+  const [statusFilter, setStatusFilter] = useState('ativo');
   const [cargoFilter, setCargoFilter] = useState('TODOS');
   const [supervisaoFilter, setSupervisaoFilter] = useState('TODOS');
   const [campoFilter, setCampoFilter] = useState('TODOS');
@@ -1682,8 +1682,9 @@ useEffect(() => {
     const matchSearch = m.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
       m.cpf.includes(searchTerm) ||
       m.matricula.includes(searchTerm);
-    const matchStatus = statusFilter === 'TODOS'
-      || (statusFilter === 'JUBILADO' ? m.jubilado === true : m.status.toUpperCase() === statusFilter);
+    const sf = statusFilter.toLowerCase();
+    const matchStatus = sf === 'todos'
+      || (sf === 'jubilado' ? m.jubilado === true : m.status.toLowerCase() === sf);
     const matchCargo = cargoFilter === 'TODOS' || (m.cargoMinisterial || '').toUpperCase() === cargoFilter.toUpperCase();
     const matchSupervisao = supervisaoFilter === 'TODOS' || (m.supervisao || '').toUpperCase() === supervisaoFilter.toUpperCase();
     const matchCampo = campoFilter === 'TODOS' || (m.campo || '').toUpperCase() === campoFilter.toUpperCase();
@@ -2661,7 +2662,7 @@ useEffect(() => {
               <button
                 onClick={() => {
                   setSearchTerm('');
-                  setStatusFilter('ATIVO');
+                  setStatusFilter('ativo');
                   setCargoFilter('TODOS');
                   setSupervisaoFilter('TODOS');
                   setCampoFilter('TODOS');
