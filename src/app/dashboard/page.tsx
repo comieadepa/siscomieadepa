@@ -57,7 +57,8 @@ export default function DashboardPage() {
           .eq('id', data.user.id)
           .maybeSingle();
 
-        const nivel = publicUser?.role ? String(publicUser.role) : 'operator';
+        const nivel = (data.user.user_metadata?.nivel as string | undefined)
+          || (publicUser?.role ? String(publicUser.role) : 'operator');
 
         const nomeLogado = data.user.user_metadata?.full_name || data.user.email || 'Usuário';
         const emailLogado = data.user.email || '';
@@ -111,6 +112,12 @@ export default function DashboardPage() {
 
   const getNivelExibicao = (nivel: string) => {
     const mapeamento: { [key: string]: string } = {
+      'super': 'Super',
+      'administrador': 'Administrador',
+      'cgadb': 'CGADB',
+      'comissao': 'Comissão',
+      'inscricao': 'Inscrição',
+      'financeiro': 'Financeiro',
       'admin': 'Administrador',
       'manager': 'Gerente',
       'operator': 'Operador',
@@ -121,6 +128,12 @@ export default function DashboardPage() {
 
   const getCorNivel = (nivel: string) => {
     const cores: { [key: string]: string } = {
+      'super': 'bg-yellow-100 text-yellow-800',
+      'administrador': 'bg-purple-100 text-purple-800',
+      'cgadb': 'bg-red-100 text-red-800',
+      'comissao': 'bg-indigo-100 text-indigo-800',
+      'inscricao': 'bg-teal-100 text-teal-800',
+      'financeiro': 'bg-blue-100 text-blue-800',
       'admin': 'bg-red-100 text-red-800',
       'manager': 'bg-green-100 text-green-800',
       'operator': 'bg-blue-100 text-blue-800',

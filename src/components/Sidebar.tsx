@@ -83,7 +83,8 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
   ];
 
   // Filtra menus restritos por plano e por nível de acesso do usuário
-  const menuItems = planFeatures.loading
+  // Enquanto o nivel ainda não foi carregado, mostra só o essencial para não piscar vazio
+  const menuItems = (planFeatures.loading || nivelUsuario === null)
     ? allMenuItems.filter(i => !['financeiro', 'eventos'].includes(i.id))
     : allMenuItems.filter(i => {
         if (i.id === 'financeiro' && !planFeatures.has_modulo_financeiro) return false;
