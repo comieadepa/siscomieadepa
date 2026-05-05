@@ -325,7 +325,7 @@ export default function MembrosPage() {
   };
 
   const [maxMembros] = useState<number>(0); // 0 = sem limite
-  const limiteMembrosAtingido = maxMembros > 0 && membros.length >= maxMembros;
+  const _limiteMembrosAtingido = maxMembros > 0 && membros.length >= maxMembros; void _limiteMembrosAtingido;
 
   const [showForm, setShowForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -429,6 +429,10 @@ export default function MembrosPage() {
   });
   const [primeirosCasamento, setPrimeirosCasamento] = useState('SIM');
   const [qtdFilhos, setQtdFilhos] = useState(0);
+
+  // Filhos (Juventude COMIEADEPA) - feature em desenvolvimento
+  // Estados reservados para implementação futura
+
 
   // Dados de Consagração (campos fixos)
   const [dadosConsagracao, setDadosConsagracao] = useState({
@@ -872,7 +876,8 @@ useEffect(() => {
   };
 
   // Função para abrir novo cadastro
-  const abrirNovoCadastro = () => {
+  const _abrirNovoCadastro = () => {
+    void _abrirNovoCadastro;
     const novaMatricula = gerarProximaMatricula();
     setDadosPessoais({
       matricula: novaMatricula,

@@ -50,19 +50,26 @@ export default function DashboardPage() {
           return;
         }
 
-        // Buscar role do usuário em public.users
-        const { data: publicUser } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', data.user.id)
-          .maybeSingle();
-
-        // 1) user_metadata.nivel (set quando criado/editado via /usuarios)
-        // 2) public.users.role (mapeado pelo flow-auth)
-        // 3) fallback para 'administrador' se o usuário existe mas sem nivel definido
-        const metaNivel = data.user.user_metadata?.nivel as string | undefined;
-        const publicRole = publicUser?.role ? String(publicUser.role) : null;
-        const nivel = metaNivel || publicRole || 'administrador';
+        // 1) Tenta user_metadata.nivel (gravado na criação/edição via /usuarios)
+        // 2) Se vazio, chama /api/auth/me que lê public.users via admin e sincroniza automaticamente
+        let nivel: string = (data.user.user_metadata?.nivel as string | undefined) || '';
+        if (!nivel) {
+          try {
+            const { data: sessionData } = await supabase.auth.getSession();
+            const token = sessionData.session?.access_token || '';
+            if (token) {
+              const res = await fetch('/api/auth/me', {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (res.ok) {
+                const json = await res.json() as { nivel?: string };
+                nivel = json.nivel || 'administrador';
+              }
+            }
+          } catch {
+            nivel = 'administrador';
+          }
+        }
 
         const nomeLogado = data.user.user_metadata?.full_name || data.user.email || 'Usuário';
         const emailLogado = data.user.email || '';
