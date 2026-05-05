@@ -109,6 +109,8 @@ export default function MembrosPage() {
 
   // ── Aniversariantes ──────────────────────────────────────────────
   const [anivMes, setAnivMes] = useState<number>(new Date().getMonth() + 1);
+  const [anivPage, setAnivPage] = useState<number>(1);
+  const ANIV_POR_PAGINA = 25;
   const [anivTexto, setAnivTexto] = useState<string>(
     'Feliz Aniversário, {nome}! 🎉\n\nA COMIEADEPA deseja que Deus te abençoe grandemente neste dia tão especial!\n\nCom carinho,\nSecretaria COMIEADEPA'
   );
@@ -4185,6 +4187,12 @@ useEffect(() => {
               return dayA - dayB;
             });
 
+            const totalPaginas = Math.max(1, Math.ceil(aniversariantes.length / ANIV_POR_PAGINA));
+            const paginaAtual = Math.min(anivPage, totalPaginas);
+            const anivPagina = aniversariantes.slice((paginaAtual - 1) * ANIV_POR_PAGINA, paginaAtual * ANIV_POR_PAGINA);
+
+            const trocarMes = (mes: number) => { setAnivMes(mes); setAnivPage(1); };
+
             const msgParaMembro = (m: typeof membros[0]) =>
               anivTexto
                 .replace(/{nome}/g, m.nome)
@@ -4227,7 +4235,7 @@ useEffect(() => {
                   return (
                     <button
                       key={idx}
-                      onClick={() => setAnivMes(idx + 1)}
+                      onClick={() => trocarMes(idx + 1)}
                       className={`p-3 rounded-lg text-left border-l-4 shadow transition ${
                         anivMes === idx + 1
                           ? 'border-teal-500 bg-teal-50 ring-2 ring-teal-300'
@@ -4266,7 +4274,7 @@ useEffect(() => {
                           </tr>
                         </thead>
                         <tbody>
-                          {aniversariantes.map(m => {
+                          {anivPagina.map(m => {
                             const dia = (m.dataNascimento || '').split('-')[2] || '—';
                             return (
                               <tr key={m.id} className="border-b border-gray-200 hover:bg-gray-50">
@@ -4307,6 +4315,48 @@ useEffect(() => {
                           })}
                         </tbody>
                       </table>
+
+                      {/* Paginação */}
+                      {totalPaginas > 1 && (
+                        <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-200">
+                          <p className="text-xs text-gray-500">
+                            Exibindo {((paginaAtual - 1) * ANIV_POR_PAGINA) + 1}–{Math.min(paginaAtual * ANIV_POR_PAGINA, aniversariantes.length)} de {aniversariantes.length}
+                          </p>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => setAnivPage(1)}
+                              disabled={paginaAtual === 1}
+                              className="px-2 py-1 text-xs rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-100"
+                            >«</button>
+                            <button
+                              onClick={() => setAnivPage(p => Math.max(1, p - 1))}
+                              disabled={paginaAtual === 1}
+                              className="px-2 py-1 text-xs rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-100"
+                            >‹</button>
+                            {Array.from({ length: totalPaginas }, (_, i) => i + 1)
+                              .filter(p => p === 1 || p === totalPaginas || Math.abs(p - paginaAtual) <= 1)
+                              .reduce<(number | '...')[]>((acc, p, i, arr) => {
+                                if (i > 0 && (p as number) - (arr[i - 1] as number) > 1) acc.push('...');
+                                acc.push(p);
+                                return acc;
+                              }, [])
+                              .map((p, i) => p === '...'
+                                ? <span key={`e${i}`} className="px-2 py-1 text-xs text-gray-400">…</span>
+                                : <button key={p} onClick={() => setAnivPage(p as number)} className={`px-2 py-1 text-xs rounded border transition ${paginaAtual === p ? 'bg-teal-500 text-white border-teal-500' : 'border-gray-300 hover:bg-gray-100'}`}>{p}</button>
+                              )}
+                            <button
+                              onClick={() => setAnivPage(p => Math.min(totalPaginas, p + 1))}
+                              disabled={paginaAtual === totalPaginas}
+                              className="px-2 py-1 text-xs rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-100"
+                            >›</button>
+                            <button
+                              onClick={() => setAnivPage(totalPaginas)}
+                              disabled={paginaAtual === totalPaginas}
+                              className="px-2 py-1 text-xs rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-100"
+                            >»</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
