@@ -104,7 +104,7 @@ export default function PermutasPage() {
   const [isSuper, setIsSuper] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(({ data }: { data: { session: { user: { user_metadata: { nivel: string } } } | null } }) => {
       const nivel = data.session?.user?.user_metadata?.nivel;
       setIsSuper(nivel === 'super');
     });
