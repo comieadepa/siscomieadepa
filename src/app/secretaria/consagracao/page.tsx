@@ -938,10 +938,7 @@ export default function ConsagracaoPage() {
   const labelCongregacao = nomenclaturas?.divisaoPrincipal?.opcao1 || 'Congregação';
   const labelCampo = nomenclaturas?.divisaoSecundaria?.opcao1 || 'Campo';
   const labelSupervisao = nomenclaturas?.divisaoTerciaria?.opcao1 || 'Supervisão';
-
-  const showCongregacao = labelCongregacao !== 'NENHUMA';
-  const showCampo = labelCampo !== 'NENHUMA';
-  const showSupervisao = labelSupervisao !== 'NENHUMA';
+  void labelCongregacao; void labelCampo; void labelSupervisao;
 
   const emProcessoCount = registros.filter((r) => r.status_processo === 'em_processo').length;
   const deferidosCount = registros.filter((r) => r.status_processo === 'deferir').length;
