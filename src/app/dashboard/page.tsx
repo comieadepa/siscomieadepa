@@ -57,8 +57,12 @@ export default function DashboardPage() {
           .eq('id', data.user.id)
           .maybeSingle();
 
-        const nivel = (data.user.user_metadata?.nivel as string | undefined)
-          || (publicUser?.role ? String(publicUser.role) : 'operator');
+        // 1) user_metadata.nivel (set quando criado/editado via /usuarios)
+        // 2) public.users.role (mapeado pelo flow-auth)
+        // 3) fallback para 'administrador' se o usuário existe mas sem nivel definido
+        const metaNivel = data.user.user_metadata?.nivel as string | undefined;
+        const publicRole = publicUser?.role ? String(publicUser.role) : null;
+        const nivel = metaNivel || publicRole || 'administrador';
 
         const nomeLogado = data.user.user_metadata?.full_name || data.user.email || 'Usuário';
         const emailLogado = data.user.email || '';

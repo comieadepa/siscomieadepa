@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
       email,
       password: senha,
       email_confirm: true,
-      user_metadata: { full_name: nome, cpf: cpfCreate, celular: celularCreate, subcategoria: subcategoriaCreate },
+      user_metadata: { full_name: nome, nivel, cpf: cpfCreate, celular: celularCreate, subcategoria: subcategoriaCreate },
     });
 
     if (authError || !authUser?.user) {
@@ -248,7 +248,7 @@ export async function PUT(request: NextRequest) {
 
     const updatePayload: Record<string, any> = {
       email,
-      user_metadata: { full_name: nome, cpf, celular, subcategoria },
+      user_metadata: { full_name: nome, nivel, cpf, celular, subcategoria },
       email_confirm: true,
     };
 
