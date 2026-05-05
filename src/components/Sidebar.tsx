@@ -37,8 +37,8 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
   const planFeatures = usePlanFeatures();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      const nivel = data.session?.user?.user_metadata?.nivel as string | undefined;
+    supabase.auth.getSession().then((result) => {
+      const nivel = result.data.session?.user?.user_metadata?.nivel as string | undefined;
       setNivelUsuario(nivel ?? null);
     });
   }, []);
