@@ -257,7 +257,7 @@ export default function MembrosPage() {
       observacoesMinisteriais: String(member.observacoes_ministeriais || (cf as any).observacoesMinisteriais || ''),
       dataConsagracao: String(member.data_consagracao || (cf as any).dataConsagracao || ''),
       dataEmissao: String(member.data_emissao || (cf as any).dataEmissao || ''),
-      dataValidadeCredencial: String(member.data_validade_credencial || (cf as any).dataValidadeCredencial || ''),
+      dataValidadeCredencial: String((member as any).cred_validade || (cf as any).dataValidadeCredencial || ''),
       dataBatismoAguas: String(member.data_batismo_aguas || (cf as any).dataBatismoAguas || ''),
       dataBatismoEspiritoSanto: String(member.data_batismo_espirito_santo || (cf as any).dataBatismoEspiritoSanto || ''),
       fotoUrl: member.foto_url || (cf as any).fotoUrl || undefined,
@@ -1379,7 +1379,8 @@ useEffect(() => {
         celular: dadosPessoais.celular || null,
         whatsapp: dadosPessoais.whatsapp || null,
         // Geolocalização
-        congregacao_id: congregacoes.find((cg) => cg.nome === dadosPessoais.supervisao)?.id || null,
+        supervisao_id: supervisoes.find((s) => s.nome === dadosPessoais.supervisao)?.id || null,
+        congregacao_id: congregacoes.find((cg) => cg.nome === dadosPessoais.congregacao)?.id || null,
         latitude: Number.isFinite(latitudeNumber) ? latitudeNumber : null,
         longitude: Number.isFinite(longitudeNumber) ? longitudeNumber : null,
         // Aba Ministerial
@@ -1394,6 +1395,7 @@ useEffect(() => {
         qual_funcao: dadosMinisteriais.qualFuncao || null,
         setor_departamento: dadosMinisteriais.setorDepartamento || null,
         observacoes_ministeriais: dadosMinisteriais.observacoesMinisteriais || null,
+        cred_validade: dadosMinisteriais.dataValidadeCredencial || null,
         // Aba Foto
         foto_url: fotoMembro || null,
         // Dados de Consagração
@@ -1420,6 +1422,7 @@ useEffect(() => {
         conjuge_fone: dadosConjuge.fone || null,
         conjuge_email: dadosConjuge.email || null,
         conjuge_tipo_sanguineo: dadosConjuge.tipo_sanguineo || null,
+        conjuge_foto_url: dadosConjuge.foto_url || null,
         primeiro_casamento: primeirosCasamento,
         qtd_filhos: qtdFilhos,
         // Sistema
@@ -1432,7 +1435,7 @@ useEffect(() => {
       if (membroEditando) {
         const payload: UpdateMemberRequest = payloadBase;
         await updateMember(membroEditando.id, payload);
-        await fetchMembers(1, 500);
+        await fetchMembers(1, 10000);
         setNotification({
           isOpen: true,
           title: 'Sucesso',
@@ -1441,7 +1444,7 @@ useEffect(() => {
         });
       } else {
         const created = await createMember(payloadBase);
-        await fetchMembers(1, 500);
+        await fetchMembers(1, 10000);
         const createdUi = memberToMembro(created as unknown as Member);
         setUltimoCadastro(createdUi);
         setNotification({
@@ -1535,7 +1538,7 @@ useEffect(() => {
 
     try {
       await deleteMember(membroDeletando.id);
-      await fetchMembers(1, 500);
+      await fetchMembers(1, 10000);
       setNotification({
         isOpen: true,
         title: 'Sucesso',

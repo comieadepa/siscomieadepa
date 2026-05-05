@@ -175,9 +175,6 @@ export async function POST(request: NextRequest) {
           email: typeof normalizedBody.email === 'string' ? normalizedBody.email.toLowerCase() : normalizedBody.email || null,
           phone: normalizedBody.phone || null,
           cpf: normalizedBody.cpf || null,
-          data_consagracao: normalizedBody.data_consagracao || null,
-          data_emissao: normalizedBody.data_emissao || null,
-          data_validade_credencial: normalizedBody.data_validade_credencial || null,
           // Aba Dados
           matricula: normalizedBody.matricula || null,
           unique_id: normalizedBody.unique_id || null,
@@ -219,6 +216,7 @@ export async function POST(request: NextRequest) {
           celular: normalizedBody.celular || null,
           whatsapp: normalizedBody.whatsapp || null,
           // Geolocalização
+          supervisao_id: normalizedBody.supervisao_id || null,
           congregacao_id: normalizedBody.congregacao_id || null,
           latitude: typeof normalizedBody.latitude === 'number' ? normalizedBody.latitude : null,
           longitude: typeof normalizedBody.longitude === 'number' ? normalizedBody.longitude : null,
@@ -235,6 +233,7 @@ export async function POST(request: NextRequest) {
           qual_funcao: normalizedBody.qual_funcao || null,
           setor_departamento: normalizedBody.setor_departamento || null,
           observacoes_ministeriais: normalizedBody.observacoes_ministeriais || null,
+          cred_validade: normalizedBody.cred_validade || null,
           // Aba Foto
           foto_url: normalizedBody.foto_url || null,
           // Dados de Consagração
@@ -261,6 +260,7 @@ export async function POST(request: NextRequest) {
           conjuge_fone: normalizedBody.conjuge_fone || null,
           conjuge_email: typeof normalizedBody.conjuge_email === 'string' ? normalizedBody.conjuge_email.toLowerCase() : null,
           conjuge_tipo_sanguineo: normalizedBody.conjuge_tipo_sanguineo || null,
+          conjuge_foto_url: normalizedBody.conjuge_foto_url || null,
           primeiro_casamento: normalizedBody.primeiro_casamento || 'SIM',
           qtd_filhos: typeof normalizedBody.qtd_filhos === 'number' ? normalizedBody.qtd_filhos : 0,
           // Sistema
