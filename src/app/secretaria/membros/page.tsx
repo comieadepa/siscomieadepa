@@ -444,7 +444,7 @@ export default function MembrosPage() {
   const [qtdFilhos, setQtdFilhos] = useState(0);
 
   // Filhos (Juventude COMIEADEPA)
-  type FilhoRecord = { id: string; nome: string; sexo: string; data_nascimento: string; cpf: string };
+  type FilhoRecord = { id: string; nome: string; sexo: string; data_nascimento: string; cpf: string; emJuventude?: boolean };
   const [filhosRegistros, setFilhosRegistros] = useState<FilhoRecord[]>([]);
   const [showFilhoForm, setShowFilhoForm] = useState(false);
   const [novoFilho, setNovoFilho] = useState({ nome: '', sexo: 'MASCULINO', data_nascimento: '', cpf: '' });
@@ -1243,16 +1243,19 @@ useEffect(() => {
     setIsAdminMode(true); // Modo admin ativado para edição
     setShowForm(true);
     setActiveTab('dados');
-    // Carregar filhos do membro na tabela juventude_comieadepa
+    // Carregar filhos (HDS = Heranças do Senhor) com flag se também está em Juventude COMIEADEPA
     setFilhosRegistros([]);
     setShowFilhoForm(false);
     setNovoFilho({ nome: '', sexo: 'MASCULINO', data_nascimento: '', cpf: '' });
-    supabase
-      .from('juventude_comieadepa')
-      .select('id, nome, sexo, data_nascimento, cpf')
-      .eq('membro_id', membro.id)
-      .order('nome')
-      .then((res: { data: any[] | null }) => { if (res.data) setFilhosRegistros(res.data as any); });
+    Promise.all([
+      supabase.from('hds').select('id, nome, sexo, data_nascimento, cpf').eq('membro_id', membro.id).order('nome'),
+      supabase.from('juventude_comieadepa').select('hds_id').eq('membro_id', membro.id)
+    ]).then(([hdsRes, juvRes]) => {
+      const juvIds = new Set<string>((juvRes.data || []).map((r: any) => r.hds_id).filter(Boolean));
+      const combined = (hdsRes.data || []).map((r: any) => ({ ...r, emJuventude: juvIds.has(r.id) }));
+      setFilhosRegistros(combined);
+      setQtdFilhos(combined.length);
+    });
   };
 
   // Função para salvar/atualizar membro
@@ -4077,7 +4080,7 @@ useEffect(() => {
                             </div>
                             <div>
                               <label className="block text-xs font-semibold text-gray-700 mb-1">QTD. de Filhos</label>
-                              <input type="number" min={0} value={qtdFilhos} onChange={(e) => setQtdFilhos(Number(e.target.value))} className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                              <input type="number" readOnly value={filhosRegistros.length} className="w-24 px-3 py-2 bg-gray-100 border border-gray-200 rounded-md text-sm cursor-not-allowed text-gray-500" />
                             </div>
                           </div>
                         </div>
@@ -4099,7 +4102,7 @@ useEffect(() => {
                             </div>
                             <div>
                               <label className="block text-xs font-semibold text-gray-700 mb-1">QTD. de Filhos</label>
-                              <input type="number" min={0} value={qtdFilhos} onChange={(e) => setQtdFilhos(Number(e.target.value))} className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                              <input type="number" readOnly value={filhosRegistros.length} className="w-24 px-3 py-2 bg-gray-100 border border-gray-200 rounded-md text-sm cursor-not-allowed text-gray-500" />
                             </div>
                           </div>
                         </div>
@@ -4139,10 +4142,11 @@ useEffect(() => {
                                 </select>
                                 <input
                                   type="date"
-                                  placeholder="DATA NASC."
+                                  placeholder="DATA NASC. *"
+                                  required
                                   value={novoFilho.data_nascimento}
                                   onChange={e => setNovoFilho(f => ({ ...f, data_nascimento: e.target.value }))}
-                                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                                  className={`px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 ${!novoFilho.data_nascimento ? 'border-red-300 bg-red-50' : 'border-gray-300'}`}
                                 />
                                 <input
                                   placeholder="CPF"
@@ -4152,22 +4156,58 @@ useEffect(() => {
                                 />
                                 <button
                                   type="button"
-                                  disabled={salvandoFilho || !novoFilho.nome.trim()}
+                                  disabled={salvandoFilho || !novoFilho.nome.trim() || !novoFilho.data_nascimento}
                                   onClick={async () => {
-                                    if (!novoFilho.nome.trim() || !membroEditando) return;
+                                    if (!novoFilho.nome.trim() || !novoFilho.data_nascimento || !membroEditando) return;
                                     setSalvandoFilho(true);
-                                    const { data, error } = await supabase
-                                      .from('juventude_comieadepa')
-                                      .insert({ membro_id: membroEditando.id, nome: novoFilho.nome.trim(), sexo: novoFilho.sexo, data_nascimento: novoFilho.data_nascimento || null, cpf: novoFilho.cpf || null })
+
+                                    // 1. SEMPRE insere em HDS (Heranças do Senhor) — todos os filhos de pastores
+                                    const { data: hdsData, error: hdsError } = await supabase
+                                      .from('hds')
+                                      .insert({
+                                        membro_id: membroEditando.id,
+                                        nome: novoFilho.nome.trim(),
+                                        sexo: novoFilho.sexo,
+                                        data_nascimento: novoFilho.data_nascimento,
+                                        cpf: novoFilho.cpf || null
+                                      })
                                       .select('id, nome, sexo, data_nascimento, cpf')
                                       .single();
                                     setSalvandoFilho(false);
-                                    if (!error && data) {
-                                      setFilhosRegistros(prev => [...prev, data as any]);
-                                      setQtdFilhos(q => q + 1);
-                                      setNovoFilho({ nome: '', sexo: 'MASCULINO', data_nascimento: '', cpf: '' });
-                                      setShowFilhoForm(false);
+                                    if (hdsError || !hdsData) return;
+
+                                    // 2. Verifica elegibilidade para Juventude COMIEADEPA:
+                                    //    • Idade >= 12 e < 33 anos
+                                    //    • Não consta na tabela de membros/ministros
+                                    const hoje = new Date();
+                                    const nasc = new Date(novoFilho.data_nascimento);
+                                    const idadeAnos = Math.floor((hoje.getTime() - nasc.getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+                                    const idadeElegivel = idadeAnos >= 12 && idadeAnos < 33;
+
+                                    let emJuventude = false;
+                                    if (idadeElegivel) {
+                                      const { count } = await supabase
+                                        .from('members')
+                                        .select('id', { count: 'exact', head: true })
+                                        .ilike('name', novoFilho.nome.trim());
+                                      const naoEhMembro = (count ?? 0) === 0;
+                                      if (naoEhMembro) {
+                                        await supabase.from('juventude_comieadepa').insert({
+                                          membro_id: membroEditando.id,
+                                          hds_id: hdsData.id,
+                                          nome: hdsData.nome,
+                                          sexo: hdsData.sexo,
+                                          data_nascimento: hdsData.data_nascimento,
+                                          cpf: hdsData.cpf
+                                        });
+                                        emJuventude = true;
+                                      }
                                     }
+
+                                    const newRecord = { ...hdsData, emJuventude } as any;
+                                    setFilhosRegistros(prev => { const upd = [...prev, newRecord]; setQtdFilhos(upd.length); return upd; });
+                                    setNovoFilho({ nome: '', sexo: 'MASCULINO', data_nascimento: '', cpf: '' });
+                                    setShowFilhoForm(false);
                                   }}
                                   className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-md transition disabled:opacity-50"
                                 >
@@ -4188,6 +4228,7 @@ useEffect(() => {
                                   <th className="px-3 py-2 text-left font-semibold">Sexo</th>
                                   <th className="px-3 py-2 text-left font-semibold">Nasc.</th>
                                   <th className="px-3 py-2 text-left font-semibold">CPF</th>
+                                  <th className="px-3 py-2 text-center font-semibold" title="Também cadastrado na Juventude COMIEADEPA">Juventude</th>
                                   <th className="px-3 py-2"></th>
                                 </tr>
                               </thead>
@@ -4198,13 +4239,18 @@ useEffect(() => {
                                     <td className="px-3 py-2 text-gray-600">{filho.sexo}</td>
                                     <td className="px-3 py-2 text-gray-600">{filho.data_nascimento || '—'}</td>
                                     <td className="px-3 py-2 text-gray-600">{filho.cpf || '—'}</td>
+                                    <td className="px-3 py-2 text-center">
+                                      {filho.emJuventude
+                                        ? <span className="px-1.5 py-0.5 bg-teal-100 text-teal-700 rounded text-[10px] font-bold">SIM</span>
+                                        : <span className="px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded text-[10px]">NÃO</span>}
+                                    </td>
                                     <td className="px-3 py-2 text-right">
                                       <button
                                         type="button"
                                         onClick={async () => {
-                                          await supabase.from('juventude_comieadepa').delete().eq('id', filho.id);
-                                          setFilhosRegistros(prev => prev.filter(f => f.id !== filho.id));
-                                          setQtdFilhos(q => Math.max(0, q - 1));
+                                          // Deleta de HDS; juventude_comieadepa é deletado em cascata via hds_id FK
+                                          await supabase.from('hds').delete().eq('id', filho.id);
+                                          setFilhosRegistros(prev => { const upd = prev.filter(f => f.id !== filho.id); setQtdFilhos(upd.length); return upd; });
                                         }}
                                         className="text-red-400 hover:text-red-600 text-xs font-semibold"
                                       >
