@@ -163,17 +163,17 @@ export default function MembrosPage() {
 
   const dbStatusToUi = (status: Member['status'] | string | null | undefined): Membro['status'] => {
     if (status === 'active' || status === 'ativo') return 'ativo';
+    if (status === 'falecido' || status === 'deceased') return 'falecido';
     if (status === 'desligado') return 'desligado';
     if (status === 'em_processo') return 'em_processo';
-    if (status === 'falecido') return 'falecido';
-    return 'inativo';
+    return 'inativo'; // inactive e qualquer outro
   };
 
   const uiStatusToDb = (status: Membro['status']): string => {
     if (status === 'ativo') return 'active';
     if (status === 'desligado') return 'desligado';
     if (status === 'em_processo') return 'em_processo';
-    if (status === 'falecido') return 'falecido';
+    if (status === 'falecido') return 'deceased';
     return 'inactive';
   };
 
