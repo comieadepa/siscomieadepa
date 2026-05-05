@@ -97,7 +97,6 @@ export default function PermutasPage() {
   const [csvErro, setCsvErro] = useState('');
   const [csvSucesso, setCsvSucesso] = useState('');
   const [importing, setImporting] = useState(false);
-  const [showImport, setShowImport] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Abas e permissão
