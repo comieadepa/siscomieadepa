@@ -288,7 +288,7 @@ function AbaMinistros({ notify }: { notify: (t: string, m: string, tp: 'success'
     }
   }
 
-  async function handleDarBaixaTodosMin(memberId: string, cpf: string) {
+  async function handleDarBaixaTodosMin(memberId: string, _cpf: string) {
     const ids = ministros.find(m => m.id === memberId)?.debitos.map(d => d.id) || [];
     if (ids.length === 0) return;
     setZerandoMin(`todos_${memberId}`);
