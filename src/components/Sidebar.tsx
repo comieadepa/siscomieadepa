@@ -37,7 +37,7 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
   const planFeatures = usePlanFeatures();
 
   useEffect(() => {
-    supabase.auth.getSession().then((result) => {
+    supabase.auth.getSession().then((result: Awaited<ReturnType<typeof supabase.auth.getSession>>) => {
       const nivel = result.data.session?.user?.user_metadata?.nivel as string | undefined;
       setNivelUsuario(nivel ?? null);
     });
