@@ -443,8 +443,12 @@ export default function MembrosPage() {
   const [primeirosCasamento, setPrimeirosCasamento] = useState('SIM');
   const [qtdFilhos, setQtdFilhos] = useState(0);
 
-  // Filhos (Juventude COMIEADEPA) - feature em desenvolvimento
-  // Estados reservados para implementação futura
+  // Filhos (Juventude COMIEADEPA)
+  type FilhoRecord = { id: string; nome: string; sexo: string; data_nascimento: string; cpf: string };
+  const [filhosRegistros, setFilhosRegistros] = useState<FilhoRecord[]>([]);
+  const [showFilhoForm, setShowFilhoForm] = useState(false);
+  const [novoFilho, setNovoFilho] = useState({ nome: '', sexo: 'MASCULINO', data_nascimento: '', cpf: '' });
+  const [salvandoFilho, setSalvandoFilho] = useState(false);
 
 
   // Dados de Consagração (campos fixos)
@@ -1239,6 +1243,16 @@ useEffect(() => {
     setIsAdminMode(true); // Modo admin ativado para edição
     setShowForm(true);
     setActiveTab('dados');
+    // Carregar filhos do membro na tabela juventude_comieadepa
+    setFilhosRegistros([]);
+    setShowFilhoForm(false);
+    setNovoFilho({ nome: '', sexo: 'MASCULINO', data_nascimento: '', cpf: '' });
+    supabase
+      .from('juventude_comieadepa')
+      .select('id, nome, sexo, data_nascimento, cpf')
+      .eq('membro_id', membro.id)
+      .order('nome')
+      .then((res: { data: any[] | null }) => { if (res.data) setFilhosRegistros(res.data as any); });
   };
 
   // Função para salvar/atualizar membro
@@ -4063,10 +4077,7 @@ useEffect(() => {
                             </div>
                             <div>
                               <label className="block text-xs font-semibold text-gray-700 mb-1">QTD. de Filhos</label>
-                              <div className="flex items-center gap-2">
-                                <input type="number" min={0} value={qtdFilhos} onChange={(e) => setQtdFilhos(Number(e.target.value))} className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
-                                <button type="button" onClick={() => setQtdFilhos(q => q + 1)} className="px-3 py-2 bg-teal-500 text-white rounded-md text-sm font-bold hover:bg-teal-600">+</button>
-                              </div>
+                              <input type="number" min={0} value={qtdFilhos} onChange={(e) => setQtdFilhos(Number(e.target.value))} className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
                             </div>
                           </div>
                         </div>
@@ -4088,12 +4099,123 @@ useEffect(() => {
                             </div>
                             <div>
                               <label className="block text-xs font-semibold text-gray-700 mb-1">QTD. de Filhos</label>
-                              <div className="flex items-center gap-2">
-                                <input type="number" min={0} value={qtdFilhos} onChange={(e) => setQtdFilhos(Number(e.target.value))} className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
-                                <button type="button" onClick={() => setQtdFilhos(q => q + 1)} className="px-3 py-2 bg-teal-500 text-white rounded-md text-sm font-bold hover:bg-teal-600">+</button>
-                              </div>
+                              <input type="number" min={0} value={qtdFilhos} onChange={(e) => setQtdFilhos(Number(e.target.value))} className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
                             </div>
                           </div>
+                        </div>
+                      )}
+
+                      {/* ── JUVENTUDE COMIEADEPA ─────────────────────────────── */}
+                      {membroEditando && (
+                        <div className="mt-4 border border-teal-200 rounded-lg overflow-hidden">
+                          <div className="flex items-center justify-between bg-teal-50 px-4 py-3 border-b border-teal-200">
+                            <h4 className="text-sm font-bold text-teal-800">👦 Juventude COMIEADEPA — Filhos</h4>
+                            <button
+                              type="button"
+                              onClick={() => setShowFilhoForm(v => !v)}
+                              className="px-3 py-1.5 bg-teal-500 hover:bg-teal-600 text-white text-xs font-semibold rounded-md transition"
+                            >
+                              {showFilhoForm ? '✕ Cancelar' : '+ Adicionar Registro'}
+                            </button>
+                          </div>
+
+                          {/* Formulário de novo filho */}
+                          {showFilhoForm && (
+                            <div className="bg-teal-50/50 px-4 py-3 border-b border-teal-100">
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                <input
+                                  placeholder="NOME"
+                                  value={novoFilho.nome}
+                                  onChange={e => setNovoFilho(f => ({ ...f, nome: e.target.value.toUpperCase() }))}
+                                  className="col-span-2 md:col-span-4 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 uppercase"
+                                />
+                                <select
+                                  value={novoFilho.sexo}
+                                  onChange={e => setNovoFilho(f => ({ ...f, sexo: e.target.value }))}
+                                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                                >
+                                  <option value="MASCULINO">MASCULINO</option>
+                                  <option value="FEMININO">FEMININO</option>
+                                </select>
+                                <input
+                                  type="date"
+                                  placeholder="DATA NASC."
+                                  value={novoFilho.data_nascimento}
+                                  onChange={e => setNovoFilho(f => ({ ...f, data_nascimento: e.target.value }))}
+                                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                                />
+                                <input
+                                  placeholder="CPF"
+                                  value={novoFilho.cpf}
+                                  onChange={e => setNovoFilho(f => ({ ...f, cpf: e.target.value }))}
+                                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={salvandoFilho || !novoFilho.nome.trim()}
+                                  onClick={async () => {
+                                    if (!novoFilho.nome.trim() || !membroEditando) return;
+                                    setSalvandoFilho(true);
+                                    const { data, error } = await supabase
+                                      .from('juventude_comieadepa')
+                                      .insert({ membro_id: membroEditando.id, nome: novoFilho.nome.trim(), sexo: novoFilho.sexo, data_nascimento: novoFilho.data_nascimento || null, cpf: novoFilho.cpf || null })
+                                      .select('id, nome, sexo, data_nascimento, cpf')
+                                      .single();
+                                    setSalvandoFilho(false);
+                                    if (!error && data) {
+                                      setFilhosRegistros(prev => [...prev, data as any]);
+                                      setQtdFilhos(q => q + 1);
+                                      setNovoFilho({ nome: '', sexo: 'MASCULINO', data_nascimento: '', cpf: '' });
+                                      setShowFilhoForm(false);
+                                    }
+                                  }}
+                                  className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-md transition disabled:opacity-50"
+                                >
+                                  {salvandoFilho ? 'Salvando...' : 'Salvar'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Tabela de filhos */}
+                          {filhosRegistros.length === 0 ? (
+                            <p className="text-center text-gray-400 text-xs py-4">Nenhum filho cadastrado.</p>
+                          ) : (
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="bg-gray-100 text-gray-600">
+                                  <th className="px-3 py-2 text-left font-semibold">Nome</th>
+                                  <th className="px-3 py-2 text-left font-semibold">Sexo</th>
+                                  <th className="px-3 py-2 text-left font-semibold">Nasc.</th>
+                                  <th className="px-3 py-2 text-left font-semibold">CPF</th>
+                                  <th className="px-3 py-2"></th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {filhosRegistros.map(filho => (
+                                  <tr key={filho.id} className="border-t border-gray-100 hover:bg-gray-50">
+                                    <td className="px-3 py-2 font-medium uppercase">{filho.nome}</td>
+                                    <td className="px-3 py-2 text-gray-600">{filho.sexo}</td>
+                                    <td className="px-3 py-2 text-gray-600">{filho.data_nascimento || '—'}</td>
+                                    <td className="px-3 py-2 text-gray-600">{filho.cpf || '—'}</td>
+                                    <td className="px-3 py-2 text-right">
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          await supabase.from('juventude_comieadepa').delete().eq('id', filho.id);
+                                          setFilhosRegistros(prev => prev.filter(f => f.id !== filho.id));
+                                          setQtdFilhos(q => Math.max(0, q - 1));
+                                        }}
+                                        className="text-red-400 hover:text-red-600 text-xs font-semibold"
+                                      >
+                                        remover
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
                         </div>
                       )}
                     </div>
