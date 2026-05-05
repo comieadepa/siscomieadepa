@@ -169,6 +169,17 @@ export default function MembrosPage() {
     return 'inativo'; // inactive e qualquer outro
   };
 
+  // Resolve o status considerando tipo_cadastro (situação ministerial real) com prioridade
+  const resolveStatusFromMember = (member: Member): Membro['status'] => {
+    const tc = String(member.tipo_cadastro || '').toUpperCase().trim();
+    if (tc.includes('FALECIDO')) return 'falecido';
+    if (tc.includes('DESLIGADO')) return 'desligado';
+    if (tc === 'EM PROCESSO') return 'em_processo';
+    if (tc === 'SUSPENSO' || tc === 'INATIVO' || tc === 'LICENCIADO' || tc === 'DISPONIBILIDADE' || tc === 'ARQUIVO MORTO') return 'inativo';
+    // fallback para coluna status do banco
+    return dbStatusToUi(member.status);
+  };
+
   const uiStatusToDb = (status: Membro['status']): string => {
     if (status === 'ativo') return 'active';
     if (status === 'desligado') return 'desligado';
@@ -203,7 +214,7 @@ export default function MembrosPage() {
       supervisao: String((cf as any).supervisao || ''),
       campo: String((cf as any).campo || ''),
       congregacao: String((cf as any).congregacao || ''),
-      status: dbStatusToUi(member.status),
+      status: resolveStatusFromMember(member),
       jubilado: (member as any).jubilado ?? false,
       dataNascimento: String(member.data_nascimento || (cf as any).dataNascimento || ''),
       sexo: String(member.sexo || (cf as any).sexo || ''),
