@@ -168,7 +168,6 @@ export async function PUT(
       procedencia: normalizedBody.procedencia ?? null,
       procedencia_local: normalizedBody.procedencia_local ?? null,
       cargo_ministerial: normalizedBody.cargo_ministerial ?? null,
-      dados_cargos: normalizedBody.dados_cargos ?? {},
       tem_funcao_igreja: normalizedBody.tem_funcao_igreja ?? false,
       qual_funcao: normalizedBody.qual_funcao ?? null,
       setor_departamento: normalizedBody.setor_departamento ?? null,

@@ -1355,7 +1355,6 @@ useEffect(() => {
         procedencia: dadosMinisteriais.procedencia || null,
         procedencia_local: dadosMinisteriais.procedenciaLocal || null,
         cargo_ministerial: cargoSelecionado || null,
-        dados_cargos: dadosCargos || {},
         tem_funcao_igreja: dadosMinisteriais.temFuncaoIgreja ?? false,
         qual_funcao: dadosMinisteriais.qualFuncao || null,
         setor_departamento: dadosMinisteriais.setorDepartamento || null,
@@ -2688,23 +2687,6 @@ useEffect(() => {
                   )}
                 </span>
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      if (limiteMembrosAtingido) {
-                        setNotification({ isOpen: true, title: 'Limite atingido', message: `Seu plano permite no máximo ${maxMembros} cadastros. Faça upgrade para adicionar mais.`, type: 'warning', showButton: true });
-                        return;
-                      }
-                      abrirNovoCadastro();
-                    }}
-                    className={`px-4 py-2 rounded-lg transition font-semibold text-sm flex items-center gap-2 ${
-                      limiteMembrosAtingido
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-green-600 text-white hover:bg-green-700'
-                    }`}
-                    title={limiteMembrosAtingido ? `Limite de ${maxMembros} cadastros atingido` : 'Novo Cadastro'}
-                  >
-                    <span>➕</span> Novo Cadastro
-                  </button>
                   <button
                     onClick={gerarPDFListagem}
                     className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition font-semibold text-sm"
