@@ -1688,7 +1688,7 @@ useEffect(() => {
     const matchCargo = cargoFilter === 'TODOS' || (m.cargoMinisterial || '').toUpperCase() === cargoFilter.toUpperCase();
     const matchSupervisao = supervisaoFilter === 'TODOS' || (m.supervisao || '').toUpperCase() === supervisaoFilter.toUpperCase();
     const matchCampo = campoFilter === 'TODOS' || (m.campo || '').toUpperCase() === campoFilter.toUpperCase();
-    const matchPastor = !pastorPresidenteFilter || (m.cargoMinisterial || '').toUpperCase().includes('PASTOR PRESIDENTE');
+    const matchPastor = !pastorPresidenteFilter || m.pastorPresidente === true;
     return matchSearch && matchStatus && matchCargo && matchSupervisao && matchCampo && matchPastor;
   });
 
