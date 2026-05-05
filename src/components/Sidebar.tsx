@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
-import { usePlanFeatures } from '@/hooks/usePlanFeatures';
 
 interface SidebarProps {
   activeMenu: string;
@@ -21,9 +20,9 @@ const MENU_POR_NIVEL: Record<string, string[]> = {
 };
 
 function menuVisivel(nivel: string | null, menuId: string): boolean {
-  if (!nivel) return false;
+  if (!nivel) return true; // enquanto carrega, mostra tudo
   const permitidos = MENU_POR_NIVEL[nivel];
-  if (!permitidos) return false;
+  if (!permitidos) return true; // nivel desconhecido → mostra tudo
   if (permitidos.includes('*')) return true;
   return permitidos.includes(menuId);
 }
@@ -34,7 +33,6 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
   const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [nivelUsuario, setNivelUsuario] = useState<string | null>(null);
-  const planFeatures = usePlanFeatures();
 
   useEffect(() => {
     supabase.auth.getSession().then((result: Awaited<ReturnType<typeof supabase.auth.getSession>>) => {
@@ -82,16 +80,8 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
     },
   ];
 
-  // Filtra menus restritos por plano e por nível de acesso do usuário
-  // Enquanto o nivel ainda não foi carregado, mostra só o essencial para não piscar vazio
-  const isSuper = nivelUsuario === 'super';
-  const menuItems = (planFeatures.loading || nivelUsuario === null)
-    ? allMenuItems.filter(i => !['financeiro', 'eventos'].includes(i.id))
-    : allMenuItems.filter(i => {
-        if (!isSuper && i.id === 'financeiro' && !planFeatures.has_modulo_financeiro) return false;
-        if (!isSuper && i.id === 'eventos' && !planFeatures.has_modulo_eventos) return false;
-        return menuVisivel(nivelUsuario, i.id);
-      });
+  // Filtra menus apenas por nível de acesso do usuário
+  const menuItems = allMenuItems.filter(i => menuVisivel(nivelUsuario, i.id));
 
   const handleNavigate = (id: string, path: string) => {
     setActiveMenu(id);
