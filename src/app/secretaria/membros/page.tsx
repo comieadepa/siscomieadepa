@@ -261,6 +261,8 @@ export default function MembrosPage() {
       dataBatismoAguas: String(member.data_batismo_aguas || (cf as any).dataBatismoAguas || ''),
       dataBatismoEspiritoSanto: String(member.data_batismo_espirito_santo || (cf as any).dataBatismoEspiritoSanto || ''),
       fotoUrl: member.foto_url || (cf as any).fotoUrl || undefined,
+      profissao: String(member.profissao || (cf as any).profissao || ''),
+      email2: String(member.email2 || (cf as any).email2 || ''),
     };
   };
 
