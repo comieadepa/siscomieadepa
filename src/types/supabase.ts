@@ -118,6 +118,62 @@ export type Member = {
   qual_funcao?: string | null
   setor_departamento?: string | null
   observacoes_ministeriais?: string | null
+  // Campos adicionais (migrações)
+  email2?: string | null
+  uf_rg?: string | null
+  municipio_eleitoral?: string | null
+  posicao_no_campo?: string | null
+  numero_cgadb?: string | null
+  local_batismo?: string | null
+  data_filiacao?: string | null
+  diretoria?: boolean | null
+  diretoria_cargo?: string | null
+  ev_autorizado_data?: string | null
+  ev_autorizado_local?: string | null
+  ev_consagrado_data?: string | null
+  ev_consagrado_local?: string | null
+  cons_missionario_data?: string | null
+  cons_missionario_local?: string | null
+  orden_pastor_data?: string | null
+  orden_pastor_local?: string | null
+  conjuge_rg?: string | null
+  conjuge_orgao_emissor?: string | null
+  conjuge_nacionalidade?: string | null
+  conjuge_naturalidade?: string | null
+  conjuge_nome_pai?: string | null
+  conjuge_nome_mae?: string | null
+  conjuge_titulo_eleitoral?: string | null
+  conjuge_fone?: string | null
+  conjuge_email?: string | null
+  conjuge_tipo_sanguineo?: string | null
+  conjuge_foto_url?: string | null
+  primeiro_casamento?: string | null
+  qtd_filhos?: number | null
+  diacono_data?: string | null
+  diacono_local?: string | null
+  cert_diacono?: string | null
+  presbitero_data?: string | null
+  presbitero_local?: string | null
+  cert_presbitero?: string | null
+  cert_evangelista?: string | null
+  cert_pastor?: string | null
+  registro_comieadepa?: string | null
+  convencional?: boolean | null
+  apto_votar?: boolean | null
+  efetivo?: boolean | null
+  ministerial?: boolean | null
+  homologado?: boolean | null
+  jubilado?: boolean | null
+  data_jubilacao?: string | null
+  data_falecimento?: string | null
+  local_falecimento?: string | null
+  data_transferido_em?: string | null
+  data_transferido_para?: string | null
+  local_transferencia?: string | null
+  data_recebido_transferencia?: string | null
+  cred_validade?: string | null
+  cred_vencida?: boolean | null
+  supervisao_id?: string | null
   // Aba Foto
   foto_url?: string | null
   // Campos do sistema
