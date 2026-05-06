@@ -3279,11 +3279,11 @@ useEffect(() => {
                             className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                           >
                             <option value="">- Escolha -</option>
-                            <option value="sem_instrucao">Sem Instrução</option>
-                            <option value="fundamental">Ensino Fundamental</option>
-                            <option value="medio">Ensino Médio</option>
-                            <option value="superior">Ensino Superior</option>
-                            <option value="posgraduacao">Pós-Graduação</option>
+                            <option value="SEM_INSTRUCAO">Sem Instrução</option>
+                            <option value="FUNDAMENTAL">Ensino Fundamental</option>
+                            <option value="MEDIO">Ensino Médio</option>
+                            <option value="SUPERIOR">Ensino Superior</option>
+                            <option value="POSGRADUACAO">Pós-Graduação</option>
                           </select>
                         </div>
                         <div>
@@ -3657,9 +3657,9 @@ useEffect(() => {
                             className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                           >
                             <option value="">NÃO TEM</option>
-                            <option value="basico">Básico</option>
-                            <option value="medio">Médio</option>
-                            <option value="bacharel">Bacharel</option>
+                            <option value="BASICO">Básico</option>
+                            <option value="MEDIO">Médio</option>
+                            <option value="BACHAREL">Bacharel</option>
                           </select>
                         </div>
                         <div>
