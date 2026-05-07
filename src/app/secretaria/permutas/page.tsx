@@ -116,13 +116,28 @@ export default function PermutasPage() {
   useEffect(() => {
     if (loading) return;
     const load = async () => {
-      const [sv, cp, pm] = await Promise.all([
-        supabase.from('supervisoes').select('id,nome').eq('is_active', true).order('nome'),
-        supabase.from('campos').select('id,nome,supervisao_id,pastor_member_id,presidente_nome').neq('is_active', false).order('nome'),
+      // Carrega campos com paginação (banco tem mais de 1000 registros)
+      let allCampos: any[] = [];
+      let from = 0;
+      const PAGE = 1000;
+      while (true) {
+        const { data } = await supabase
+          .from('campos')
+          .select('id,nome,supervisao_id,pastor_member_id,presidente_nome')
+          .neq('is_active', false)
+          .order('nome')
+          .range(from, from + PAGE - 1);
+        allCampos = allCampos.concat(data || []);
+        if (!data || data.length < PAGE) break;
+        from += PAGE;
+      }
+
+      const [sv, pm] = await Promise.all([
+        supabase.from('supervisoes').select('id,nome').neq('is_active', false).order('nome'),
         fetch('/api/permutas').then(r => r.json()),
       ]);
       setSupervisoes((sv.data as any[]) || []);
-      setCampos(((cp.data as any[]) || []).map((row: any) => ({
+      setCampos(allCampos.map((row: any) => ({
         id: row.id,
         nome: row.nome,
         supervisao_id: row.supervisao_id,
@@ -238,9 +253,21 @@ export default function PermutasPage() {
     const pm = await fetch('/api/permutas').then(r => r.json());
     setPermutas(pm.data || []);
 
-    // Recarrega campos (presidente_nome pode ter mudado)
-    const cp = await supabase.from('campos').select('id,nome,supervisao_id,pastor_member_id,presidente_nome').neq('is_active', false).order('nome');
-    setCampos(((cp.data as any[]) || []).map((row: any) => ({
+    // Recarrega campos com paginação (presidente_nome pode ter mudado)
+    let reloadCampos: any[] = [];
+    let rcFrom = 0;
+    while (true) {
+      const { data } = await supabase
+        .from('campos')
+        .select('id,nome,supervisao_id,pastor_member_id,presidente_nome')
+        .neq('is_active', false)
+        .order('nome')
+        .range(rcFrom, rcFrom + 999);
+      reloadCampos = reloadCampos.concat(data || []);
+      if (!data || data.length < 1000) break;
+      rcFrom += 1000;
+    }
+    setCampos(reloadCampos.map((row: any) => ({
       id: row.id,
       nome: row.nome,
       supervisao_id: row.supervisao_id,
