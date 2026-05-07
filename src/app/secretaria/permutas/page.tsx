@@ -118,7 +118,7 @@ export default function PermutasPage() {
     const load = async () => {
       const [sv, cp, pm] = await Promise.all([
         supabase.from('supervisoes').select('id,nome').eq('is_active', true).order('nome'),
-        supabase.from('campos').select('id,nome,supervisao_id,pastor_member_id,presidente_nome').eq('is_active', true).order('nome'),
+        supabase.from('campos').select('id,nome,supervisao_id,pastor_member_id,presidente_nome').neq('is_active', false).order('nome'),
         fetch('/api/permutas').then(r => r.json()),
       ]);
       setSupervisoes((sv.data as any[]) || []);
@@ -239,7 +239,7 @@ export default function PermutasPage() {
     setPermutas(pm.data || []);
 
     // Recarrega campos (presidente_nome pode ter mudado)
-    const cp = await supabase.from('campos').select('id,nome,supervisao_id,pastor_member_id,presidente_nome').eq('is_active', true).order('nome');
+    const cp = await supabase.from('campos').select('id,nome,supervisao_id,pastor_member_id,presidente_nome').neq('is_active', false).order('nome');
     setCampos(((cp.data as any[]) || []).map((row: any) => ({
       id: row.id,
       nome: row.nome,

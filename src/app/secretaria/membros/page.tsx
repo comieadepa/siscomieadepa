@@ -676,9 +676,9 @@ export default function MembrosPage() {
 useEffect(() => {
     const loadEstruturaOptions = async () => {
       const [s, c, g] = await Promise.all([
-        supabase.from('supervisoes').select('id,nome,is_active').eq('is_active', true).order('nome'),
-        supabase.from('campos').select('id,nome,supervisao_id,is_active').eq('is_active', true).order('nome'),
-        supabase.from('congregacoes').select('id,nome,supervisao_id,campo_id,is_active').eq('is_active', true).order('nome'),
+        supabase.from('supervisoes').select('id,nome,is_active').neq('is_active', false).order('nome'),
+        supabase.from('campos').select('id,nome,supervisao_id,is_active').neq('is_active', false).order('nome'),
+        supabase.from('congregacoes').select('id,nome,supervisao_id,campo_id,is_active').neq('is_active', false).order('nome'),
       ]);
 
       if (s.error) console.warn('Falha ao carregar 1a divisao:', s.error);
