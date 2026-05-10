@@ -100,7 +100,7 @@ export default function FinanceiroPage() {
     if (loading) return;
     // Carrega supervisões
     supabase.from('supervisoes').select('id,nome').neq('is_active', false).order('nome')
-      .then(({ data }) => setSupervisoes((data as Supervisao[]) || []));
+      .then(({ data }: { data: unknown }) => setSupervisoes((data as Supervisao[]) || []));
 
     // Carrega campos com paginação
     (async () => {

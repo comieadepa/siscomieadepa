@@ -1,0 +1,1067 @@
+'use client';
+
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useParams } from 'next/navigation';
+import { createClient } from '@/lib/supabase-client';
+import { generateQRCodeToken } from '@/lib/qrcode-token';
+import AssistenteWidget from '@/components/AssistenteWidget';
+
+// ─── Tipos ────────────────────────────────────────────────────
+interface Supervisao { id: string; nome: string; }
+interface Campo      { id: string; nome: string; supervisao_id: string; }
+
+interface TipoInscricao {
+  id: string; nome: string; valor: number;
+  inclui_alimentacao: boolean; inclui_hospedagem: boolean; ordem: number;
+}
+
+interface Evento {
+  id: string; nome: string; slug: string; descricao: string | null;
+  departamento: string; data_inicio: string; data_fim: string;
+  local: string | null; cidade: string | null;
+  supervisao_id: string | null; campo_id: string | null;
+  banner_url: string | null; valor_inscricao: number;
+  permite_hospedagem: boolean; permite_alimentacao: boolean;
+  permite_brinde: boolean; gerar_certificado: boolean;
+  link_whatsapp: string | null; mensagem_confirmacao: string | null;
+  inscricoes_abertas: boolean; limite_vagas: number | null;
+  limite_hospedagem: number | null; limite_brindes: number | null;
+  publico_alvo: string | null;
+  usar_tipos_inscricao: boolean;
+  status: 'programado' | 'realizado' | 'cancelado';
+}
+
+interface FormData {
+  nome_inscrito: string;
+  cpf: string;
+  email: string;
+  whatsapp: string;
+  sexo: string;
+  data_nascimento: string;
+  supervisao_id: string;
+  campo_id: string;
+  hospedagem: boolean;
+  alimentacao: boolean;
+  brinde: boolean;
+  // Campos hospedagem AGO
+  hosp_necessidade_especial: boolean;
+  hosp_descricao_necessidade: string;
+  hosp_cama_inferior: boolean;
+  hosp_observacoes: string;
+}
+
+// Participante adicional (lote)
+interface ParticipanteExtra {
+  nome_inscrito: string; cpf: string; email: string; whatsapp: string;
+  sexo: string; supervisao_id: string; campo_id: string;
+}
+
+const FORM_VAZIO: FormData = {
+  nome_inscrito: '', cpf: '', email: '', whatsapp: '',
+  sexo: '', data_nascimento: '',
+  supervisao_id: '', campo_id: '',
+  hospedagem: false, alimentacao: false, brinde: false,
+  hosp_necessidade_especial: false,
+  hosp_descricao_necessidade: '',
+  hosp_cama_inferior: false,
+  hosp_observacoes: '',
+};
+
+// ─── Helpers ─────────────────────────────────────────────────
+const fmtData = (d: string | null) => {
+  if (!d) return '-';
+  const [y, m, day] = d.split('-');
+  return `${day}/${m}/${y}`;
+};
+
+const fmtMoeda = (v: number) =>
+  v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+function substituirVariaveis(mensagem: string, vars: Record<string, string>) {
+  return mensagem.replace(/\{([A-Z_]+)\}/g, (_, key) => vars[key] ?? `{${key}}`);
+}
+
+function formatarCPF(v: string) {
+  const d = v.replace(/\D/g, '').slice(0, 11);
+  return d
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+}
+
+// ─── Componente principal ────────────────────────────────────
+export default function InscricaoPublicaPage() {
+  const params = useParams();
+  const slug = params?.slug as string;
+  const supabase = useMemo(() => createClient(), []);
+
+  const [evento,      setEvento]      = useState<Evento | null>(null);
+  const [supervisoes, setSupervisoes] = useState<Supervisao[]>([]);
+  const [campos,      setCampos]      = useState<Campo[]>([]);
+  const [tipos,       setTipos]       = useState<TipoInscricao[]>([]);
+  const [vagasHospedagem, setVagasHospedagem] = useState<number | null>(null);
+  const [loading,     setLoading]     = useState(true);
+  const [estadoErro,  setEstadoErro]  = useState<'nao_encontrado' | 'fechado' | 'encerrado' | 'esgotado' | null>(null);
+
+  // Form
+  const [form,          setForm]          = useState<FormData>({ ...FORM_VAZIO });
+  const [buscandoCPF,   setBuscandoCPF]   = useState(false);
+  const [cpfStatus,     setCpfStatus]     = useState<'idle' | 'encontrado' | 'nao_encontrado'>('idle');
+  const [salvando,      setSalvando]      = useState(false);
+  const [erroForm,      setErroForm]      = useState<string | null>(null);
+
+  // Tipo de inscrição e cupom
+  const [tipoSelecionado, setTipoSelecionado] = useState<TipoInscricao | null>(null);
+  const [cupomCodigo,     setCupomCodigo]     = useState('');
+  const [cupomStatus,     setCupomStatus]     = useState<'idle' | 'validando' | 'ok' | 'erro'>('idle');
+  const [cupomDesconto,   setCupomDesconto]   = useState(0);
+  const [cupomMensagem,   setCupomMensagem]   = useState('');
+
+  // Lote (participantes extras)
+  const [modoLote,          setModoLote]          = useState(false);
+  const [participantesExtra,setParticipantesExtra] = useState<ParticipanteExtra[]>([]);
+
+  // Confirmação + pagamento
+  const [confirmacao,    setConfirmacao]    = useState<{
+    qr_code: string;
+    inscricaoId?: string;
+    loteId?: string;
+    qtdLote?: number;
+    statusPagamento: string;
+    pagamento: {
+      asaasId: string | null;
+      invoiceUrl: string | null;
+      pixQrCode: string | null;
+      pixCopiaECola: string | null;
+      valor: number;
+      vencimento: string;
+    } | null;
+    asaasError?: string;
+  } | null>(null);
+  const [totalInscritos, setTotalInscritos] = useState(0);
+  const [verificando,    setVerificando]    = useState(false);
+  const [statusChecked,  setStatusChecked]  = useState<string | null>(null);
+  const [copiado,        setCopiado]        = useState(false);
+
+  const camposFiltrados = useMemo(
+    () => form.supervisao_id ? campos.filter(c => c.supervisao_id === form.supervisao_id) : campos,
+    [form.supervisao_id, campos]
+  );
+
+  // ── Carrega evento ───────────────────────────────────────
+  const fetchEvento = useCallback(async () => {
+    if (!slug) return;
+    setLoading(true);
+
+    const [evRes, supRes, camRes] = await Promise.all([
+      supabase.from('eventos').select('*').eq('slug', slug).single(),
+      supabase.from('supervisoes').select('id,nome').order('nome'),
+      supabase.from('campos').select('id,nome,supervisao_id').order('nome'),
+    ]);
+
+    if (evRes.error || !evRes.data) {
+      setEstadoErro('nao_encontrado');
+      setLoading(false);
+      return;
+    }
+
+    const ev = evRes.data as Evento;
+
+    if (ev.status !== 'programado') { setEstadoErro('encerrado'); setLoading(false); return; }
+    if (!ev.inscricoes_abertas)      { setEstadoErro('fechado');   setLoading(false); return; }
+
+    // Verifica vagas
+    if (ev.limite_vagas) {
+      const { count } = await supabase
+        .from('evento_inscricoes')
+        .select('id', { count: 'exact', head: true })
+        .eq('evento_id', ev.id);
+      if ((count ?? 0) >= ev.limite_vagas) {
+        setEstadoErro('esgotado');
+        setLoading(false);
+        return;
+      }
+      setTotalInscritos(count ?? 0);
+    }
+
+    // Verifica vagas de hospedagem
+    if (ev.limite_hospedagem) {
+      const { count: hCount } = await supabase
+        .from('evento_inscricoes')
+        .select('id', { count: 'exact', head: true })
+        .eq('evento_id', ev.id)
+        .eq('hospedagem', true);
+      setVagasHospedagem(Math.max(0, ev.limite_hospedagem - (hCount ?? 0)));
+    }
+
+    // Busca tipos de inscrição
+    const { data: tiposData } = await supabase
+      .from('evento_tipos_inscricao')
+      .select('id,nome,valor,inclui_alimentacao,inclui_hospedagem,ordem')
+      .eq('evento_id', ev.id)
+      .eq('ativo', true)
+      .order('ordem');
+    setTipos((tiposData as TipoInscricao[]) ?? []);
+
+    setEvento(ev);
+    setSupervisoes((supRes.data as Supervisao[]) || []);
+    setCampos((camRes.data as Campo[]) || []);
+    setLoading(false);
+  }, [slug, supabase]);
+
+  useEffect(() => { fetchEvento(); }, [fetchEvento]);
+
+  // ── Busca CPF ────────────────────────────────────────────
+  async function buscarCPF(cpf: string) {
+    const limpo = cpf.replace(/\D/g, '');
+    if (limpo.length < 11) return;
+    setBuscandoCPF(true);
+    setCpfStatus('idle');
+    const { data } = await supabase
+      .from('members')
+      .select('id, nome, cpf, celular, whatsapp, email, supervisao, campo, supervisao_id, campo_id')
+      .or(`cpf.ilike.%${limpo}%`)
+      .limit(1);
+    setBuscandoCPF(false);
+    if (data && data.length > 0) {
+      const m = data[0] as {
+        id: string; nome: string; cpf: string | null;
+        celular: string | null; whatsapp: string | null; email: string | null;
+        supervisao: string | null; campo: string | null;
+        supervisao_id: string | null; campo_id: string | null;
+      };
+      setCpfStatus('encontrado');
+      const sup = supervisoes.find(s => s.id === m.supervisao_id || s.nome === m.supervisao);
+      const cam = campos.find(c => c.id === m.campo_id || c.nome === m.campo);
+      setForm(f => ({
+        ...f,
+        nome_inscrito: m.nome       || f.nome_inscrito,
+        whatsapp:      m.whatsapp   || m.celular || f.whatsapp,
+        email:         m.email      || f.email,
+        supervisao_id: sup?.id      || f.supervisao_id,
+        campo_id:      cam?.id      || f.campo_id,
+      }));
+    } else {
+      setCpfStatus('nao_encontrado');
+    }
+  }
+
+  function handleText(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
+    const { name, value } = e.target;
+    if (name === 'cpf') {
+      const masked = formatarCPF(value);
+      setForm(f => ({ ...f, cpf: masked }));
+      if (masked.replace(/\D/g, '').length === 11) buscarCPF(masked);
+      return;
+    }
+    if (name === 'supervisao_id') {
+      setForm(f => ({ ...f, supervisao_id: value, campo_id: '' }));
+      return;
+    }
+    setForm(f => ({ ...f, [name]: value }));
+  }
+
+  function handleCheck(e: React.ChangeEvent<HTMLInputElement>) {
+    setForm(f => ({ ...f, [e.target.name]: e.target.checked }));
+  }
+
+  // ── Valida cupom ────────────────────────────────────────
+  async function validarCupom() {
+    if (!cupomCodigo.trim() || !evento) return;
+    const valorBase = tipoSelecionado?.valor ?? evento.valor_inscricao;
+    setCupomStatus('validando');
+    try {
+      const res  = await fetch(`/api/eventos/${evento.id}/cupons/validar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codigo: cupomCodigo, valor_base: valorBase }),
+      });
+      const json = await res.json();
+      if (json.valido) {
+        setCupomStatus('ok');
+        setCupomDesconto(json.desconto);
+        setCupomMensagem(`Desconto de ${fmtMoeda(json.desconto)} aplicado!`);
+      } else {
+        setCupomStatus('erro');
+        setCupomDesconto(0);
+        setCupomMensagem(json.erro || 'Cupom inválido.');
+      }
+    } catch {
+      setCupomStatus('erro');
+      setCupomMensagem('Erro ao validar cupom.');
+    }
+  }
+
+  // ── Adiciona participante no lote ───────────────────────
+  function adicionarParticipante() {
+    setParticipantesExtra(p => [...p, { nome_inscrito: '', cpf: '', email: '', whatsapp: '', sexo: '', supervisao_id: form.supervisao_id, campo_id: form.campo_id }]);
+  }
+
+  function atualizarParticipante(idx: number, field: keyof ParticipanteExtra, value: string) {
+    setParticipantesExtra(p => p.map((x, i) => i === idx ? { ...x, [field]: value } : x));
+  }
+
+  function removerParticipante(idx: number) {
+    setParticipantesExtra(p => p.filter((_, i) => i !== idx));
+  }
+
+  // Valor a pagar calculado
+  const valorBase  = tipoSelecionado?.valor ?? (evento?.valor_inscricao ?? 0);
+  const valorFinal = Math.max(0, valorBase - cupomDesconto);
+  const qtdTotal   = modoLote ? 1 + participantesExtra.length : 1;
+  const totalLote  = valorFinal * qtdTotal;
+
+  // ── Envio do formulário — chama API server-side ─────────
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setErroForm(null);
+    if (!evento) return;
+    if (!form.nome_inscrito.trim()) return setErroForm('Nome completo é obrigatório.');
+    if (!form.cpf.replace(/\D/g, ''))  return setErroForm('CPF é obrigatório.');
+    if (!form.supervisao_id)           return setErroForm('Selecione a supervisão.');
+    if (evento.usar_tipos_inscricao && !tipoSelecionado) return setErroForm('Selecione a modalidade de inscrição.');
+
+    // Valida participantes extras se modo lote
+    if (modoLote) {
+      for (let i = 0; i < participantesExtra.length; i++) {
+        if (!participantesExtra[i].nome_inscrito.trim()) {
+          return setErroForm(`Nome do participante ${i + 2} é obrigatório.`);
+        }
+        if (!participantesExtra[i].supervisao_id) {
+          return setErroForm(`Supervisão do participante ${i + 2} é obrigatória.`);
+        }
+      }
+    }
+
+    setSalvando(true);
+    try {
+      const qr = generateQRCodeToken();
+      const body: Record<string, unknown> = {
+        slug:            evento.slug,
+        nome_inscrito:   form.nome_inscrito.trim(),
+        cpf:             form.cpf,
+        email:           form.email.trim() || null,
+        whatsapp:        form.whatsapp.trim() || null,
+        sexo:            form.sexo || null,
+        data_nascimento: form.data_nascimento || null,
+        supervisao_id:   form.supervisao_id || null,
+        campo_id:        form.campo_id || null,
+        hospedagem:      tipoSelecionado?.inclui_hospedagem ?? form.hospedagem,
+        alimentacao:     tipoSelecionado?.inclui_alimentacao ?? form.alimentacao,
+        brinde:          form.brinde,
+        qr_code:         qr,
+        tipo_inscricao:  tipoSelecionado?.nome ?? null,
+        cupom_codigo:    cupomStatus === 'ok' && cupomCodigo ? cupomCodigo.toUpperCase() : null,
+        // Campos hospedagem AGO
+        hosp_necessidade_especial:  form.hosp_necessidade_especial,
+        hosp_descricao_necessidade: form.hosp_descricao_necessidade.trim() || null,
+        hosp_cama_inferior:         form.hosp_cama_inferior,
+        hosp_observacoes:           form.hosp_observacoes.trim() || null,
+      };
+
+      if (modoLote && participantesExtra.length > 0) {
+        body.participantes = participantesExtra.map(p => ({
+          ...p,
+          cpf:           p.cpf.replace(/\D/g, ''),
+          hospedagem:    tipoSelecionado?.inclui_hospedagem ?? false,
+          alimentacao:   tipoSelecionado?.inclui_alimentacao ?? false,
+          brinde:        false,
+          qr_code:       generateQRCodeToken(),
+        }));
+      }
+
+      const res = await fetch('/api/eventos/inscricao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Erro ao realizar inscrição');
+      setConfirmacao({
+        qr_code:         qr,
+        inscricaoId:     json.inscricaoId,
+        loteId:          json.loteId,
+        qtdLote:         json.inscricoes,
+        statusPagamento: json.statusPagamento,
+        pagamento:       json.pagamento ?? null,
+        asaasError:      json.asaasError,
+      });
+    } catch (err: unknown) {
+      setErroForm('Erro ao realizar inscrição: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  // ── Verifica status do pagamento (polling manual) ────────
+  async function verificarPagamento() {
+    if (!confirmacao?.inscricaoId) return;
+    setVerificando(true);
+    try {
+      const res = await fetch(`/api/eventos/inscricao/${confirmacao.inscricaoId}/pagamento`);
+      const json = await res.json();
+      setStatusChecked(json.status);
+      if (json.status === 'pago') {
+        setConfirmacao(c => c ? { ...c, statusPagamento: 'pago' } : c);
+      }
+      // Atualiza QR code se chegou agora
+      if (json.pixCopiaECola && confirmacao.pagamento && !confirmacao.pagamento.pixCopiaECola) {
+        setConfirmacao(c => c ? {
+          ...c,
+          pagamento: c.pagamento ? { ...c.pagamento, pixCopiaECola: json.pixCopiaECola, pixQrCode: json.pixQrCode } : null,
+        } : c);
+      }
+    } catch {
+      // ignora silenciosamente
+    } finally {
+      setVerificando(false);
+    }
+  }
+
+  async function copiarPix(texto: string) {
+    try { await navigator.clipboard.writeText(texto); } catch { /* fallback: não faz nada */ }
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 2500);
+  }
+
+  // ── Estados de erro ──────────────────────────────────────
+  if (loading) return <PaginaLoading />;
+  if (estadoErro) return <PaginaErro tipo={estadoErro} />;
+  if (!evento)    return <PaginaErro tipo="nao_encontrado" />;
+
+  // ── Confirmação pós-inscrição ────────────────────────────
+  if (confirmacao) {
+    const pago = confirmacao.statusPagamento === 'pago' || statusChecked === 'pago';
+    const isento = confirmacao.statusPagamento === 'isento';
+    const pag = confirmacao.pagamento;
+
+    const vars: Record<string, string> = {
+      NOME:        form.nome_inscrito,
+      EVENTO:      evento.nome,
+      LINK_GRUPO:  evento.link_whatsapp || '(em breve)',
+      QR_CODE:     confirmacao.qr_code,
+    };
+    const mensagem = evento.mensagem_confirmacao
+      ? substituirVariaveis(evento.mensagem_confirmacao, vars)
+      : null;
+
+    return (
+      <PaginaPublica evento={evento}>
+        <div className="max-w-lg mx-auto py-8 px-4">
+          {/* Confirmação pós-inscrição: cabeçalho para lote */}
+          <div className="text-center mb-6">
+            <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 ${pago || isento ? 'bg-emerald-100' : 'bg-blue-100'}`}>
+              <span className="text-4xl">{pago || isento ? '✅' : '📋'}</span>
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-1">
+              {pago ? 'Pagamento confirmado!' : isento ? 'Inscrição gratuita!' : 'Inscrição realizada!'}
+            </h2>
+            <p className="text-gray-500">
+              Obrigado, <span className="font-semibold text-[#123b63]">{form.nome_inscrito}</span>.
+              {confirmacao.loteId
+                ? ` Lote com ${confirmacao.qtdLote ?? 1} participante(s) registrado.`
+                : isento ? ' Sua inscrição gratuita foi registrada.' : pago ? ' Seu pagamento foi confirmado.' : ' Complete o pagamento para garantir sua vaga.'}
+            </p>
+          </div>
+
+          {/* Código de inscrição */}
+          <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-4 mb-5 text-center">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Código de inscrição</p>
+            <p className="text-base font-mono font-bold text-[#123b63] tracking-widest">{confirmacao.qr_code}</p>
+            <p className="text-xs text-gray-400 mt-1">Apresente este código no check-in do evento.</p>
+          </div>
+
+          {/* ── Bloco de pagamento ── */}
+          {!isento && (
+            <div className="mb-5">
+              {/* Pago */}
+              {pago && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 text-center">
+                  <p className="text-emerald-700 font-bold text-lg">✅ Pagamento confirmado</p>
+                  <p className="text-emerald-600 text-sm mt-1">Sua vaga está garantida!</p>
+                </div>
+              )}
+
+              {/* Pendente com dados ASAAS */}
+              {!pago && pag && (
+                <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+                  {/* Header */}
+                  <div className="bg-[#123b63] text-white px-5 py-4">
+                    <p className="font-bold text-base">💳 Realize o pagamento</p>
+                    <p className="text-blue-200 text-sm mt-0.5">
+                      {fmtMoeda(pag.valor)} • vence em {pag.vencimento?.split('-').reverse().join('/')}
+                    </p>
+                  </div>
+
+                  <div className="p-5 space-y-4">
+                    {/* PIX QR Code */}
+                    {pag.pixQrCode && (
+                      <div className="text-center">
+                        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">📱 PIX — Escaneie o QR Code</p>
+                        <div className="inline-block border-4 border-[#123b63]/20 rounded-xl p-2 bg-white shadow-sm">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={`data:image/png;base64,${pag.pixQrCode}`}
+                            alt="QR Code PIX"
+                            width={200}
+                            height={200}
+                            className="mx-auto"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* PIX copia e cola */}
+                    {pag.pixCopiaECola && (
+                      <div>
+                        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">📋 PIX Copia e Cola</p>
+                        <div className="flex gap-2">
+                          <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-mono text-gray-600 truncate">
+                            {pag.pixCopiaECola.slice(0, 60)}…
+                          </div>
+                          <button
+                            onClick={() => copiarPix(pag.pixCopiaECola!)}
+                            className={`flex-shrink-0 px-4 py-2 rounded-xl text-xs font-semibold transition ${copiado ? 'bg-emerald-500 text-white' : 'bg-[#123b63] text-white hover:bg-[#0f2a45]'}`}>
+                            {copiado ? '✅ Copiado' : '📋 Copiar'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Link de pagamento alternativo */}
+                    {pag.invoiceUrl && (
+                      <div className="border-t border-gray-100 pt-4">
+                        <p className="text-xs text-gray-500 mb-2 text-center">Prefere pagar de outra forma?</p>
+                        <a href={pag.invoiceUrl} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center justify-center gap-2 w-full bg-white border-2 border-[#123b63] text-[#123b63] font-semibold text-sm py-2.5 rounded-xl hover:bg-[#123b63] hover:text-white transition">
+                          💳 Abrir link de pagamento
+                        </a>
+                        <p className="text-center text-xs text-gray-400 mt-1">PIX, boleto, cartão de crédito</p>
+                      </div>
+                    )}
+
+                    {/* Verificar pagamento */}
+                    <div className="border-t border-gray-100 pt-4 text-center">
+                      <button
+                        onClick={verificarPagamento}
+                        disabled={verificando}
+                        className="inline-flex items-center gap-2 px-5 py-2 rounded-xl border border-[#123b63] text-[#123b63] text-sm font-semibold hover:bg-[#123b63]/5 transition disabled:opacity-50">
+                        {verificando ? '⏳ Verificando…' : '🔄 Já paguei — verificar'}
+                      </button>
+                      {statusChecked && statusChecked !== 'pago' && (
+                        <p className="text-xs text-amber-600 mt-2">Pagamento ainda não identificado. Aguarde alguns instantes.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Pendente SEM dados ASAAS (fallback) */}
+              {!pago && !pag && (
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-center">
+                  {confirmacao.asaasError ? (
+                    <>
+                      <p className="text-amber-800 font-semibold text-sm">⚠️ Pagamento online temporariamente indisponível</p>
+                      <p className="text-amber-700 text-xs mt-1">{confirmacao.asaasError}</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-amber-800 font-semibold text-sm">⏳ Pagamento pendente</p>
+                      <p className="text-amber-700 text-xs mt-1">A organização do evento informará as instruções de pagamento.</p>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Mensagem de confirmação personalizada */}
+          {mensagem && (
+            <div className="bg-[#123b63]/5 border border-[#123b63]/20 rounded-xl p-5 mb-5">
+              <p className="text-xs font-semibold text-[#123b63] mb-3 uppercase tracking-wide">📢 Informações importantes</p>
+              <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">{mensagem}</pre>
+            </div>
+          )}
+
+          {/* Grupo WhatsApp */}
+          {evento.link_whatsapp && (
+            <a href={evento.link_whatsapp} target="_blank" rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 w-full bg-emerald-500 text-white px-6 py-3 rounded-xl font-semibold text-sm hover:bg-emerald-600 transition mb-4">
+              📲 Entrar no grupo do WhatsApp
+            </a>
+          )}
+        </div>
+      </PaginaPublica>
+    );
+  }
+
+  const vagasRestantes = evento.limite_vagas ? evento.limite_vagas - totalInscritos : null;
+
+  // ── Formulário público ───────────────────────────────────
+  return (
+    <PaginaPublica evento={evento}>
+      <div className="max-w-2xl mx-auto px-4 pb-12">
+
+        {/* Card de informações do evento */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden mb-8">
+          {/* Banner */}
+          <div className="relative bg-gradient-to-br from-[#0D2B4E] to-[#1A5276] h-48 flex items-center justify-center">
+            {evento.banner_url ? (
+              <img src={evento.banner_url} alt={evento.nome}
+                className="absolute inset-0 w-full h-full object-cover" />
+            ) : (
+              <span className="text-7xl select-none">📅</span>
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+            <div className="absolute bottom-0 left-0 p-5 text-white">
+              <span className="text-xs font-bold bg-[#F39C12] text-white px-2.5 py-0.5 rounded-full uppercase tracking-wide">
+                {evento.departamento}
+              </span>
+              <h1 className="text-xl font-bold mt-2 leading-tight drop-shadow">{evento.nome}</h1>
+            </div>
+          </div>
+
+          <div className="p-5">
+            <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-gray-600 mb-4">
+              <span className="flex items-center gap-1.5">📅 {fmtData(evento.data_inicio)} → {fmtData(evento.data_fim)}</span>
+              {(evento.local || evento.cidade) &&
+                <span className="flex items-center gap-1.5">📍 {[evento.local, evento.cidade].filter(Boolean).join(' — ')}</span>}
+            </div>
+
+            {evento.descricao && (
+              <p className="text-sm text-gray-600 leading-relaxed border-t border-gray-100 pt-4 mb-4">{evento.descricao}</p>
+            )}
+
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="bg-[#123b63]/10 text-[#123b63] px-4 py-2 rounded-xl text-sm font-bold">
+                {evento.usar_tipos_inscricao ? '🎟️ Ver modalidades abaixo' : evento.valor_inscricao === 0 ? '🎁 Inscrição gratuita' : `💳 ${fmtMoeda(evento.valor_inscricao)}`}
+              </div>
+              {vagasRestantes !== null && (
+                <div className={`px-3 py-1.5 rounded-xl text-xs font-semibold ${
+                  vagasRestantes <= 10 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
+                }`}>
+                  {vagasRestantes <= 10 ? `⚠️ Últimas ${vagasRestantes} vagas` : `✅ ${vagasRestantes} vagas disponíveis`}
+                </div>
+              )}
+              {evento.publico_alvo && (
+                <div className="bg-gray-100 text-gray-600 px-3 py-1.5 rounded-xl text-xs font-semibold">
+                  👥 {evento.publico_alvo}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Formulário de inscrição */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+          <h2 className="text-xl font-bold text-[#123b63] mb-1 flex items-center gap-2">
+            ✍️ Formulário de Inscrição
+          </h2>
+          <p className="text-sm text-gray-500 mb-6">Preencha os dados abaixo para realizar sua inscrição.</p>
+
+          {erroForm && (
+            <div className="mb-5 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+              {erroForm}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} noValidate>
+
+            {/* CPF — primeiro campo */}
+            <div className="mb-5">
+              <label className={LBL}>CPF *</label>
+              <div className="relative">
+                <input name="cpf" value={form.cpf} onChange={handleText}
+                  placeholder="000.000.000-00" maxLength={14}
+                  className={INP + (cpfStatus === 'encontrado' ? ' border-emerald-400 bg-emerald-50' : '')}
+                  required />
+                {buscandoCPF && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 animate-pulse">
+                    Buscando...
+                  </span>
+                )}
+              </div>
+              {cpfStatus === 'encontrado' && (
+                <p className="mt-1 text-xs text-emerald-600 font-semibold">✅ Ministro localizado — dados preenchidos automaticamente</p>
+              )}
+              {cpfStatus === 'nao_encontrado' && (
+                <p className="mt-1 text-xs text-yellow-600">⚠️ CPF não encontrado na base — preencha os dados manualmente</p>
+              )}
+            </div>
+
+            {/* Nome */}
+            <div className="mb-5">
+              <label className={LBL}>Nome completo *</label>
+              <input name="nome_inscrito" value={form.nome_inscrito} onChange={handleText}
+                placeholder="Seu nome completo"
+                className={INP} required />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+              {/* E-mail */}
+              <div>
+                <label className={LBL}>E-mail</label>
+                <input name="email" type="email" value={form.email} onChange={handleText}
+                  placeholder="email@exemplo.com" className={INP} />
+              </div>
+              {/* WhatsApp */}
+              <div>
+                <label className={LBL}>WhatsApp</label>
+                <input name="whatsapp" value={form.whatsapp} onChange={handleText}
+                  placeholder="(00) 00000-0000" className={INP} />
+              </div>
+              {/* Sexo */}
+              <div>
+                <label className={LBL}>Sexo</label>
+                <select name="sexo" value={form.sexo} onChange={handleText} className={INP}>
+                  <option value="">Selecione...</option>
+                  <option value="M">Masculino</option>
+                  <option value="F">Feminino</option>
+                </select>
+              </div>
+              {/* Data nascimento */}
+              <div>
+                <label className={LBL}>Data de Nascimento</label>
+                <input name="data_nascimento" type="date" value={form.data_nascimento}
+                  onChange={handleText} className={INP} />
+              </div>
+            </div>
+
+            {/* Supervisão */}
+            <div className="mb-4">
+              <label className={LBL}>Supervisão *</label>
+              <select name="supervisao_id" value={form.supervisao_id} onChange={handleText}
+                className={INP} required>
+                <option value="">Selecione a supervisão...</option>
+                {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+              </select>
+            </div>
+
+            {/* Campo */}
+            <div className="mb-6">
+              <label className={LBL}>Campo</label>
+              <select name="campo_id" value={form.campo_id} onChange={handleText} className={INP}>
+                <option value="">Selecione o campo...</option>
+                {camposFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              </select>
+            </div>
+
+            {/* Tipos de inscrição */}
+            {evento.usar_tipos_inscricao && tipos.length > 0 && (
+              <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                <p className="text-sm font-semibold text-[#123b63] mb-3">📋 Modalidade de Inscrição</p>
+                <div className="space-y-2">
+                  {tipos.map(t => (
+                    <label key={t.id} className={`flex items-center justify-between gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${tipoSelecionado?.id === t.id ? 'border-[#123b63] bg-white' : 'border-gray-200 bg-white hover:border-[#123b63]/50'}`}>
+                      <div className="flex items-center gap-3">
+                        <input type="radio" name="tipo_inscricao" value={t.id}
+                          checked={tipoSelecionado?.id === t.id}
+                          onChange={() => { setTipoSelecionado(t); setCupomStatus('idle'); setCupomDesconto(0); }}
+                          className="accent-[#123b63]" />
+                        <div>
+                          <p className="text-sm font-semibold text-gray-800">{t.nome}</p>
+                          <p className="text-xs text-gray-500">
+                            {[t.inclui_alimentacao && '🍽️ Alimentação', t.inclui_hospedagem && '🛏️ Hospedagem'].filter(Boolean).join(' + ') || 'Apenas plenárias'}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-sm font-bold text-[#123b63] whitespace-nowrap">
+                        {t.valor === 0 ? 'Gratuito' : fmtMoeda(t.valor)}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Serviços opcionais (apenas se não houver tipos configurados) */}
+            {!evento.usar_tipos_inscricao && (evento.permite_hospedagem || evento.permite_alimentacao || evento.permite_brinde) && (
+              <div className="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                <p className="text-sm font-semibold text-gray-700 mb-3">Serviços adicionais</p>
+                <div className="flex flex-wrap gap-4">
+                  {evento.permite_hospedagem && (
+                    <div>
+                      <ChkPublico name="hospedagem"  label="🛏️ Hospedagem"  checked={form.hospedagem}  onChange={handleCheck} />
+                      {vagasHospedagem !== null && (
+                        <p className="text-xs text-gray-500 mt-1 ml-6">{vagasHospedagem} vagas restantes</p>
+                      )}
+                    </div>
+                  )}
+                  {evento.permite_alimentacao && (
+                    <ChkPublico name="alimentacao" label="🍽️ Alimentação"  checked={form.alimentacao} onChange={handleCheck} />
+                  )}
+                  {evento.permite_brinde && (
+                    <ChkPublico name="brinde"      label="🎁 Brinde"       checked={form.brinde}      onChange={handleCheck} />
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Campos de hospedagem AGO */}
+            {evento.departamento === 'AGO' && evento.permite_hospedagem &&
+              (form.hospedagem || tipoSelecionado?.inclui_hospedagem) && (
+              <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                <p className="text-sm font-bold text-amber-800 mb-3">🏨 Informações de Hospedagem (AGO)</p>
+
+                <div className="flex items-start gap-3 mb-3">
+                  <input type="checkbox" id="hosp_necessidade_especial"
+                    name="hosp_necessidade_especial" checked={form.hosp_necessidade_especial}
+                    onChange={handleCheck}
+                    className="mt-0.5 accent-amber-600" />
+                  <label htmlFor="hosp_necessidade_especial" className="text-sm text-gray-700 cursor-pointer">
+                    Possuo <strong>necessidade especial</strong> de acessibilidade
+                    <span className="block text-xs text-gray-500 mt-0.5">
+                      (mobilidade reduzida, deficiência visual, problema de coluna, cirurgia recente, etc.)
+                    </span>
+                  </label>
+                </div>
+
+                {form.hosp_necessidade_especial && (
+                  <div className="mb-3">
+                    <label className={LBL}>Descreva a necessidade *</label>
+                    <input name="hosp_descricao_necessidade"
+                      value={form.hosp_descricao_necessidade}
+                      onChange={handleText}
+                      placeholder="Ex: mobilidade reduzida, usa cadeira de rodas..."
+                      className={INP}
+                      required />
+                  </div>
+                )}
+
+                <div className="flex items-center gap-3 mb-3">
+                  <input type="checkbox" id="hosp_cama_inferior"
+                    name="hosp_cama_inferior" checked={form.hosp_cama_inferior}
+                    onChange={handleCheck}
+                    className="accent-amber-600" />
+                  <label htmlFor="hosp_cama_inferior" className="text-sm text-gray-700 cursor-pointer">
+                    Preciso de <strong>cama inferior</strong> (beliche de baixo)
+                  </label>
+                </div>
+
+                <div>
+                  <label className={LBL}>Observações de hospedagem (opcional)</label>
+                  <textarea name="hosp_observacoes"
+                    value={form.hosp_observacoes}
+                    onChange={handleText}
+                    rows={2}
+                    placeholder="Alguma informação relevante para a equipe de hospedagem..."
+                    className={INP + ' resize-none'} />
+                </div>
+              </div>
+            )}
+
+            {/* Cupom de desconto */}
+            {(evento.usar_tipos_inscricao || evento.valor_inscricao > 0) && (
+              <div className="mb-6">
+                <p className="text-sm font-semibold text-gray-700 mb-2">🏷️ Cupom de desconto</p>
+                <div className="flex gap-2">
+                  <input value={cupomCodigo} onChange={e => { setCupomCodigo(e.target.value); setCupomStatus('idle'); setCupomDesconto(0); }}
+                    placeholder="Código do cupom"
+                    className={INP + ' flex-1 uppercase'}
+                    disabled={cupomStatus === 'ok'} />
+                  {cupomStatus !== 'ok' ? (
+                    <button type="button" onClick={validarCupom} disabled={!cupomCodigo.trim() || cupomStatus === 'validando'}
+                      className="px-4 py-2 bg-[#123b63] text-white text-sm font-semibold rounded-xl hover:bg-[#0f2a45] transition disabled:opacity-50 whitespace-nowrap">
+                      {cupomStatus === 'validando' ? 'Validando...' : 'Aplicar'}
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => { setCupomStatus('idle'); setCupomCodigo(''); setCupomDesconto(0); }}
+                      className="px-4 py-2 bg-gray-200 text-gray-600 text-sm font-semibold rounded-xl hover:bg-gray-300 transition whitespace-nowrap">
+                      Remover
+                    </button>
+                  )}
+                </div>
+                {cupomStatus === 'ok' && (
+                  <p className="text-emerald-600 text-xs font-semibold mt-1.5">✅ {cupomMensagem}</p>
+                )}
+                {cupomStatus === 'erro' && (
+                  <p className="text-red-600 text-xs mt-1.5">❌ {cupomMensagem}</p>
+                )}
+              </div>
+            )}
+
+            {/* Resumo do valor */}
+            {(evento.usar_tipos_inscricao || evento.valor_inscricao > 0 || modoLote) && (
+              <div className="mb-5 p-4 bg-[#123b63]/5 rounded-xl border border-[#123b63]/20 text-sm">
+                {cupomDesconto > 0 && (
+                  <div className="flex justify-between text-gray-600 mb-1">
+                    <span>Valor base</span><span>{fmtMoeda(valorBase)}</span>
+                  </div>
+                )}
+                {cupomDesconto > 0 && (
+                  <div className="flex justify-between text-emerald-600 mb-1">
+                    <span>Desconto</span><span>- {fmtMoeda(cupomDesconto)}</span>
+                  </div>
+                )}
+                {modoLote && qtdTotal > 1 && (
+                  <div className="flex justify-between text-gray-600 mb-1">
+                    <span>Participantes</span><span>× {qtdTotal}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-[#123b63] border-t border-[#123b63]/20 pt-2 mt-1">
+                  <span>Total a pagar</span>
+                  <span>{modoLote && qtdTotal > 1 ? fmtMoeda(totalLote) : fmtMoeda(valorFinal)}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Inscrição em lote */}
+            <div className="mb-5">
+              <button type="button" onClick={() => { setModoLote(m => !m); if (modoLote) setParticipantesExtra([]); }}
+                className="text-sm text-[#123b63] font-semibold underline underline-offset-2 hover:text-[#0f2a45]">
+                {modoLote ? '➖ Cancelar inscrição em grupo' : '➕ Adicionar mais participantes (inscrição em grupo)'}
+              </button>
+            </div>
+
+            {modoLote && (
+              <div className="mb-6 space-y-4">
+                {participantesExtra.map((p, idx) => (
+                  <div key={idx} className="p-4 bg-gray-50 border border-gray-200 rounded-xl">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-sm font-semibold text-gray-700">Participante {idx + 2}</p>
+                      <button type="button" onClick={() => removerParticipante(idx)} className="text-red-500 text-xs hover:underline">Remover</button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="sm:col-span-2">
+                        <label className={LBL}>Nome completo *</label>
+                        <input value={p.nome_inscrito} onChange={e => atualizarParticipante(idx, 'nome_inscrito', e.target.value)} className={INP} placeholder="Nome completo" required />
+                      </div>
+                      <div>
+                        <label className={LBL}>CPF</label>
+                        <input value={p.cpf} onChange={e => atualizarParticipante(idx, 'cpf', formatarCPF(e.target.value))} className={INP} placeholder="000.000.000-00" maxLength={14} />
+                      </div>
+                      <div>
+                        <label className={LBL}>WhatsApp</label>
+                        <input value={p.whatsapp} onChange={e => atualizarParticipante(idx, 'whatsapp', e.target.value)} className={INP} placeholder="(00) 00000-0000" />
+                      </div>
+                      <div>
+                        <label className={LBL}>Supervisão *</label>
+                        <select value={p.supervisao_id} onChange={e => atualizarParticipante(idx, 'supervisao_id', e.target.value)} className={INP} required>
+                          <option value="">Selecione...</option>
+                          {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className={LBL}>Campo</label>
+                        <select value={p.campo_id} onChange={e => atualizarParticipante(idx, 'campo_id', e.target.value)} className={INP}>
+                          <option value="">Selecione...</option>
+                          {campos.filter(c => !p.supervisao_id || c.supervisao_id === p.supervisao_id).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <button type="button" onClick={adicionarParticipante}
+                  className="w-full py-2.5 border-2 border-dashed border-[#123b63]/40 text-[#123b63] text-sm font-semibold rounded-xl hover:border-[#123b63] hover:bg-[#123b63]/5 transition">
+                  ➕ Adicionar participante
+                </button>
+              </div>
+            )}
+
+            <button type="submit" disabled={salvando}
+              className="w-full bg-[#123b63] text-white py-3.5 rounded-xl font-bold text-base hover:bg-[#0f2a45] transition disabled:opacity-50 flex items-center justify-center gap-2">
+              {salvando
+                ? <><Spinner /> Enviando inscrição...</>
+                : modoLote && qtdTotal > 1
+                  ? `✅ Confirmar ${qtdTotal} inscrições — ${fmtMoeda(totalLote)}`
+                  : '✅ Confirmar Inscrição'}
+            </button>
+
+            <p className="text-xs text-gray-400 text-center mt-4">
+              Ao se inscrever, você concorda com as condições do evento.
+            </p>
+          </form>
+        </div>
+      </div>
+    </PaginaPublica>
+  );
+}
+
+// ─── Layout público ──────────────────────────────────────────
+function PaginaPublica({ evento, children }: { evento: Evento; children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-gray-100">
+      {/* Header institucional */}
+      <header className="bg-[#0D2B4E] text-white shadow-md">
+        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-3">
+          <div className="w-9 h-9 bg-[#F39C12] rounded-lg flex items-center justify-center flex-shrink-0">
+            <span className="text-white font-black text-sm">GS</span>
+          </div>
+          <div>
+            <p className="font-bold text-sm leading-tight">GestãoServus</p>
+            <p className="text-xs text-blue-300 leading-tight">Sistema de Gestão Ministerial</p>
+          </div>
+          <div className="ml-auto hidden sm:block">
+            <span className="text-xs text-blue-300 font-medium">📅 {evento.nome}</span>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-4xl mx-auto px-2 pt-6">
+        {children}
+      </main>
+
+      <footer className="text-center py-8 mt-8 text-xs text-gray-400 border-t border-gray-200">
+        GestãoServus • Sistema de Gestão Ministerial
+      </footer>
+
+      {/* Assistente flutuante do evento */}
+      <AssistenteWidget eventoId={evento.id} nomeEvento={evento.nome} />
+    </div>
+  );
+}
+
+// ─── Páginas de estado ───────────────────────────────────────
+function PaginaLoading() {
+  return (
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+      <div className="text-center">
+        <Spinner large />
+        <p className="mt-4 text-sm text-gray-500">Carregando evento...</p>
+      </div>
+    </div>
+  );
+}
+
+const MSGS_ERRO = {
+  nao_encontrado: { icon: '🔍', titulo: 'Evento não encontrado', desc: 'O link acessado não corresponde a nenhum evento cadastrado.' },
+  fechado:        { icon: '🔒', titulo: 'Inscrições encerradas', desc: 'As inscrições para este evento estão fechadas no momento.' },
+  encerrado:      { icon: '📋', titulo: 'Evento encerrado',      desc: 'Este evento já foi realizado ou foi cancelado.' },
+  esgotado:       { icon: '⚠️', titulo: 'Vagas esgotadas',       desc: 'Todas as vagas disponíveis para este evento já foram preenchidas.' },
+};
+
+function PaginaErro({ tipo }: { tipo: keyof typeof MSGS_ERRO }) {
+  const cfg = MSGS_ERRO[tipo];
+  return (
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center px-4">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-10 max-w-md text-center">
+        <span className="text-6xl mb-4 block">{cfg.icon}</span>
+        <h2 className="text-xl font-bold text-gray-900 mb-2">{cfg.titulo}</h2>
+        <p className="text-sm text-gray-500">{cfg.desc}</p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Micro-componentes ────────────────────────────────────────
+const LBL = 'block text-sm font-semibold text-gray-700 mb-1.5';
+const INP = 'w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white transition';
+
+function ChkPublico({ name, label, checked, onChange }: {
+  name: string; label: string; checked: boolean;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <label className="flex items-center gap-2.5 cursor-pointer group">
+      <input type="checkbox" name={name} checked={checked} onChange={onChange}
+        className="w-4 h-4 accent-[#123b63] cursor-pointer" />
+      <span className="text-sm text-gray-700 group-hover:text-[#123b63] transition">{label}</span>
+    </label>
+  );
+}
+
+function Spinner({ large }: { large?: boolean }) {
+  return (
+    <div className={`inline-block border-2 border-gray-300 border-t-[#123b63] rounded-full animate-spin ${large ? 'w-10 h-10' : 'w-4 h-4'}`} />
+  );
+}

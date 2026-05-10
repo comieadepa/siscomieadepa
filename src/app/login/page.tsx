@@ -50,7 +50,9 @@ export default function LoginPage() {
       });
 
       if (!authError && authData?.user) {
-        router.push('/dashboard');
+        // Usuários de nível 'inscricao' vão direto para /eventos
+        const nivel = authData.user.user_metadata?.nivel as string | undefined;
+        router.push(nivel === 'inscricao' ? '/eventos' : '/dashboard');
         return;
       }
 

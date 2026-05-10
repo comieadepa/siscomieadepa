@@ -62,7 +62,16 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
     },
     { id: 'cgadb', label: 'Débitos CGADB', icon: '🔴', path: '/secretaria/cgadb' },
     { id: 'financeiro', label: 'Financeiro', icon: '💳', path: '/financeiro' },
-    { id: 'eventos', label: 'Eventos', icon: '📅', path: '/eventos' },
+    {
+      id: 'eventos',
+      label: 'Eventos',
+      icon: '📅',
+      path: '/eventos',
+      submenu: [
+        { id: 'eventos-lista',     label: 'Todos os Eventos',  icon: '📋', path: '/eventos' },
+        { id: 'eventos-dashboard', label: 'Dashboard Geral',   icon: '📊', path: '/eventos/dashboard' },
+      ],
+    },
     { id: 'comissao', label: 'Comissão', icon: '👥', path: '/comissao' },
     { id: 'patrimonio', label: 'Patrimônio', icon: '🏢', path: '/patrimonio' },
     { id: 'missoes', label: 'Missões', icon: '✈️', path: '/missoes' },

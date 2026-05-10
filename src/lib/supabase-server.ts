@@ -8,7 +8,9 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
+import { createServerClient as createSSRServerClient } from '@supabase/ssr'
 import { NextRequest } from 'next/server'
+import { cookies } from 'next/headers'
 
 export function createServerClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -48,4 +50,22 @@ export function createServerClientFromRequest(request: NextRequest) {
       },
     }
   )
+}
+
+/**
+ * createServerClientFromCookies
+ * Lê a sessão do usuário a partir dos cookies do browser (padrão @supabase/ssr).
+ * Use em API Routes do App Router que precisam validar o usuário autenticado.
+ * O browser envia os cookies automaticamente em requisições fetch() same-origin.
+ */
+export async function createServerClientFromCookies() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+  const anonKey    = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
+  const cookieStore = await cookies();
+  return createSSRServerClient(supabaseUrl, anonKey, {
+    cookies: {
+      getAll: () => cookieStore.getAll(),
+      setAll: () => { /* read-only em API routes */ },
+    },
+  });
 }

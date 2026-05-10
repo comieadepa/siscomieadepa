@@ -1,0 +1,180 @@
+/**
+ * hospedagem-helpers.ts
+ * Helpers para prioridade e autoalocação de hospedagem AGO.
+ */
+
+// ─── Tipos ────────────────────────────────────────────────────
+export interface InscricaoParaHospedagem {
+  id: string;
+  nome_inscrito: string;
+  sexo: string | null;
+  data_nascimento: string | null;
+  tipo_inscricao: string | null;
+  hosp_necessidade_especial: boolean;
+  hosp_descricao_necessidade: string | null;
+  hosp_cama_inferior: boolean;
+  hosp_observacoes: string | null;
+}
+
+export interface Alojamento {
+  id: string;
+  evento_id: string;
+  nome: string;
+  publico: string;   // feminino | presidentes | jubilados | masculino_geral | misto
+  sexo: string | null; // M | F | null (misto)
+  total_vagas: number;
+  camas_inferiores: number;
+  camas_superiores: number;
+  ativo: boolean;
+  // Vagas calculadas (da view v_vagas_alojamento)
+  vagas_livres?: number;
+  inferiores_livres?: number;
+  superiores_livres?: number;
+}
+
+export interface SugestaoHospedagem {
+  alojamento_id: string | null;
+  tipo_cama: 'inferior' | 'superior' | null;
+  status: 'confirmada' | 'lista_espera';
+  prioridade: number;
+}
+
+// ─── Prioridade ───────────────────────────────────────────────
+
+/**
+ * Calcula a prioridade numérica de uma inscrição para hospedagem AGO.
+ * Pontuação maior = atendido primeiro.
+ */
+export function calcularPrioridadeHospedagem(inscricao: InscricaoParaHospedagem): number {
+  let pontos = 0;
+
+  // Necessidade especial → máxima prioridade
+  if (inscricao.hosp_necessidade_especial) pontos += 100;
+
+  // Cama inferior solicitada (ex: coluna, cirurgia)
+  if (inscricao.hosp_cama_inferior) pontos += 80;
+
+  // Idade > 70 ou > 60
+  const idade = calcularIdade(inscricao.data_nascimento);
+  if (idade !== null) {
+    if (idade > 70) pontos += 70;
+    else if (idade > 60) pontos += 50;
+  }
+
+  // Jubilado detectado pelo tipo de inscrição
+  const tipoLower = (inscricao.tipo_inscricao ?? '').toLowerCase();
+  if (tipoLower.includes('jubilado')) pontos += 40;
+
+  // Pastor presidente
+  if (tipoLower.includes('presidente')) pontos += 30;
+
+  return pontos;
+}
+
+function calcularIdade(dataNascimento: string | null): number | null {
+  if (!dataNascimento) return null;
+  const nasc = new Date(dataNascimento);
+  if (isNaN(nasc.getTime())) return null;
+  const hoje = new Date();
+  let anos = hoje.getFullYear() - nasc.getFullYear();
+  const meses = hoje.getMonth() - nasc.getMonth();
+  if (meses < 0 || (meses === 0 && hoje.getDate() < nasc.getDate())) anos--;
+  return anos;
+}
+
+// ─── Perfil AGO ───────────────────────────────────────────────
+
+type PerfilAGO = 'feminino' | 'presidentes' | 'jubilados' | 'masculino_geral' | 'misto';
+
+export function detectarPerfilAGO(inscricao: InscricaoParaHospedagem): PerfilAGO {
+  const tipoLower = (inscricao.tipo_inscricao ?? '').toLowerCase();
+  const sexo = inscricao.sexo?.toUpperCase();
+
+  if (tipoLower.includes('presidente')) return 'presidentes';
+  if (tipoLower.includes('jubilado'))   return 'jubilados';
+  if (sexo === 'F')                     return 'feminino';
+  return 'masculino_geral';
+}
+
+// ─── Sugestão de alojamento ───────────────────────────────────
+
+/**
+ * Sugere o melhor alojamento para uma inscrição.
+ * Retorna null no alojamento_id se não houver vaga disponível.
+ */
+export function sugerirAlojamento(
+  inscricao: InscricaoParaHospedagem,
+  alojamentos: Alojamento[],
+  prioridade: number,
+): SugestaoHospedagem {
+  const perfil = detectarPerfilAGO(inscricao);
+  const precisaCamaInferior = inscricao.hosp_cama_inferior || inscricao.hosp_necessidade_especial;
+
+  // Filtra alojamentos ativos com vagas livres
+  const candidatos = alojamentos
+    .filter(a => a.ativo && (a.vagas_livres ?? 0) > 0)
+    .filter(a => {
+      // Compatibilidade de publico
+      if (a.publico === 'misto') return true;
+      if (a.publico === perfil)  return true;
+
+      // Fallback: alojamentos por sexo
+      const sexo = inscricao.sexo?.toUpperCase();
+      if (a.publico === 'feminino' && sexo === 'F')          return true;
+      if (a.publico === 'masculino_geral' && sexo === 'M')   return true;
+
+      return false;
+    });
+
+  if (candidatos.length === 0) {
+    return { alojamento_id: null, tipo_cama: null, status: 'lista_espera', prioridade };
+  }
+
+  // Prefere alojamento do perfil exato, depois misto
+  const ordenados = [...candidatos].sort((a, b) => {
+    const aExato = a.publico === perfil ? 0 : 1;
+    const bExato = b.publico === perfil ? 0 : 1;
+    return aExato - bExato;
+  });
+
+  for (const aloj of ordenados) {
+    if (precisaCamaInferior) {
+      const infLivres = aloj.inferiores_livres ?? (aloj.camas_inferiores - 0);
+      if (infLivres > 0) {
+        return {
+          alojamento_id: aloj.id,
+          tipo_cama: 'inferior',
+          status: 'confirmada',
+          prioridade,
+        };
+      }
+      // Sem inferior disponível: pode usar superior (lista espera para inferior?)
+      // Por spec: se não cabe preferência, coloca em lista_espera
+      continue;
+    }
+
+    // Sem preferência especial: prefere superior (deixar inferiores para prioritários)
+    const supLivres = aloj.superiores_livres ?? (aloj.camas_superiores - 0);
+    if (supLivres > 0) {
+      return {
+        alojamento_id: aloj.id,
+        tipo_cama: 'superior',
+        status: 'confirmada',
+        prioridade,
+      };
+    }
+
+    // Se só tem inferior sobrando
+    const infLivres = aloj.inferiores_livres ?? 0;
+    if (infLivres > 0) {
+      return {
+        alojamento_id: aloj.id,
+        tipo_cama: 'inferior',
+        status: 'confirmada',
+        prioridade,
+      };
+    }
+  }
+
+  return { alojamento_id: null, tipo_cama: null, status: 'lista_espera', prioridade };
+}

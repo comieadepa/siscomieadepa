@@ -13,8 +13,8 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const params = new URLSearchParams({ tipo: 'cpf', argumento: cpf });
-    const res = await fetch(`${ACP_URL}?${params.toString()}`, {
+    const urlParams = new URLSearchParams({ tipo: 'cpf', argumento: cpf });
+    const res = await fetch(`${ACP_URL}?${urlParams.toString()}`, {
       method: 'GET',
       headers: {
         'ClientId': ACP_CLIENT_ID,

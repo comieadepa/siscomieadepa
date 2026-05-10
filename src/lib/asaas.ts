@@ -1,4 +1,7 @@
-const ASAAS_API_URL = 'https://api.asaas.com/v3';
+const getAsaasBaseUrl = () =>
+  process.env.ASAAS_ENV === 'sandbox'
+    ? 'https://sandbox.asaas.com/api/v3'
+    : 'https://api.asaas.com/v3';
 
 const getAsaasApiKey = () => {
   // Lida a cada chamada para pegar o valor atualizado do processo
@@ -12,7 +15,7 @@ const asaasFetch = async (path: string, init: RequestInit) => {
     throw new Error('ASAAS não configurado');
   }
 
-  const response = await fetch(`${ASAAS_API_URL}${path}`, {
+  const response = await fetch(`${getAsaasBaseUrl()}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -216,3 +219,104 @@ export function buildBillingInstallments(
 
   return installments;
 }
+
+// ─────────────────────────────────────────────────────────────
+// FUNÇÕES ESPECÍFICAS PARA EVENTOS
+// ─────────────────────────────────────────────────────────────
+
+export interface AsaasEventoPaymentResult {
+  id: string;
+  status: string;
+  invoiceUrl: string | null;
+  bankSlipUrl: string | null;
+  pixQrCode: string | null;
+  pixCopiaECola: string | null;
+}
+
+/**
+ * Cria ou reutiliza um cliente ASAAS a partir dos dados do inscrito.
+ * Não persiste na DB — só retorna o ID do cliente criado/existente.
+ */
+export const createOrFindAsaasCustomer = async (payload: {
+  nome: string;
+  email: string | null;
+  cpf: string | null;
+  whatsapp: string | null;
+}): Promise<string> => {
+  const cleanCpf = payload.cpf ? payload.cpf.replace(/\D/g, '') : null;
+
+  const customer = await asaasFetch('/customers', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: payload.nome,
+      email: payload.email || `sem-email-${Date.now()}@gestoservus.local`,
+      cpfCnpj: cleanCpf || undefined,
+      mobilePhone: payload.whatsapp ? payload.whatsapp.replace(/\D/g, '') : undefined,
+    }),
+  });
+
+  if (!customer?.id) throw new Error('ASAAS não retornou ID do cliente');
+  return customer.id as string;
+};
+
+/**
+ * Cria cobrança UNDEFINED (PIX + boleto + cartão) para inscrição de evento.
+ * billingType: 'UNDEFINED' = ASAAS gera link de pagamento com todas as formas.
+ */
+export const createEventoPayment = async (payload: {
+  customerId: string;
+  value: number;
+  dueDate: string;
+  description: string;
+  externalReference: string;
+}): Promise<AsaasEventoPaymentResult> => {
+  const payment = await asaasFetch('/payments', {
+    method: 'POST',
+    body: JSON.stringify({
+      customer: payload.customerId,
+      billingType: 'UNDEFINED',
+      value: payload.value,
+      dueDate: payload.dueDate,
+      description: payload.description,
+      externalReference: payload.externalReference,
+    }),
+  });
+
+  // Busca QR Code PIX separadamente
+  let pixQrCode: string | null = null;
+  let pixCopiaECola: string | null = null;
+  try {
+    const pix = await asaasFetch(`/payments/${payment.id}/pixQrCode`, { method: 'GET' });
+    pixQrCode    = pix?.encodedImage ?? null;
+    pixCopiaECola = pix?.payload ?? null;
+  } catch {
+    // PIX pode não estar disponível imediatamente — ignora silenciosamente
+  }
+
+  return {
+    id:            payment.id,
+    status:        payment.status,
+    invoiceUrl:    payment.invoiceUrl    ?? null,
+    bankSlipUrl:   payment.bankSlipUrl   ?? null,
+    pixQrCode,
+    pixCopiaECola,
+  };
+};
+
+/** Consulta status + dados de pagamento de um charge ASAAS */
+export const getAsaasPayment = async (paymentId: string) => {
+  return asaasFetch(`/payments/${paymentId}`, { method: 'GET' });
+};
+
+/** Consulta QR Code PIX de um pagamento existente */
+export const getAsaasPixQrCode = async (paymentId: string): Promise<{
+  encodedImage: string | null;
+  payload: string | null;
+}> => {
+  try {
+    const pix = await asaasFetch(`/payments/${paymentId}/pixQrCode`, { method: 'GET' });
+    return { encodedImage: pix?.encodedImage ?? null, payload: pix?.payload ?? null };
+  } catch {
+    return { encodedImage: null, payload: null };
+  }
+};
