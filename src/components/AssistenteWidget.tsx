@@ -67,9 +67,11 @@ export default function AssistenteWidget({ eventoId, nomeEvento }: AssistenteWid
     setInput('');
     setEnviando(true);
 
-    // Verifica se o usuário está informando CPF
-    const cpfMatch = pergunta.match(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/);
-    const cpfEnvio = cpfMatch ? cpfMatch[0] : (cpf || undefined);
+    // Detecta CPF: 11 dígitos puros, ###.###.###-## ou variantes com espaços
+    const CPF_RE = /(?<!\d)(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\s]?\d{2})(?!\d)/;
+    const cpfMatch = pergunta.match(CPF_RE);
+    const cpfDigits = cpfMatch ? cpfMatch[1].replace(/\D/g, '') : null;
+    const cpfEnvio = cpfDigits ?? (cpf || undefined);
 
     try {
       const res = await fetch(`/api/eventos/${eventoId}/assistente`, {
@@ -79,8 +81,8 @@ export default function AssistenteWidget({ eventoId, nomeEvento }: AssistenteWid
       });
       const json = await res.json();
 
-      // Armazena CPF se foi enviado e reconhecido
-      if (cpfMatch) setCpf(cpfMatch[0]);
+      // Armazena CPF (apenas dígitos) se foi reconhecido
+      if (cpfDigits) setCpf(cpfDigits);
 
       setMensagens(prev => [
         ...prev,

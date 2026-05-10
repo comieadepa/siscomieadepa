@@ -14,6 +14,40 @@ const fmtHora = (h: string | null) => {
   return h.slice(0, 5); // HH:MM
 };
 
+// ── Formata CPF (11 dígitos → ###.###.###-##) ─────────────────
+function formatarCpf(digits: string): string {
+  return digits.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+}
+
+// ── Verifica se toda a string é um CPF (puro ou mascarado) ────
+function isCpfOnly(s: string): boolean {
+  const t = s.trim();
+  return /^\d{11}$/.test(t) || /^\d{3}[.\s]\d{3}[.\s]\d{3}[-\s]\d{2}$/.test(t);
+}
+
+// ── Resposta estruturada para consulta de CPF ─────────────────
+function respostaCpfConsulta(
+  nomeEvento: string,
+  cpfDigits: string,
+  inscricao: Record<string, unknown> | null
+): string {
+  const cpfFormatado = formatarCpf(cpfDigits);
+  if (!inscricao) {
+    return `Não encontrei inscrição vinculada ao CPF *${cpfFormatado}* neste evento.\n\nVerifique se o CPF está correto ou entre em contato com a organização do evento.`;
+  }
+  const nome   = inscricao.nome_inscrito as string;
+  const status = inscricao.status_pagamento as string;
+  const statusLabel = status === 'pago'     ? '✅ Pago'
+                    : status === 'isento'   ? '🎁 Isento'
+                    : status === 'pendente' ? '⏳ Pendente'
+                    : status;
+  let msg = `✅ Encontrei sua inscrição em *${nomeEvento}*!\n\n👤 Nome: ${nome}\n💳 Pagamento: ${statusLabel}`;
+  if (inscricao.hospedagem)  msg += '\n🛏️ Hospedagem: incluída';
+  if (inscricao.brinde)      msg += '\n🎁 Brinde: incluído';
+  if (inscricao.alimentacao) msg += '\n🍽️ Alimentação: incluída';
+  return msg;
+}
+
 // ── Modo fallback (sem OpenAI) ─────────────────────────────────
 function respostaFallback(
   pergunta: string,
@@ -22,6 +56,16 @@ function respostaFallback(
   inscricao: Record<string, unknown> | null
 ): string {
   const p = pergunta.toLowerCase();
+
+  // ── CPF puro: detecta quando a mensagem inteira é um CPF ─────
+  const pTrim = p.trim();
+  if (/^\d{11}$/.test(pTrim) || /^\d{3}[.\s]\d{3}[.\s]\d{3}[-\s]\d{2}$/.test(pTrim)) {
+    return respostaCpfConsulta(
+      evento.nome as string,
+      pTrim.replace(/\D/g, ''),
+      inscricao
+    );
+  }
 
   // ── Status de inscrição ──────────────────────────────────────
   if (p.includes('inscrição') || p.includes('inscri') || p.includes('status') || p.includes('inscrito')) {
@@ -148,7 +192,13 @@ export async function POST(
     const body = await req.json();
     const pergunta: string = String(body.pergunta || '').trim();
     const cpfRaw: string   = String(body.cpf || '').trim();
-    const cpf = cpfRaw.replace(/\D/g, '');
+    let cpf = cpfRaw.replace(/\D/g, '');
+
+    // Se a pergunta em si é um CPF, extrai e usa como CPF de consulta
+    const perguntaIsCpf = isCpfOnly(pergunta);
+    if (perguntaIsCpf && cpf.length !== 11) {
+      cpf = pergunta.replace(/\D/g, '');
+    }
 
     if (!pergunta) {
       return NextResponse.json({ error: 'Pergunta é obrigatória.' }, { status: 400 });
@@ -200,6 +250,17 @@ export async function POST(
     const openaiKey = process.env.OPENAI_API_KEY;
     const openaiModel = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
 
+    // Quando a pergunta é apenas um CPF, retorna direto sem IA nem fallback
+    if (perguntaIsCpf && !openaiKey) {
+      const respostaDireta = respostaCpfConsulta(evento.nome as string, cpf, inscricao);
+      supabase
+        .from('evento_assistente_logs')
+        .insert([{ evento_id: eventoId, pergunta, resposta: respostaDireta, cpf: cpf.length === 11 ? cpf : null, modo: 'fallback' }])
+        .then(() => {/* fire and forget */})
+        .then(undefined, () => {/* ignora erro */});
+      return NextResponse.json({ resposta: respostaDireta, modo: 'fallback' });
+    }
+
     if (openaiKey) {
       try {
         // Monta contexto seguro
@@ -241,6 +302,11 @@ REGRAS OBRIGATÓRIAS:
 CONTEXTO DO EVENTO:
 ${contexto}`;
 
+        // Quando a pergunta é só um CPF, reformula para o modelo entender
+        const perguntaParaIA = perguntaIsCpf
+          ? `Quero consultar minha inscrição. Meu CPF é ${pergunta.trim()}.`
+          : pergunta;
+
         const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -251,7 +317,7 @@ ${contexto}`;
             model: openaiModel,
             messages: [
               { role: 'system', content: systemPrompt },
-              { role: 'user', content: pergunta },
+              { role: 'user', content: perguntaParaIA },
             ],
             max_tokens: 400,
             temperature: 0.4,
