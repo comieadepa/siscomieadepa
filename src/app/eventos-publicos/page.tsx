@@ -76,7 +76,7 @@ export default async function EventosPublicosPage() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-white/60 bg-white/80 p-6 shadow-xl" style={{ animation: 'fadeUp 0.8s ease both' }}>
+          <div className="rounded-3xl border border-white/60 bg-white/80 p-6 shadow-xl">
             <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Status geral</div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <div className="rounded-2xl bg-slate-900 px-4 py-4 text-white">
@@ -180,12 +180,6 @@ export default async function EventosPublicosPage() {
 
       <PublicAssistenteWidget scope="global" />
 
-      <style jsx>{`
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(16px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
     </div>
   );
 }
