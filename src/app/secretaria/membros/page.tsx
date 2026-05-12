@@ -18,6 +18,7 @@ import { getMensagemSemTemplate } from '@/lib/cartoes-utils';
 import { createClient } from '@/lib/supabase-client';
 import { loadOrgNomenclaturasFromSupabaseOrMigrate } from '@/lib/org-nomenclaturas';
 import { loadTemplatesForCurrentUser } from '@/lib/cartoes-templates-sync';
+import { authenticatedFetch } from '@/lib/api-client';
 import { useMembers } from '@/hooks/useMembers';
 import type { Member, CreateMemberRequest, UpdateMemberRequest } from '@/types/supabase';
 
@@ -1334,7 +1335,7 @@ useEffect(() => {
     form.append('file', file);
     form.append('membroId', membroId);
 
-    const resp = await fetch('/api/v1/secretaria/uploads/membro-foto', {
+    const resp = await authenticatedFetch('/api/v1/secretaria/uploads/membro-foto', {
       method: 'POST',
       body: form,
     });
