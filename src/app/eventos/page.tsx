@@ -319,6 +319,12 @@ export default function EventosPage() {
               <span className="text-[#F39C12] font-bold">+</span> Novo Evento
             </button>
           )}
+          <button
+            onClick={() => window.open(buildUrl(getPublicBaseUrl(), '/eventos-publicos'), '_blank')}
+            className="whitespace-nowrap bg-white text-[#123b63] px-5 py-2 rounded-lg text-sm font-semibold border border-[#123b63]/30 hover:bg-[#123b63]/5 transition flex items-center gap-2"
+          >
+            🌐 Portal publico
+          </button>
         </div>
       </div>
 

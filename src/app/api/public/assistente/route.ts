@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
-import { buildUrl, getPublicBaseUrl } from '@/lib/urls';
 import {
   DEPARTAMENTOS,
   fetchOpenEvents,
@@ -12,6 +11,26 @@ import {
 
 const SAUDACOES = ['oi', 'ola', 'bom dia', 'boa tarde', 'boa noite', 'ajuda'];
 const DESPEDIDAS = ['tchau', 'ate', 'obrigado', 'obrigada', 'valeu'];
+
+type AssistenteAction = {
+  label: string;
+  href?: string;
+  copyText?: string;
+  variant?: 'primary' | 'ghost';
+};
+
+type AssistenteCard = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  meta?: string[];
+  actions?: AssistenteAction[];
+};
+
+type AssistenteResposta = {
+  resposta: string;
+  cards?: AssistenteCard[];
+};
 
 function normalizeText(value: string) {
   return value
@@ -63,37 +82,73 @@ function departamentoFromQuestion(pergunta: string): DepartamentoConfig | null {
   return null;
 }
 
-function buildEventoLine(ev: EventoPublico, baseUrl: string) {
+function buildEventoCard(ev: EventoPublico): AssistenteCard {
   const data = formatDateRange(ev.data_inicio, ev.data_fim);
   const local = [ev.local, ev.cidade].filter(Boolean).join(' - ');
   const valor = ev.usar_tipos_inscricao
-    ? 'Ver modalidades'
+    ? 'Modalidades disponiveis'
     : ev.valor_inscricao === 0
       ? 'Gratuito'
       : fmtMoeda(ev.valor_inscricao);
-  const vagas = ev.vagas_disponiveis !== null ? ` | ${ev.vagas_disponiveis} vagas` : '';
-  const link = buildUrl(baseUrl, `/inscricao/${ev.slug}`);
-  return `• ${ev.nome}\n  ${data}${local ? ` | ${local}` : ''}\n  ${valor}${vagas}\n  ${link}`;
+  const vagas = ev.vagas_disponiveis !== null ? `${ev.vagas_disponiveis} vagas` : null;
+  const dep = getDepartamentoByKey(ev.departamento) ?? getDepartamentoBySlug(ev.departamento.toLowerCase());
+  const depSlug = dep?.slug ?? ev.departamento.toLowerCase();
+  const actionLabel = 'Ver eventos';
+
+  return {
+    id: ev.id,
+    title: `🎉 ${ev.nome}`,
+    meta: [
+      `📅 ${data}`,
+      `📍 ${local || 'Local a confirmar'}`,
+      `💳 ${valor}${vagas ? ` · ${vagas}` : ''}`,
+    ],
+    actions: [
+      {
+        label: `👉 ${actionLabel}`,
+        href: `/eventos-publicos/${depSlug}`,
+        variant: 'primary',
+      },
+    ],
+  };
+}
+
+async function fetchEventosComCards(departamento: DepartamentoConfig | null) {
+  const eventos = await fetchOpenEvents({ departamento: departamento?.key });
+  const cards = eventos.map(ev => buildEventoCard(ev));
+  return { eventos, cards };
 }
 
 async function responderEventosAbertos(
-  baseUrl: string,
   departamento: DepartamentoConfig | null
-) {
-  const eventos = await fetchOpenEvents({ departamento: departamento?.key });
+): Promise<AssistenteResposta> {
+  const { eventos, cards } = await fetchEventosComCards(departamento);
   if (eventos.length === 0) {
     if (departamento) {
-      return `No momento nao ha eventos com inscricoes abertas para ${departamento.nome}.`;
+      return { resposta: `No momento nao ha eventos com inscricoes abertas para ${departamento.nome}.` };
     }
-    return 'No momento nao ha eventos com inscricoes abertas. Volte em breve!';
+    return { resposta: 'No momento nao ha eventos com inscricoes abertas. Volte em breve!' };
   }
 
   const titulo = departamento
-    ? `Eventos abertos de ${departamento.nome}:`
-    : 'Eventos com inscricoes abertas:';
+    ? `Temos eventos com inscricoes abertas em ${departamento.nome} 😊`
+    : 'Temos eventos com inscricoes abertas 😊';
 
-  const linhas = eventos.map(ev => buildEventoLine(ev, baseUrl));
-  return `${titulo}\n\n${linhas.join('\n\n')}`;
+  return { resposta: titulo, cards };
+}
+
+async function responderEventosComIntro(
+  departamento: DepartamentoConfig | null,
+  intro: string
+): Promise<AssistenteResposta> {
+  const { eventos, cards } = await fetchEventosComCards(departamento);
+  if (eventos.length === 0) {
+    const base = departamento
+      ? `No momento nao ha eventos com inscricoes abertas para ${departamento.nome}.`
+      : 'No momento nao ha eventos com inscricoes abertas. Volte em breve!';
+    return { resposta: `${intro}\n\n${base}` };
+  }
+  return { resposta: intro, cards };
 }
 
 function statusPagamentoLabel(status: string) {
@@ -104,10 +159,9 @@ function statusPagamentoLabel(status: string) {
 }
 
 async function responderCpfConsulta(
-  baseUrl: string,
   cpf: string,
   departamento: DepartamentoConfig | null
-) {
+): Promise<AssistenteResposta> {
   const supabase = createServerClient();
   let query = supabase
     .from('evento_inscricoes')
@@ -125,41 +179,52 @@ async function responderCpfConsulta(
 
   if (lista.length === 0) {
     if (departamento) {
-      return `Nao encontrei inscricoes para este CPF em ${departamento.nome}.`;
+      return { resposta: `Nao encontrei inscricoes para este CPF em ${departamento.nome}.` };
     }
-    return 'Nao encontrei inscricoes para este CPF.';
+    return { resposta: 'Nao encontrei inscricoes para este CPF.' };
   }
 
-  const blocos = lista.map(item => {
+  const cards = lista.map(item => {
     const ev = item.eventos as Record<string, unknown> | null;
     const nome = String(ev?.nome || 'Evento');
     const slug = String(ev?.slug || '');
+    const dataInicio = typeof ev?.data_inicio === 'string' ? ev?.data_inicio as string : '';
+    const dataFim = typeof ev?.data_fim === 'string' ? ev?.data_fim as string : null;
     const statusRaw = String(item.status_pagamento || '');
     const status = statusPagamentoLabel(statusRaw);
     const valor = typeof item.valor_final === 'number' ? fmtMoeda(item.valor_final as number) : null;
-    const link = slug ? buildUrl(baseUrl, `/inscricao/${slug}`) : '';
+    const link = slug ? `/inscricao/${slug}` : '';
     const invoiceUrl = typeof item.invoice_url === 'string' ? item.invoice_url : '';
     const pixCopia = typeof item.pix_copia_cola === 'string' ? item.pix_copia_cola : '';
-    let bloco = `• ${nome}\n  Status: ${status}`;
-    if (valor) bloco += ` | Valor: ${valor}`;
-    if (link) bloco += `\n  ${link}`;
+    const meta: string[] = [`Status: ${status}${valor ? ` · Valor: ${valor}` : ''}`];
+    if (dataInicio) {
+      meta.push(`📅 ${formatDateRange(dataInicio, dataFim)}`);
+    }
 
+    const actions: AssistenteAction[] = [];
+    if (link) {
+      actions.push({ label: '🔗 Abrir inscricao', href: link, variant: 'ghost' });
+    }
     if (statusRaw === 'pendente' && invoiceUrl) {
-      bloco += `\n  Segunda via: ${invoiceUrl}`;
+      actions.push({ label: '💳 Abrir pagamento', href: invoiceUrl, variant: 'primary' });
     }
-
     if (statusRaw === 'pendente' && pixCopia) {
-      bloco += `\n  PIX copia e cola: ${pixCopia}`;
+      actions.push({ label: 'Copiar PIX', copyText: pixCopia, variant: 'ghost' });
     }
 
-    return bloco;
+    return {
+      id: String(item.id || `${nome}-${Date.now()}`),
+      title: `🎫 ${nome}`,
+      meta,
+      actions,
+    };
   });
 
   const header = lista.length > 1
     ? 'Encontrei mais de uma inscricao para este CPF:'
     : 'Encontrei sua inscricao:';
 
-  return `${header}\n\n${blocos.join('\n\n')}`;
+  return { resposta: header, cards };
 }
 
 export async function POST(req: NextRequest) {
@@ -177,7 +242,6 @@ export async function POST(req: NextRequest) {
     }
 
     const pergunta = normalizeText(perguntaRaw);
-    const baseUrl = getPublicBaseUrl({ request: req });
 
     const departamentoFromText = scope === 'global' ? departamentoFromQuestion(perguntaRaw) : null;
     const departamento = departamentoFromContext ?? departamentoFromText;
@@ -198,51 +262,114 @@ export async function POST(req: NextRequest) {
       'segunda via',
       '2 via',
       '2via',
-      'pagamento',
       'boleto',
       'pix',
       'link de pagamento',
       'link do pagamento',
+      'perdi o pagamento',
+      'gerar cobranca',
+      'segunda via do pagamento',
+    ]);
+    const isPagamento = !isSegundaVia && hasAny(pergunta, [
+      'pagamento',
+      'pagar',
+      'como pagar',
+      'formas de pagamento',
+      'como faco pagamento',
+      'como fazer pagamento',
+    ]);
+    const querOrientacaoInscricao = hasAny(pergunta, [
+      'como faco minha inscricao',
+      'como faco a inscricao',
+      'como faco para me inscrever',
+      'como me inscrevo',
+      'como fazer inscricao',
+      'como fazer a inscricao',
+      'quero me inscrever',
+      'quero fazer inscricao',
+      'fazer minha inscricao',
+    ]);
+    const querEventosAbertos = hasAny(pergunta, [
+      'eventos abertos',
+      'eventos com inscricao',
+      'inscricoes abertas',
+      'eventos disponiveis',
+      'quais eventos',
+    ]);
+    const querParticiparDepto = departamento && hasAny(pergunta, [
+      'participar',
+      'quero participar',
+      'quero ir',
+      'quero me inscrever',
+      'inscrever',
+      'inscricao',
+      'evento',
     ]);
 
     if (isSegundaVia) {
       if (!cpfDetectado) {
         return NextResponse.json({ resposta: 'Claro! Me informe seu CPF para localizar sua inscricao.' });
       }
-      const resposta = await responderCpfConsulta(baseUrl, cpfDetectado, departamento);
-      return NextResponse.json({ resposta });
+      const resposta = await responderCpfConsulta(cpfDetectado, departamento);
+      return NextResponse.json(resposta);
+    }
+
+    if (isPagamento) {
+      const intro = 'Apos selecionar a modalidade da inscricao, o sistema exibira as opcoes de pagamento disponiveis 😊';
+      const resposta = await responderEventosComIntro(departamento, `${intro}\n\nEscolha um evento abaixo para continuar.`);
+      return NextResponse.json(resposta);
+    }
+
+    if (querParticiparDepto && departamento) {
+      const { eventos, cards } = await fetchEventosComCards(departamento);
+      if (eventos.length === 0) {
+        return NextResponse.json({ resposta: `No momento nao ha eventos com inscricoes abertas para ${departamento.nome}.` });
+      }
+      const intro = eventos.length === 1
+        ? `Perfeito 😊 ${eventos[0].nome} esta com inscricoes abertas.`
+        : `Perfeito 😊 ${departamento.nome} tem eventos com inscricoes abertas.`;
+      return NextResponse.json({ resposta: intro, cards });
+    }
+
+    if (querOrientacaoInscricao) {
+      const intro = 'Claro 😊 Para fazer sua inscricao, escolha um dos eventos disponiveis abaixo e clique em "Ver eventos" para concluir.';
+      const resposta = await responderEventosComIntro(departamento, intro);
+      return NextResponse.json(resposta);
     }
 
     if (hasAny(pergunta, ['inscricao', 'inscricoes', 'me inscrever', 'como faco', 'como fazer'])) {
-      const resposta = await responderEventosAbertos(baseUrl, departamento);
-      return NextResponse.json({ resposta });
+      const intro = 'Para se inscrever, escolha um dos eventos disponiveis abaixo 😊';
+      const resposta = await responderEventosComIntro(departamento, intro);
+      return NextResponse.json(resposta);
     }
 
-    if (hasAny(pergunta, ['eventos abertos', 'eventos com inscricao', 'inscricoes abertas', 'eventos disponiveis', 'quais eventos'])) {
-      const resposta = await responderEventosAbertos(baseUrl, departamento);
-      return NextResponse.json({ resposta });
+    if (querEventosAbertos) {
+      const intro = 'Temos estes eventos com inscricoes abertas 😊';
+      const resposta = await responderEventosComIntro(departamento, intro);
+      return NextResponse.json(resposta);
     }
 
     if (hasAny(pergunta, ['vagas', 'disponibilidade', 'lotado'])) {
-      const resposta = await responderEventosAbertos(baseUrl, departamento);
-      return NextResponse.json({ resposta });
+      const intro = 'Estas sao as inscricoes abertas no momento 😊';
+      const resposta = await responderEventosComIntro(departamento, intro);
+      return NextResponse.json(resposta);
     }
 
     if (hasAny(pergunta, ['hospedagem', 'alojamento', 'brinde', 'alimentacao', 'programacao', 'certificado'])) {
       const resposta = departamento
         ? `Esses detalhes variam por evento em ${departamento.nome}. Veja os eventos abertos para escolher o seu.`
         : 'Esses detalhes variam por evento. Veja os eventos com inscricoes abertas para escolher o seu.';
-      const lista = await responderEventosAbertos(baseUrl, departamento);
-      return NextResponse.json({ resposta: `${resposta}\n\n${lista}` });
+      const lista = await responderEventosAbertos(departamento);
+      return NextResponse.json({ resposta: `${resposta}\n\n${lista.resposta}`, cards: lista.cards });
     }
 
     if (cpfDetectado) {
-      const resposta = await responderCpfConsulta(baseUrl, cpfDetectado, departamento);
-      return NextResponse.json({ resposta });
+      const resposta = await responderCpfConsulta(cpfDetectado, departamento);
+      return NextResponse.json(resposta);
     }
 
     const fallback = departamento
-      ? `Posso ajudar com eventos de ${departamento.nome}. Pergunte sobre inscricoes abertas ou pagamentos.`
+      ? `Posso ajudar com eventos de ${departamento.nome}. Pergunte sobre inscricoes abertas, pagamentos ou segunda via.`
       : 'Posso ajudar com inscricoes abertas, pagamentos e duvidas gerais dos eventos.';
     return NextResponse.json({ resposta: fallback });
   } catch {

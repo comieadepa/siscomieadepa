@@ -22,7 +22,7 @@ export const DEPARTAMENTOS: DepartamentoConfig[] = [
     slug: 'ago',
     nome: 'AGO',
     resumo: 'Eventos e congressos da area ministerial.',
-    banner: '/img/bgslider.jpg',
+    banner: '/img/ago.png',
     tonalidade: {
       chip: 'bg-amber-100 text-amber-800',
       gradFrom: 'from-amber-400/30',
@@ -35,7 +35,7 @@ export const DEPARTAMENTOS: DepartamentoConfig[] = [
     slug: 'umadespa',
     nome: 'UMADESPA',
     resumo: 'Juventude e mobilizacao missionaria.',
-    banner: '/img/bg_site.png',
+    banner: '/img/umadespa.png',
     tonalidade: {
       chip: 'bg-blue-100 text-blue-800',
       gradFrom: 'from-blue-400/30',
@@ -48,7 +48,7 @@ export const DEPARTAMENTOS: DepartamentoConfig[] = [
     slug: 'coadespa',
     nome: 'COADESPA',
     resumo: 'Areas de cooperacao e lideranca.',
-    banner: '/img/login-bg.jpg',
+    banner: '/img/coadespa.jpg',
     tonalidade: {
       chip: 'bg-emerald-100 text-emerald-800',
       gradFrom: 'from-emerald-400/30',
@@ -61,7 +61,7 @@ export const DEPARTAMENTOS: DepartamentoConfig[] = [
     slug: 'seiadepa',
     nome: 'SEIADEPA',
     resumo: 'Secretaria e suporte institucional.',
-    banner: '/img/login-bg2.png',
+    banner: '/img/seiadepa.jpg',
     tonalidade: {
       chip: 'bg-cyan-100 text-cyan-800',
       gradFrom: 'from-cyan-400/30',
@@ -74,7 +74,7 @@ export const DEPARTAMENTOS: DepartamentoConfig[] = [
     slug: 'avulso',
     nome: 'AVULSO',
     resumo: 'Eventos gerais e iniciativas locais.',
-    banner: '/img/bg_site.png',
+    banner: '/img/avulso.png',
     tonalidade: {
       chip: 'bg-slate-100 text-slate-800',
       gradFrom: 'from-slate-400/30',
