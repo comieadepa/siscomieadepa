@@ -103,8 +103,8 @@ export default function FluxosOperacaoPage() {
 
       const isLocked = role === 'operator' || role === 'viewer';
       setLockedCongregation(isLocked);
-      if (isLocked && mu?.congregacao_id) {
-        setCongregationId(String(mu.congregacao_id));
+      if (isLocked && me?.congregacao_id) {
+        setCongregationId(String(me.congregacao_id));
       } else if (allowAll && !congregationId) {
         setCongregationId('all');
       }

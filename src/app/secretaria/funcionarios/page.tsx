@@ -387,13 +387,11 @@ export default function GerenciarFuncionarios() {
     }
 
     try {
-      const accessToken = await getAccessTokenOrThrow();
       // Enviar dados para API
-      const response = await fetch('/api/v1/employees', {
+      const response = await authenticatedFetch('/api/v1/employees', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           member_id: membroSelecionado.id,
@@ -449,12 +447,8 @@ export default function GerenciarFuncionarios() {
   // Deletar funcionário
   const handleDeletar = async (id: string) => {
     try {
-      const accessToken = await getAccessTokenOrThrow();
-      const response = await fetch(`/api/v1/employees/${id}`, {
+      const response = await authenticatedFetch(`/api/v1/employees/${id}`, {
         method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
       });
 
       if (!response.ok) {

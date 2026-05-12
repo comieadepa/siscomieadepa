@@ -6,7 +6,6 @@ import { createClient } from '@/lib/supabase-client';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { normalizePayloadUppercase } from '@/lib/text';
 import AssistenteWidget from '@/components/AssistenteWidget';
-import { authenticatedFetch } from '@/lib/api-client';
 
 // ─── Tipos ────────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -240,33 +239,34 @@ export default function InscricaoPublicaPage() {
     setCpfStatus('idle');
 
     const isAGO = evento.departamento === 'AGO';
-    const res = await authenticatedFetch(`/api/v1/members/lookup?cpf=${encodeURIComponent(limpo)}&limit=1`);
+    const query = new URLSearchParams({ cpf: limpo });
+    if (isAGO) query.set('includeMatricula', 'true');
+    const res = await fetch(`/api/public/members/lookup?${query.toString()}`);
     const json = res.ok ? await res.json().catch(() => null as any) : null;
-    const data = (json?.data ?? []) as {
-      id: string; nome?: string | null; name?: string | null; cpf?: string | null;
-      celular?: string | null; phone?: string | null; whatsapp?: string | null; email?: string | null;
-      supervisao?: string | null; campo?: string | null;
-      supervisao_id?: string | null; campo_id?: string | null;
-      sexo?: string | null; data_nascimento?: string | null; cargo_ministerial?: string | null;
-    }[];
+    const payload = (json ?? {}) as {
+      encontrado?: boolean;
+      nome?: string | null;
+      sexo?: string | null;
+      data_nascimento?: string | null;
+      supervisao_id?: string | null;
+      campo_id?: string | null;
+      congregacao_id?: string | null;
+      matricula?: string | null;
+    };
 
     setBuscandoCPF(false);
-    if (data && data.length > 0) {
-      const m = data[0];
-      const nome = (m.nome ?? m.name ?? '') as string;
-      const celular = (m.celular ?? m.phone ?? '') as string;
+    if (payload.encontrado) {
+      const nome = (payload.nome ?? '') as string;
       setCpfStatus('encontrado');
-      const sup = supervisoes.find(s => s.id === m.supervisao_id || s.nome === m.supervisao);
-      const cam = campos.find(c => c.id === m.campo_id || c.nome === m.campo);
+      const sup = supervisoes.find(s => s.id === payload.supervisao_id);
+      const cam = campos.find(c => c.id === payload.campo_id);
       setForm(f => ({
         ...f,
         nome_inscrito: nome                          || f.nome_inscrito,
-        whatsapp:      m.whatsapp || celular         || f.whatsapp,
-        email:         m.email                       || f.email,
         supervisao_id: sup?.id                       || f.supervisao_id,
         campo_id:      cam?.id                       || f.campo_id,
-        ...(isAGO && m.sexo             ? { sexo: m.sexo } : {}),
-        ...(isAGO && m.data_nascimento  ? { data_nascimento: m.data_nascimento } : {}),
+        ...(isAGO && payload.sexo             ? { sexo: payload.sexo } : {}),
+        ...(isAGO && payload.data_nascimento  ? { data_nascimento: payload.data_nascimento } : {}),
       }));
     } else {
       setCpfStatus('nao_encontrado');
