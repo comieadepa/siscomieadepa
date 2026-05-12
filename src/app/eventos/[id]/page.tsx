@@ -10,6 +10,7 @@ import { getEquipeSession } from '@/lib/equipe-session';
 import type { EquipeSession } from '@/lib/equipe-session';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { buildUrl, getAppBaseUrl, getPublicBaseUrl } from '@/lib/urls';
+import { normalizePayloadUppercase } from '@/lib/text';
 import { EtiquetaPreviewDepartamento, EtiquetaPreviewAGO } from '@/components/EtiquetaLabels';
 import type { EtiquetaInscricaoAGO } from '@/components/EtiquetaLabels';
 import TabHospedagem    from './TabHospedagem';
@@ -410,6 +411,12 @@ export default function GerenciarEventoPage() {
 
               {/* Botões de ação — agrupados à direita */}
               <div className="flex flex-wrap md:flex-col lg:flex-row gap-2 flex-shrink-0">
+                <button
+                  onClick={() => router.push('/eventos')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-gray-600 hover:bg-gray-50 border border-gray-200 transition"
+                >
+                  ← Voltar
+                </button>
                 {perfil.podeEditar && (
                   <button onClick={() => router.push(`/eventos/${id}/editar`)}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200 transition">
@@ -978,7 +985,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
     const obsBase = editForm.observacoes.trim();
     const obsFinal = obsBase ? `${obsBase}\n${log}` : log;
 
-    const payload: Record<string, unknown> = {
+    const payload: Record<string, unknown> = normalizePayloadUppercase({
       evento_id: editForm.evento_id,
       nome_inscrito: editForm.nome_inscrito.trim(),
       cpf: cpfLimpo,
@@ -996,7 +1003,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
       valor_original: valorNovoFinal,
       valor_final: valorNovoFinal,
       status_pagamento: novoStatus,
-    };
+    });
 
     setSalvandoEdit(true);
     const { error } = await supabase
@@ -1709,7 +1716,7 @@ function TabInscricaoManual({ eventoId, evento, supervisoes, campos, supabase, o
     if (!form.nome_inscrito.trim()) return setErroForm('Nome é obrigatório.');
     setSalvando(true);
     try {
-      const { error } = await supabase.from('evento_inscricoes').insert([{
+      const payload = normalizePayloadUppercase({
         evento_id:       eventoId,
         nome_inscrito:   form.nome_inscrito.trim(),
         cpf:             form.cpf.replace(/\D/g, '') || null,
@@ -1729,7 +1736,8 @@ function TabInscricaoManual({ eventoId, evento, supervisoes, campos, supabase, o
         forma_pagamento: form.forma_pagamento|| null,
         observacoes:     form.observacoes.trim() || null,
         qr_code:         generateQRCodeToken(),
-      }]);
+      });
+      const { error } = await supabase.from('evento_inscricoes').insert([payload]);
       if (error) throw error;
       onSalvo();
       setSucesso(`Inscrição de "${form.nome_inscrito}" salva com sucesso!`);
@@ -2120,7 +2128,6 @@ function TabEtiquetas({ inscricoes, loading, nomeSup, nomeCampo, supabase, onRef
 }) {
   const [busca,       setBusca]       = useState('');
   const [filtroImp,   setFiltroImp]   = useState<'todos' | 'impresso' | 'pendente'>('todos');
-  const [filtroPag,   setFiltroPag]   = useState('');
   const [filtroSup,   setFiltroSup]   = useState('');
   const [filtroHosp,  setFiltroHosp]  = useState(false);
   const [filtroAlim,  setFiltroAlim]  = useState(false);
@@ -2129,16 +2136,21 @@ function TabEtiquetas({ inscricoes, loading, nomeSup, nomeCampo, supabase, onRef
   const [preview,     setPreview]     = useState<Inscricao | null>(null);
   const [pag,         setPag]         = useState(1);
 
+  const inscricoesElegiveis = useMemo(
+    () => inscricoes.filter(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento'),
+    [inscricoes]
+  );
+
   // AGO: mapa de dados extras (matricula, hospedagem) por inscricao.id
   type AgoExtra = { matricula: string | null; numero_cama: string | null; tipo_cama: string | null; hosp_status: string | null; nome_alojamento: string | null };
   const [agoDataMap, setAgoDataMap] = useState<Map<string, AgoExtra>>(new Map());
 
   useEffect(() => {
-    if (evento?.departamento !== 'AGO' || inscricoes.length === 0) return;
+    if (evento?.departamento !== 'AGO' || inscricoesElegiveis.length === 0) return;
     let cancelled = false;
     async function loadAgo() {
-      const inscIds    = inscricoes.map(i => i.id);
-      const ministroIds = [...new Set(inscricoes.map(i => i.ministro_id).filter((x): x is string => !!x))];
+      const inscIds    = inscricoesElegiveis.map(i => i.id);
+      const ministroIds = [...new Set(inscricoesElegiveis.map(i => i.ministro_id).filter((x): x is string => !!x))];
 
       const [hospRes, membersRes] = await Promise.all([
         supabase.from('evento_hospedagens')
@@ -2166,7 +2178,7 @@ function TabEtiquetas({ inscricoes, loading, nomeSup, nomeCampo, supabase, onRef
       const memberMap = new Map(((membersRes as { data: { id: string; matricula: string | null }[] | null }).data ?? []).map(m => [m.id, m.matricula]));
 
       const map = new Map<string, AgoExtra>();
-      inscricoes.forEach(ins => {
+      inscricoesElegiveis.forEach(ins => {
         const hosp = hospMap.get(ins.id);
         map.set(ins.id, {
           matricula:       ins.ministro_id ? (memberMap.get(ins.ministro_id) ?? null) : null,
@@ -2180,34 +2192,33 @@ function TabEtiquetas({ inscricoes, loading, nomeSup, nomeCampo, supabase, onRef
     }
     loadAgo();
     return () => { cancelled = true; };
-  }, [evento, inscricoes, supabase]);
+  }, [evento, inscricoesElegiveis, supabase]);
   const POR_PAG = 48;
 
   // Supervisões únicas para filtro
   const supsUnicas = useMemo(() => {
     const map = new Map<string, string>();
-    inscricoes.forEach(i => { if (i.supervisao_id) map.set(i.supervisao_id, nomeSup(i.supervisao_id)); });
+    inscricoesElegiveis.forEach(i => { if (i.supervisao_id) map.set(i.supervisao_id, nomeSup(i.supervisao_id)); });
     return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
-  }, [inscricoes, nomeSup]);
+  }, [inscricoesElegiveis, nomeSup]);
 
   // Filtragem
   const filtradas = useMemo(() => {
-    let list = inscricoes;
+    let list = inscricoesElegiveis;
     if (busca.trim())         list = list.filter(i => i.nome_inscrito.toLowerCase().includes(busca.toLowerCase()));
     if (filtroImp === 'impresso')  list = list.filter(i => i.etiqueta_impressa);
     if (filtroImp === 'pendente')  list = list.filter(i => !i.etiqueta_impressa);
-    if (filtroPag)            list = list.filter(i => i.status_pagamento === filtroPag);
     if (filtroSup)            list = list.filter(i => i.supervisao_id === filtroSup);
     if (filtroHosp)           list = list.filter(i => i.hospedagem);
     if (filtroAlim)           list = list.filter(i => i.alimentacao);
     return list;
-  }, [inscricoes, busca, filtroImp, filtroPag, filtroSup, filtroHosp, filtroAlim]);
+  }, [inscricoesElegiveis, busca, filtroImp, filtroSup, filtroHosp, filtroAlim]);
 
   const totalPags = Math.max(1, Math.ceil(filtradas.length / POR_PAG));
   const pagina = useMemo(() => filtradas.slice((pag - 1) * POR_PAG, pag * POR_PAG), [filtradas, pag]);
 
   // Reset pág ao mudar filtros
-  useEffect(() => { setPag(1); }, [busca, filtroImp, filtroPag, filtroSup, filtroHosp, filtroAlim]);
+  useEffect(() => { setPag(1); }, [busca, filtroImp, filtroSup, filtroHosp, filtroAlim]);
 
   // Seleção
   const todosNaPaginaIds = pagina.map(i => i.id);
@@ -2257,8 +2268,8 @@ function TabEtiquetas({ inscricoes, loading, nomeSup, nomeCampo, supabase, onRef
 
   if (loading) return <LoadingSkeleton />;
 
-  const totalImpressos = inscricoes.filter(i => i.etiqueta_impressa).length;
-  const totalPendentes = inscricoes.filter(i => !i.etiqueta_impressa).length;
+  const totalImpressos = inscricoesElegiveis.filter(i => i.etiqueta_impressa).length;
+  const totalPendentes = inscricoesElegiveis.filter(i => !i.etiqueta_impressa).length;
 
   return (
     <div>
@@ -2277,7 +2288,7 @@ function TabEtiquetas({ inscricoes, loading, nomeSup, nomeCampo, supabase, onRef
       {/* ── Stats rápidos ── */}
       <div className="grid grid-cols-3 gap-3 mb-4">
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 text-center">
-          <p className="text-xl font-black text-[#123b63]">{inscricoes.length}</p>
+          <p className="text-xl font-black text-[#123b63]">{inscricoesElegiveis.length}</p>
           <p className="text-xs text-gray-500">Total</p>
         </div>
         <div className="bg-emerald-50 rounded-xl border border-emerald-100 shadow-sm p-3 text-center">
@@ -2330,21 +2341,13 @@ function TabEtiquetas({ inscricoes, loading, nomeSup, nomeCampo, supabase, onRef
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 mb-4 flex flex-wrap gap-2 items-end">
         <input type="text" placeholder="🔍 Buscar nome..." value={busca}
           onChange={e => setBusca(e.target.value)}
-          className="border border-gray-200 rounded-lg px-3 py-2 text-xs w-44 focus:outline-none focus:ring-2 focus:ring-[#123b63]" />
+          className="border border-gray-200 rounded-lg px-3 py-2 text-xs flex-1 min-w-[240px] sm:min-w-[320px] md:min-w-[420px] focus:outline-none focus:ring-2 focus:ring-[#123b63]" />
 
         <select value={filtroImp} onChange={e => setFiltroImp(e.target.value as typeof filtroImp)}
           className="border border-gray-200 rounded-lg px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
           <option value="todos">Todos</option>
           <option value="pendente">Não impressos</option>
           <option value="impresso">Impressos</option>
-        </select>
-
-        <select value={filtroPag} onChange={e => setFiltroPag(e.target.value)}
-          className="border border-gray-200 rounded-lg px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-          <option value="">Qualquer pagamento</option>
-          <option value="pago">Pago</option>
-          <option value="pendente">Pendente</option>
-          <option value="isento">Isento</option>
         </select>
 
         {supsUnicas.length > 0 && (
@@ -2364,8 +2367,8 @@ function TabEtiquetas({ inscricoes, loading, nomeSup, nomeCampo, supabase, onRef
           Alimentação
         </label>
 
-        {(busca || filtroImp !== 'todos' || filtroPag || filtroSup || filtroHosp || filtroAlim) && (
-          <button onClick={() => { setBusca(''); setFiltroImp('todos'); setFiltroPag(''); setFiltroSup(''); setFiltroHosp(false); setFiltroAlim(false); }}
+        {(busca || filtroImp !== 'todos' || filtroSup || filtroHosp || filtroAlim) && (
+          <button onClick={() => { setBusca(''); setFiltroImp('todos'); setFiltroSup(''); setFiltroHosp(false); setFiltroAlim(false); }}
             className="text-xs text-red-500 hover:text-red-700 underline">
             Limpar filtros
           </button>

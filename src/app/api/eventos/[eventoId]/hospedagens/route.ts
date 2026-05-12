@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireEventoAccess } from '@/lib/evento-guard';
+import { normalizePayloadUppercase } from '@/lib/text';
 
 // GET /api/eventos/[eventoId]/hospedagens
 // Lista todas as hospedagens com dados do inscrito
@@ -93,22 +94,24 @@ export async function POST(
   }
 
   const supabase = guard.ctx.supabaseAdmin;
+  const payload = normalizePayloadUppercase({
+    evento_id:            eventoId,
+    inscricao_id,
+    alojamento_id:        alojamento_id || null,
+    status:               status        ?? 'solicitada',
+    prioridade:           prioridade    ?? 0,
+    necessidade_especial: necessidade_especial ?? false,
+    descricao_necessidade: descricao_necessidade ?? null,
+    cama_inferior:        cama_inferior ?? false,
+    tipo_cama:            tipo_cama     || null,
+    numero_cama:          numero_cama   || null,
+    observacoes:          observacoes   || null,
+    alocacao_automatica:  false, // Manual
+  });
+
   const { data, error } = await supabase
     .from('evento_hospedagens')
-    .upsert([{
-      evento_id:            eventoId,
-      inscricao_id,
-      alojamento_id:        alojamento_id || null,
-      status:               status        ?? 'solicitada',
-      prioridade:           prioridade    ?? 0,
-      necessidade_especial: necessidade_especial ?? false,
-      descricao_necessidade: descricao_necessidade ?? null,
-      cama_inferior:        cama_inferior ?? false,
-      tipo_cama:            tipo_cama     || null,
-      numero_cama:          numero_cama   || null,
-      observacoes:          observacoes   || null,
-      alocacao_automatica:  false, // Manual
-    }], { onConflict: 'inscricao_id' })
+    .upsert([payload], { onConflict: 'inscricao_id' })
     .select()
     .single();
 
@@ -181,9 +184,11 @@ export async function PATCH(
     }
   }
 
+  const updatesNormalized = normalizePayloadUppercase(updates);
+
   const { error } = await supabase
     .from('evento_hospedagens')
-    .update(updates)
+    .update(updatesNormalized)
     .eq('id', id)
     .eq('evento_id', eventoId);
 

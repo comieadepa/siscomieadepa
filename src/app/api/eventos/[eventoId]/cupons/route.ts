@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireEventoAccess } from '@/lib/evento-guard';
+import { normalizeUppercase } from '@/lib/text';
 
 // GET /api/eventos/[eventoId]/cupons  — lista cupons (admin)
 export async function GET(
@@ -47,7 +48,7 @@ export async function POST(
     .from('evento_cupons')
     .insert([{
       evento_id:  eventoId,
-      codigo:     String(codigo).trim().toUpperCase(),
+      codigo:     normalizeUppercase(String(codigo).trim()),
       tipo,
       valor:      Number(valor),
       limite_uso: limite_uso ? Number(limite_uso) : null,

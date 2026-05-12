@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireEventoAccess } from '@/lib/evento-guard';
+import { normalizePayloadUppercase } from '@/lib/text';
 
 // GET /api/eventos/[eventoId]/alojamentos
 export async function GET(
@@ -74,17 +75,19 @@ export async function POST(
   }
 
   const supabase = guard.ctx.supabaseAdmin;
+  const payload = normalizePayloadUppercase({
+    evento_id:        eventoId,
+    nome:             nome.trim(),
+    publico:          publico.trim(),
+    sexo:             sexo || null,
+    total_vagas:      Number(total_vagas),
+    camas_inferiores: Number(camas_inferiores ?? 0),
+    camas_superiores: Number(camas_superiores ?? 0),
+  });
+
   const { data, error } = await supabase
     .from('evento_alojamentos')
-    .insert([{
-      evento_id:        eventoId,
-      nome:             nome.trim(),
-      publico:          publico.trim(),
-      sexo:             sexo || null,
-      total_vagas:      Number(total_vagas),
-      camas_inferiores: Number(camas_inferiores ?? 0),
-      camas_superiores: Number(camas_superiores ?? 0),
-    }])
+    .insert([payload])
     .select()
     .single();
 
@@ -108,9 +111,11 @@ export async function PATCH(
   if (!id) return NextResponse.json({ error: 'id obrigatório' }, { status: 400 });
 
   const supabase = guard.ctx.supabaseAdmin;
+  const updatesNormalized = normalizePayloadUppercase(updates);
+
   const { error } = await supabase
     .from('evento_alojamentos')
-    .update(updates)
+    .update(updatesNormalized)
     .eq('id', id)
     .eq('evento_id', eventoId);
 

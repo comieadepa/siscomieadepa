@@ -51,6 +51,16 @@ const fmtDT = (d: string | null) => {
   return new Date(d).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
 };
 
+const PAGAMENTO_LABELS: Record<string, string> = {
+  pago: 'Pago',
+  isento: 'Isento',
+  pendente: 'Pendente',
+  cancelado: 'Cancelado',
+};
+
+const MIN_BUSCA_MANUAL = 3;
+const DEBOUNCE_MANUAL_MS = 400;
+
 function extractQrToken(raw: string): string {
   const value = raw.trim();
   if (!value) return '';
@@ -140,6 +150,7 @@ export default function CheckinMobilePage() {
   const [buscaManual, setBuscaManual] = useState('');
   const [resultadosManual, setResultadosManual] = useState<Inscricao[]>([]);
   const [buscandoManual,   setBuscandoManual]   = useState(false);
+  const [manualMsg,        setManualMsg]        = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const precisaGate = !authLoading && !perfil.loading && !user && !equipeSessao;
@@ -451,13 +462,31 @@ export default function CheckinMobilePage() {
         const ok = await validarSessaoEquipe();
         if (!ok) return;
       }
-      await Promise.all([
-        supabase.from('evento_inscricoes')
-          .update({ checkin_realizado: true, checkin_at: now })
-          .eq('id', inscricao.id),
-        supabase.from('evento_checkins')
-          .insert([{ evento_id: id, inscricao_id: inscricao.id, metodo: 'manual' }]),
-      ]);
+
+      const { data, error } = await supabase
+        .from('evento_inscricoes')
+        .update({ checkin_realizado: true, checkin_at: now })
+        .eq('id', inscricao.id)
+        .eq('evento_id', id)
+        .eq('checkin_realizado', false)
+        .in('status_pagamento', ['pago', 'isento'])
+        .select('id');
+
+      if (error) {
+        setManualMsg('Erro ao realizar check-in.');
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        setManualMsg('Check-in não permitido para pendentes/cancelados ou já realizado.');
+        return;
+      }
+
+      await supabase
+        .from('evento_checkins')
+        .insert([{ evento_id: id, inscricao_id: inscricao.id, metodo: 'manual' }]);
+
+      setManualMsg(null);
       emitirSom('sucesso');
       vibrar('sucesso');
       setBuscaManual('');
@@ -476,28 +505,40 @@ export default function CheckinMobilePage() {
   // Busca manual com debounce
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!buscaManual.trim() || buscaManual.length < 2) {
+    const qRaw = buscaManual.trim();
+    if (manualMsg) setManualMsg(null);
+    if (!qRaw || qRaw.length < MIN_BUSCA_MANUAL) {
       setResultadosManual([]);
+      setBuscandoManual(false);
       return;
     }
     debounceRef.current = setTimeout(async () => {
       setBuscandoManual(true);
-      const q = buscaManual.trim();
-      const cpfLimpo = q.replace(/\D/g, '');
-      const { data } = await supabase
-        .from('evento_inscricoes')
-        .select('id,evento_id,nome_inscrito,cpf,supervisao_id,campo_id,status_pagamento,checkin_realizado,checkin_at,qr_code')
-        .eq('evento_id', id)
-        .or(
-          cpfLimpo.length >= 3
-            ? `nome_inscrito.ilike.%${q}%,cpf.ilike.%${cpfLimpo}%`
-            : `nome_inscrito.ilike.%${q}%`
-        )
-        .order('nome_inscrito')
-        .limit(20);
-      setResultadosManual((data ?? []) as Inscricao[]);
-      setBuscandoManual(false);
-    }, 350);
+      try {
+        const q = qRaw;
+        const cpfLimpo = q.replace(/\D/g, '');
+        const filtros = [
+          `nome_inscrito.ilike.%${q}%`,
+          `email.ilike.%${q}%`,
+          `whatsapp.ilike.%${q}%`,
+        ];
+        if (cpfLimpo.length >= MIN_BUSCA_MANUAL) {
+          filtros.push(`cpf.ilike.%${cpfLimpo}%`);
+          filtros.push(`whatsapp.ilike.%${cpfLimpo}%`);
+        }
+        const { data } = await supabase
+          .from('evento_inscricoes')
+          .select('id,evento_id,nome_inscrito,cpf,supervisao_id,campo_id,status_pagamento,checkin_realizado,checkin_at,qr_code')
+          .eq('evento_id', id)
+          .in('status_pagamento', ['pago', 'isento'])
+          .or(filtros.join(','))
+          .order('nome_inscrito')
+          .limit(20);
+        setResultadosManual((data ?? []) as Inscricao[]);
+      } finally {
+        setBuscandoManual(false);
+      }
+    }, DEBOUNCE_MANUAL_MS);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [buscaManual, id, supabase]);
 
@@ -743,7 +784,7 @@ export default function CheckinMobilePage() {
           <div className="px-4 py-4">
             <input
               type="text"
-              placeholder="🔍 Buscar por nome ou CPF..."
+              placeholder="🔍 Buscar por nome, CPF, WhatsApp ou e-mail..."
               value={buscaManual}
               onChange={e => setBuscaManual(e.target.value)}
               autoFocus
@@ -756,8 +797,16 @@ export default function CheckinMobilePage() {
               </div>
             )}
 
-            {!buscandoManual && buscaManual.length >= 2 && resultadosManual.length === 0 && (
-              <p className="text-white/40 text-center mt-8 text-sm">Nenhum inscrito encontrado</p>
+            {manualMsg && (
+              <p className="text-amber-400 text-center mt-4 text-sm font-semibold">{manualMsg}</p>
+            )}
+
+            {!buscandoManual && buscaManual.trim().length > 0 && buscaManual.trim().length < MIN_BUSCA_MANUAL && (
+              <p className="text-white/40 text-center mt-6 text-sm">Digite pelo menos 3 caracteres para buscar.</p>
+            )}
+
+            {!buscandoManual && buscaManual.trim().length >= MIN_BUSCA_MANUAL && resultadosManual.length === 0 && (
+              <p className="text-white/40 text-center mt-6 text-sm">Não encontramos inscritos confirmados com esse termo.</p>
             )}
 
             <div className="mt-4 space-y-3">
@@ -771,9 +820,13 @@ export default function CheckinMobilePage() {
                         {nomeSup(ins.supervisao_id)} {ins.cpf ? `• CPF: ${ins.cpf}` : ''}
                       </p>
                       <p className="text-white/40 text-xs">{nomeCampo(ins.campo_id)}</p>
+                      <p className="text-white/50 text-xs mt-1">
+                        Pagamento: <span className="font-semibold">{PAGAMENTO_LABELS[ins.status_pagamento] ?? ins.status_pagamento}</span>
+                        {' · '}Check-in: <span className="font-semibold">{ins.checkin_realizado ? 'Realizado' : 'Pendente'}</span>
+                      </p>
                       {ins.checkin_realizado && (
                         <p className="text-emerald-400 text-xs font-semibold mt-1">
-                          ✅ Realizado {fmtDT(ins.checkin_at)}
+                          ✅ Check-in já realizado em {fmtDT(ins.checkin_at)}
                         </p>
                       )}
                     </div>

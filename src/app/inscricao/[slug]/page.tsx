@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
+import { normalizePayloadUppercase } from '@/lib/text';
 import AssistenteWidget from '@/components/AssistenteWidget';
 
 // ─── Tipos ────────────────────────────────────────────────────
@@ -393,7 +394,7 @@ export default function InscricaoPublicaPage() {
     setSalvando(true);
     try {
       const qr = generateQRCodeToken();
-      const body: Record<string, unknown> = {
+      const body: Record<string, unknown> = normalizePayloadUppercase({
         slug:            evento.slug,
         nome_inscrito:   form.nome_inscrito.trim(),
         cpf:             form.cpf,
@@ -415,10 +416,10 @@ export default function InscricaoPublicaPage() {
         hosp_cama_inferior:         form.hosp_cama_inferior,
         hosp_observacoes:           form.hosp_observacoes.trim() || null,
         lgpd_aceito:                true,
-      };
+      });
 
       if (modoLote && participantesExtra.length > 0) {
-        body.participantes = participantesExtra.map(p => ({
+        body.participantes = participantesExtra.map(p => normalizePayloadUppercase({
           ...p,
           cpf:           p.cpf.replace(/\D/g, ''),
           hospedagem:    tipoSelecionado?.inclui_hospedagem ?? false,

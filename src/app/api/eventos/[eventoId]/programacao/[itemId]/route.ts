@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireEventoAccess } from '@/lib/evento-guard';
+import { normalizePayloadUppercase } from '@/lib/text';
 
 // ── Helper de auth ──────────────────────────────────────────────
 async function requireAuth(request: NextRequest, eventoId: string) {
@@ -26,17 +27,19 @@ export async function PATCH(
   }
 
   const supabase = guard.ctx.supabaseAdmin;
+  const payload = normalizePayloadUppercase({
+    data:        dataEvento || undefined,
+    horario:     horario || null,
+    titulo:      String(titulo).trim(),
+    descricao:   descricao ? String(descricao).trim() : null,
+    palestrante: palestrante ? String(palestrante).trim() : null,
+    local:       local ? String(local).trim() : null,
+    ordem:       Number(ordem) || 0,
+  });
+
   const { data, error } = await supabase
     .from('evento_programacao')
-    .update({
-      data:        dataEvento || undefined,
-      horario:     horario || null,
-      titulo:      String(titulo).trim(),
-      descricao:   descricao ? String(descricao).trim() : null,
-      palestrante: palestrante ? String(palestrante).trim() : null,
-      local:       local ? String(local).trim() : null,
-      ordem:       Number(ordem) || 0,
-    })
+    .update(payload)
     .eq('id', itemId)
     .eq('evento_id', eventoId)
     .select()

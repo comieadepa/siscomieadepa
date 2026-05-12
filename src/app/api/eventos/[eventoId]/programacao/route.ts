@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { requireEventoAccess } from '@/lib/evento-guard';
+import { normalizePayloadUppercase } from '@/lib/text';
 
 // GET /api/eventos/[eventoId]/programacao — público (página de inscrição + assistente)
 export async function GET(
@@ -42,18 +43,20 @@ export async function POST(
   }
 
   const supabase = guard.ctx.supabaseAdmin;
+  const payload = normalizePayloadUppercase({
+    evento_id:   eventoId,
+    data:        dataEvento,
+    horario:     horario || null,
+    titulo:      String(titulo).trim(),
+    descricao:   descricao ? String(descricao).trim() : null,
+    palestrante: palestrante ? String(palestrante).trim() : null,
+    local:       local ? String(local).trim() : null,
+    ordem:       Number(ordem) || 0,
+  });
+
   const { data, error } = await supabase
     .from('evento_programacao')
-    .insert([{
-      evento_id:   eventoId,
-      data:        dataEvento,
-      horario:     horario || null,
-      titulo:      String(titulo).trim(),
-      descricao:   descricao ? String(descricao).trim() : null,
-      palestrante: palestrante ? String(palestrante).trim() : null,
-      local:       local ? String(local).trim() : null,
-      ordem:       Number(ordem) || 0,
-    }])
+    .insert([payload])
     .select()
     .single();
 

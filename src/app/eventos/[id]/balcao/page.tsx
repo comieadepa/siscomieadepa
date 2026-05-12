@@ -6,6 +6,7 @@ import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useEventosPerfil } from '@/hooks/useEventosPerfil';
 import { createClient } from '@/lib/supabase-client';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
+import { normalizePayloadUppercase } from '@/lib/text';
 import { EventBadge } from '@/components/EventBadge';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────
@@ -19,6 +20,7 @@ interface Evento {
   permite_hospedagem: boolean; permite_alimentacao: boolean; permite_brinde: boolean;
   limite_vagas: number | null; limite_hospedagem: number | null; limite_brindes: number | null;
   inscricoes_abertas: boolean; status: string; usar_tipos_inscricao: boolean;
+  gerar_certificado: boolean;
 }
 
 interface TipoInscricao {
@@ -31,6 +33,36 @@ interface InscricaoSalva {
   supervisao_id: string | null; campo_id: string | null;
   status_pagamento: string; hospedagem: boolean; alimentacao: boolean; brinde: boolean;
   qr_code: string | null; checkin_realizado: boolean;
+}
+
+interface InscricaoResumo {
+  id: string;
+  nome_inscrito: string;
+  cpf: string | null;
+  whatsapp: string | null;
+  email: string | null;
+  supervisao_id: string | null;
+  campo_id: string | null;
+  valor_final: number | null;
+  valor_pago: number | null;
+  status_pagamento: string;
+  forma_pagamento: string | null;
+  asaas_payment_id: string | null;
+  invoice_url: string | null;
+  checkin_realizado: boolean;
+  checkin_at: string | null;
+  etiqueta_impressa: boolean;
+  certificado_enviado: boolean;
+  created_at: string;
+}
+
+interface EditFormBalcao {
+  nome_inscrito: string;
+  cpf: string;
+  email: string;
+  whatsapp: string;
+  supervisao_id: string;
+  campo_id: string;
 }
 
 interface FormState {
@@ -48,6 +80,8 @@ interface FormState {
   hosp_cama_inferior: boolean;
   hosp_observacoes: string;
 }
+
+type BalcaoTab = 'nova' | 'inscritos';
 
 const FORM_VAZIO: FormState = {
   nome: '', cpf: '', email: '', whatsapp: '', sexo: '',
@@ -68,6 +102,13 @@ const inputCls =
   'w-full border border-gray-600 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#F39C12] bg-[#1a3050] text-white placeholder-gray-400';
 const labelCls = 'block text-xs font-semibold text-gray-300 mb-1 uppercase tracking-wide';
 
+const PAGAMENTO_CFG: Record<string, { label: string; cls: string }> = {
+  pendente:  { label: 'Pendente',  cls: 'bg-amber-500/20 text-amber-300' },
+  pago:      { label: 'Pago',      cls: 'bg-emerald-500/20 text-emerald-300' },
+  isento:    { label: 'Isento',    cls: 'bg-blue-500/20 text-blue-300' },
+  cancelado: { label: 'Cancelado', cls: 'bg-red-500/20 text-red-300' },
+};
+
 // ─── Componente principal ──────────────────────────────────────────────────
 export default function BalcaoPage() {
   const { loading: authLoading } = useRequireSupabaseAuth();
@@ -76,6 +117,8 @@ export default function BalcaoPage() {
   const params = useParams();
   const id = params?.id as string;
   const supabase = useMemo(() => createClient(), []);
+  const permissaoEvento = useMemo(() => (id ? perfil.permissaoParaEvento(id) : null), [id, perfil]);
+  const podeCheckinManual = perfil.isGlobal || perfil.isDeptAdmin || permissaoEvento === 'admin_evento' || permissaoEvento === 'operador';
 
   // ── Estado geral ──────────────────────────────────────────
   const [evento,      setEvento]      = useState<Evento | null>(null);
@@ -84,6 +127,28 @@ export default function BalcaoPage() {
   const [tipos,       setTipos]       = useState<TipoInscricao[]>([]);
   const [loadingInit, setLoadingInit] = useState(true);
   const [acessoNegado, setAcessoNegado] = useState(false);
+  const [activeTab, setActiveTab] = useState<BalcaoTab>('nova');
+
+  // ── Estado da lista de inscritos ─────────────────────────
+  const [inscricoesLista, setInscricoesLista] = useState<InscricaoResumo[]>([]);
+  const [loadingLista, setLoadingLista] = useState(false);
+  const [listaErro, setListaErro] = useState<string | null>(null);
+  const [buscaLista, setBuscaLista] = useState('');
+  const [filtroPag, setFiltroPag] = useState('');
+  const [filtroSup, setFiltroSup] = useState('');
+  const [filtroCampo, setFiltroCampo] = useState('');
+  const [destacarId, setDestacarId] = useState<string | null>(null);
+  const [listaMsg, setListaMsg] = useState<{ tipo: 'ok' | 'erro' | 'aviso'; texto: string } | null>(null);
+  const [enviandoEmail, setEnviandoEmail] = useState<Record<string, boolean>>({});
+  const [enviandoCert, setEnviandoCert] = useState<Record<string, boolean>>({});
+  const [marcandoEtiqueta, setMarcandoEtiqueta] = useState<Record<string, boolean>>({});
+  const [abrindoPagamento, setAbrindoPagamento] = useState<Record<string, boolean>>({});
+  const [checkinManual, setCheckinManual] = useState<Record<string, boolean>>({});
+  const [editando, setEditando] = useState<InscricaoResumo | null>(null);
+  const [editForm, setEditForm] = useState<EditFormBalcao | null>(null);
+  const [salvandoEdit, setSalvandoEdit] = useState(false);
+  const [erroEdit, setErroEdit] = useState<string | null>(null);
+  const [precisaAtualizar, setPrecisaAtualizar] = useState(false);
 
   // ── Estado do formulário ──────────────────────────────────
   const [form,       setForm]       = useState<FormState>(FORM_VAZIO);
@@ -127,6 +192,7 @@ export default function BalcaoPage() {
   const cpfRef    = useRef<HTMLInputElement>(null);
   const nomeRef   = useRef<HTMLInputElement>(null);
   const supRef    = useRef<HTMLSelectElement>(null);
+  const listaMsgTimeoutRef = useRef<number | null>(null);
 
   // ─────────────────────────────────────────────────────────
   // Inicialização
@@ -154,7 +220,7 @@ export default function BalcaoPage() {
           { data: tps },
         ] = await Promise.all([
           supabase.from('eventos').select(
-            'id,nome,slug,departamento,data_inicio,data_fim,local,cidade,banner_url,valor_inscricao,permite_hospedagem,permite_alimentacao,permite_brinde,limite_vagas,limite_hospedagem,limite_brindes,inscricoes_abertas,status,usar_tipos_inscricao'
+            'id,nome,slug,departamento,data_inicio,data_fim,local,cidade,banner_url,valor_inscricao,permite_hospedagem,permite_alimentacao,permite_brinde,limite_vagas,limite_hospedagem,limite_brindes,inscricoes_abertas,status,usar_tipos_inscricao,gerar_certificado'
           ).eq('id', id).single(),
           supabase.from('supervisoes').select('id,nome').order('nome'),
           supabase.from('campos').select('id,nome,supervisao_id').order('nome'),
@@ -217,7 +283,7 @@ export default function BalcaoPage() {
     ? campos.filter(c => c.supervisao_id === form.supervisao_id)
     : campos;
 
-  function limparTudo() {
+  function limparTudo(options?: { focoCpf?: boolean }) {
     setForm(FORM_VAZIO);
     setCpfBusca('');
     setMinistroEncontrado(false);
@@ -231,7 +297,9 @@ export default function BalcaoPage() {
     setAsaasData(null);
     // Se há só um tipo, pré-selecionar (somente quando evento usa tipos)
     if (evento?.usar_tipos_inscricao && tipos.length === 1) setForm(f => ({ ...f, tipo_id: tipos[0].id }));
-    setTimeout(() => cpfRef.current?.focus(), 50);
+    if (options?.focoCpf !== false) {
+      setTimeout(() => cpfRef.current?.focus(), 50);
+    }
   }
 
   // ─────────────────────────────────────────────────────────
@@ -370,30 +438,31 @@ export default function BalcaoPage() {
       // ── Inscrição via ASAAS (rota pública de inscrição) ──
       if (form.forma_pagamento === 'asaas' && !isGratuito) {
         const qrTokenAsaas = generateQRCodeToken();
+        const payloadApi = normalizePayloadUppercase({
+          slug:          evento.slug,
+          nome_inscrito: form.nome.trim(),
+          cpf:           form.cpf.replace(/\D/g, '') || undefined,
+          email:         form.email.trim() || undefined,
+          whatsapp:      form.whatsapp.trim() || undefined,
+          sexo:          form.sexo || undefined,
+          supervisao_id: form.supervisao_id,
+          campo_id:      form.campo_id || undefined,
+          hospedagem,
+          alimentacao,
+          brinde:        form.brinde,
+          tipo_inscricao: tipoSel?.nome || undefined,
+          cupom_codigo:  form.cupom && cupomStatus === 'ok' ? form.cupom.trim().toUpperCase() : undefined,
+          qr_code:       qrTokenAsaas,
+          // Campos hospedagem AGO
+          hosp_necessidade_especial:  form.hosp_necessidade_especial,
+          hosp_descricao_necessidade: form.hosp_descricao_necessidade.trim() || undefined,
+          hosp_cama_inferior:         form.hosp_cama_inferior,
+          hosp_observacoes:           form.hosp_observacoes.trim() || undefined,
+        });
         const res = await fetch('/api/eventos/inscricao', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            slug:          evento.slug,
-            nome_inscrito: form.nome.trim(),
-            cpf:           form.cpf.replace(/\D/g, '') || undefined,
-            email:         form.email.trim() || undefined,
-            whatsapp:      form.whatsapp.trim() || undefined,
-            sexo:          form.sexo || undefined,
-            supervisao_id: form.supervisao_id,
-            campo_id:      form.campo_id || undefined,
-            hospedagem,
-            alimentacao,
-            brinde:        form.brinde,
-            tipo_inscricao: tipoSel?.nome || undefined,
-            cupom_codigo:  form.cupom && cupomStatus === 'ok' ? form.cupom.trim().toUpperCase() : undefined,
-            qr_code:       qrTokenAsaas,
-            // Campos hospedagem AGO
-            hosp_necessidade_especial:  form.hosp_necessidade_especial,
-            hosp_descricao_necessidade: form.hosp_descricao_necessidade.trim() || undefined,
-            hosp_cama_inferior:         form.hosp_cama_inferior,
-            hosp_observacoes:           form.hosp_observacoes.trim() || undefined,
-          }),
+          body: JSON.stringify(payloadApi),
         });
         const json = await res.json() as {
           inscricaoId?: string; statusPagamento?: string;
@@ -415,6 +484,7 @@ export default function BalcaoPage() {
           .single();
 
         setInscricaoSalva(insc as InscricaoSalva);
+        registrarInscricaoCriada(insc as InscricaoSalva);
         if (json.pagamento) {
           setAsaasData({ invoiceUrl: json.pagamento.invoiceUrl, pixCopiaECola: json.pagamento.pixCopiaECola, valor: json.pagamento.valor ?? valorFinal });
         }
@@ -428,7 +498,7 @@ export default function BalcaoPage() {
       const cupomCodigo = form.cupom && cupomStatus === 'ok' ? form.cupom.trim().toUpperCase() : null;
       const statusPag = isGratuito ? 'isento' : 'pago';
 
-      const payload: Record<string, unknown> = {
+      const payload: Record<string, unknown> = normalizePayloadUppercase({
         evento_id:        evento.id,
         nome_inscrito:    form.nome.trim(),
         cpf:              form.cpf.replace(/\D/g, '') || null,
@@ -455,7 +525,7 @@ export default function BalcaoPage() {
         hosp_descricao_necessidade: form.hosp_descricao_necessidade.trim() || null,
         hosp_cama_inferior:         form.hosp_cama_inferior,
         hosp_observacoes:           form.hosp_observacoes.trim() || null,
-      };
+      });
 
       const { data: insc, error } = await supabase
         .from('evento_inscricoes')
@@ -490,7 +560,7 @@ export default function BalcaoPage() {
           (form.hosp_cama_inferior        ?  80 : 0) +
           (tipoNome.includes('jubilado')  ?  40 : 0) +
           (tipoNome.includes('presidente')?  30 : 0);
-        await supabase.from('evento_hospedagens').insert([{
+        const hospedagemPayload = normalizePayloadUppercase({
           evento_id:            evento.id,
           inscricao_id:         (insc as { id: string }).id,
           status:               'solicitada',
@@ -500,10 +570,12 @@ export default function BalcaoPage() {
           cama_inferior:        form.hosp_cama_inferior,
           observacoes:          form.hosp_observacoes.trim() || null,
           alocacao_automatica:  true,
-        }]);
+        });
+        await supabase.from('evento_hospedagens').insert([hospedagemPayload]);
       }
 
       setInscricaoSalva(insc as InscricaoSalva);
+      registrarInscricaoCriada(insc as InscricaoSalva);
       setAsaasData(null);
       setContadorTotal(c => c + 1);
     } catch (err: unknown) {
@@ -521,11 +593,383 @@ export default function BalcaoPage() {
     window.open(`/eventos/${id}/etiquetas/print?ids=${inscricaoSalva.id}&size=medium`, '_blank', 'width=900,height=700');
   }
 
+  function registrarInscricaoCriada(insc: InscricaoSalva) {
+    setDestacarId(insc.id);
+    setPrecisaAtualizar(true);
+  }
+
+  const fetchInscricoesLista = useCallback(async (options?: { silent?: boolean }) => {
+    if (!id) return;
+    if (!options?.silent) setLoadingLista(true);
+    setListaErro(null);
+    try {
+      const { data, error } = await supabase
+        .from('evento_inscricoes')
+        .select('id,nome_inscrito,cpf,whatsapp,email,supervisao_id,campo_id,valor_final,valor_pago,status_pagamento,forma_pagamento,asaas_payment_id,invoice_url,checkin_realizado,checkin_at,etiqueta_impressa,certificado_enviado,created_at')
+        .eq('evento_id', id)
+        .order('created_at', { ascending: false });
+      if (error) {
+        setListaErro('Erro ao carregar inscritos.');
+        return;
+      }
+      setInscricoesLista((data as InscricaoResumo[]) || []);
+      setPrecisaAtualizar(false);
+    } catch {
+      setListaErro('Erro ao carregar inscritos.');
+    } finally {
+      if (!options?.silent) setLoadingLista(false);
+    }
+  }, [id, supabase]);
+
+  useEffect(() => {
+    if (!inscricaoSalva) return;
+    if (!['pago', 'isento'].includes(inscricaoSalva.status_pagamento)) return;
+    const timer = window.setTimeout(() => {
+      limparTudo({ focoCpf: false });
+      setActiveTab('inscritos');
+    }, 3200);
+    return () => window.clearTimeout(timer);
+  }, [inscricaoSalva]);
+
+  useEffect(() => {
+    if (activeTab !== 'inscritos') return;
+    fetchInscricoesLista();
+    const timer = window.setInterval(() => {
+      fetchInscricoesLista({ silent: true });
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, [activeTab, fetchInscricoesLista]);
+
+  useEffect(() => {
+    if (activeTab === 'inscritos' && precisaAtualizar) {
+      fetchInscricoesLista();
+    }
+  }, [activeTab, precisaAtualizar, fetchInscricoesLista]);
+
+  useEffect(() => {
+    if (!destacarId) return;
+    const timer = window.setTimeout(() => setDestacarId(null), 12000);
+    return () => window.clearTimeout(timer);
+  }, [destacarId]);
+
+  useEffect(() => {
+    if (activeTab !== 'inscritos' || !destacarId) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(`insc-${destacarId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, destacarId, inscricoesLista.length, buscaLista, filtroPag, filtroSup, filtroCampo]);
+
+  useEffect(() => {
+    if (!destacarId) return;
+    setDestacarId(null);
+  }, [buscaLista, filtroPag, filtroSup, filtroCampo]);
+
+  useEffect(() => {
+    if (activeTab === 'nova' && !inscricaoSalva) {
+      setTimeout(() => cpfRef.current?.focus(), 50);
+    }
+  }, [activeTab, inscricaoSalva]);
+
+  useEffect(() => () => {
+    if (listaMsgTimeoutRef.current) window.clearTimeout(listaMsgTimeoutRef.current);
+  }, []);
+
   // ─────────────────────────────────────────────────────────
   // Helpers de nomes
   // ─────────────────────────────────────────────────────────
+  const supervisaoById = useMemo(
+    () => new Map(supervisoes.map(s => [s.id, s.nome])),
+    [supervisoes]
+  );
+  const campoById = useMemo(
+    () => new Map(campos.map(c => [c.id, c])),
+    [campos]
+  );
+
   const nomeSup   = (sid: string | null) => supervisoes.find(s => s.id === sid)?.nome ?? '';
   const nomeCampo = (cid: string | null) => campos.find(c => c.id === cid)?.nome ?? '';
+
+  const supervisoesLista = useMemo(() => {
+    const map = new Map<string, string>();
+    inscricoesLista.forEach(i => {
+      const id = i.supervisao_id;
+      if (!id) return;
+      const nome = (supervisaoById.get(id) ?? '').trim();
+      if (!nome) return;
+      map.set(id, nome);
+    });
+    return Array.from(map.entries())
+      .map(([id, nome]) => ({ id, nome }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  }, [inscricoesLista, supervisaoById]);
+
+  const camposBaseLista = useMemo(() => {
+    const map = new Map<string, { id: string; nome: string; supervisao_id: string | null }>();
+    inscricoesLista.forEach(i => {
+      const id = i.campo_id;
+      if (!id) return;
+      const campo = campoById.get(id);
+      const nome = (campo?.nome ?? '').trim();
+      if (!nome) return;
+      map.set(id, { id, nome, supervisao_id: campo?.supervisao_id ?? i.supervisao_id ?? null });
+    });
+    return Array.from(map.values())
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  }, [inscricoesLista, campoById]);
+
+  const camposLista = useMemo(
+    () => (filtroSup ? camposBaseLista.filter(c => c.supervisao_id === filtroSup) : camposBaseLista),
+    [camposBaseLista, filtroSup]
+  );
+
+  const inscritosFiltrados = useMemo(() => {
+    const q = buscaLista.trim().toLowerCase();
+    return inscricoesLista.filter(i => {
+      if (q) {
+        const nomeOk = i.nome_inscrito.toLowerCase().includes(q);
+        const cpfOk = (i.cpf || '').includes(q);
+        const wppOk = (i.whatsapp || '').includes(q);
+        if (!nomeOk && !cpfOk && !wppOk) return false;
+      }
+      if (filtroSup && i.supervisao_id !== filtroSup) return false;
+      if (filtroCampo && i.campo_id !== filtroCampo) return false;
+      if (filtroPag && i.status_pagamento !== filtroPag) return false;
+      // Filtro de check-in removido no balcao.
+      return true;
+    });
+  }, [inscricoesLista, buscaLista, filtroSup, filtroCampo, filtroPag]);
+
+  function definirMsgLista(tipo: 'ok' | 'erro' | 'aviso', texto: string) {
+    setListaMsg({ tipo, texto });
+    if (listaMsgTimeoutRef.current) window.clearTimeout(listaMsgTimeoutRef.current);
+    listaMsgTimeoutRef.current = window.setTimeout(() => setListaMsg(null), 4000);
+  }
+
+  async function reenviarEmail(ins: InscricaoResumo) {
+    if (!ins.email) {
+      definirMsgLista('aviso', 'E-mail nao cadastrado para esta inscricao.');
+      return;
+    }
+    setEnviandoEmail(p => ({ ...p, [ins.id]: true }));
+    try {
+      const res = await fetch(`/api/eventos/${id}/notificacoes/reenviar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inscricao_id: ins.id }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        definirMsgLista('ok', 'E-mail reenviado com sucesso.');
+      } else {
+        definirMsgLista('erro', json.error || 'Falha ao reenviar e-mail.');
+      }
+    } catch {
+      definirMsgLista('erro', 'Erro de rede ao reenviar e-mail.');
+    } finally {
+      setEnviandoEmail(p => ({ ...p, [ins.id]: false }));
+    }
+  }
+
+  async function enviarCertificadoLista(ins: InscricaoResumo) {
+    if (!ins.email) {
+      definirMsgLista('aviso', 'E-mail nao cadastrado para esta inscricao.');
+      return;
+    }
+    if (!['pago', 'isento'].includes(ins.status_pagamento)) {
+      definirMsgLista('aviso', 'Pagamento pendente: certificado indisponivel.');
+      return;
+    }
+    if (!ins.checkin_realizado) {
+      definirMsgLista('aviso', 'Check-in pendente: certificado indisponivel.');
+      return;
+    }
+    setEnviandoCert(p => ({ ...p, [ins.id]: true }));
+    try {
+      const res = await fetch(`/api/eventos/${id}/certificados/enviar-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inscricao_id: ins.id, reenviar: ins.certificado_enviado }),
+      });
+      const json = await res.json();
+      if (json.jaEnviado) {
+        definirMsgLista('ok', 'Certificado ja enviado anteriormente.');
+      } else if (res.ok) {
+        definirMsgLista('ok', 'Certificado enviado com sucesso.');
+        setInscricoesLista(list => list.map(i => i.id === ins.id ? { ...i, certificado_enviado: true } : i));
+      } else {
+        definirMsgLista('erro', json.error || 'Falha ao enviar certificado.');
+      }
+    } catch {
+      definirMsgLista('erro', 'Erro de rede ao enviar certificado.');
+    } finally {
+      setEnviandoCert(p => ({ ...p, [ins.id]: false }));
+    }
+  }
+
+  async function realizarCheckinManual(ins: InscricaoResumo) {
+    if (!podeCheckinManual) return;
+    if (!['pago', 'isento'].includes(ins.status_pagamento)) {
+      definirMsgLista('aviso', 'Somente inscricoes pagas/isentas podem fazer check-in.');
+      return;
+    }
+    setCheckinManual(p => ({ ...p, [ins.id]: true }));
+    try {
+      const now = new Date().toISOString();
+      await supabase
+        .from('evento_inscricoes')
+        .update({ checkin_realizado: true, checkin_at: now })
+        .eq('id', ins.id);
+      await supabase
+        .from('evento_checkins')
+        .insert([{ evento_id: id, inscricao_id: ins.id, metodo: 'manual' }]);
+      setInscricoesLista(list => list.map(i => i.id === ins.id ? { ...i, checkin_realizado: true, checkin_at: now } : i));
+      definirMsgLista('ok', 'Check-in realizado com sucesso.');
+    } catch {
+      definirMsgLista('erro', 'Erro ao realizar check-in.');
+    } finally {
+      setCheckinManual(p => ({ ...p, [ins.id]: false }));
+    }
+  }
+
+  function imprimirEtiqueta(ins: InscricaoResumo) {
+    window.open(`/eventos/${id}/etiquetas/print?mode=thermal&ids=${ins.id}`, '_blank', 'width=520,height=420');
+  }
+
+  async function alternarEtiquetaImpressa(ins: InscricaoResumo) {
+    if (!perfil.podeEditarInscricoes) {
+      definirMsgLista('aviso', 'Sem permissao para alterar etiqueta.');
+      return;
+    }
+    setMarcandoEtiqueta(p => ({ ...p, [ins.id]: true }));
+    try {
+      const res = await fetch(`/api/eventos/${id}/inscricoes/${ins.id}/etiqueta`, {
+        method: 'PATCH',
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        definirMsgLista('erro', json.error || 'Falha ao atualizar etiqueta.');
+        return;
+      }
+      setInscricoesLista(list => list.map(i => i.id === ins.id
+        ? { ...i, etiqueta_impressa: !!json.etiqueta_impressa }
+        : i));
+      definirMsgLista('ok', json.etiqueta_impressa ? 'Etiqueta marcada como impressa.' : 'Etiqueta desmarcada.');
+    } catch {
+      definirMsgLista('erro', 'Erro de rede ao atualizar etiqueta.');
+    } finally {
+      setMarcandoEtiqueta(p => ({ ...p, [ins.id]: false }));
+    }
+  }
+
+  async function abrirSegundaVia(ins: InscricaoResumo) {
+    setAbrindoPagamento(p => ({ ...p, [ins.id]: true }));
+    try {
+      const res = await fetch(`/api/eventos/${id}/inscricoes/${ins.id}/invoice`);
+      const json = await res.json();
+      if (!res.ok || !json.invoice_url) {
+        definirMsgLista('aviso', json.error || 'Sem cobranca ASAAS disponivel.');
+        return;
+      }
+      window.open(json.invoice_url, '_blank', 'noopener,noreferrer');
+    } catch {
+      definirMsgLista('erro', 'Erro ao abrir link de pagamento.');
+    } finally {
+      setAbrindoPagamento(p => ({ ...p, [ins.id]: false }));
+    }
+  }
+
+  function abrirEdicao(ins: InscricaoResumo) {
+    if (!perfil.podeEditarInscricoes) return;
+    setErroEdit(null);
+    setEditando(ins);
+    setEditForm({
+      nome_inscrito: ins.nome_inscrito,
+      cpf: ins.cpf ?? '',
+      email: ins.email ?? '',
+      whatsapp: ins.whatsapp ?? '',
+      supervisao_id: ins.supervisao_id ?? '',
+      campo_id: ins.campo_id ?? '',
+    });
+  }
+
+  async function salvarEdicao() {
+    if (!editando || !editForm) return;
+    if (!perfil.podeEditarInscricoes) return;
+    if (!editForm.nome_inscrito.trim()) {
+      setErroEdit('Nome do inscrito e obrigatorio.');
+      return;
+    }
+    if (!editForm.supervisao_id) {
+      setErroEdit('Supervisao e obrigatoria.');
+      return;
+    }
+    setErroEdit(null);
+    setSalvandoEdit(true);
+    try {
+      const cpfLimpo = editForm.cpf.replace(/\D/g, '') || null;
+      const payload = normalizePayloadUppercase({
+        nome_inscrito: editForm.nome_inscrito.trim(),
+        cpf: cpfLimpo,
+        email: editForm.email.trim() || null,
+        whatsapp: editForm.whatsapp.trim() || null,
+        supervisao_id: editForm.supervisao_id,
+        campo_id: editForm.campo_id || null,
+      });
+      const { error } = await supabase
+        .from('evento_inscricoes')
+        .update(payload)
+        .eq('id', editando.id);
+      if (error) {
+        setErroEdit(error.message);
+        return;
+      }
+      const normalized = payload as {
+        nome_inscrito?: string;
+        cpf?: string | null;
+        email?: string | null;
+        whatsapp?: string | null;
+        supervisao_id?: string | null;
+        campo_id?: string | null;
+      };
+      setInscricoesLista(list => list.map(i => i.id === editando.id ? {
+        ...i,
+        nome_inscrito: normalized.nome_inscrito ?? editForm.nome_inscrito.trim(),
+        cpf: normalized.cpf ?? cpfLimpo,
+        email: normalized.email ?? (editForm.email.trim() || null),
+        whatsapp: normalized.whatsapp ?? (editForm.whatsapp.trim() || null),
+        supervisao_id: normalized.supervisao_id ?? editForm.supervisao_id,
+        campo_id: normalized.campo_id ?? (editForm.campo_id || null),
+      } : i));
+      definirMsgLista('ok', 'Inscricao atualizada com sucesso.');
+      setEditando(null);
+      setEditForm(null);
+    } catch {
+      setErroEdit('Erro ao salvar edicao.');
+    } finally {
+      setSalvandoEdit(false);
+    }
+  }
+
+  function trocarAba(tab: BalcaoTab) {
+    setActiveTab(tab);
+    setInscricaoSalva(null);
+  }
+
+  function verNaListaInscritos() {
+    const idAtual = inscricaoSalva?.id ?? null;
+    limparTudo({ focoCpf: false });
+    if (idAtual) setDestacarId(idAtual);
+    setActiveTab('inscritos');
+    setPrecisaAtualizar(true);
+  }
+
+  function limparFiltrosLista() {
+    setBuscaLista('');
+    setFiltroPag('');
+    setFiltroSup('');
+    setFiltroCampo('');
+  }
 
   // ─────────────────────────────────────────────────────────
   // Guards de carregamento
@@ -563,26 +1007,6 @@ export default function BalcaoPage() {
   }
 
   // ─────────────────────────────────────────────────────────
-  // Tela de confirmação (pós-save)
-  // ─────────────────────────────────────────────────────────
-  if (inscricaoSalva) {
-    return (
-      <ConfirmacaoScreen
-        inscricao={inscricaoSalva}
-        evento={evento}
-        nomeSup={nomeSup(inscricaoSalva.supervisao_id)}
-        nomeCampo={nomeCampo(inscricaoSalva.campo_id)}
-        valorFinal={valorFinal}
-        formaPagamento={form.forma_pagamento}
-        asaasData={asaasData}
-        contadorTotal={contadorTotal}
-        onNova={limparTudo}
-        onImprimir={imprimirCracha}
-      />
-    );
-  }
-
-  // ─────────────────────────────────────────────────────────
   // Formulário principal
   // ─────────────────────────────────────────────────────────
   const temTipos = (evento?.usar_tipos_inscricao ?? false) && tipos.length > 0;
@@ -609,12 +1033,60 @@ export default function BalcaoPage() {
         )}
       </header>
 
+      {/* ── Abas internas ── */}
+      <div className="bg-[#0a2040] border-b border-white/10">
+        <div className="max-w-5xl mx-auto px-4 lg:px-6">
+          <div className="flex gap-2 py-3">
+            <button
+              type="button"
+              onClick={() => trocarAba('nova')}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition ${
+                activeTab === 'nova'
+                  ? 'bg-[#F39C12] text-[#0D2B4E]'
+                  : 'bg-white/10 text-white/70 hover:bg-white/20'
+              }`}
+            >
+              📝 Nova Inscrição
+            </button>
+            <button
+              type="button"
+              onClick={() => trocarAba('inscritos')}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition ${
+                activeTab === 'inscritos'
+                  ? 'bg-[#F39C12] text-[#0D2B4E]'
+                  : 'bg-white/10 text-white/70 hover:bg-white/20'
+              }`}
+            >
+              👥 Inscritos
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* ── Corpo principal ── */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-5xl mx-auto p-4 lg:p-6">
+        <div className={`mx-auto p-4 lg:p-6 ${activeTab === 'inscritos' ? 'max-w-[1400px]' : 'max-w-5xl'}`}>
 
-          {/* ── Bloco 1: Busca CPF ── */}
-          <section className="bg-[#123b63] rounded-2xl p-5 mb-4 border border-white/10">
+          {activeTab === 'nova' && inscricaoSalva && (
+            <ConfirmacaoScreen
+              inscricao={inscricaoSalva}
+              evento={evento}
+              nomeSup={nomeSup(inscricaoSalva.supervisao_id)}
+              nomeCampo={nomeCampo(inscricaoSalva.campo_id)}
+              valorFinal={valorFinal}
+              formaPagamento={form.forma_pagamento}
+              asaasData={asaasData}
+              contadorTotal={contadorTotal}
+              onNova={() => { limparTudo(); setActiveTab('nova'); }}
+              onImprimir={imprimirCracha}
+              onVerLista={verNaListaInscritos}
+            />
+          )}
+
+          {activeTab === 'nova' && !inscricaoSalva && (
+            <>
+              {/* ── Bloco 1: Busca CPF ── */}
+              <section className="bg-[#123b63] rounded-2xl p-5 mb-4 border border-white/10">
             <h2 className="text-white font-bold text-sm mb-3 flex items-center gap-2">
               <span className="w-6 h-6 bg-[#F39C12] text-[#0D2B4E] rounded-full flex items-center justify-center text-xs font-black">1</span>
               Identificação
@@ -967,7 +1439,7 @@ export default function BalcaoPage() {
             <div className="flex gap-2 flex-shrink-0 w-full sm:w-auto">
               <button
                 type="button"
-                onClick={limparTudo}
+                onClick={() => limparTudo()}
                 className="flex-1 sm:flex-none border border-white/20 text-white/60 hover:text-white hover:border-white/40 px-5 py-3.5 rounded-xl text-sm font-semibold transition"
                 title="Esc"
               >
@@ -997,6 +1469,334 @@ export default function BalcaoPage() {
               </div>
             )}
           </div>
+            </>
+          )}
+
+          {activeTab === 'inscritos' && (
+            <div className="space-y-4">
+              <div className="bg-[#123b63] rounded-2xl border border-white/10 p-4">
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    type="text"
+                    placeholder="🔍 Buscar nome, CPF, WhatsApp"
+                    value={buscaLista}
+                    onChange={e => setBuscaLista(e.target.value)}
+                    className={inputCls + ' sm:flex-1 min-w-[220px]'}
+                  />
+                  <select
+                    value={filtroSup}
+                    onChange={e => { setFiltroSup(e.target.value); setFiltroCampo(''); }}
+                    className={inputCls + ' sm:w-44'}
+                  >
+                    <option value="">Todas supervisões</option>
+                    {supervisoesLista.map(s => (
+                      <option key={s.id} value={s.id}>{s.nome}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={filtroCampo}
+                    onChange={e => setFiltroCampo(e.target.value)}
+                    className={inputCls + ' sm:w-44'}
+                  >
+                    <option value="">Todos campos</option>
+                    {camposLista.map(c => (
+                      <option key={c.id} value={c.id}>{c.nome}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={filtroPag}
+                    onChange={e => setFiltroPag(e.target.value)}
+                    className={inputCls + ' sm:w-40'}
+                  >
+                    <option value="">Pagamento</option>
+                    <option value="pendente">Pendente</option>
+                    <option value="pago">Pago</option>
+                    <option value="isento">Isento</option>
+                    <option value="cancelado">Cancelado</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={limparFiltrosLista}
+                    className="px-4 py-2.5 rounded-lg text-xs font-bold bg-white/10 text-white/70 hover:bg-white/20 transition"
+                  >
+                    Limpar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fetchInscricoesLista()}
+                    disabled={loadingLista}
+                    className="px-4 py-2.5 rounded-lg text-xs font-bold bg-[#F39C12] text-[#0D2B4E] hover:bg-[#D68910] disabled:opacity-50 transition"
+                  >
+                    {loadingLista ? 'Atualizando...' : 'Atualizar'}
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 mt-3 text-xs text-white/50">
+                  <span>{inscritosFiltrados.length} inscrito(s)</span>
+                  {precisaAtualizar && <span className="text-amber-300">Lista pendente de atualizacao</span>}
+                </div>
+                {listaMsg && (
+                  <div className={`mt-3 text-xs font-bold px-3 py-2 rounded-lg border ${
+                    listaMsg.tipo === 'ok'
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      : listaMsg.tipo === 'aviso'
+                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                      : 'bg-red-500/10 border-red-500/30 text-red-300'
+                  }`}>
+                    {listaMsg.texto}
+                  </div>
+                )}
+                {listaErro && (
+                  <div className="mt-3 text-xs font-bold px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300">
+                    {listaErro}
+                  </div>
+                )}
+              </div>
+
+              {loadingLista ? (
+                <div className="bg-[#123b63] rounded-2xl border border-white/10 p-6 text-white/60 text-sm">
+                  Carregando inscritos...
+                </div>
+              ) : inscritosFiltrados.length === 0 ? (
+                <div className="bg-[#123b63] rounded-2xl border border-white/10 p-6 text-white/60 text-sm">
+                  Nenhum inscrito encontrado com os filtros atuais.
+                </div>
+              ) : (
+                <div className="bg-[#123b63] rounded-2xl border border-white/10 overflow-x-auto">
+                  <table className="min-w-[1100px] w-full text-sm">
+                    <thead className="bg-[#0a2040] text-white/70">
+                      <tr>
+                        {['Nome', 'Campo', 'Valor', 'Pagamento', 'Etiqueta', 'Ações'].map(h => (
+                          <th key={h} className="text-left px-3 py-3 text-xs font-semibold whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {inscritosFiltrados.map(ins => {
+                        const pagCfg = PAGAMENTO_CFG[ins.status_pagamento] ?? PAGAMENTO_CFG.pendente;
+                        const valorExib = ins.valor_pago ?? ins.valor_final ?? 0;
+                        const isDestaque = ins.id === destacarId;
+                        const podeCert = perfil.podeCertificados && evento.gerar_certificado;
+                        const elegivelCheckin = ['pago', 'isento'].includes(ins.status_pagamento);
+                        const podeMostrarCheckin = podeCheckinManual && !ins.checkin_realizado && elegivelCheckin;
+                        const podeMostrarCert = podeCert && !!ins.email && ins.checkin_realizado && elegivelCheckin;
+                        const etiquetaAtiva = !!ins.etiqueta_impressa;
+                        const etiquetaTooltip = etiquetaAtiva
+                          ? 'Etiqueta impressa · Desmarcar impressão'
+                          : 'Marcar etiqueta';
+                        const hasAsaas = !!ins.asaas_payment_id && !!ins.invoice_url;
+                        const podeAbrirPagamento = ins.status_pagamento === 'pendente' && hasAsaas;
+                        const pagamentoTooltip = ins.status_pagamento === 'pendente'
+                          ? (hasAsaas ? 'Abrir link de pagamento' : (ins.forma_pagamento ? 'Pagamento manual' : 'Sem cobrança ASAAS'))
+                          : ins.status_pagamento === 'cancelado'
+                          ? 'Pagamento cancelado'
+                          : 'Pagamento já confirmado';
+                        return (
+                          <tr
+                            key={ins.id}
+                            id={`insc-${ins.id}`}
+                            className={`border-b border-white/5 ${isDestaque ? 'bg-amber-400/10' : 'hover:bg-white/5'}`}
+                          >
+                            <td className="px-3 py-3 text-white font-semibold whitespace-nowrap">
+                              {ins.nome_inscrito}
+                              {isDestaque && (
+                                <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300">
+                                  Recém cadastrada
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-3 text-white/70 whitespace-nowrap">{nomeCampo(ins.campo_id) || '-'}</td>
+                            <td className="px-3 py-3 text-white whitespace-nowrap">{fmtMoeda(valorExib)}</td>
+                            <td className="px-3 py-3 whitespace-nowrap">
+                              <span className={`text-xs font-bold px-2 py-1 rounded-full ${pagCfg.cls}`}>{pagCfg.label}</span>
+                            </td>
+                            <td className="px-3 py-3 whitespace-nowrap">
+                              {ins.etiqueta_impressa ? '🏷️' : <span className="text-white/30">—</span>}
+                            </td>
+                            <td className="px-3 py-3 whitespace-nowrap">
+                              <div className="flex flex-wrap gap-1">
+                                {perfil.podeEditarInscricoes && (
+                                  <button
+                                    type="button"
+                                    onClick={() => abrirEdicao(ins)}
+                                    className="px-2 py-1 text-xs font-bold rounded-md bg-white/10 text-white/70 hover:bg-white/20"
+                                    title="Editar inscrição"
+                                  >
+                                    ✏️
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => imprimirEtiqueta(ins)}
+                                  className="px-2 py-1 text-xs font-bold rounded-md bg-purple-500/20 text-purple-200 hover:bg-purple-500/30"
+                                  title="Imprimir etiqueta"
+                                >
+                                  🏷️
+                                </button>
+                                {perfil.podeEditarInscricoes && (
+                                  <button
+                                    type="button"
+                                    onClick={() => alternarEtiquetaImpressa(ins)}
+                                    disabled={marcandoEtiqueta[ins.id]}
+                                    className={`px-2 py-1 text-xs font-bold rounded-md transition disabled:opacity-50 ${
+                                      etiquetaAtiva
+                                        ? 'bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30'
+                                        : 'bg-white/10 text-white/60 hover:bg-white/20'
+                                    }`}
+                                    title={etiquetaTooltip}
+                                  >
+                                    {marcandoEtiqueta[ins.id] ? '⏳' : etiquetaAtiva ? '✅' : '🏷️'}
+                                  </button>
+                                )}
+                                {perfil.podeComunicacao && (
+                                  <button
+                                    type="button"
+                                    onClick={() => reenviarEmail(ins)}
+                                    disabled={enviandoEmail[ins.id]}
+                                    className="px-2 py-1 text-xs font-bold rounded-md bg-sky-500/20 text-sky-200 hover:bg-sky-500/30 disabled:opacity-50"
+                                    title="Reenviar e-mail"
+                                  >
+                                    {enviandoEmail[ins.id] ? '⏳' : '✉️'}
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => podeAbrirPagamento && abrirSegundaVia(ins)}
+                                  disabled={!podeAbrirPagamento || abrindoPagamento[ins.id]}
+                                  className="px-2 py-1 text-xs font-bold rounded-md bg-white/10 text-white/60 hover:bg-white/20 disabled:opacity-50"
+                                  title={pagamentoTooltip}
+                                >
+                                  {abrindoPagamento[ins.id] ? '⏳' : '💳'}
+                                </button>
+                                {podeMostrarCheckin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => realizarCheckinManual(ins)}
+                                    disabled={checkinManual[ins.id]}
+                                    className="px-2 py-1 text-xs font-bold rounded-md bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-50"
+                                    title="Check-in manual"
+                                  >
+                                    {checkinManual[ins.id] ? '⏳' : '✅'}
+                                  </button>
+                                )}
+                                {podeMostrarCert && (
+                                  <button
+                                    type="button"
+                                    onClick={() => enviarCertificadoLista(ins)}
+                                    disabled={enviandoCert[ins.id]}
+                                    className="px-2 py-1 text-xs font-bold rounded-md bg-blue-500/20 text-blue-200 hover:bg-blue-500/30 disabled:opacity-50"
+                                    title="Enviar certificado"
+                                  >
+                                    {enviandoCert[ins.id] ? '⏳' : '🎓'}
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {editando && editForm && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => { setEditando(null); setEditForm(null); }}>
+              <div className="bg-[#123b63] border border-white/10 rounded-2xl w-full max-w-lg p-5" onClick={e => e.stopPropagation()}>
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h3 className="text-white font-bold text-sm">✏️ Editar inscrição</h3>
+                    <p className="text-white/50 text-xs">{editando.nome_inscrito}</p>
+                  </div>
+                  <button className="text-white/60 hover:text-white text-lg" onClick={() => { setEditando(null); setEditForm(null); }}>×</button>
+                </div>
+
+                {erroEdit && (
+                  <div className="mb-3 text-xs font-bold px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300">
+                    {erroEdit}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className={labelCls}>Nome completo *</label>
+                    <input
+                      value={editForm.nome_inscrito}
+                      onChange={e => setEditForm(f => f ? { ...f, nome_inscrito: e.target.value } : f)}
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>CPF</label>
+                    <input
+                      value={editForm.cpf}
+                      onChange={e => setEditForm(f => f ? { ...f, cpf: e.target.value } : f)}
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>WhatsApp</label>
+                    <input
+                      value={editForm.whatsapp}
+                      onChange={e => setEditForm(f => f ? { ...f, whatsapp: e.target.value } : f)}
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>E-mail</label>
+                    <input
+                      type="email"
+                      value={editForm.email}
+                      onChange={e => setEditForm(f => f ? { ...f, email: e.target.value } : f)}
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Supervisão *</label>
+                    <select
+                      value={editForm.supervisao_id}
+                      onChange={e => { setEditForm(f => f ? { ...f, supervisao_id: e.target.value, campo_id: '' } : f); }}
+                      className={inputCls}
+                    >
+                      <option value="">Selecione...</option>
+                      {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Campo</label>
+                    <select
+                      value={editForm.campo_id}
+                      onChange={e => setEditForm(f => f ? { ...f, campo_id: e.target.value } : f)}
+                      className={inputCls}
+                    >
+                      <option value="">Selecione...</option>
+                      {campos.filter(c => !editForm.supervisao_id || c.supervisao_id === editForm.supervisao_id)
+                        .map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 mt-4">
+                  <button
+                    type="button"
+                    onClick={() => { setEditando(null); setEditForm(null); }}
+                    className="flex-1 border border-white/20 text-white/70 hover:text-white hover:border-white/40 py-2.5 rounded-lg text-sm font-bold transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={salvarEdicao}
+                    disabled={salvandoEdit}
+                    className="flex-1 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-bold transition"
+                  >
+                    {salvandoEdit ? 'Salvando...' : 'Salvar'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1024,7 +1824,7 @@ function ToggleService({ label, active, onClick }: { label: string; active: bool
 function ConfirmacaoScreen({
   inscricao, evento, nomeSup, nomeCampo,
   valorFinal, formaPagamento, asaasData,
-  contadorTotal, onNova, onImprimir,
+  contadorTotal, onNova, onImprimir, onVerLista,
 }: {
   inscricao: InscricaoSalva;
   evento: { id: string; nome: string; departamento: string; data_inicio: string; data_fim: string; local: string | null; cidade: string | null; banner_url: string | null };
@@ -1034,6 +1834,7 @@ function ConfirmacaoScreen({
   contadorTotal: number;
   onNova: () => void;
   onImprimir: () => void;
+  onVerLista: () => void;
 }) {
   const fmtMoeda = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -1055,7 +1856,7 @@ function ConfirmacaoScreen({
   const isGratuito = valorFinal <= 0 || formaPagamento === 'isento';
 
   return (
-    <div className="min-h-screen bg-[#0D2B4E] flex flex-col items-center justify-center p-4">
+    <div className="min-h-[70vh] bg-[#0D2B4E] flex flex-col items-center justify-center p-4">
       {/* Ícone de sucesso */}
       <div className="mb-6 text-center">
         <div className="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center mx-auto mb-3 shadow-lg shadow-emerald-500/30">
@@ -1147,6 +1948,13 @@ function ConfirmacaoScreen({
             ➕ Nova Inscrição
           </button>
         </div>
+        <button
+          type="button"
+          onClick={onVerLista}
+          className="w-full border border-white/20 text-white/80 hover:text-white hover:border-white/40 py-3 rounded-xl text-sm font-bold transition"
+        >
+          👥 Ver na lista de inscritos
+        </button>
       </div>
       <p className="text-white/30 text-xs mt-3">Enter = Nova inscrição &nbsp;&middot;&nbsp; Ctrl+P = Só imprimir</p>
     </div>

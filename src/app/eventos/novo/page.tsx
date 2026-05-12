@@ -6,6 +6,7 @@ import PageLayout from '@/components/PageLayout';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useEventosPerfil } from '@/hooks/useEventosPerfil';
 import { createClient } from '@/lib/supabase-client';
+import { normalizePayloadUppercase } from '@/lib/text';
 
 // ─── Tipos ───────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -303,7 +304,7 @@ export default function NovoEventoPage() {
 
     setSalvando(true);
     try {
-      const payload = {
+      const payload = normalizePayloadUppercase({
         nome:                   form.nome.trim(),
         slug:                   gerarSlug(form.nome.trim()),
         descricao:              form.descricao.trim() || null,
@@ -331,7 +332,7 @@ export default function NovoEventoPage() {
         limite_brindes:         form.limite_brindes ? parseInt(form.limite_brindes) : null,
         publico_alvo:           form.publico_alvo.trim() || null,
         status:                 form.status,
-      };
+      });
 
       const { data: novoEvento, error } = await supabase
         .from('eventos')

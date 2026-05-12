@@ -4,6 +4,7 @@ import {
   createOrFindAsaasCustomer,
   createEventoPayment,
 } from '@/lib/asaas';
+import { normalizePayloadUppercase } from '@/lib/text';
 
 const VENCIMENTO_DIAS = 3;
 
@@ -133,7 +134,7 @@ export async function POST(request: NextRequest) {
         .from('evento_tipos_inscricao')
         .select('nome, valor, inclui_alimentacao, inclui_hospedagem')
         .eq('evento_id', evento.id)
-        .eq('nome', tipo_inscricao)
+        .ilike('nome', String(tipo_inscricao).trim())
         .eq('ativo', true)
         .single();
       if (tipo) {
@@ -202,25 +203,27 @@ export async function POST(request: NextRequest) {
       const valorTotalLote = valorFinal * todos.length;
       const codigoLote     = gerarCodigoLote();
 
+      const lotePayload = normalizePayloadUppercase({
+        evento_id:            evento.id,
+        codigo:               codigoLote,
+        responsavel_nome:     nome_inscrito.trim(),
+        responsavel_email:    email?.trim() || null,
+        responsavel_whatsapp: whatsapp?.trim() || null,
+        valor_total:          valorTotalLote,
+        status_pagamento:     isGratuito ? 'isento' : 'pendente',
+        cupom_codigo:         cupomUsado,
+        desconto_valor:       desconto * todos.length,
+      });
+
       const { data: lote, error: loteErr } = await supabase
         .from('evento_lotes_inscricao')
-        .insert([{
-          evento_id:            evento.id,
-          codigo:               codigoLote,
-          responsavel_nome:     nome_inscrito.trim(),
-          responsavel_email:    email?.trim() || null,
-          responsavel_whatsapp: whatsapp?.trim() || null,
-          valor_total:          valorTotalLote,
-          status_pagamento:     isGratuito ? 'isento' : 'pendente',
-          cupom_codigo:         cupomUsado,
-          desconto_valor:       desconto * todos.length,
-        }])
+        .insert([lotePayload])
         .select('id')
         .single();
 
       if (loteErr || !lote) return NextResponse.json({ error: 'Erro ao criar lote' }, { status: 500 });
 
-      const rows = todos.map(p => ({
+      const rows = todos.map(p => normalizePayloadUppercase({
         evento_id:        evento.id,
         lote_id:          lote.id,
         nome_inscrito:    String(p.nome_inscrito ?? nome_inscrito).trim(),
@@ -276,39 +279,41 @@ export async function POST(request: NextRequest) {
     // ════════════════════════════════════════════════════════════
     // FLUXO INDIVIDUAL
     // ════════════════════════════════════════════════════════════
+    const inscricaoPayload = normalizePayloadUppercase({
+      evento_id:        evento.id,
+      nome_inscrito:    nome_inscrito.trim(),
+      cpf:              cpf?.replace(/\D/g, '') || null,
+      email:            email?.trim() || null,
+      telefone:         telefone?.trim() || null,
+      whatsapp:         whatsapp?.trim() || null,
+      sexo:             sexo || null,
+      data_nascimento:  data_nascimento || null,
+      supervisao_id:    supervisao_id || null,
+      campo_id:         campo_id || null,
+      hospedagem:       querHospedagem,
+      alimentacao:      tipoInclui.alimentacao,
+      brinde:           !!brinde,
+      tipo_inscricao:   tipoNome,
+      valor_original:   valorBase,
+      cupom_codigo:     cupomUsado,
+      desconto_valor:   desconto,
+      valor_final:      valorFinal,
+      valor_pago:       valorFinal,
+      status_pagamento: isGratuito ? 'isento' : 'pendente',
+      forma_pagamento:  isGratuito ? null : 'pix',
+      qr_code:          qr_code || null,
+      // Campos hospedagem AGO
+      hosp_necessidade_especial:  !!hosp_necessidade_especial,
+      hosp_descricao_necessidade: hosp_descricao_necessidade?.trim() || null,
+      hosp_cama_inferior:         !!hosp_cama_inferior,
+      hosp_observacoes:           hosp_observacoes?.trim() || null,
+      lgpd_aceito:      true,
+      lgpd_aceito_em:   new Date().toISOString(),
+    });
+
     const { data: inscricao, error: insErr } = await supabase
       .from('evento_inscricoes')
-      .insert([{
-        evento_id:        evento.id,
-        nome_inscrito:    nome_inscrito.trim(),
-        cpf:              cpf?.replace(/\D/g, '') || null,
-        email:            email?.trim() || null,
-        telefone:         telefone?.trim() || null,
-        whatsapp:         whatsapp?.trim() || null,
-        sexo:             sexo || null,
-        data_nascimento:  data_nascimento || null,
-        supervisao_id:    supervisao_id || null,
-        campo_id:         campo_id || null,
-        hospedagem:       querHospedagem,
-        alimentacao:      tipoInclui.alimentacao,
-        brinde:           !!brinde,
-        tipo_inscricao:   tipoNome,
-        valor_original:   valorBase,
-        cupom_codigo:     cupomUsado,
-        desconto_valor:   desconto,
-        valor_final:      valorFinal,
-        valor_pago:       valorFinal,
-        status_pagamento: isGratuito ? 'isento' : 'pendente',
-        forma_pagamento:  isGratuito ? null : 'pix',
-        qr_code:          qr_code || null,
-        // Campos hospedagem AGO
-        hosp_necessidade_especial:  !!hosp_necessidade_especial,
-        hosp_descricao_necessidade: hosp_descricao_necessidade?.trim() || null,
-        hosp_cama_inferior:         !!hosp_cama_inferior,
-        hosp_observacoes:           hosp_observacoes?.trim() || null,
-        lgpd_aceito:      true,
-        lgpd_aceito_em:   new Date().toISOString(),
-      }])
+      .insert([inscricaoPayload])
       .select('id')
       .single();
 
@@ -333,7 +338,7 @@ export async function POST(request: NextRequest) {
         hosp_cama_inferior: !!hosp_cama_inferior,
         hosp_observacoes: hosp_observacoes?.trim() || null,
       });
-      await supabase.from('evento_hospedagens').insert([{
+      const hospedagemPayload = normalizePayloadUppercase({
         evento_id:            evento.id,
         inscricao_id:         inscricao.id,
         status:               'solicitada',
@@ -343,7 +348,8 @@ export async function POST(request: NextRequest) {
         cama_inferior:        !!hosp_cama_inferior,
         observacoes:          hosp_observacoes?.trim() || null,
         alocacao_automatica:  true,
-      }]);
+      });
+      await supabase.from('evento_hospedagens').insert([hospedagemPayload]);
     }
 
     if (isGratuito) {

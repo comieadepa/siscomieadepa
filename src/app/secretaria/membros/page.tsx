@@ -1321,6 +1321,30 @@ useEffect(() => {
     });
   };
 
+  const isDataUrl = (value?: string | null) => {
+    return !!value && value.startsWith('data:image/');
+  };
+
+  const uploadFotoMembro = async (dataUrl: string, membroId: string) => {
+    const blob = await fetch(dataUrl).then((res) => res.blob());
+    const file = new File([blob], `foto-${membroId}.jpg`, {
+      type: blob.type || 'image/jpeg',
+    });
+    const form = new FormData();
+    form.append('file', file);
+    form.append('membroId', membroId);
+
+    const resp = await fetch('/api/v1/secretaria/uploads/membro-foto', {
+      method: 'POST',
+      body: form,
+    });
+    const payload = await resp.json();
+    if (!resp.ok) {
+      throw new Error(payload?.error || 'Erro ao enviar foto');
+    }
+    return payload as { url?: string; bucket?: string; path?: string };
+  };
+
   // Função para salvar/atualizar membro
   const salvarMembro = async () => {
     console.log('💾 Iniciando salvamento do membro...');
@@ -1350,6 +1374,18 @@ useEffect(() => {
     }
 
     try {
+      const fotoEhBase64 = isDataUrl(fotoMembro);
+      let fotoUrlFinal: string | null = fotoMembro || null;
+
+      if (membroEditando && fotoEhBase64 && fotoMembro) {
+        const uploaded = await uploadFotoMembro(fotoMembro, membroEditando.id);
+        fotoUrlFinal = uploaded?.url || null;
+      }
+
+      if (!membroEditando && fotoEhBase64) {
+        fotoUrlFinal = null;
+      }
+
       const baseForCustom: Partial<Membro> = {
         uniqueId: membroEditando?.uniqueId || gerarUniqueId(),
         matricula: dadosPessoais.matricula,
@@ -1381,7 +1417,7 @@ useEffect(() => {
         cargoMinisterial: cargoSelecionado,
         dadosCargos,
         temFuncaoIgreja: dadosMinisteriais.temFuncaoIgreja,
-        fotoUrl: fotoMembro || undefined,
+        fotoUrl: fotoUrlFinal || undefined,
       };
 
       const custom_fields = {
@@ -1460,7 +1496,7 @@ useEffect(() => {
         observacoes_ministeriais: dadosMinisteriais.observacoesMinisteriais || null,
         cred_validade: dadosMinisteriais.dataValidadeCredencial || null,
         // Aba Foto
-        foto_url: fotoMembro || null,
+        foto_url: fotoUrlFinal,
         // Dados de Consagração
         local_batismo: dadosConsagracao.local_batismo || null,
         data_filiacao: dadosConsagracao.data_filiacao || null,
@@ -1507,8 +1543,19 @@ useEffect(() => {
         });
       } else {
         const created = await createMember(payloadBase);
+        let createdUi = memberToMembro(created as unknown as Member);
+
+        if (fotoEhBase64 && fotoMembro && created?.id) {
+          const uploaded = await uploadFotoMembro(fotoMembro, created.id);
+          if (uploaded?.url) {
+            await updateMember(created.id, { foto_url: uploaded.url });
+            createdUi = { ...createdUi, fotoUrl: uploaded.url } as Membro;
+            setFotoMembro(uploaded.url);
+            setFotoOriginal(uploaded.url);
+          }
+        }
+
         await fetchMembers(1, 10000);
-        const createdUi = memberToMembro(created as unknown as Member);
         setUltimoCadastro(createdUi);
         setNotification({
           isOpen: true,

@@ -65,6 +65,7 @@ export default function EtiquetasPrintPage() {
         .from('evento_inscricoes')
         .select('id,nome_inscrito,cpf,supervisao_id,campo_id,status_pagamento,tipo_inscricao,hospedagem,alimentacao,brinde,qr_code,checkin_realizado,etiqueta_impressa,ministro_id')
         .eq('evento_id', id)
+        .in('status_pagamento', ['pago', 'isento'])
         .order('nome_inscrito');
 
       if (ids)                         inscrQuery = inscrQuery.in('id', ids.split(','));

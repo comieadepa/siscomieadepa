@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { requireEventoAccess } from '@/lib/evento-guard';
+import { normalizePayloadUppercase } from '@/lib/text';
 
 // GET /api/eventos/[eventoId]/certificado-config
 // Público — necessário para página de download de certificado
@@ -46,7 +47,7 @@ export async function POST(
 
   const supabase = guard.ctx.supabaseAdmin;
 
-  const payload: Record<string, unknown> = {
+  const payload: Record<string, unknown> = normalizePayloadUppercase({
     evento_id:        eventoId,
     arte_url:         arte_url?.trim() || background_url?.trim() || null,
     background_url:   background_url?.trim() || arte_url?.trim() || null,
@@ -58,7 +59,7 @@ export async function POST(
     fonte_tamanho:    Number(fonte_tamanho) || 14,
     elementos_json:   elementos_json ?? null,
     updated_at:       new Date().toISOString(),
-  };
+  });
 
   const { data, error } = await supabase
     .from('evento_certificado_config')

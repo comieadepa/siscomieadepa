@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { requireEventoAccess } from '@/lib/evento-guard';
+import { normalizeUppercase } from '@/lib/text';
 
 // GET /api/eventos/[eventoId]/tipos-inscricao
 // Lista os tipos de inscrição ativos de um evento (público)
@@ -53,7 +54,7 @@ export async function POST(
   // Remove os tipos antigos e insere os novos (evita duplicados)
   const rows = tipos.map(t => ({
     evento_id:         eventoId,
-    nome:              t.nome,
+    nome:              normalizeUppercase(String(t.nome || '')),
     valor:             t.valor,
     inclui_alimentacao:t.inclui_alimentacao,
     inclui_hospedagem: t.inclui_hospedagem,
