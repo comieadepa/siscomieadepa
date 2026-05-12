@@ -2,9 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import PageLayout from '@/components/PageLayout';
+import AccessRestricted from '@/components/AccessRestricted';
 import { createClient } from '@/lib/supabase-client';
 import { buildUrl, getAppBaseUrl } from '@/lib/urls';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
+import { useUserRole } from '@/hooks/useUserRole';
+import { canAccessModule } from '@/lib/auth/roles';
 
 // ─── Tipos ─────────────────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -49,8 +52,11 @@ const parseMoeda = (s: string) =>
 // ─── Componente principal ──────────────────────────────────────────────
 export default function FinanceiroPage() {
   const { loading } = useRequireSupabaseAuth();
+  const { role, loading: roleLoading } = useUserRole();
   const supabase = createClient();
   const anoAtual = new Date().getFullYear();
+
+  const podeAcessar = canAccessModule(role, 'financeiro');
 
   // Aba ativa
   const [abaAtiva, setAbaAtiva] = useState<'contribuicao-estatutaria'>('contribuicao-estatutaria');
@@ -86,49 +92,51 @@ export default function FinanceiroPage() {
   const [sucesso, setSucesso] = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
 
+  const getAccessTokenOrThrow = async () => {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error('Nao autenticado');
+    return token;
+  };
+
+  const authedFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const token = await getAccessTokenOrThrow();
+    const headers = new Headers(init?.headers || {});
+    headers.set('Authorization', `Bearer ${token}`);
+    return fetch(input, { ...init, headers });
+  };
+
   // ─── Carga inicial ────────────────────────────────────────────────────
   const loadContribuicoes = useCallback(async () => {
     const params = new URLSearchParams();
     if (filtroAno) params.set('ano', filtroAno);
     if (filtroSup) params.set('supervisao_id', filtroSup);
     if (filtroCampo) params.set('campo_id', filtroCampo);
-    const res = await fetch(`/api/financeiro/contribuicoes?${params}`);
+    const res = await authedFetch(`/api/financeiro/contribuicoes?${params}`);
     const json = await res.json();
     setContribuicoes(json.data || []);
   }, [filtroAno, filtroSup, filtroCampo]);
 
   useEffect(() => {
-    if (loading) return;
-    // Carrega supervisões
-    supabase.from('supervisoes').select('id,nome').neq('is_active', false).order('nome')
-      .then(({ data }: { data: unknown }) => setSupervisoes((data as Supervisao[]) || []));
-
-    // Carrega campos com paginação
+    if (loading || roleLoading || !podeAcessar) return;
+    // Carrega supervisoes e campos via API protegida
     (async () => {
-      let all: Campo[] = [];
-      let from = 0;
-      while (true) {
-        const { data } = await supabase
-          .from('campos')
-          .select('id,nome,supervisao_id,pastor_member_id,presidente_nome')
-          .neq('is_active', false)
-          .order('nome')
-          .range(from, from + 999);
-        all = all.concat((data as Campo[]) || []);
-        if (!data || data.length < 1000) break;
-        from += 1000;
+      const res = await authedFetch('/api/v1/estrutura');
+      const json = await res.json();
+      if (res.ok) {
+        setSupervisoes((json?.supervisoes as Supervisao[]) || []);
+        setCampos((json?.campos as Campo[]) || []);
       }
-      setCampos(all);
     })();
 
     loadContribuicoes();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading]);
+  }, [loading, roleLoading, podeAcessar]);
 
   // Recarrega tabela quando filtros mudam
   useEffect(() => {
-    if (!loading) loadContribuicoes();
-  }, [loading, loadContribuicoes]);
+    if (!loading && !roleLoading && podeAcessar) loadContribuicoes();
+  }, [loading, roleLoading, podeAcessar, loadContribuicoes]);
 
   // ─── Selecionar campo → preenche pastor ──────────────────────────────
   const handleCampoChange = async (id: string) => {
@@ -137,15 +145,13 @@ export default function FinanceiroPage() {
     if (!campo) { setCampoNome(''); setPastorNome(''); setPastorMat(''); setPastorCpf(''); return; }
     setCampoNome(campo.nome);
     if (campo.pastor_member_id) {
-      const { data } = await supabase
-        .from('members')
-        .select('name,matricula,cpf')
-        .eq('id', campo.pastor_member_id)
-        .maybeSingle();
-      if (data) {
-        setPastorNome((data as any).name || '');
-        setPastorMat(String((data as any).matricula || ''));
-        setPastorCpf((data as any).cpf || '');
+      const res = await authedFetch(`/api/v1/members/lookup?id=${campo.pastor_member_id}&limit=1`);
+      const json = await res.json();
+      const data = (json?.data as any[])?.[0];
+      if (res.ok && data) {
+        setPastorNome(data.name || '');
+        setPastorMat(String(data.matricula || ''));
+        setPastorCpf(data.cpf || '');
         return;
       }
     }
@@ -166,7 +172,7 @@ export default function FinanceiroPage() {
     if (!campoId || !campoNome) { setErro('Selecione uma supervisão e um campo.'); return; }
     setSaving(true); setErro(''); setSucesso('');
     const sup = supervisoes.find(s => s.id === supId);
-    const res = await fetch('/api/financeiro/contribuicoes', {
+    const res = await authedFetch('/api/financeiro/contribuicoes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -193,10 +199,21 @@ export default function FinanceiroPage() {
   const handleExcluir = async (id: string) => {
     if (!confirm('Excluir este registro?')) return;
     setDeleting(id);
-    await fetch(`/api/financeiro/contribuicoes?id=${id}`, { method: 'DELETE' });
+    await authedFetch(`/api/financeiro/contribuicoes?id=${id}`, { method: 'DELETE' });
     setDeleting(null);
     await loadContribuicoes();
   };
+
+  if (loading || roleLoading) return <div className="p-8">Carregando...</div>;
+  if (!podeAcessar) {
+    return (
+      <PageLayout title="Financeiro" description="" activeMenu="financeiro">
+        <AccessRestricted
+          message="Voce nao tem permissao para acessar o modulo financeiro."
+        />
+      </PageLayout>
+    );
+  }
 
   // ─── Pivot table ──────────────────────────────────────────────────────
   const linhas: LinhaPivot[] = [];

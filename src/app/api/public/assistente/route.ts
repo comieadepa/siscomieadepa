@@ -11,6 +11,7 @@ import {
 
 const SAUDACOES = ['oi', 'ola', 'bom dia', 'boa tarde', 'boa noite', 'ajuda'];
 const DESPEDIDAS = ['tchau', 'ate', 'obrigado', 'obrigada', 'valeu'];
+const SEM_EVENTOS_MSG = 'No momento nao ha eventos com inscricoes abertas 😊\nAssim que novas inscricoes forem liberadas, elas aparecerao aqui no portal.';
 
 type AssistenteAction = {
   label: string;
@@ -82,6 +83,13 @@ function departamentoFromQuestion(pergunta: string): DepartamentoConfig | null {
   return null;
 }
 
+function buildSemEventosMensagem(departamento: DepartamentoConfig | null) {
+  if (departamento) {
+    return `No momento nao ha eventos com inscricoes abertas para ${departamento.nome} 😊\nAssim que novas inscricoes forem liberadas, elas aparecerao aqui no portal.`;
+  }
+  return SEM_EVENTOS_MSG;
+}
+
 function buildEventoCard(ev: EventoPublico): AssistenteCard {
   const data = formatDateRange(ev.data_inicio, ev.data_fim);
   const local = [ev.local, ev.cidade].filter(Boolean).join(' - ');
@@ -119,34 +127,13 @@ async function fetchEventosComCards(departamento: DepartamentoConfig | null) {
   return { eventos, cards };
 }
 
-async function responderEventosAbertos(
-  departamento: DepartamentoConfig | null
-): Promise<AssistenteResposta> {
-  const { eventos, cards } = await fetchEventosComCards(departamento);
-  if (eventos.length === 0) {
-    if (departamento) {
-      return { resposta: `No momento nao ha eventos com inscricoes abertas para ${departamento.nome}.` };
-    }
-    return { resposta: 'No momento nao ha eventos com inscricoes abertas. Volte em breve!' };
-  }
-
-  const titulo = departamento
-    ? `Temos eventos com inscricoes abertas em ${departamento.nome} 😊`
-    : 'Temos eventos com inscricoes abertas 😊';
-
-  return { resposta: titulo, cards };
-}
-
 async function responderEventosComIntro(
   departamento: DepartamentoConfig | null,
   intro: string
 ): Promise<AssistenteResposta> {
   const { eventos, cards } = await fetchEventosComCards(departamento);
   if (eventos.length === 0) {
-    const base = departamento
-      ? `No momento nao ha eventos com inscricoes abertas para ${departamento.nome}.`
-      : 'No momento nao ha eventos com inscricoes abertas. Volte em breve!';
-    return { resposta: `${intro}\n\n${base}` };
+    return { resposta: buildSemEventosMensagem(departamento) };
   }
   return { resposta: intro, cards };
 }
@@ -404,14 +391,17 @@ export async function POST(req: NextRequest) {
 
     if (isPagamento) {
       const intro = 'Apos selecionar a modalidade da inscricao, o sistema exibira as opcoes de pagamento disponiveis 😊';
-      const resposta = await responderEventosComIntro(departamento, `${intro}\n\nEscolha um evento abaixo para continuar.`);
+      const resposta = await responderEventosComIntro(
+        departamento,
+        `${intro}\n\nEscolha um dos eventos disponiveis para continuar.`
+      );
       return NextResponse.json(resposta);
     }
 
     if (querParticiparDepto && departamento) {
       const { eventos, cards } = await fetchEventosComCards(departamento);
       if (eventos.length === 0) {
-        return NextResponse.json({ resposta: `No momento nao ha eventos com inscricoes abertas para ${departamento.nome}.` });
+        return NextResponse.json({ resposta: buildSemEventosMensagem(departamento) });
       }
       const intro = eventos.length === 1
         ? `Perfeito 😊 ${eventos[0].nome} esta com inscricoes abertas.`
@@ -420,13 +410,13 @@ export async function POST(req: NextRequest) {
     }
 
     if (querOrientacaoInscricao) {
-      const intro = 'Claro 😊 Para fazer sua inscricao, escolha um dos eventos disponiveis abaixo e clique em "Ver eventos" para concluir.';
+      const intro = 'Claro 😊 Para fazer sua inscricao, escolha um dos eventos disponiveis na pagina e clique em "Ver eventos" para concluir.';
       const resposta = await responderEventosComIntro(departamento, intro);
       return NextResponse.json(resposta);
     }
 
     if (hasAny(pergunta, ['inscricao', 'inscricoes', 'me inscrever', 'como faco', 'como fazer'])) {
-      const intro = 'Para se inscrever, escolha um dos eventos disponiveis abaixo 😊';
+      const intro = 'Para se inscrever, escolha um dos eventos disponiveis nesta pagina 😊';
       const resposta = await responderEventosComIntro(departamento, intro);
       return NextResponse.json(resposta);
     }
@@ -444,11 +434,14 @@ export async function POST(req: NextRequest) {
     }
 
     if (hasAny(pergunta, ['hospedagem', 'alojamento', 'brinde', 'alimentacao', 'programacao', 'certificado'])) {
+      const { eventos, cards } = await fetchEventosComCards(departamento);
+      if (eventos.length === 0) {
+        return NextResponse.json({ resposta: buildSemEventosMensagem(departamento) });
+      }
       const resposta = departamento
         ? `Esses detalhes variam por evento em ${departamento.nome}. Veja os eventos abertos para escolher o seu.`
         : 'Esses detalhes variam por evento. Veja os eventos com inscricoes abertas para escolher o seu.';
-      const lista = await responderEventosAbertos(departamento);
-      return NextResponse.json({ resposta: `${resposta}\n\n${lista.resposta}`, cards: lista.cards });
+      return NextResponse.json({ resposta, cards });
     }
 
     if (cpfDetectado) {

@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 
 import { createClient } from '@/lib/supabase-client';
+import { authenticatedFetch } from '@/lib/api-client';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -24,17 +25,14 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const fetchTotais = async () => {
-      const [{ count: cSup }, { count: cCampos }, { count: cCand }, { count: cMin }] = await Promise.all([
-        supabase.from('supervisoes').select('*', { count: 'exact', head: true }).eq('is_active', true),
-        supabase.from('campos').select('*', { count: 'exact', head: true }).eq('is_active', true),
-        supabase.from('members').select('*', { count: 'exact', head: true }).eq('status', 'candidate'),
-        supabase.from('members').select('*', { count: 'exact', head: true }).eq('status', 'active'),
-      ]);
+      const res = await authenticatedFetch('/api/v1/dashboard/metrics');
+      if (!res.ok) return;
+      const json = await res.json().catch(() => null as any);
       setTotais({
-        supervisao: String(cSup ?? 0),
-        campos:     String(cCampos ?? 0),
-        candidatos: String(cCand ?? 0),
-        ministros:  String(cMin ?? 0),
+        supervisao: String(json?.supervisoes ?? 0),
+        campos:     String(json?.campos ?? 0),
+        candidatos: String(json?.candidatos ?? 0),
+        ministros:  String(json?.ministros ?? 0),
       });
     };
     fetchTotais().catch(() => null);
@@ -77,12 +75,14 @@ export default function DashboardPage() {
         setUsuarioLogado({ nome: nomeLogado, email: emailLogado, nivel });
 
         // Buscar matrícula na tabela members pelo e-mail
-        const { data: memberData } = await supabase
-          .from('members')
-          .select('matricula')
-          .ilike('email', emailLogado)
-          .maybeSingle();
-        setMatricula(String(memberData?.matricula ?? ''));
+        if (emailLogado) {
+          const memberRes = await authenticatedFetch(`/api/v1/members/lookup?email=${encodeURIComponent(emailLogado)}&limit=1`);
+          if (memberRes.ok) {
+            const memberJson = await memberRes.json().catch(() => null as any);
+            const member = (memberJson?.data ?? [])[0] as { matricula?: string | null } | undefined;
+            setMatricula(String(member?.matricula ?? ''));
+          }
+        }
       } finally {
         setAuthLoading(false);
       }

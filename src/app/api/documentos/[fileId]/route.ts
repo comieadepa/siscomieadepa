@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClientFromRequest } from '@/lib/supabase-server';
 import { deleteFileFromDrive, getDriveStream } from '@/lib/google-drive';
+import { requireRole } from '@/lib/auth/require-auth';
 
 export const dynamic = 'force-dynamic';
 
-async function requireAuth(request: NextRequest) {
-  const supabase = createServerClientFromRequest(request);
-  const { data } = await supabase.auth.getUser();
-  if (!data.user) throw new Error('Unauthorized');
-  return data.user;
-}
+const DOCUMENTOS_ROLES = ['super', 'administrador'] as const;
 
 /**
  * GET /api/documentos/[fileId]
@@ -21,7 +16,8 @@ export async function GET(
   { params }: { params: Promise<{ fileId: string }> },
 ) {
   try {
-    await requireAuth(request);
+    const auth = await requireRole(request, DOCUMENTOS_ROLES);
+    if (!auth.ok) return auth.response;
     const { fileId } = await params;
 
     if (!fileId) {
@@ -45,7 +41,7 @@ export async function GET(
     return new NextResponse(stream as unknown as ReadableStream, { headers });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (msg === 'Unauthorized') return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    if (msg === 'Unauthorized') return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 });
     console.error('[GET /api/documentos/[fileId]]', msg);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
@@ -57,7 +53,8 @@ export async function DELETE(
   { params }: { params: Promise<{ fileId: string }> },
 ) {
   try {
-    await requireAuth(request);
+    const auth = await requireRole(request, DOCUMENTOS_ROLES);
+    if (!auth.ok) return auth.response;
     const { fileId } = await params;
 
     if (!fileId) {
@@ -68,7 +65,7 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (msg === 'Unauthorized') return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    if (msg === 'Unauthorized') return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 });
     console.error('[DELETE /api/documentos/[fileId]]', msg);
     return NextResponse.json({ error: msg }, { status: 500 });
   }

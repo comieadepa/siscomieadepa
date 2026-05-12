@@ -6,6 +6,9 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase-client'
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth'
 import Sidebar from '@/components/Sidebar'
+import AccessRestricted from '@/components/AccessRestricted'
+import { useUserRole } from '@/hooks/useUserRole'
+import { canAccessModule } from '@/lib/auth/roles'
 
 type AuditLog = {
   id: string
@@ -23,6 +26,7 @@ type AuditLog = {
 export default function AuditoriaPage() {
   const supabase = createClient()
   const { loading: authLoading } = useRequireSupabaseAuth()
+  const { role, loading: roleLoading } = useUserRole()
 
   const [activeMenu, setActiveMenu] = useState('auditoria')
   const [logs, setLogs] = useState<AuditLog[]>([])
@@ -41,11 +45,13 @@ export default function AuditoriaPage() {
   const modulos = ['suporte', 'usuarios', 'ministerios', 'financeiro', 'membros', 'configuracoes']
   const statuses = ['sucesso', 'erro', 'aviso']
 
+  const podeAcessar = canAccessModule(role, 'auditoria')
+
   // Carregar logs
   useEffect(() => {
-    if (authLoading) return
+    if (authLoading || roleLoading || !podeAcessar) return
     carregarLogs()
-  }, [authLoading, filtroAcao, filtroModulo, filtroStatus, filtroData, filtroUsuario])
+  }, [authLoading, roleLoading, podeAcessar, filtroAcao, filtroModulo, filtroStatus, filtroData, filtroUsuario])
 
   const carregarLogs = async () => {
     try {
@@ -122,7 +128,18 @@ export default function AuditoriaPage() {
     }
   }
 
-  if (authLoading) return <div className="p-8">Carregando...</div>
+  if (authLoading || roleLoading) return <div className="p-8">Carregando...</div>
+
+  if (!podeAcessar) {
+    return (
+      <div className="flex min-h-screen bg-gray-100">
+        <Sidebar activeMenu={activeMenu} setActiveMenu={setActiveMenu} />
+        <div className="flex-1 p-6">
+          <AccessRestricted message="Voce nao tem permissao para acessar a auditoria." />
+        </div>
+      </div>
+    )
+  }
 
   // Cores para status
   const getStatusColor = (status: string) => {

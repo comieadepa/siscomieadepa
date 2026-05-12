@@ -139,6 +139,27 @@ export async function fetchOpenEvents(options?: { departamento?: string }) {
 
   const dentroData = base.filter(e => isEventoDentroDaData(e.data_fim, hoje));
 
+  const tipoEventoIds = dentroData.filter(e => e.usar_tipos_inscricao).map(e => e.id);
+  const tipoMinMap = new Map<string, number>();
+  if (tipoEventoIds.length > 0) {
+    const { data: tipos } = await supabase
+      .from('evento_tipos_inscricao')
+      .select('evento_id, valor')
+      .in('evento_id', tipoEventoIds)
+      .eq('ativo', true);
+
+    for (const tipo of tipos ?? []) {
+      const eventoId = String((tipo as Record<string, unknown>).evento_id || '');
+      const rawValor = (tipo as Record<string, unknown>).valor;
+      const valor = typeof rawValor === 'number' ? rawValor : Number(rawValor);
+      if (!eventoId || Number.isNaN(valor)) continue;
+      const atual = tipoMinMap.get(eventoId);
+      if (atual === undefined || valor < atual) {
+        tipoMinMap.set(eventoId, valor);
+      }
+    }
+  }
+
   const contagens = await Promise.all(
     dentroData.map(async e => {
       if (!e.limite_vagas) {
@@ -161,8 +182,13 @@ export async function fetchOpenEvents(options?: { departamento?: string }) {
     if (ev.limite_vagas && (total ?? 0) >= ev.limite_vagas) {
       continue;
     }
+    const valorMinimo = ev.usar_tipos_inscricao ? tipoMinMap.get(ev.id) : null;
+    const valorInscricao = ev.usar_tipos_inscricao && typeof valorMinimo === 'number'
+      ? valorMinimo
+      : ev.valor_inscricao;
     result.push({
       ...ev,
+      valor_inscricao: valorInscricao,
       total_inscritos: total,
       vagas_disponiveis: vagas,
     });

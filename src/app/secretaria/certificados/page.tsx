@@ -6,8 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
-import { createClient } from '@/lib/supabase-client';
-import { loadCertificadosTemplatesForCurrentUser } from '@/lib/certificados-templates-sync';
+import { authenticatedFetch } from '@/lib/api-client';
 
 interface CertificadoTemplate {
   id: string;
@@ -20,7 +19,6 @@ interface CertificadoTemplate {
 
 export default function SecretariaCertificadosPage() {
   const { loading } = useRequireSupabaseAuth();
-  const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
 
   const [activeMenu, setActiveMenu] = useState('certificados');
@@ -30,11 +28,14 @@ export default function SecretariaCertificadosPage() {
   useEffect(() => {
     if (loading) return;
     (async () => {
-      const res = await loadCertificadosTemplatesForCurrentUser(supabase);
-      setTemplates(res.templates as CertificadoTemplate[]);
+      const res = await authenticatedFetch('/api/v1/secretaria/certificados-templates');
+      if (res.ok) {
+        const json = await res.json().catch(() => null as any);
+        setTemplates((json?.data as CertificadoTemplate[]) || []);
+      }
       setLoadingData(false);
     })();
-  }, [loading, supabase]);
+  }, [loading]);
 
   if (loading || loadingData) return <div className="p-8">Carregando...</div>;
 

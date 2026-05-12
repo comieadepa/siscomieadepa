@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import NotificationModal from '@/components/NotificationModal';
-import { createClient } from '@/lib/supabase-client';
+import { authenticatedFetch } from '@/lib/api-client';
 
 export const dynamic = 'force-dynamic';
 
@@ -300,7 +300,6 @@ interface ImportResult {
 
 // ── Componente principal ──────────────────────────────────────────────────────
 export default function ImportarMembrosPage() {
-  const supabase = createClient();
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeMenu, setActiveMenu] = useState('membros');
@@ -418,17 +417,25 @@ export default function ImportarMembrosPage() {
     // Lotes com CPF → upsert (atualiza se já existe)
     for (let i = 0; i < comCpf.length; i += BATCH) {
       const batch = comCpf.slice(i, i + BATCH);
-      const { error } = await supabase
-        .from('members')
-        .upsert(batch, { onConflict: 'cpf', ignoreDuplicates: false });
-      if (error) {
-        // Fallback: insert ignorando duplicatas (não faz update, mas não trava)
-        const { error: ie, count } = await supabase
-          .from('members')
-          .insert(batch)
-          .select('id', { count: 'exact', head: true });
-        if (ie) errors.push(`Lote ${Math.floor(i / BATCH) + 1}: ${ie.message}`);
-        else inserted += count ?? batch.length;
+      const upRes = await authenticatedFetch('/api/v1/secretaria/members/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: batch, mode: 'upsert', onConflict: 'cpf' }),
+      });
+
+      if (!upRes.ok) {
+        const upErr = await upRes.json().catch(() => null as any);
+        const insRes = await authenticatedFetch('/api/v1/secretaria/members/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rows: batch, mode: 'insert' }),
+        });
+        if (!insRes.ok) {
+          const insErr = await insRes.json().catch(() => null as any);
+          errors.push(`Lote ${Math.floor(i / BATCH) + 1}: ${insErr?.error || upErr?.error || 'Erro ao importar.'}`);
+        } else {
+          inserted += batch.length;
+        }
       } else {
         inserted += batch.length;
       }
@@ -439,11 +446,17 @@ export default function ImportarMembrosPage() {
     const offsetLote = Math.ceil(comCpf.length / BATCH);
     for (let i = 0; i < semCpf.length; i += BATCH) {
       const batch = semCpf.slice(i, i + BATCH);
-      const { error } = await supabase
-        .from('members')
-        .insert(batch);
-      if (error) errors.push(`Lote sem-CPF ${offsetLote + Math.floor(i / BATCH) + 1}: ${error.message}`);
-      else inserted += batch.length;
+      const res = await authenticatedFetch('/api/v1/secretaria/members/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: batch, mode: 'insert' }),
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null as any);
+        errors.push(`Lote sem-CPF ${offsetLote + Math.floor(i / BATCH) + 1}: ${errJson?.error || 'Erro ao importar.'}`);
+      } else {
+        inserted += batch.length;
+      }
       setProgress(80 + Math.round(((i + batch.length) / (semCpf.length || 1)) * 20)); // 80–100%
     }
 

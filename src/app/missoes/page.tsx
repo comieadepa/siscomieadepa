@@ -5,12 +5,30 @@ import PageLayout from '@/components/PageLayout';
 import Tabs from '@/components/Tabs';
 import Section from '@/components/Section';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
+import AccessRestricted from '@/components/AccessRestricted';
+import { useUserRole } from '@/hooks/useUserRole';
+import { canAccessModule } from '@/lib/auth/roles';
 
 export default function MissoesPage() {
   const { loading } = useRequireSupabaseAuth();
+  const { role, loading: roleLoading } = useUserRole();
   const [activeTab, setActiveTab] = useState('projetos');
 
-  if (loading) return <div className="p-8">Carregando...</div>;
+  const podeAcessar = canAccessModule(role, 'missoes');
+
+  if (loading || roleLoading) return <div className="p-8">Carregando...</div>;
+
+  if (!podeAcessar) {
+    return (
+      <PageLayout
+        title="Missoes"
+        description=""
+        activeMenu="missoes"
+      >
+        <AccessRestricted message="Voce nao tem permissao para acessar o modulo de missoes." />
+      </PageLayout>
+    );
+  }
 
   const tabs = [
     { id: 'projetos', label: 'Projetos', icon: '✏️' },

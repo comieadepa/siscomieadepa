@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
+import { requireRole } from '@/lib/auth/require-auth';
+
+const FINANCEIRO_ROLES = ['super', 'administrador', 'financeiro'] as const;
 
 // GET /api/financeiro/contribuicoes?ano=2026&supervisao_id=xxx&campo_id=xxx
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireRole(request, FINANCEIRO_ROLES);
+    if (!auth.ok) return auth.response;
     const supabase = createServerClient();
     const { searchParams } = new URL(request.url);
     const ano = searchParams.get('ano');
@@ -33,6 +38,8 @@ export async function GET(request: NextRequest) {
 // POST /api/financeiro/contribuicoes — registra (upsert por campo_id + mes + ano)
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireRole(request, FINANCEIRO_ROLES);
+    if (!auth.ok) return auth.response;
     const supabase = createServerClient();
     const body = await request.json();
     const {
@@ -94,6 +101,8 @@ export async function POST(request: NextRequest) {
 // DELETE /api/financeiro/contribuicoes?id=xxx
 export async function DELETE(request: NextRequest) {
   try {
+    const auth = await requireRole(request, FINANCEIRO_ROLES);
+    if (!auth.ok) return auth.response;
     const supabase = createServerClient();
     const id = new URL(request.url).searchParams.get('id');
 

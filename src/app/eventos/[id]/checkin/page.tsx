@@ -7,6 +7,7 @@ import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { createClient } from '@/lib/supabase-client';
 import { clearEquipeSession, getEquipeSession } from '@/lib/equipe-session';
 import type { EquipeSession } from '@/lib/equipe-session';
+import { authenticatedFetch } from '@/lib/api-client';
 
 // ─── Tipos ────────────────────────────────────────────────────
 interface Evento {
@@ -236,10 +237,9 @@ export default function CheckinMobilePage() {
         const ok = await validarSessaoEquipe();
         if (!ok) return;
       }
-      const [evRes, supRes, camRes] = await Promise.all([
+      const [evRes, estruturaRes] = await Promise.all([
         supabase.from('eventos').select('id,nome,slug,departamento,data_inicio,data_fim,status,checkin_ativo').eq('id', id).single(),
-        supabase.from('supervisoes').select('id,nome').order('nome'),
-        supabase.from('campos').select('id,nome').order('nome'),
+        authenticatedFetch('/api/v1/estrutura'),
       ]);
       if (evRes.data && (evRes.data as Evento).status !== 'programado') {
         setAcessoMotivo('evento_encerrado');
@@ -259,8 +259,11 @@ export default function CheckinMobilePage() {
         setAcessoNegado(true); setLoadingEvento(false); return;
       }
       if (evRes.data) setEvento(evRes.data as Evento);
-      if (supRes.data) setSupervisoes(supRes.data as Supervisao[]);
-      if (camRes.data) setCampos(camRes.data as Campo[]);
+      if (estruturaRes.ok) {
+        const estrutura = await estruturaRes.json().catch(() => null as any);
+        setSupervisoes((estrutura?.supervisoes as Supervisao[]) || []);
+        setCampos((estrutura?.campos as Campo[]) || []);
+      }
       setLoadingEvento(false);
       await carregarContadores();
     }

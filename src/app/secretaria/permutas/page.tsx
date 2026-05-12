@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import PageLayout from '@/components/PageLayout';
-import { createClient } from '@/lib/supabase-client';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { buildUrl, getAppBaseUrl } from '@/lib/urls';
+import { normalizeRole } from '@/lib/auth/roles';
+import { authenticatedFetch } from '@/lib/api-client';
 
 interface Supervisao { id: string; nome: string; }
 interface Campo { id: string; nome: string; supervisao_id: string; pastor_member_id?: string | null; presidente_nome?: string | null; }
@@ -52,7 +53,6 @@ const fmtDate = (s: string | null) => {
 
 export default function PermutasPage() {
   const { loading } = useRequireSupabaseAuth();
-  const supabase = createClient();
 
   // Dados de referência
   const [supervisoes, setSupervisoes] = useState<Supervisao[]>([]);
@@ -104,11 +104,16 @@ export default function PermutasPage() {
   const [abaAtiva, setAbaAtiva] = useState<'nova' | 'lista' | 'importar'>('nova');
   const [isSuper, setIsSuper] = useState(false);
 
+  const authedFetch = authenticatedFetch;
+
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }: { data: { session: { user: { user_metadata: { nivel: string } } } | null } }) => {
-      const nivel = data.session?.user?.user_metadata?.nivel;
-      setIsSuper(nivel === 'super');
-    });
+    authenticatedFetch('/api/auth/me')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        const normalized = normalizeRole(json?.nivel as string | null | undefined);
+        setIsSuper(normalized === 'super');
+      })
+      .catch(() => null);
   }, []);
 
   // ────────────────────────────────────────────────
@@ -117,28 +122,13 @@ export default function PermutasPage() {
   useEffect(() => {
     if (loading) return;
     const load = async () => {
-      // Carrega campos com paginação (banco tem mais de 1000 registros)
-      let allCampos: any[] = [];
-      let from = 0;
-      const PAGE = 1000;
-      while (true) {
-        const { data } = await supabase
-          .from('campos')
-          .select('id,nome,supervisao_id,pastor_member_id,presidente_nome')
-          .neq('is_active', false)
-          .order('nome')
-          .range(from, from + PAGE - 1);
-        allCampos = allCampos.concat(data || []);
-        if (!data || data.length < PAGE) break;
-        from += PAGE;
-      }
-
-      const [sv, pm] = await Promise.all([
-        supabase.from('supervisoes').select('id,nome').neq('is_active', false).order('nome'),
-        fetch('/api/permutas').then(r => r.json()),
+      const [estruturaRes, pm] = await Promise.all([
+        authedFetch('/api/v1/estrutura').then(r => r.json()),
+        authedFetch('/api/permutas').then(r => r.json()),
       ]);
-      setSupervisoes((sv.data as any[]) || []);
-      setCampos(allCampos.map((row: any) => ({
+
+      setSupervisoes((estruturaRes?.supervisoes as any[]) || []);
+      setCampos(((estruturaRes?.campos as any[]) || []).map((row: any) => ({
         id: row.id,
         nome: row.nome,
         supervisao_id: row.supervisao_id,
@@ -160,13 +150,10 @@ export default function PermutasPage() {
   // ────────────────────────────────────────────────
   const buscarMembro = useCallback(async (termo: string) => {
     if (termo.trim().length < 2) { setSugestoes([]); return; }
-    const { data } = await supabase
-      .from('members')
-      .select('id,name,matricula,cpf,custom_fields,pastor_presidente')
-      .ilike('name', `%${termo}%`)
-      .limit(8);
-    setSugestoes(data || []);
-  }, [supabase]);
+    const res = await authedFetch(`/api/v1/members/lookup?search=${encodeURIComponent(termo)}&limit=8`);
+    const json = await res.json();
+    setSugestoes((json?.data as any[]) || []);
+  }, [authedFetch]);
 
   const handleNomeChange = (v: string) => {
     setNomeQuery(v);
@@ -223,7 +210,7 @@ export default function PermutasPage() {
     if (!supervisaoDestinoId || !campoDestinoId) { setErro('Informe Supervisão e Campo de destino.'); return; }
 
     setSaving(true);
-    const res = await fetch('/api/permutas', {
+    const res = await authedFetch('/api/permutas', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -251,23 +238,12 @@ export default function PermutasPage() {
     setProximoCodigo((json.codigo_processo as number) + 1);
 
     // Recarrega lista
-    const pm = await fetch('/api/permutas').then(r => r.json());
+    const pm = await authedFetch('/api/permutas').then(r => r.json());
     setPermutas(pm.data || []);
 
-    // Recarrega campos com paginação (presidente_nome pode ter mudado)
-    let reloadCampos: any[] = [];
-    let rcFrom = 0;
-    while (true) {
-      const { data } = await supabase
-        .from('campos')
-        .select('id,nome,supervisao_id,pastor_member_id,presidente_nome')
-        .neq('is_active', false)
-        .order('nome')
-        .range(rcFrom, rcFrom + 999);
-      reloadCampos = reloadCampos.concat(data || []);
-      if (!data || data.length < 1000) break;
-      rcFrom += 1000;
-    }
+    // Recarrega campos (presidente_nome pode ter mudado)
+    const estrutura = await authedFetch('/api/v1/estrutura').then(r => r.json()).catch(() => null as any);
+    const reloadCampos = (estrutura?.campos as any[]) || [];
     setCampos(reloadCampos.map((row: any) => ({
       id: row.id,
       nome: row.nome,
@@ -375,7 +351,7 @@ export default function PermutasPage() {
     setImporting(true);
     setCsvErro('');
     setCsvSucesso('');
-    const res = await fetch('/api/permutas/importar', {
+    const res = await authedFetch('/api/permutas/importar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rows: csvRows }),
@@ -386,7 +362,7 @@ export default function PermutasPage() {
     setCsvSucesso(`${json.importados} permuta(s) importada(s) com sucesso!`);
     setCsvRows([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
-    const pm = await fetch('/api/permutas').then(r => r.json());
+    const pm = await authedFetch('/api/permutas').then(r => r.json());
     setPermutas(pm.data || []);
     const ano = new Date().getFullYear();
     const ultimo = ((pm.data as Permuta[]) || []).filter((p: Permuta) => p.ano === ano);

@@ -11,6 +11,7 @@ import type { EquipeSession } from '@/lib/equipe-session';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { buildUrl, getAppBaseUrl, getPublicBaseUrl } from '@/lib/urls';
 import { normalizePayloadUppercase } from '@/lib/text';
+import { authenticatedFetch } from '@/lib/api-client';
 import { EtiquetaPreviewDepartamento, EtiquetaPreviewAGO } from '@/components/EtiquetaLabels';
 import type { EtiquetaInscricaoAGO } from '@/components/EtiquetaLabels';
 import TabHospedagem    from './TabHospedagem';
@@ -303,8 +304,12 @@ export default function GerenciarEventoPage() {
       fetchEvento(),
       fetchInscricoes(),
       fetchEquipe(),
-      supabase.from('supervisoes').select('id,nome').order('nome').then((r: { data: unknown }) => setSupervisoes((r.data as Supervisao[]) || [])),
-      supabase.from('campos').select('id,nome,supervisao_id').order('nome').then((r: { data: unknown }) => setCampos((r.data as Campo[]) || [])),
+      authenticatedFetch('/api/v1/estrutura').then(async (res) => {
+        if (!res.ok) return;
+        const estrutura = await res.json().catch(() => null as any);
+        setSupervisoes((estrutura?.supervisoes as Supervisao[]) || []);
+        setCampos((estrutura?.campos as Campo[]) || []);
+      }),
     ]);
   }, [authLoading, perfil.loading, perfil.isGlobal, id, permissaoNesseEvento, equipeSessao, fetchEvento, fetchInscricoes, fetchEquipe, supabase, router, searchParams]);
 
@@ -1675,26 +1680,26 @@ function TabInscricaoManual({ eventoId, evento, supervisoes, campos, supabase, o
     setNaoEncontrado(false);
     setMinistroEnc(null);
     const cpfLimpo = cpfBusca.replace(/\D/g, '');
-    // busca em members pelo CPF
-    const { data } = await supabase
-      .from('members')
-      .select('id, nome, cpf, celular, whatsapp, email, supervisao, campo, supervisao_id, campo_id')
-      .or(`cpf.ilike.%${cpfLimpo}%,cpf.ilike.%${cpfBusca}%`)
-      .limit(1);
+    const searchParam = cpfLimpo || cpfBusca;
+    const res = await authenticatedFetch(`/api/v1/members/lookup?search=${encodeURIComponent(searchParam)}&limit=1`);
+    const json = res.ok ? await res.json().catch(() => null as any) : null;
+    const data = (json?.data ?? []) as Ministro[];
     setBuscando(false);
     if (data && data.length > 0) {
-      const m = data[0] as Ministro;
+      const m = data[0] as Ministro & { name?: string | null; phone?: string | null };
+      const nome = (m.nome ?? m.name ?? '') as string;
+      const celular = (m.celular ?? m.phone ?? '') as string;
       setMinistroEnc(m);
       const sup = supervisoes.find(s => s.id === m.supervisao_id || s.nome === m.supervisao);
       const campo = campos.find(c => c.id === m.campo_id || c.nome === m.campo);
       setForm(f => ({
         ...f,
-        nome_inscrito: m.nome || '',
+        nome_inscrito: nome || f.nome_inscrito,
         cpf: m.cpf || cpfBusca,
-        whatsapp: m.whatsapp || m.celular || '',
-        email: m.email || '',
-        supervisao_id: sup?.id || '',
-        campo_id: campo?.id || '',
+        whatsapp: m.whatsapp || celular || f.whatsapp,
+        email: m.email || f.email,
+        supervisao_id: sup?.id || f.supervisao_id,
+        campo_id: campo?.id || f.campo_id,
       }));
     } else {
       setNaoEncontrado(true);
@@ -2157,8 +2162,8 @@ function TabEtiquetas({ inscricoes, loading, nomeSup, nomeCampo, supabase, onRef
           .select('inscricao_id,numero_cama,tipo_cama,status,alojamento_id')
           .in('inscricao_id', inscIds),
         ministroIds.length > 0
-          ? supabase.from('members').select('id,matricula').in('id', ministroIds)
-          : Promise.resolve({ data: [] as { id: string; matricula: string | null }[] }),
+          ? authenticatedFetch(`/api/v1/members/lookup?ids=${encodeURIComponent(ministroIds.join(','))}&limit=${ministroIds.length}`)
+          : Promise.resolve(null),
       ]);
 
       type HospRow2 = { inscricao_id: string; numero_cama: string | null; tipo_cama: string | null; status: string; alojamento_id: string | null };
@@ -2175,7 +2180,11 @@ function TabEtiquetas({ inscricoes, loading, nomeSup, nomeCampo, supabase, onRef
 
       const hospMap   = new Map(hospRows2.map(h => [h.inscricao_id, h]));
       const aloMap    = new Map(((aloRes.data ?? []) as { id: string; nome: string }[]).map(a => [a.id, a.nome]));
-      const memberMap = new Map(((membersRes as { data: { id: string; matricula: string | null }[] | null }).data ?? []).map(m => [m.id, m.matricula]));
+      const membersJson = membersRes && 'ok' in membersRes && membersRes.ok
+        ? await membersRes.json().catch(() => null as any)
+        : null;
+      const memberList = (membersJson?.data ?? []) as { id: string; matricula: string | null }[];
+      const memberMap = new Map(memberList.map(m => [m.id, m.matricula]));
 
       const map = new Map<string, AgoExtra>();
       inscricoesElegiveis.forEach(ins => {

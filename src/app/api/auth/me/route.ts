@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
+import { normalizeRole } from '@/lib/auth/roles';
 
 // Retorna o nivel do usuário autenticado, lendo public.users via admin client (bypassa RLS).
 // Se user_metadata.nivel já estiver preenchido, usa-o diretamente.
@@ -23,8 +24,14 @@ export async function GET(request: NextRequest) {
 
   // Se já tem nivel no metadata, retorna direto
   const metaNivel = user.user_metadata?.nivel as string | undefined;
-  if (metaNivel) {
-    return NextResponse.json({ nivel: metaNivel });
+  const metaNormalized = normalizeRole(metaNivel);
+  if (metaNormalized) {
+    if (metaNivel && metaNormalized !== metaNivel) {
+      await admin.auth.admin.updateUserById(user.id, {
+        user_metadata: { ...user.user_metadata, nivel: metaNormalized },
+      });
+    }
+    return NextResponse.json({ nivel: metaNormalized, userId: user.id });
   }
 
   // Lê role de public.users via admin (ignora RLS)
@@ -35,14 +42,15 @@ export async function GET(request: NextRequest) {
     .maybeSingle();
 
   const role = row?.role ? String(row.role) : null;
+  const normalized = normalizeRole(role);
 
-  if (role) {
+  if (normalized) {
     // Sincroniza automaticamente no user_metadata para próximas chamadas
     await admin.auth.admin.updateUserById(user.id, {
-      user_metadata: { ...user.user_metadata, nivel: role },
+      user_metadata: { ...user.user_metadata, nivel: normalized },
     });
-    return NextResponse.json({ nivel: role });
+    return NextResponse.json({ nivel: normalized, userId: user.id });
   }
 
-  return NextResponse.json({ nivel: null });
+  return NextResponse.json({ nivel: null, userId: user.id });
 }

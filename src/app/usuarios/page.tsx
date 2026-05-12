@@ -6,7 +6,11 @@ import { useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { createClient } from '@/lib/supabase-client';
+import { authenticatedFetch } from '@/lib/api-client';
 import { fetchConfiguracaoIgrejaFromSupabase } from '@/lib/igreja-config-utils';
+import AccessRestricted from '@/components/AccessRestricted';
+import { useUserRole } from '@/hooks/useUserRole';
+import { canAccessModule } from '@/lib/auth/roles';
 
 
 interface Usuario {
@@ -39,6 +43,7 @@ interface CongregacaoOption {
 export default function UsuariosPage() {
   const [activeMenu, setActiveMenu] = useState('usuarios');
   const { loading: authLoading } = useRequireSupabaseAuth();
+  const { role, loading: roleLoading } = useUserRole();
   const supabase = useMemo(() => createClient(), []);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [usuariosLoading, setUsuariosLoading] = useState(true);
@@ -94,6 +99,8 @@ export default function UsuariosPage() {
   const [nomeBuscando, setNomeBuscando] = useState(false);
   const [nomeFoco, setNomeFoco] = useState(false);
   const itemsPerPage = 5;
+
+  const podeAcessar = canAccessModule(role, 'usuarios');
 
   const totalUsuarios = usuarios.length;
 
@@ -167,7 +174,7 @@ export default function UsuariosPage() {
 
   useEffect(() => {
     const loadUsuarios = async () => {
-      if (authLoading) return;
+      if (authLoading || roleLoading || !podeAcessar) return;
       setUsuariosLoading(true);
       setUsuariosError('');
 
@@ -198,11 +205,11 @@ export default function UsuariosPage() {
     };
 
     loadUsuarios();
-  }, [authLoading, supabase]);
+  }, [authLoading, roleLoading, podeAcessar, supabase]);
 
   useEffect(() => {
     const loadCongregacoes = async () => {
-      if (authLoading) return;
+      if (authLoading || roleLoading || !podeAcessar) return;
       setCongregacoesLoading(true);
 
       const { data } = await supabase.auth.getSession();
@@ -227,7 +234,20 @@ export default function UsuariosPage() {
     };
 
     loadCongregacoes();
-  }, [authLoading, supabase]);
+  }, [authLoading, roleLoading, podeAcessar, supabase]);
+
+  if (authLoading || roleLoading) return <div className="p-8">Carregando...</div>;
+
+  if (!podeAcessar) {
+    return (
+      <div className="flex min-h-screen bg-gray-100">
+        <Sidebar activeMenu={activeMenu} setActiveMenu={setActiveMenu} />
+        <div className="flex-1 p-6">
+          <AccessRestricted message="Voce nao tem permissao para acessar a gestao de usuarios." />
+        </div>
+      </div>
+    );
+  }
 
 
   const openEditModal = (usuario: Usuario & { congregacao_id?: string | null }) => {
@@ -580,13 +600,18 @@ export default function UsuariosPage() {
     if (termo.trim().length < 3) { setNomeSugestoes([]); return; }
     setNomeBuscando(true);
     try {
-      const { data } = await supabase
-        .from('members')
-        .select('name, cpf, phone')
-        .ilike('name', `%${termo}%`)
-        .order('name')
-        .limit(8);
-      setNomeSugestoes((data || []).map((r: any) => ({ name: String(r.name), cpf: String(r.cpf || ''), phone: String(r.phone || '') })));
+      const res = await authenticatedFetch(`/api/v1/members/lookup?search=${encodeURIComponent(termo)}&limit=8`);
+      if (!res.ok) {
+        setNomeSugestoes([]);
+        return;
+      }
+      const json = await res.json().catch(() => null as any);
+      const data = (json?.data ?? []) as { name?: string | null; nome?: string | null; cpf?: string | null; phone?: string | null; celular?: string | null }[];
+      setNomeSugestoes(data.map((r) => ({
+        name: String(r.name || r.nome || ''),
+        cpf: String(r.cpf || ''),
+        phone: String(r.phone || r.celular || ''),
+      })));
     } catch {
       setNomeSugestoes([]);
     } finally {

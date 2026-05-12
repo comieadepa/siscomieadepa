@@ -7,7 +7,7 @@ import PageLayout from '@/components/PageLayout';
 import Section from '@/components/Section';
 import Tabs from '@/components/Tabs';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
-import { createClient } from '@/lib/supabase-client';
+import { authenticatedFetch } from '@/lib/api-client';
 
 const PENDING_STATUSES = new Set(['pendente', 'aguardando', 'em_analise']);
 const TERMINAL_STATUSES = new Set(['concluido', 'rejeitado', 'cancelado']);
@@ -24,7 +24,9 @@ function hasApprovalAction(actions: any): boolean {
 
 function mapBaseRole(role: string | null | undefined): string[] {
   switch ((role || '').toLowerCase()) {
+    case 'super':
     case 'admin':
+    case 'administrador':
       return ['ADMINISTRADOR'];
     case 'manager':
       return ['SUPERVISOR'];
@@ -37,6 +39,8 @@ function mapBaseRole(role: string | null | undefined): string[] {
       return ['OPERADOR'];
     case 'viewer':
       return ['LEITURA'];
+    case 'comissao':
+      return ['SUPERVISOR'];
     default:
       return [];
   }
@@ -46,7 +50,6 @@ export default function FluxosOperacaoPage() {
   const { loading } = useRequireSupabaseAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const supabase = useMemo(() => createClient(), []);
 
   const [activeTab, setActiveTab] = useState('minha-fila');
   const [dashboard, setDashboard] = useState({ ativos: 0, pendentes: 0, concluidos: 0 });
@@ -82,33 +85,17 @@ export default function FluxosOperacaoPage() {
 
   useEffect(() => {
     const loadContext = async () => {
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
-      const sessionUserId = data.session?.user?.id;
-      if (!token || !sessionUserId) return;
+      const meRes = await authenticatedFetch('/api/auth/me');
+      if (!meRes.ok) return;
 
-      setUserId(sessionUserId);
-
-      const { data: publicUser } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', sessionUserId)
-        .maybeSingle();
-
-      const mu = { role: publicUser?.role || 'operator', permissions: [] as string[], congregacao_id: null as string | null };
-
-      const role = String(mu?.role || '').toLowerCase();
-      const perms = Array.isArray(mu?.permissions) ? mu?.permissions : [];
-      const permSet = new Set<string>(perms.map((p: any) => String(p || '').toUpperCase()));
-      const allowAll = ['admin', 'manager', 'supervisor', 'superintendent', 'superintendente'].includes(role)
-        || permSet.has('ADMINISTRADOR')
-        || permSet.has('SUPERVISOR')
-        || permSet.has('SUPERINTENDENTE');
-
+      const me = await meRes.json().catch(() => null as any);
+      const role = String(me?.nivel || '').toLowerCase();
+      const allowAll = ['super', 'administrador', 'comissao'].includes(role);
       const mappedRoles = Array.from(new Set<string>([
         ...mapBaseRole(role),
-        ...Array.from(permSet)
       ]));
+
+      setUserId(String(me?.userId || ''));
 
       setCanViewAll(allowAll);
       setRoleLabel(role);
@@ -122,36 +109,30 @@ export default function FluxosOperacaoPage() {
         setCongregationId('all');
       }
 
-      const { data: rows, error } = await supabase
-        .from('congregacoes')
-        .select('id, nome')
-        .order('nome', { ascending: true });
-
-      if (!error) {
-        setCongregacoes(rows || []);
-        if (!congregationId && rows && rows.length > 0 && !allowAll) {
-          setCongregationId(rows[0].id);
+      const congRes = await authenticatedFetch('/api/v1/secretaria/congregacoes?includeInactive=true');
+      if (congRes.ok) {
+        const json = await congRes.json().catch(() => null as any);
+        const rows = (json?.data as any[]) || [];
+        const mapped = rows.map((row) => ({ id: row.id, nome: row.nome }));
+        setCongregacoes(mapped);
+        if (!congregationId && mapped.length > 0 && !allowAll) {
+          setCongregationId(mapped[0].id);
         }
       }
     };
 
     loadContext();
-  }, [supabase]);
+  }, [congregationId]);
 
   const reloadData = async () => {
     if (!congregationId) return;
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) return;
-
-    const headers = { Authorization: `Bearer ${token}` };
     const query = `?congregation_id=${congregationId}`;
 
     const [dashboardRes, activationsRes, instancesRes, templatesRes] = await Promise.all([
-      fetch(`/api/flows/dashboard${query}`, { headers }),
-      fetch(`/api/flows/activations${query}`, { headers }),
-      fetch(`/api/flows/instances${query}`, { headers }),
-      fetch('/api/flows/templates', { headers })
+      authenticatedFetch(`/api/flows/dashboard${query}`),
+      authenticatedFetch(`/api/flows/activations${query}`),
+      authenticatedFetch(`/api/flows/instances${query}`),
+      authenticatedFetch('/api/flows/templates')
     ]);
 
     if (dashboardRes.ok) {
@@ -181,7 +162,7 @@ export default function FluxosOperacaoPage() {
 
   useEffect(() => {
     reloadData();
-  }, [supabase, congregationId]);
+  }, [congregationId]);
 
   const activeTemplates = useMemo(() => {
     return (activations || [])
@@ -299,13 +280,9 @@ export default function FluxosOperacaoPage() {
 
     const payloadData = { ...newData };
 
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) return;
-
-    const res = await fetch('/api/flows/instances', {
+    const res = await authenticatedFetch('/api/flows/instances', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         template_id: newTemplateId,
         congregation_id: congregationId,

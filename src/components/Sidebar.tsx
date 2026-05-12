@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
+import { normalizeRole } from '@/lib/auth/roles';
 
 interface SidebarProps {
   activeMenu: string;
@@ -12,10 +13,10 @@ interface SidebarProps {
 // Quais menus (por id) cada nível pode ver. 'super' vê tudo.
 const MENU_POR_NIVEL: Record<string, string[]> = {
   super: ['*'],
-  administrador: ['dashboard', 'secretaria', 'comissao', 'patrimonio', 'missoes', 'configuracoes', 'eventos', 'eventos-lista', 'eventos-dashboard'],
+  administrador: ['dashboard', 'secretaria', 'cgadb', 'comissao', 'patrimonio', 'missoes', 'configuracoes', 'eventos'],
   cgadb: ['cgadb'],
   comissao: ['dashboard', 'secretaria', 'comissao'],
-  inscricao: ['eventos', 'eventos-lista'],
+  inscricao: ['eventos'],
   financeiro: ['financeiro'],
 };
 
@@ -30,18 +31,30 @@ function menuVisivel(nivel: string | null, menuId: string): boolean {
 export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
   const router = useRouter();
   const supabase = createClient();
-  const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [nivelUsuario, setNivelUsuario] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchSession = async () => {
       const { data } = await supabase.auth.getSession();
-      const nivel = data.session?.user?.user_metadata?.nivel as string | undefined;
-      setNivelUsuario(nivel ?? null);
+      const token = data.session?.access_token || '';
+      const rawNivel = (data.session?.user?.user_metadata?.nivel || data.session?.user?.user_metadata?.role) as string | undefined;
+      let normalized = normalizeRole(rawNivel);
+
+      if (!normalized && token) {
+        const res = await fetch('/api/auth/me', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const json = (await res.json()) as { nivel?: string | null };
+          normalized = normalizeRole(json.nivel || undefined);
+        }
+      }
+
+      setNivelUsuario(normalized ?? null);
     };
     fetchSession();
-  }, []);
+  }, [supabase]);
 
   const allMenuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: '📊', path: '/dashboard' },
@@ -105,8 +118,13 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
     });
 
   const handleNavigate = (id: string, path: string) => {
+    let targetPath = path;
+    if (id === 'eventos') {
+      const isAdmin = nivelUsuario === 'administrador' || nivelUsuario === 'super';
+      targetPath = isAdmin ? '/eventos/dashboard' : '/eventos';
+    }
     setActiveMenu(id);
-    router.push(path);
+    router.push(targetPath);
     setIsMobileMenuOpen(false);
   };
 
@@ -128,11 +146,7 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
             <div key={item.id}>
               <button
                 onClick={() => {
-                  if ((item as any).submenu) {
-                    setExpandedMenu(expandedMenu === item.id ? null : item.id);
-                  } else {
-                    handleNavigate(item.id, item.path);
-                  }
+                  handleNavigate(item.id, item.path);
                 }}
                 className={`w-full flex items-center gap-3 px-4 py-3 transition border-l-4 ${activeMenu === item.id
                     ? 'border-[#F39C12] bg-[#1A5276] text-white font-semibold'
@@ -141,31 +155,7 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
               >
                 <span className="text-lg w-6 text-center">{item.icon}</span>
                 <span className="text-sm font-medium flex-1 text-left">{item.label}</span>
-                {(item as any).submenu && (
-                  <span className={`text-[#F39C12] transition transform text-xs ${expandedMenu === item.id ? 'rotate-180' : ''}`}>
-                    ▼
-                  </span>
-                )}
               </button>
-
-              {/* SUBMENUS */}
-              {(item as any).submenu && expandedMenu === item.id && (
-                <div className="bg-[#071527] border-y border-white/10">
-                  {(item as any).submenu.map((submenu: any, index: number) => (
-                    <button
-                      key={submenu.id}
-                      onClick={() => handleNavigate(submenu.id, submenu.path)}
-                      className={`w-full flex items-center gap-3 px-4 py-3 transition text-sm text-left border-l-4 ${activeMenu === submenu.id
-                          ? 'border-[#F39C12] bg-[#1A5276] text-white font-semibold'
-                          : 'border-transparent text-white/70 hover:bg-[#1A3A5C] hover:text-white'
-                        } ${index < (item as any).submenu.length - 1 ? 'border-b border-white/5' : ''}`}
-                    >
-                      <span className="text-[#F39C12] text-lg w-6 text-center">▸</span>
-                      <span className="flex-1">{submenu.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           ))}
         </div>

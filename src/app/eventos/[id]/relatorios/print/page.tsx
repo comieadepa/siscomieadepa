@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
 import { buildUrl, getAppBaseUrl } from '@/lib/urls';
+import { authenticatedFetch } from '@/lib/api-client';
 
 // ─── Tipos locais ─────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -84,18 +85,20 @@ export default function RelatoriosPrintPage() {
 
   useEffect(() => {
     async function load() {
-      const [evRes, supRes, camRes, insRes] = await Promise.all([
+      const [evRes, estruturaRes, insRes] = await Promise.all([
         supabase.from('eventos').select('id,nome,departamento,data_inicio,data_fim,cidade').eq('id', id).single(),
-        supabase.from('supervisoes').select('id,nome'),
-        supabase.from('campos').select('id,nome,supervisao_id'),
+        authenticatedFetch('/api/v1/estrutura'),
         supabase.from('evento_inscricoes')
           .select('id,nome_inscrito,cpf,whatsapp,supervisao_id,campo_id,status_pagamento,forma_pagamento,valor_pago,checkin_realizado,checkin_at,hospedagem,alimentacao,brinde,etiqueta_impressa,created_at')
           .eq('evento_id', id)
           .order('nome_inscrito'),
       ]);
       if (evRes.data)  setEvento(evRes.data as Evento);
-      if (supRes.data) setSupervisoes(supRes.data as Supervisao[]);
-      if (camRes.data) setCampos(camRes.data as Campo[]);
+      if (estruturaRes.ok) {
+        const estrutura = await estruturaRes.json().catch(() => null as any);
+        setSupervisoes((estrutura?.supervisoes as Supervisao[]) || []);
+        setCampos((estrutura?.campos as Campo[]) || []);
+      }
       if (insRes.data) setInscricoes(insRes.data as Inscricao[]);
       setLoading(false);
     }

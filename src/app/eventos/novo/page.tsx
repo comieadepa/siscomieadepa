@@ -7,6 +7,7 @@ import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useEventosPerfil } from '@/hooks/useEventosPerfil';
 import { createClient } from '@/lib/supabase-client';
 import { normalizePayloadUppercase } from '@/lib/text';
+import { authenticatedFetch } from '@/lib/api-client';
 
 // ─── Tipos ───────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -178,14 +179,15 @@ export default function NovoEventoPage() {
   // Carrega supervisões e campos ao montar
   useEffect(() => {
     if (authLoading) return;
-    Promise.all([
-      supabase.from('supervisoes').select('id,nome').order('nome'),
-      supabase.from('campos').select('id,nome,supervisao_id').order('nome'),
-    ]).then(([supRes, camRes]) => {
-      setSupervisoes((supRes.data as Supervisao[]) || []);
-      setCampos((camRes.data as Campo[]) || []);
-    });
-  }, [authLoading, supabase]);
+    const loadEstrutura = async () => {
+      const res = await authenticatedFetch('/api/v1/estrutura');
+      if (!res.ok) return;
+      const data = await res.json().catch(() => null as any);
+      setSupervisoes((data?.supervisoes as Supervisao[]) || []);
+      setCampos((data?.campos as Campo[]) || []);
+    };
+    loadEstrutura();
+  }, [authLoading]);
 
   // Guard: redireciona se não tem permissão para criar eventos
   useEffect(() => {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { requireFlowAuth, hasRole } from '@/lib/flows/flow-auth';
+import { normalizeRole } from '@/lib/auth/roles';
 
 type UsuarioResponse = {
   id: string;
@@ -32,13 +33,13 @@ type UsuarioUpdateBody = {
 };
 
 function mapNivel(role: string | null | undefined): UsuarioResponse['nivel'] {
-  const base = String(role || '').toLowerCase();
-  if (base === 'super') return 'super';
-  if (['admin', 'administrador'].includes(base)) return 'administrador';
-  if (['cgadb'].includes(base)) return 'cgadb';
-  if (['comissao', 'comissão'].includes(base)) return 'comissao';
-  if (['inscricao', 'inscrição', 'inscricão'].includes(base)) return 'inscricao';
-  if (['financeiro', 'financial'].includes(base)) return 'financeiro';
+  const normalized = normalizeRole(role);
+  if (normalized === 'super') return 'super';
+  if (normalized === 'administrador') return 'administrador';
+  if (normalized === 'cgadb') return 'cgadb';
+  if (normalized === 'comissao') return 'comissao';
+  if (normalized === 'inscricao') return 'inscricao';
+  if (normalized === 'financeiro') return 'financeiro';
   return 'administrador';
 }
 

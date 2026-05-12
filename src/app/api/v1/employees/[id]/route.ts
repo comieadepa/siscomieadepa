@@ -5,9 +5,11 @@
  * PATCH /api/v1/employees/[id] - Atualizar funcionário
  */
 
-import { createServerClientFromRequest } from '@/lib/supabase-server'
 import { normalizePayloadToUppercase } from '@/lib/uppercase-normalizer'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireRole } from '@/lib/auth/require-auth'
+
+const EMPLOYEE_ROLES = ['super', 'administrador'] as const
 
 function getSupabaseErrorText(error: any): string {
   if (!error) return ''
@@ -41,15 +43,9 @@ export async function GET(
   try {
     const { id } = await params
 
-    const supabase = createServerClientFromRequest(request)
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const auth = await requireRole(request, EMPLOYEE_ROLES)
+    if (!auth.ok) return auth.response
+    const supabase = auth.ctx.supabase
 
     const { data, error } = await supabase
       .from('employees_with_member_info')
@@ -115,15 +111,9 @@ export async function DELETE(
   try {
     const { id } = await params
 
-    const supabase = createServerClientFromRequest(request)
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const auth = await requireRole(request, EMPLOYEE_ROLES)
+    if (!auth.ok) return auth.response
+    const supabase = auth.ctx.supabase
 
     const { error } = await supabase
       .from('employees')
@@ -164,15 +154,9 @@ export async function PATCH(
       normalizedBody.email = normalizedBody.email.toLowerCase()
     }
 
-    const supabase = createServerClientFromRequest(request)
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const auth = await requireRole(request, EMPLOYEE_ROLES)
+    if (!auth.ok) return auth.response
+    const supabase = auth.ctx.supabase
 
     const { data, error } = await supabase
       .from('employees')

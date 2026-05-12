@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
+import { requireRole } from '@/lib/auth/require-auth';
+
+const PERMUTAS_ROLES = ['super', 'administrador', 'financeiro'] as const;
 
 interface CsvRow {
   ano: number;
@@ -17,6 +20,8 @@ interface CsvRow {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireRole(request, PERMUTAS_ROLES);
+    if (!auth.ok) return auth.response;
     const supabase = createServerClient();
     const body = await request.json();
     const rows: CsvRow[] = body?.rows || [];

@@ -2,10 +2,13 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Database, AlertTriangle, HardDrive } from 'lucide-react'
 import AdminSidebar from '@/components/AdminSidebar'
 import { createClient } from '@/lib/supabase-client'
+import { useAdminAuth } from '@/providers/AdminAuthProvider'
+import AccessRestricted from '@/components/AccessRestricted'
 
 type AlertLevel = 'warning' | 'critical'
 
@@ -32,9 +35,17 @@ interface CapacityMetrics {
 }
 
 export default function SupabasePage() {
+  const { adminUser, isLoading, isAuthenticated, isAdmin } = useAdminAuth()
+  const router = useRouter()
   const [stats, setStats] = useState<CapacityMetrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isLoading && (!isAuthenticated || !isAdmin)) {
+      router.push('/admin/login')
+    }
+  }, [isLoading, isAuthenticated, isAdmin, router])
 
   useEffect(() => {
     fetchDatabaseStats()
@@ -99,6 +110,31 @@ export default function SupabasePage() {
   }
 
   const dbPercentage = getDbPercentage()
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen bg-gray-900">
+        <AdminSidebar />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-gray-300">Verificando autenticacao...</div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!isAuthenticated || !isAdmin) return null
+
+  const isSuperAdmin = adminUser?.role === 'super_admin'
+  if (!isSuperAdmin) {
+    return (
+      <div className="flex h-screen bg-gray-900">
+        <AdminSidebar />
+        <div className="flex-1 p-6">
+          <AccessRestricted message="Acesso restrito ao time tecnico (super admin)." />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-screen bg-gray-900">

@@ -50,7 +50,7 @@ function parseBigintLike(value: unknown): number | null {
 
 export async function GET(request: NextRequest) {
   try {
-    const result = await requireAdmin(request, { requiredRole: 'admin' })
+    const result = await requireAdmin(request, { requiredRole: 'super_admin' })
     if (!result.ok) return result.response
 
     const { supabaseAdmin: supabase } = result.ctx

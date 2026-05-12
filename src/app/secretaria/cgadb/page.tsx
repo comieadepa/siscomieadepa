@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import NotificationModal from '@/components/NotificationModal';
-import { createClient } from '@/lib/supabase-client';
+import { authenticatedFetch } from '@/lib/api-client';
 import { buildUrl, getAppBaseUrl } from '@/lib/urls';
 
 export const dynamic = 'force-dynamic';
@@ -156,7 +156,7 @@ export default function CgadbPage() {
 // ── Aba 1: Lista de Ministros ─────────────────────────────────────────────────
 
 function AbaMinistros({ notify }: { notify: (t: string, m: string, tp: 'success' | 'error' | 'warning' | 'info') => void }) {
-  const supabase = createClient();
+  const authedFetch = (input: string, init?: RequestInit) => authenticatedFetch(input, init);
 
   const [loading, setLoading] = useState(true);
   const [ministros, setMinistros] = useState<MinistroComDebito[]>([]);
@@ -183,37 +183,30 @@ function AbaMinistros({ notify }: { notify: (t: string, m: string, tp: 'success'
     try {
       setLoading(true);
 
-      // Carregar ministros em lotes (Supabase limita 1000/query)
+      // Carregar ministros em lotes (API)
       const allMembros: any[] = [];
       let from = 0;
       while (true) {
-        const { data, error } = await supabase
-          .from('members')
-          .select('id, name, cpf, status, tipo_cadastro, celular, phone, whatsapp, cargo_ministerial, custom_fields')
-          .or('status.eq.active,tipo_cadastro.eq.ministro')
-          .order('name')
-          .range(from, from + 999);
-        if (error) throw error;
-        if (!data || data.length === 0) break;
+        const res = await authedFetch(`/api/v1/secretaria/cgadb/ministros?offset=${from}&limit=1000`);
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error || 'Erro ao carregar ministros.');
+        const data = (json?.data as any[]) || [];
         allMembros.push(...data);
-        if (data.length < 1000) break;
-        from += 1000;
+        if (!json?.nextOffset) break;
+        from = Number(json.nextOffset);
       }
 
-      // Carregar todos os débitos em lotes
+      // Carregar todos os débitos em lotes (API)
       const allDebitos: DebitoCgadb[] = [];
       from = 0;
       while (true) {
-        const { data, error } = await supabase
-          .from('cgadb_debitos')
-          .select('*')
-          .order('ano', { ascending: false })
-          .range(from, from + 999);
-        if (error) throw error;
-        if (!data || data.length === 0) break;
-        allDebitos.push(...(data as DebitoCgadb[]));
-        if (data.length < 1000) break;
-        from += 1000;
+        const res = await authedFetch(`/api/v1/secretaria/cgadb/debitos?offset=${from}&limit=1000&orderBy=ano`);
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error || 'Erro ao carregar debitos.');
+        const data = (json?.data as DebitoCgadb[]) || [];
+        allDebitos.push(...data);
+        if (!json?.nextOffset) break;
+        from = Number(json.nextOffset);
       }
 
       const membros = allMembros;
@@ -272,8 +265,13 @@ function AbaMinistros({ notify }: { notify: (t: string, m: string, tp: 'success'
   async function handleDarBaixaMin(debitoId: string, memberId: string) {
     setZerandoMin(debitoId);
     try {
-      const { error } = await supabase.from('cgadb_debitos').delete().eq('id', debitoId);
-      if (error) throw error;
+      const res = await authedFetch('/api/v1/secretaria/cgadb/debitos', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [debitoId] }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Erro ao dar baixa.');
       setMinistros(prev => prev.map(m => {
         if (m.id !== memberId) return m;
         const novosDebitos = m.debitos.filter(d => d.id !== debitoId);
@@ -294,8 +292,13 @@ function AbaMinistros({ notify }: { notify: (t: string, m: string, tp: 'success'
     if (ids.length === 0) return;
     setZerandoMin(`todos_${memberId}`);
     try {
-      const { error } = await supabase.from('cgadb_debitos').delete().in('id', ids);
-      if (error) throw error;
+      const res = await authedFetch('/api/v1/secretaria/cgadb/debitos', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Erro ao dar baixa geral.');
       setMinistros(prev => prev.map(m => m.id !== memberId ? m : { ...m, debitos: [], totalDevido: 0, anosDebito: [] }));
       setExpandedId(null);
       notify('Baixa realizada', `${ids.length} débito(s) removido(s) com sucesso.`, 'success');
@@ -700,7 +703,7 @@ function AbaMinistros({ notify }: { notify: (t: string, m: string, tp: 'success'
 // ── Aba 2: Débito CGADB (com upload CSV) ─────────────────────────────────────
 
 function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' | 'error' | 'warning' | 'info') => void }) {
-  const supabase = createClient();
+  const authedFetch = (input: string, init?: RequestInit) => authenticatedFetch(input, init);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [loading, setLoading] = useState(true);
@@ -729,10 +732,14 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
       const oldKey = normalizeCpf(editCpf.oldCpf);
       // Atualiza todos os registros da tabela cgadb_debitos com o CPF antigo
       const ids = debitos.filter(d => normalizeCpf(d.cpf) === oldKey).map(d => d.id);
-      for (const id of ids) {
-        const { error } = await supabase.from('cgadb_debitos').update({ cpf: newCpf }).eq('id', id);
-        if (error) throw error;
-      }
+      if (ids.length === 0) return;
+      const res = await authedFetch('/api/v1/secretaria/cgadb/debitos', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, cpf: newCpf }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Erro ao atualizar CPF.');
       notify('CPF atualizado', `CPF de ${editCpf.nome} atualizado com sucesso.`, 'success');
       setEditCpf(null);
       await loadDebitos();
@@ -746,8 +753,13 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
   async function handleDarBaixa(id: string) {
     setZerando(id);
     try {
-      const { error } = await supabase.from('cgadb_debitos').delete().eq('id', id);
-      if (error) throw error;
+      const res = await authedFetch('/api/v1/secretaria/cgadb/debitos', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [id] }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Erro ao dar baixa.');
       setDebitos(prev => prev.filter(d => d.id !== id));
       notify('Baixa realizada', 'Débito removido com sucesso.', 'success');
     } catch (err: any) {
@@ -762,8 +774,13 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
     if (ids.length === 0) return;
     setZerando(`todos_${cpfKey}`);
     try {
-      const { error } = await supabase.from('cgadb_debitos').delete().in('id', ids);
-      if (error) throw error;
+      const res = await authedFetch('/api/v1/secretaria/cgadb/debitos', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Erro ao dar baixa geral.');
       setDebitos(prev => prev.filter(d => normalizeCpf(d.cpf) !== cpfKey));
       setExpandedCpf(null);
       notify('Baixa realizada', `${ids.length} débito(s) removido(s) com sucesso.`, 'success');
@@ -782,20 +799,17 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
   async function loadDebitos() {
     try {
       setLoading(true);
-      // Carrega todos em lotes (Supabase limita 1000/query)
+      // Carrega todos em lotes (API)
       const allDebitos: DebitoCgadb[] = [];
       let from = 0;
       while (true) {
-        const { data, error } = await supabase
-          .from('cgadb_debitos')
-          .select('*')
-          .order('nome', { ascending: true })
-          .range(from, from + 999);
-        if (error) throw error;
-        if (!data || data.length === 0) break;
-        allDebitos.push(...(data as DebitoCgadb[]));
-        if (data.length < 1000) break;
-        from += 1000;
+        const res = await authedFetch(`/api/v1/secretaria/cgadb/debitos?offset=${from}&limit=1000&orderBy=nome`);
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error || 'Erro ao carregar debitos.');
+        const data = (json?.data as DebitoCgadb[]) || [];
+        allDebitos.push(...data);
+        if (!json?.nextOffset) break;
+        from = Number(json.nextOffset);
       }
       setDebitos(allDebitos);
 
@@ -803,17 +817,15 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
       const cpfSet = new Set<string>();
       let mFrom = 0;
       while (true) {
-        const { data: mData, error: mError } = await supabase
-          .from('members')
-          .select('cpf')
-          .range(mFrom, mFrom + 999);
-        if (mError) break;
-        if (!mData || mData.length === 0) break;
-        for (const row of mData) {
+        const res = await authedFetch(`/api/v1/secretaria/cgadb/ministros?offset=${mFrom}&limit=1000`);
+        const json = await res.json();
+        if (!res.ok) break;
+        const data = (json?.data as Array<{ cpf?: string | null }>) || [];
+        for (const row of data) {
           if (row.cpf) cpfSet.add(normalizeCpf(row.cpf));
         }
-        if (mData.length < 1000) break;
-        mFrom += 1000;
+        if (!json?.nextOffset) break;
+        mFrom = Number(json.nextOffset);
       }
       setMembersSet(cpfSet);
 
@@ -834,8 +846,13 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
   async function deleteAll() {
     setDeleting(true);
     try {
-      const { error } = await supabase.from('cgadb_debitos').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      if (error) throw error;
+      const res = await authedFetch('/api/v1/secretaria/cgadb/debitos', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all: true }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Erro ao apagar dados.');
       setDebitos([]);
       setLastImport(null);
       setExpandedCpf(null);
@@ -923,10 +940,13 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
       let upserted = 0;
       for (let i = 0; i < deduped.length; i += BATCH) {
         const batch = deduped.slice(i, i + BATCH);
-        const { error } = await supabase
-          .from('cgadb_debitos')
-          .upsert(batch as any[], { onConflict: 'cpf,ano', ignoreDuplicates: false });
-        if (error) throw error;
+        const res = await authedFetch('/api/v1/secretaria/cgadb/debitos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rows: batch }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error || 'Erro ao importar debitos.');
         upserted += batch.length;
       }
 

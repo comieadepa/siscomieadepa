@@ -9,6 +9,7 @@ import { loadOrgNomenclaturasFromSupabaseOrMigrate, type OrgNomenclaturasState }
 import { getCargosMinisteriais, type CargoMinisterial } from '@/lib/cargos-utils';
 import { formatCpf, formatPhone } from '@/lib/mascaras';
 import { normalizePayloadToUppercase } from '@/lib/uppercase-normalizer';
+import { authenticatedFetch } from '@/lib/api-client';
 import type { Member } from '@/types/supabase';
 
 interface SimpleOption {
@@ -59,7 +60,7 @@ const normalizeTipoRegistro = (value: string) => {
 };
 
 const isConsagracaoTableMissing = (error: any) => {
-  const message = String(error?.message || '').toLowerCase();
+  const message = String(error?.message || error || '').toLowerCase();
   const code = String(error?.code || '').toUpperCase();
   return code === 'PGRST205' || message.includes("could not find the table 'public.consagracao_registros'");
 };
@@ -173,21 +174,18 @@ export default function ConsagracaoPage() {
   const getNextProcessNumber = async () => {
     if (!ministryId || !consagracaoModuleReady) return '';
     const year = new Date().getFullYear();
-    const { data, error } = await supabase
-      .from('consagracao_registros')
-      .select('numero_processo')
-      
-      .like('numero_processo', `%/${year}`);
-
-    if (error) {
-      if (isConsagracaoTableMissing(error)) {
+    const res = await authenticatedFetch(`/api/v1/secretaria/consagracao?fields=numero_processo&year=${year}`);
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null as any);
+      if (isConsagracaoTableMissing(payload?.error)) {
         setConsagracaoModuleReady(false);
         setStatusMensagem('Módulo Consagração indisponível: tabela public.consagracao_registros não encontrada. Aplique as migrations de Consagração no Supabase.');
       }
       return '';
     }
 
-    const numeros = (data || [])
+    const payload = await res.json().catch(() => null as any);
+    const numeros = (payload?.data || [])
       .map((item: any) => {
         const raw = String(item?.numero_processo || '');
         const base = raw.split('/')[0];
@@ -206,29 +204,29 @@ export default function ConsagracaoPage() {
     const orgNomes = await loadOrgNomenclaturasFromSupabaseOrMigrate(supabase, { syncLocalStorage: false });
     setNomenclaturas(orgNomes);
 
-    const [supRes, camposRes, congRes] = await Promise.all([
-      supabase.from('supervisoes').select('id, nome').order('nome'),
-      supabase.from('campos').select('id, nome, supervisao_id').order('nome'),
-      supabase.from('congregacoes').select('id, nome, supervisao_id, campo_id').order('nome')
+    const [estruturaRes, registrosRes] = await Promise.all([
+      authenticatedFetch('/api/v1/secretaria/estrutura'),
+      authenticatedFetch('/api/v1/secretaria/consagracao')
     ]);
 
-    if (!supRes.error) setSupervisoes((supRes.data as SimpleOption[]) || []);
-    if (!camposRes.error) setCampos((camposRes.data as SimpleOption[]) || []);
-    if (!congRes.error) setCongregacoes((congRes.data as SimpleOption[]) || []);
+    if (estruturaRes.ok) {
+      const estruturaJson = await estruturaRes.json().catch(() => null as any);
+      setSupervisoes((estruturaJson?.supervisoes as SimpleOption[]) || []);
+      setCampos((estruturaJson?.campos as SimpleOption[]) || []);
+      setCongregacoes((estruturaJson?.congregacoes as SimpleOption[]) || []);
+    }
 
-    const { data, error } = await supabase
-      .from('consagracao_registros')
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (error) {
-      if (isConsagracaoTableMissing(error)) {
+    if (!registrosRes.ok) {
+      const payload = await registrosRes.json().catch(() => null as any);
+      if (isConsagracaoTableMissing(payload?.error)) {
         setConsagracaoModuleReady(false);
         setStatusMensagem('Módulo Consagração indisponível: tabela public.consagracao_registros não encontrada. Aplique as migrations de Consagração no Supabase.');
         setRegistros([]);
       }
-    } else if (data) {
+    } else {
+      const payload = await registrosRes.json().catch(() => null as any);
       setConsagracaoModuleReady(true);
-      setRegistros(data);
+      setRegistros((payload?.data as any[]) || []);
     }
 
     setLoadingData(false);
@@ -550,9 +548,18 @@ export default function ConsagracaoPage() {
       for (const k of Object.keys(payload)) {
         if (payload[k] === '') payload[k] = null;
       }
-      const { error } = await supabase.from('consagracao_registros').insert(payload);
-      if (error) erros.push(`${row.nome}: ${error.message}`);
-      else importados++;
+      const res = await authenticatedFetch('/api/v1/secretaria/consagracao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null as any);
+        const msg = errJson?.error || 'Erro ao importar registro.';
+        erros.push(`${row.nome}: ${msg}`);
+      } else {
+        importados++;
+      }
     }
     setImporting(false);
     if (erros.length > 0) setCsvErro(`${erros.length} erro(s): ${erros.slice(0, 3).join('; ')}`);
@@ -686,17 +693,14 @@ export default function ConsagracaoPage() {
   ) => {
     if (!memberId) return;
 
-    const { data: existingMember, error: existingMemberError } = await supabase
-      .from('members')
-      .select('custom_fields')
-      .eq('id', memberId)
-      .maybeSingle();
-
-    if (existingMemberError) {
-      console.error('Erro ao carregar membro para sincronizar status de consagração:', existingMemberError);
+    const memberRes = await authenticatedFetch(`/api/v1/members/${memberId}`);
+    if (!memberRes.ok) {
+      const payload = await memberRes.json().catch(() => null as any);
+      console.error('Erro ao carregar membro para sincronizar status de consagração:', payload?.error || 'Falha');
       return;
     }
 
+    const existingMember = await memberRes.json().catch(() => null as any);
     const currentCustomFields =
       existingMember?.custom_fields && typeof existingMember.custom_fields === 'object'
         ? (existingMember.custom_fields as Record<string, any>)
@@ -710,16 +714,15 @@ export default function ConsagracaoPage() {
       consagracaoAtualizadoEm: new Date().toISOString(),
     };
 
-    const { error: updateMemberError } = await supabase
-      .from('members')
-      .update({
-        custom_fields: nextCustomFields,
-        updated_at: new Date().toISOString(),
-      } as any)
-      .eq('id', memberId);
+    const updateRes = await authenticatedFetch(`/api/v1/members/${memberId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ custom_fields: nextCustomFields }),
+    });
 
-    if (updateMemberError) {
-      console.error('Erro ao sincronizar status de consagração no membro:', updateMemberError);
+    if (!updateRes.ok) {
+      const payload = await updateRes.json().catch(() => null as any);
+      console.error('Erro ao sincronizar status de consagração no membro:', payload?.error || 'Falha');
     }
   };
 
@@ -825,30 +828,39 @@ export default function ConsagracaoPage() {
     }
 
     if (editingRegistro) {
-      const { error } = await supabase
-        .from('consagracao_registros')
-        .update({ ...normalizedPayload, updated_at: new Date().toISOString() })
-        .eq('id', editingRegistro.id);
-      if (error) {
-        if (isConsagracaoTableMissing(error)) {
+      const res = await authenticatedFetch('/api/v1/secretaria/consagracao', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingRegistro.id,
+          ...normalizedPayload,
+          updated_at: new Date().toISOString(),
+        }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null as any);
+        if (isConsagracaoTableMissing(payload?.error)) {
           setConsagracaoModuleReady(false);
           setStatusMensagem('Módulo Consagração indisponível: tabela public.consagracao_registros não encontrada. Aplique as migrations de Consagração no Supabase.');
           return;
         }
-        setStatusMensagem(`Erro ao atualizar registro: ${error.message}`);
+        setStatusMensagem(`Erro ao atualizar registro: ${payload?.error || 'Falha ao atualizar registro.'}`);
         return;
       }
     } else {
-      const { error } = await supabase
-        .from('consagracao_registros')
-        .insert(normalizedPayload);
-      if (error) {
-        if (isConsagracaoTableMissing(error)) {
+      const res = await authenticatedFetch('/api/v1/secretaria/consagracao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(normalizedPayload),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null as any);
+        if (isConsagracaoTableMissing(payload?.error)) {
           setConsagracaoModuleReady(false);
           setStatusMensagem('Módulo Consagração indisponível: tabela public.consagracao_registros não encontrada. Aplique as migrations de Consagração no Supabase.');
           return;
         }
-        setStatusMensagem(`Erro ao criar registro: ${error.message}`);
+        setStatusMensagem(`Erro ao criar registro: ${payload?.error || 'Falha ao criar registro.'}`);
         return;
       }
     }
@@ -866,11 +878,11 @@ export default function ConsagracaoPage() {
     resetForm();
     setShowForm(false);
     await ensureNumeroProcesso();
-    const { data, error } = await supabase
-      .from('consagracao_registros')
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (!error && data) setRegistros(data);
+    const registrosRes = await authenticatedFetch('/api/v1/secretaria/consagracao');
+    if (registrosRes.ok) {
+      const payload = await registrosRes.json().catch(() => null as any);
+      setRegistros((payload?.data as any[]) || []);
+    }
   };
 
   const handleDeleteRegistro = async (id: string) => {
@@ -879,12 +891,14 @@ export default function ConsagracaoPage() {
       return;
     }
 
-    const { error } = await supabase
-      .from('consagracao_registros')
-      .delete()
-      .eq('id', id);
-    if (error) {
-      if (isConsagracaoTableMissing(error)) {
+    const res = await authenticatedFetch('/api/v1/secretaria/consagracao', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null as any);
+      if (isConsagracaoTableMissing(payload?.error)) {
         setConsagracaoModuleReady(false);
         setStatusMensagem('Módulo Consagração indisponível: tabela public.consagracao_registros não encontrada. Aplique as migrations de Consagração no Supabase.');
         return;
@@ -902,12 +916,18 @@ export default function ConsagracaoPage() {
     }
 
     if (!processRegistro) return;
-    const { error } = await supabase
-      .from('consagracao_registros')
-      .update({ status_processo: status, updated_at: new Date().toISOString() })
-      .eq('id', processRegistro.id);
-    if (error) {
-      if (isConsagracaoTableMissing(error)) {
+    const res = await authenticatedFetch('/api/v1/secretaria/consagracao', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: processRegistro.id,
+        status_processo: status,
+        updated_at: new Date().toISOString(),
+      }),
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null as any);
+      if (isConsagracaoTableMissing(payload?.error)) {
         setConsagracaoModuleReady(false);
         setStatusMensagem('Módulo Consagração indisponível: tabela public.consagracao_registros não encontrada. Aplique as migrations de Consagração no Supabase.');
         return;

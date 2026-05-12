@@ -1,12 +1,15 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import PageLayout from '@/components/PageLayout';
+import AccessRestricted from '@/components/AccessRestricted';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useEventosPerfil } from '@/hooks/useEventosPerfil';
+import { useUserRole } from '@/hooks/useUserRole';
 import { createClient } from '@/lib/supabase-client';
 import { buildUrl, getPublicBaseUrl } from '@/lib/urls';
+import { canAccessModule } from '@/lib/auth/roles';
 
 // ─── Tipos ───────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -69,6 +72,7 @@ function fmtMoeda(v: number) {
 export default function EventosPage() {
   const { loading: authLoading } = useRequireSupabaseAuth();
   const perfil = useEventosPerfil();
+  const { role, loading: roleLoading } = useUserRole();
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -78,6 +82,9 @@ export default function EventosPage() {
   const [campos,      setCampos]      = useState<Campo[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [activeTab,   setActiveTab]   = useState<'programado' | 'realizado' | 'cancelado'>('programado');
+  const [modalEvento, setModalEvento] = useState<EventoComStats | null>(null);
+  const [acaoLoading, setAcaoLoading] = useState(false);
+  const [acaoErro,    setAcaoErro]    = useState('');
 
   const [busca,       setBusca]       = useState('');
   const [filtroDept,  setFiltroDept]  = useState('');
@@ -92,55 +99,81 @@ export default function EventosPage() {
     }
   }, [perfil.loading, perfil.isDeptAdmin, perfil.departamentoUsuario]);
 
-  const isReady = !authLoading && !perfil.loading;
+  const podeAcessar = canAccessModule(role, 'eventos');
+  const isReady = !authLoading && !perfil.loading && !roleLoading && podeAcessar;
+
+  const getAccessTokenOrThrow = useCallback(async () => {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error('Sessao expirada. Faça login novamente.');
+    return token;
+  }, [supabase]);
+
+  const authedFetch = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const token = await getAccessTokenOrThrow();
+    const headers = new Headers(init?.headers || {});
+    headers.set('Authorization', `Bearer ${token}`);
+    return fetch(input, { ...init, headers });
+  }, [getAccessTokenOrThrow]);
+
+  const carregarDados = useCallback(async () => {
+    try {
+      // Busca eventos: filtra pelo dept (isDeptAdmin) ou IDs acessíveis (vinculados)
+      let evQuery = supabase.from('eventos').select('*').order('data_inicio', { ascending: false });
+      if (perfil.isDeptAdmin && perfil.departamentoUsuario) {
+        // Admin de departamento: vê todos os eventos do próprio dept
+        evQuery = evQuery.eq('departamento', perfil.departamentoUsuario);
+      } else if (!perfil.isGlobal && perfil.eventoIds !== null) {
+        if (perfil.eventoIds.length === 0) {
+          setEventos([]);
+          setInscricoes([]);
+          return;
+        }
+        evQuery = evQuery.in('id', perfil.eventoIds);
+      }
+
+      const [evRes, estruturaRes] = await Promise.all([
+        evQuery,
+        authedFetch('/api/v1/estrutura'),
+      ]);
+
+      const estruturaJson = await estruturaRes.json();
+      if (estruturaRes.ok) {
+        setSupervisoes((estruturaJson?.supervisoes as Supervisao[]) || []);
+        setCampos((estruturaJson?.campos as Campo[]) || []);
+      }
+
+      const evs = (evRes.data as Evento[]) || [];
+      setEventos(evs);
+
+      // Carrega inscrições apenas dos eventos acessíveis
+      if (evs.length > 0) {
+        const ids = evs.map(e => e.id);
+        const { data: inData } = await supabase
+          .from('evento_inscricoes')
+          .select('evento_id, status_pagamento, valor_pago')
+          .in('evento_id', ids);
+        setInscricoes((inData as InscricaoResumo[]) || []);
+      } else {
+        setInscricoes([]);
+      }
+    } catch {
+      setEventos([]);
+      setInscricoes([]);
+    }
+  }, [perfil.departamentoUsuario, perfil.eventoIds, perfil.isDeptAdmin, perfil.isGlobal, supabase]);
+
+  const recarregarDados = useCallback(async () => {
+    setLoadingData(true);
+    await carregarDados();
+    setLoadingData(false);
+  }, [carregarDados]);
 
   useEffect(() => {
     if (!isReady) return;
-    (async () => {
-      setLoadingData(true);
-      try {
-        // Busca eventos: filtra pelo dept (isDeptAdmin) ou IDs acessíveis (vinculados)
-        let evQuery = supabase.from('eventos').select('*').order('data_inicio', { ascending: false });
-        if (perfil.isDeptAdmin && perfil.departamentoUsuario) {
-          // Admin de departamento: vê todos os eventos do próprio dept
-          evQuery = evQuery.eq('departamento', perfil.departamentoUsuario);
-        } else if (!perfil.isGlobal && perfil.eventoIds !== null) {
-          if (perfil.eventoIds.length === 0) {
-            setEventos([]);
-            setInscricoes([]);
-            setLoadingData(false);
-            return;
-          }
-          evQuery = evQuery.in('id', perfil.eventoIds);
-        }
-
-        const [evRes, supRes, camRes] = await Promise.all([
-          evQuery,
-          supabase.from('supervisoes').select('id, nome').order('nome'),
-          supabase.from('campos').select('id, nome, supervisao_id').order('nome'),
-        ]);
-
-        const evs = (evRes.data as Evento[]) || [];
-        setEventos(evs);
-        setSupervisoes((supRes.data as Supervisao[]) || []);
-        setCampos((camRes.data as Campo[]) || []);
-
-        // Carrega inscrições apenas dos eventos acessíveis
-        if (evs.length > 0) {
-          const ids = evs.map(e => e.id);
-          const { data: inData } = await supabase
-            .from('evento_inscricoes')
-            .select('evento_id, status_pagamento, valor_pago')
-            .in('evento_id', ids);
-          setInscricoes((inData as InscricaoResumo[]) || []);
-        } else {
-          setInscricoes([]);
-        }
-      } finally {
-        setLoadingData(false);
-      }
-    })();
-  }, [isReady, perfil.isGlobal, perfil.eventoIds, supabase]);
+    setLoadingData(true);
+    carregarDados().finally(() => setLoadingData(false));
+  }, [isReady, carregarDados]);
 
   const eventosComStats = useMemo<EventoComStats[]>(() => {
     return eventos.map(ev => {
@@ -190,12 +223,64 @@ export default function EventosPage() {
     });
   }, [eventosComStats, activeTab, busca, filtroDept, filtroAno, filtroSup, filtroCampo]);
 
+  const abrirModalRemocao = (ev: EventoComStats) => {
+    setModalEvento(ev);
+    setAcaoErro('');
+  };
+
+  const fecharModalRemocao = () => {
+    setModalEvento(null);
+    setAcaoErro('');
+  };
+
+  const handleCancelarEvento = async () => {
+    if (!modalEvento) return;
+    setAcaoLoading(true);
+    setAcaoErro('');
+    try {
+      const res = await authedFetch(`/api/eventos/${modalEvento.id}`, { method: 'PATCH' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Erro ao cancelar evento.');
+      fecharModalRemocao();
+      await recarregarDados();
+    } catch (e) {
+      setAcaoErro(e instanceof Error ? e.message : 'Erro ao cancelar evento.');
+    } finally {
+      setAcaoLoading(false);
+    }
+  };
+
+  const handleDeletarEvento = async () => {
+    if (!modalEvento) return;
+    setAcaoLoading(true);
+    setAcaoErro('');
+    try {
+      const res = await authedFetch(`/api/eventos/${modalEvento.id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Erro ao deletar evento.');
+      fecharModalRemocao();
+      await recarregarDados();
+    } catch (e) {
+      setAcaoErro(e instanceof Error ? e.message : 'Erro ao deletar evento.');
+    } finally {
+      setAcaoLoading(false);
+    }
+  };
+
   function handleFiltroSup(v: string) {
     setFiltroSup(v);
     setFiltroCampo('');
   }
 
-  if (authLoading || perfil.loading) return <div className="p-8 text-gray-500">Carregando...</div>;
+  if (authLoading || perfil.loading || roleLoading) return <div className="p-8 text-gray-500">Carregando...</div>;
+
+  if (!podeAcessar) {
+    return (
+      <PageLayout title="Eventos" description="" activeMenu="eventos">
+        <AccessRestricted message="Voce nao tem permissao para acessar o modulo de eventos." />
+      </PageLayout>
+    );
+  }
 
   // ── Dashboard simplificada para perfil checkin ───────────
   if (perfil.somenteCheckin) {
@@ -388,8 +473,55 @@ export default function EventosPage() {
               evento={ev}
               podeVerFinanceiro={perfil.podeVerFinanceiro}
               onGerenciar={() => router.push(`/eventos/${ev.id}`)}
+              podeRemover={perfil.podeEditarEvento}
+              onRemover={() => abrirModalRemocao(ev)}
             />
           ))}
+        </div>
+      )}
+
+      {modalEvento && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-bold text-gray-800">Remover evento</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              Escolha o que deseja fazer com <strong>{modalEvento.nome}</strong>.
+            </p>
+            <div className="mt-4 space-y-1 text-xs text-gray-500">
+              <p>• Deletar: remove o evento e todas as inscricoes vinculadas.</p>
+              <p>• Cancelar: define status Cancelado e marca inscricoes como canceladas.</p>
+            </div>
+
+            {acaoErro && (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                {acaoErro}
+              </div>
+            )}
+
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                onClick={fecharModalRemocao}
+                disabled={acaoLoading}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                Voltar
+              </button>
+              <button
+                onClick={handleCancelarEvento}
+                disabled={acaoLoading || modalEvento.status === 'cancelado'}
+                className="rounded-lg bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+              >
+                Cancelar evento
+              </button>
+              <button
+                onClick={handleDeletarEvento}
+                disabled={acaoLoading}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300"
+              >
+                Deletar evento
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -414,10 +546,12 @@ function SummaryCard({ label, value, color, textColor, icon, small = false }: {
 }
 
 // ─── EventoCard ───────────────────────────────────────────────
-function EventoCard({ evento, podeVerFinanceiro, onGerenciar }: {
+function EventoCard({ evento, podeVerFinanceiro, onGerenciar, podeRemover, onRemover }: {
   evento: EventoComStats;
   podeVerFinanceiro: boolean;
   onGerenciar: () => void;
+  podeRemover: boolean;
+  onRemover: () => void;
 }) {
   const cfg = STATUS_CONFIG[evento.status] ?? STATUS_CONFIG.programado;
 
@@ -482,6 +616,14 @@ function EventoCard({ evento, podeVerFinanceiro, onGerenciar }: {
           <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t border-gray-100">
             <ActionBtn label="Gerenciar" icon="⚙️" onClick={onGerenciar} primary tooltip="Abrir painel completo do evento" />
             <ActionBtn label="Pág. Pública" icon="🌐" onClick={() => window.open(buildUrl(getPublicBaseUrl(), `/inscricao/${evento.slug}`), '_blank')} />
+            {podeRemover && (
+              <button
+                onClick={onRemover}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+              >
+                🗑️ Deletar evento
+              </button>
+            )}
           </div>
         </div>
       </div>

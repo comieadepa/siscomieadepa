@@ -65,31 +65,15 @@ export default async function EventosPublicosPage() {
           <p className="mt-4 max-w-2xl text-base text-white/80">
             Escolha um dos eventos disponiveis para ver detalhes e garantir sua inscricao.
           </p>
-          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,240px)_minmax(0,1fr)_minmax(0,1fr)]">
-            <div className="rounded-2xl bg-white/95 px-5 py-4 text-emerald-900 shadow-lg">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-700">Inscricoes abertas</div>
-              <div className="mt-2 text-3xl font-semibold">{eventos.length}</div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                {formatQuantidadeBadge(eventos.length)}
-              </div>
-            </div>
-            <div className="group rounded-2xl border border-white/20 bg-white/10 px-5 py-4 text-white/90 shadow-sm backdrop-blur-md transition hover:bg-white/15">
-              <div className="flex items-start gap-3">
-                <div className="text-2xl">🏛️</div>
-                <div>
-                  <div className="text-sm font-semibold">Portal Oficial</div>
-                  <p className="mt-1 text-xs text-white/70">Eventos, congressos e inscricoes da COMIEADEPA.</p>
+          <div className="mt-6">
+            <div className="inline-flex w-fit items-center gap-4 rounded-lg bg-white/90 px-3 py-2 text-emerald-900 shadow-sm ring-1 ring-emerald-900/10">
+              <div className="flex flex-col">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.24em] text-emerald-700">Inscricoes abertas</div>
+                <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                  {formatQuantidadeBadge(eventos.length)}
                 </div>
               </div>
-            </div>
-            <div className="group rounded-2xl border border-white/20 bg-white/10 px-5 py-4 text-white/90 shadow-sm backdrop-blur-md transition hover:bg-white/15">
-              <div className="flex items-start gap-3">
-                <div className="text-2xl">🤖</div>
-                <div>
-                  <div className="text-sm font-semibold">Maia — Assistente Virtual</div>
-                  <p className="mt-1 text-xs text-white/70">Suporte para inscricoes, pagamentos e duvidas.</p>
-                </div>
-              </div>
+              <div className="text-xl font-semibold leading-tight">{eventos.length}</div>
             </div>
           </div>
         </div>

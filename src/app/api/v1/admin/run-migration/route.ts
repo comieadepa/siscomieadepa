@@ -4,7 +4,7 @@ import { consumeRateLimit } from '@/lib/rate-limit-db'
 
 export async function POST(request: NextRequest) {
   try {
-    const guard = await requireAdmin(request, { requiredRole: 'admin' })
+    const guard = await requireAdmin(request, { requiredRole: 'super_admin' })
     if (!guard.ok) return guard.response
 
     // Por segurança operacional, migrações via endpoint precisam ser explicitamente habilitadas.

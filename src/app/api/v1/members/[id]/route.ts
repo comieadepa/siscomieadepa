@@ -5,9 +5,12 @@
  * DELETE /api/v1/members/:id - Deletar membro
  */
 
-import { createServerClientFromRequest } from '@/lib/supabase-server'
 import { normalizePayloadToUppercase } from '@/lib/uppercase-normalizer'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireRole } from '@/lib/auth/require-auth'
+import { createServerClient } from '@/lib/supabase-server'
+
+const MEMBERS_ROLES = ['super', 'administrador', 'comissao'] as const
 
 /**
  * GET: Obter um membro pelo ID
@@ -18,15 +21,9 @@ export async function GET(
 ) {
   const { id } = await params
   try {
-    const supabase = createServerClientFromRequest(request)
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const auth = await requireRole(request, MEMBERS_ROLES)
+    if (!auth.ok) return auth.response
+    const supabase = createServerClient()
 
     const { data, error } = await supabase
       .from('members')
@@ -85,15 +82,9 @@ export async function PUT(
         'cred_validade',
       ],
     })
-    const supabase = createServerClientFromRequest(request)
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const auth = await requireRole(request, MEMBERS_ROLES)
+    if (!auth.ok) return auth.response
+    const supabase = createServerClient()
 
     // Verificar se membro existe
     const { data: existing } = await supabase
@@ -245,6 +236,61 @@ export async function PUT(
 }
 
 /**
+ * PATCH: Atualizar campos parciais de membro
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  try {
+    const auth = await requireRole(request, MEMBERS_ROLES)
+    if (!auth.ok) return auth.response
+    const supabase = createServerClient()
+
+    const body = await request.json().catch(() => null as any)
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Payload invalido' }, { status: 400 })
+    }
+
+    const updates: Record<string, any> = {}
+    if ('custom_fields' in body) updates.custom_fields = body.custom_fields ?? {}
+    if ('status' in body) updates.status = body.status ?? null
+    if ('jubilado' in body) updates.jubilado = body.jubilado ?? false
+    if ('observacoes' in body) updates.observacoes = body.observacoes ?? null
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: 'Nenhuma atualizacao enviada' }, { status: 400 })
+    }
+
+    updates.updated_at = new Date().toISOString()
+
+    const { data, error } = await supabase
+      .from('members')
+      .update(updates)
+      .eq('id', id)
+      .select('*')
+      .maybeSingle()
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
+    if (!data) {
+      return NextResponse.json({ error: 'Membro não encontrado' }, { status: 404 })
+    }
+
+    return NextResponse.json(data)
+  } catch (error) {
+    console.error('PATCH /api/v1/members/:id:', error)
+    return NextResponse.json(
+      { error: 'Erro interno do servidor' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
  * DELETE: Deletar membro
  */
 export async function DELETE(
@@ -253,15 +299,9 @@ export async function DELETE(
 ) {
   const { id } = await params
   try {
-    const supabase = createServerClientFromRequest(request)
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const auth = await requireRole(request, MEMBERS_ROLES)
+    if (!auth.ok) return auth.response
+    const supabase = createServerClient()
 
     // Verificar se existe
     const { data: existing } = await supabase

@@ -6,7 +6,7 @@ import PageLayout from '@/components/PageLayout';
 import Tabs from '@/components/Tabs';
 import Section from '@/components/Section';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
-import { createClient } from '@/lib/supabase-client';
+import { authenticatedFetch } from '@/lib/api-client';
 
 export default function AtivarFluxoPage() {
   const { loading } = useRequireSupabaseAuth();
@@ -26,7 +26,6 @@ export default function AtivarFluxoPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [actionMessage, setActionMessage] = useState('');
   const [actionPending, setActionPending] = useState<{ id: string; type: 'activate' | 'deactivate' } | null>(null);
-  const supabase = useMemo(() => createClient(), []);
 
   const tabs = [
     { id: 'ativos', label: 'Ativos', icon: '▶️' },
@@ -38,54 +37,36 @@ export default function AtivarFluxoPage() {
 
   useEffect(() => {
     const loadContext = async () => {
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
-      const userId = data.session?.user?.id;
-      if (!token || !userId) {
+      const meRes = await authenticatedFetch('/api/auth/me');
+      if (!meRes.ok) {
         setIsAdmin(false);
         setAdminChecked(true);
         return;
       }
 
-      const { data: publicUser } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', userId)
-        .maybeSingle();
-
-      const mu = { role: publicUser?.role || 'operator', permissions: [] as string[], congregacao_id: null as string | null };
-
-      const role = String(mu?.role || '').toLowerCase();
-      const perms = Array.isArray(mu?.permissions) ? mu?.permissions : [];
-      const permSet = new Set(perms.map((p: any) => String(p || '').toUpperCase()));
-      const allowAll = ['admin', 'manager', 'supervisor', 'superintendent', 'superintendente'].includes(role)
-        || permSet.has('ADMINISTRADOR')
-        || permSet.has('SUPERVISOR')
-        || permSet.has('SUPERINTENDENTE');
-
-      const adminAccess = allowAll || permSet.has('ADMINISTRADOR');
+      const me = await meRes.json().catch(() => null as any);
+      const role = String(me?.nivel || '').toLowerCase();
+      const allowAll = ['super', 'administrador', 'comissao'].includes(role);
+      const adminAccess = allowAll;
       setIsAdmin(adminAccess);
       setCanViewAll(allowAll);
       setRoleLabel(role);
 
       const isLocked = role === 'operator' || role === 'viewer';
       setLockedCongregation(isLocked);
-      if (isLocked && mu?.congregacao_id) {
-        setCongregationId(String(mu.congregacao_id));
-      } else if (allowAll && !congregationId) {
+      if (allowAll && !congregationId) {
         setCongregationId('all');
       }
 
       if (adminAccess) {
-        const { data: rows, error } = await supabase
-          .from('congregacoes')
-          .select('id, nome')
-          .order('nome', { ascending: true });
-
-        if (!error) {
-          setCongregacoes(rows || []);
-          if (!congregationId && rows && rows.length > 0 && !allowAll) {
-            setCongregationId(rows[0].id);
+        const congRes = await authenticatedFetch('/api/v1/secretaria/congregacoes?includeInactive=true');
+        if (congRes.ok) {
+          const json = await congRes.json().catch(() => null as any);
+          const rows = (json?.data as any[]) || [];
+          const mapped = rows.map((row) => ({ id: row.id, nome: row.nome }));
+          setCongregacoes(mapped);
+          if (!congregationId && mapped.length > 0 && !allowAll) {
+            setCongregationId(mapped[0].id);
           }
         }
       }
@@ -94,22 +75,17 @@ export default function AtivarFluxoPage() {
     };
 
     loadContext();
-  }, [supabase]);
+  }, [congregationId]);
 
   useEffect(() => {
     const run = async () => {
       if (!isAdmin) return;
       if (!congregationId) return;
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-
-      const headers = { Authorization: `Bearer ${token}` };
       const query = `?congregation_id=${congregationId}`;
 
       const [templatesRes, activationsRes] = await Promise.all([
-        fetch('/api/flows/templates', { headers }),
-        fetch(`/api/flows/activations${query}`, { headers })
+        authenticatedFetch('/api/flows/templates'),
+        authenticatedFetch(`/api/flows/activations${query}`)
       ]);
 
       if (templatesRes.ok) {
@@ -124,7 +100,7 @@ export default function AtivarFluxoPage() {
     };
 
     run();
-  }, [supabase, congregationId, isAdmin]);
+  }, [congregationId, isAdmin]);
 
   const mergedTemplates = useMemo(() => {
     return (templates || []).map((t: any) => {
@@ -207,12 +183,8 @@ export default function AtivarFluxoPage() {
   };
 
   const refreshActivations = async () => {
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token || !congregationId) return;
-    const res = await fetch(`/api/flows/activations?congregation_id=${congregationId}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    if (!congregationId) return;
+    const res = await authenticatedFetch(`/api/flows/activations?congregation_id=${congregationId}`);
     if (res.ok) {
       const data = await res.json();
       setActivations(data?.data || []);
@@ -225,16 +197,14 @@ export default function AtivarFluxoPage() {
       setActionMessage('Template invalido.');
       return;
     }
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token || !congregationId || congregationId === 'all') {
+    if (!congregationId || congregationId === 'all') {
       setActionMessage('Selecione uma congregacao valida para ativar.');
       return;
     }
     setActionPending({ id: templateId, type: 'activate' });
-    const res = await fetch(`/api/flows/activations/${templateId}/activate`, {
+    const res = await authenticatedFetch(`/api/flows/activations/${templateId}/activate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ congregation_id: congregationId, assignees_json: { roles: configRoles }, settings_json: {} })
     });
     if (!res.ok) {
@@ -254,16 +224,14 @@ export default function AtivarFluxoPage() {
       setActionMessage('Template invalido.');
       return;
     }
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token || !congregationId || congregationId === 'all') {
+    if (!congregationId || congregationId === 'all') {
       setActionMessage('Selecione uma congregacao valida para desativar.');
       return;
     }
     setActionPending({ id: templateId, type: 'deactivate' });
-    const res = await fetch(`/api/flows/activations/${templateId}/deactivate`, {
+    const res = await authenticatedFetch(`/api/flows/activations/${templateId}/deactivate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ congregation_id: congregationId })
     });
     if (!res.ok) {
@@ -279,14 +247,12 @@ export default function AtivarFluxoPage() {
 
   const saveConfig = async () => {
     if (!configTemplate) return;
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token || !congregationId || congregationId === 'all') return;
+    if (!congregationId || congregationId === 'all') return;
     const activationId = configTemplate.activation?.id;
     if (activationId) {
-      await fetch(`/api/flows/activations/${activationId}/config`, {
+      await authenticatedFetch(`/api/flows/activations/${activationId}/config`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ congregation_id: congregationId, assignees_json: { roles: configRoles }, settings_json: {} })
       });
     } else {

@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase-client';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { normalizePayloadUppercase } from '@/lib/text';
 import AssistenteWidget from '@/components/AssistenteWidget';
+import { authenticatedFetch } from '@/lib/api-client';
 
 // ─── Tipos ────────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -168,11 +169,12 @@ export default function InscricaoPublicaPage() {
     if (!slug) return;
     setLoading(true);
 
-    const [evRes, supRes, camRes] = await Promise.all([
-      supabase.from('eventos').select('*').eq('slug', slug).single(),
-      supabase.from('supervisoes').select('id,nome').order('nome'),
-      supabase.from('campos').select('id,nome,supervisao_id').order('nome'),
-    ]);
+    const estruturaPromise = fetch('/api/public/estrutura')
+      .then(async (res) => (res.ok ? res.json() : null))
+      .catch(() => null);
+
+    const evRes = await supabase.from('eventos').select('*').eq('slug', slug).single();
+    const estrutura = await estruturaPromise;
 
     if (evRes.error || !evRes.data) {
       setEstadoErro('nao_encontrado');
@@ -220,8 +222,8 @@ export default function InscricaoPublicaPage() {
     setTipos(tiposLimpos);
 
     setEvento(ev);
-    setSupervisoes((supRes.data as Supervisao[]) || []);
-    setCampos((camRes.data as Campo[]) || []);
+    setSupervisoes((estrutura?.supervisoes as Supervisao[]) || []);
+    setCampos((estrutura?.campos as Campo[]) || []);
     setLoading(false);
   }, [slug, supabase]);
 
@@ -238,33 +240,28 @@ export default function InscricaoPublicaPage() {
     setCpfStatus('idle');
 
     const isAGO = evento.departamento === 'AGO';
-    const campos_select = isAGO
-      ? 'id, nome, cpf, celular, whatsapp, email, supervisao, campo, supervisao_id, campo_id, sexo, data_nascimento, cargo_ministerial'
-      : 'id, nome, cpf, celular, whatsapp, email, supervisao, campo, supervisao_id, campo_id';
-
-    const { data } = await supabase
-      .from('members')   // base de membros/ministros do sistema
-      .select(campos_select)
-      .eq('cpf', limpo)  // busca exata pelo CPF limpo (apenas dígitos)
-      .limit(1);
+    const res = await authenticatedFetch(`/api/v1/members/lookup?cpf=${encodeURIComponent(limpo)}&limit=1`);
+    const json = res.ok ? await res.json().catch(() => null as any) : null;
+    const data = (json?.data ?? []) as {
+      id: string; nome?: string | null; name?: string | null; cpf?: string | null;
+      celular?: string | null; phone?: string | null; whatsapp?: string | null; email?: string | null;
+      supervisao?: string | null; campo?: string | null;
+      supervisao_id?: string | null; campo_id?: string | null;
+      sexo?: string | null; data_nascimento?: string | null; cargo_ministerial?: string | null;
+    }[];
 
     setBuscandoCPF(false);
     if (data && data.length > 0) {
-      const m = data[0] as {
-        id: string; nome: string; cpf: string | null;
-        celular: string | null; whatsapp: string | null; email: string | null;
-        supervisao: string | null; campo: string | null;
-        supervisao_id: string | null; campo_id: string | null;
-        sexo?: string | null; data_nascimento?: string | null;
-        cargo_ministerial?: string | null;
-      };
+      const m = data[0];
+      const nome = (m.nome ?? m.name ?? '') as string;
+      const celular = (m.celular ?? m.phone ?? '') as string;
       setCpfStatus('encontrado');
       const sup = supervisoes.find(s => s.id === m.supervisao_id || s.nome === m.supervisao);
       const cam = campos.find(c => c.id === m.campo_id || c.nome === m.campo);
       setForm(f => ({
         ...f,
-        nome_inscrito: m.nome                       || f.nome_inscrito,
-        whatsapp:      m.whatsapp || m.celular       || f.whatsapp,
+        nome_inscrito: nome                          || f.nome_inscrito,
+        whatsapp:      m.whatsapp || celular         || f.whatsapp,
         email:         m.email                       || f.email,
         supervisao_id: sup?.id                       || f.supervisao_id,
         campo_id:      cam?.id                       || f.campo_id,

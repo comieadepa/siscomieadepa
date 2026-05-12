@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase-client';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { normalizePayloadUppercase } from '@/lib/text';
 import { EventBadge } from '@/components/EventBadge';
+import { authenticatedFetch } from '@/lib/api-client';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -215,15 +216,13 @@ export default function BalcaoPage() {
       try {
         const [
           { data: ev },
-          { data: sups },
-          { data: cams },
+          estruturaRes,
           { data: tps },
         ] = await Promise.all([
           supabase.from('eventos').select(
             'id,nome,slug,departamento,data_inicio,data_fim,local,cidade,banner_url,valor_inscricao,permite_hospedagem,permite_alimentacao,permite_brinde,limite_vagas,limite_hospedagem,limite_brindes,inscricoes_abertas,status,usar_tipos_inscricao,gerar_certificado'
           ).eq('id', id).single(),
-          supabase.from('supervisoes').select('id,nome').order('nome'),
-          supabase.from('campos').select('id,nome,supervisao_id').order('nome'),
+          authenticatedFetch('/api/v1/estrutura'),
           supabase.from('evento_tipos_inscricao').select('id,nome,valor,inclui_alimentacao,inclui_hospedagem').eq('evento_id', id).eq('ativo', true).order('ordem'),
         ]);
         // Gate de departamento: isDeptAdmin só acessa eventos do seu dept
@@ -232,8 +231,11 @@ export default function BalcaoPage() {
         }
 
         setEvento(ev as Evento);
-        setSupervisoes((sups ?? []) as Supervisao[]);
-        setCampos((cams ?? []) as Campo[]);
+        if (estruturaRes.ok) {
+          const estrutura = await estruturaRes.json().catch(() => null as any);
+          setSupervisoes((estrutura?.supervisoes as Supervisao[]) || []);
+          setCampos((estrutura?.campos as Campo[]) || []);
+        }
         setTipos((tps ?? []) as TipoInscricao[]);
 
         // Se há exatamente um tipo, pré-selecionar (somente quando evento usa tipos)
@@ -314,12 +316,8 @@ export default function BalcaoPage() {
     const cpfLimpo = cpfBusca.replace(/\D/g, '');
 
     // Busca membro E verifica duplicidade em paralelo
-    const [{ data }, { data: dupData }] = await Promise.all([
-      supabase
-        .from('members')
-        .select('id,nome,cpf,celular,whatsapp,email,supervisao,campo,supervisao_id,campo_id')
-        .or(`cpf.ilike.%${cpfLimpo}%,cpf.ilike.%${cpfBusca}%`)
-        .limit(1),
+    const [lookupRes, dupRes] = await Promise.all([
+      authenticatedFetch(`/api/v1/members/lookup?search=${encodeURIComponent(cpfLimpo || cpfBusca)}&limit=1`),
       cpfLimpo
         ? supabase
             .from('evento_inscricoes')
@@ -329,6 +327,9 @@ export default function BalcaoPage() {
             .limit(1)
         : Promise.resolve({ data: [] as { id: string; nome_inscrito: string }[] }),
     ]);
+    const lookupJson = lookupRes.ok ? await lookupRes.json().catch(() => null as any) : null;
+    const data = (lookupJson?.data ?? []) as { id: string; nome?: string | null; name?: string | null; cpf?: string | null; celular?: string | null; phone?: string | null; whatsapp?: string | null; email?: string | null; supervisao?: string | null; campo?: string | null; supervisao_id?: string | null; campo_id?: string | null }[];
+    const dupData = (dupRes as { data?: { id: string; nome_inscrito: string }[] }).data ?? [];
     setBuscando(false);
 
     // Alerta de duplicidade (exibe antes de preencher o form)
@@ -337,19 +338,21 @@ export default function BalcaoPage() {
     }
 
     if (data && data.length > 0) {
-      const m = data[0] as { id: string; nome: string; cpf: string | null; celular: string | null; whatsapp: string | null; email: string | null; supervisao: string | null; campo: string | null; supervisao_id?: string | null; campo_id?: string | null };
+      const m = data[0];
+      const nome = (m.nome ?? m.name ?? '') as string;
+      const celular = (m.celular ?? m.phone ?? '') as string;
       const sup   = supervisoes.find(s => s.id === m.supervisao_id || s.nome === m.supervisao);
       const campo = campos.find(c => c.id === m.campo_id || c.nome === m.campo);
       setMinistroEncontrado(true);
-      setNomeMinistro(m.nome || '');
+      setNomeMinistro(nome || '');
       setForm(f => ({
         ...f,
-        nome:         m.nome || '',
+        nome:         nome || f.nome,
         cpf:          m.cpf  || cpfBusca,
-        whatsapp:     m.whatsapp || m.celular || '',
-        email:        m.email   || '',
-        supervisao_id: sup?.id  || '',
-        campo_id:     campo?.id || '',
+        whatsapp:     m.whatsapp || celular || f.whatsapp,
+        email:        m.email   || f.email,
+        supervisao_id: sup?.id  || f.supervisao_id,
+        campo_id:     campo?.id || f.campo_id,
       }));
       setTimeout(() => supRef.current?.focus(), 50);
     } else {

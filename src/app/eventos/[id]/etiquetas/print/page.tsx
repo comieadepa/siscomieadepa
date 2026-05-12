@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
 import { EtiquetaDepartamento, EtiquetaAGO } from '@/components/EtiquetaLabels';
 import type { EtiquetaEvento, EtiquetaInscricaoAGO } from '@/components/EtiquetaLabels';
+import { authenticatedFetch } from '@/lib/api-client';
 
 // ─── Tipos ────────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -71,16 +72,18 @@ export default function EtiquetasPrintPage() {
       if (ids)                         inscrQuery = inscrQuery.in('id', ids.split(','));
       else if (apenas === 'pendentes') inscrQuery = inscrQuery.eq('etiqueta_impressa', false);
 
-      const [evRes, supRes, camRes, inscRes] = await Promise.all([
+      const [evRes, estruturaRes, inscRes] = await Promise.all([
         supabase.from('eventos').select('id,nome,departamento,data_inicio,data_fim,local,cidade').eq('id', id).single(),
-        supabase.from('supervisoes').select('id,nome'),
-        supabase.from('campos').select('id,nome'),
+        authenticatedFetch('/api/v1/estrutura'),
         inscrQuery,
       ]);
 
       if (evRes.data)  setEvento(evRes.data as EventoData);
-      if (supRes.data) setSupervisoes(supRes.data as Supervisao[]);
-      if (camRes.data) setCampos(camRes.data as Campo[]);
+      if (estruturaRes.ok) {
+        const estrutura = await estruturaRes.json().catch(() => null as any);
+        setSupervisoes((estrutura?.supervisoes as Supervisao[]) || []);
+        setCampos((estrutura?.campos as Campo[]) || []);
+      }
 
       const inscBase = (inscRes.data ?? []) as InscricaoLabel[];
       const dept = (evRes.data as EventoData | null)?.departamento;
@@ -95,8 +98,8 @@ export default function EtiquetasPrintPage() {
             .select('inscricao_id,numero_cama,tipo_cama,status,alojamento_id')
             .in('inscricao_id', inscIds),
           ministroIds.length > 0
-            ? supabase.from('members').select('id,matricula').in('id', ministroIds)
-            : Promise.resolve({ data: [] as { id: string; matricula: string | null }[] }),
+            ? authenticatedFetch(`/api/v1/members/lookup?ids=${encodeURIComponent(ministroIds.join(','))}&limit=${ministroIds.length}`)
+            : Promise.resolve(null),
         ]);
 
         type HospRow = { inscricao_id: string; numero_cama: string | null; tipo_cama: string | null; status: string; alojamento_id: string | null };
@@ -111,7 +114,11 @@ export default function EtiquetasPrintPage() {
 
         const hospMap   = new Map(hospRows.map(h => [h.inscricao_id, h]));
         const aloMap    = new Map(((aloRes.data ?? []) as { id: string; nome: string }[]).map(a => [a.id, a.nome]));
-        const memberMap = new Map(((membersRes as { data: { id: string; matricula: string | null }[] | null }).data ?? []).map(m => [m.id, m.matricula]));
+        const membersJson = membersRes && 'ok' in membersRes && membersRes.ok
+          ? await membersRes.json().catch(() => null as any)
+          : null;
+        const memberList = (membersJson?.data ?? []) as { id: string; matricula: string | null }[];
+        const memberMap = new Map(memberList.map(m => [m.id, m.matricula]));
 
         const merged = inscBase.map(ins => {
           const hosp = ins.id ? hospMap.get(ins.id) : undefined;

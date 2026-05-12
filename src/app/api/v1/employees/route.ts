@@ -11,9 +11,11 @@
  * - grupo: filtrar por grupo
  */
 
-import { createServerClientFromRequest } from '@/lib/supabase-server'
 import { normalizePayloadToUppercase } from '@/lib/uppercase-normalizer'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireRole } from '@/lib/auth/require-auth'
+
+const EMPLOYEE_ROLES = ['super', 'administrador'] as const
 
 function getSupabaseErrorText(error: any): string {
   if (!error) return ''
@@ -94,15 +96,9 @@ async function listEmployeesFallback(
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createServerClientFromRequest(request)
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const auth = await requireRole(request, EMPLOYEE_ROLES)
+    if (!auth.ok) return auth.response
+    const supabase = auth.ctx.supabase
 
     // Extrair query params
     const searchParams = request.nextUrl.searchParams
@@ -176,15 +172,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createServerClientFromRequest(request)
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const auth = await requireRole(request, EMPLOYEE_ROLES)
+    if (!auth.ok) return auth.response
+    const supabase = auth.ctx.supabase
 
     const body = await request.json()
     const normalizedBody = normalizePayloadToUppercase(body, {

@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import PageLayout from '@/components/PageLayout';
 import Section from '@/components/Section';
 import { getAvailableActions } from '@/lib/flows/flow-engine';
-import { createClient } from '@/lib/supabase-client';
+import { authenticatedFetch } from '@/lib/api-client';
 
 const PENDING_STATUSES = new Set(['pendente', 'aguardando', 'em_analise']);
 const TERMINAL_STATUSES = new Set(['concluido', 'rejeitado', 'cancelado']);
@@ -47,7 +47,6 @@ export default function FluxoInstancePage() {
   const [isEditingData, setIsEditingData] = useState(false);
   const [editData, setEditData] = useState<Record<string, string>>({});
   const [dataError, setDataError] = useState('');
-  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     if (!toast) return;
@@ -56,14 +55,10 @@ export default function FluxoInstancePage() {
   }, [toast]);
 
   const loadInstance = async () => {
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token || !instanceId) return;
+    if (!instanceId) return;
     setLoadError('');
 
-    const res = await fetch(`/api/flows/instances/${instanceId}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const res = await authenticatedFetch(`/api/flows/instances/${instanceId}`);
 
     if (!res.ok) {
       const message = res.status === 403
@@ -90,7 +85,7 @@ export default function FluxoInstancePage() {
 
   useEffect(() => {
     if (instanceId) loadInstance();
-  }, [instanceId, supabase]);
+  }, [instanceId]);
 
   const availableActions = useMemo(() => {
     if (!instance || !definition) return [];
@@ -137,13 +132,9 @@ export default function FluxoInstancePage() {
       return;
     }
 
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) return;
-
-    const res = await fetch(`/api/flows/instances/${instanceId}/action`, {
+    const res = await authenticatedFetch(`/api/flows/instances/${instanceId}/action`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: selectedAction.action,
         note: actionNote,
@@ -213,13 +204,9 @@ export default function FluxoInstancePage() {
 
   const saveData = async () => {
     setDataError('');
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) return;
-
-    const res = await fetch(`/api/flows/instances/${instanceId}`, {
+    const res = await authenticatedFetch(`/api/flows/instances/${instanceId}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ data_json: editData }),
     });
 

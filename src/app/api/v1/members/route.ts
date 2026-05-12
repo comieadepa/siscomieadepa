@@ -8,21 +8,18 @@
  * - Evita depender de `ministry_id` vindo do cliente.
  */
 
-import { createServerClientFromRequest } from '@/lib/supabase-server'
 import { normalizePayloadToUppercase } from '@/lib/uppercase-normalizer'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireRole } from '@/lib/auth/require-auth'
+import { createServerClient } from '@/lib/supabase-server'
+
+const MEMBERS_ROLES = ['super', 'administrador', 'comissao'] as const
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createServerClientFromRequest(request)
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const auth = await requireRole(request, MEMBERS_ROLES)
+    if (!auth.ok) return auth.response
+    const supabase = createServerClient()
 
     // Extrair query params
     const searchParams = request.nextUrl.searchParams
@@ -121,15 +118,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createServerClientFromRequest(request)
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const auth = await requireRole(request, MEMBERS_ROLES)
+    if (!auth.ok) return auth.response
+    const supabase = createServerClient()
 
     const body = await request.json()
     const normalizedBody = normalizePayloadToUppercase(body, {

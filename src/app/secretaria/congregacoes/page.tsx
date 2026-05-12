@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase-client';
 import { loadOrgNomenclaturasFromSupabaseOrMigrate } from '@/lib/org-nomenclaturas';
 import { useAppDialog } from '@/providers/AppDialogProvider';
 import { buildUrl, getAppBaseUrl } from '@/lib/urls';
+import { authenticatedFetch } from '@/lib/api-client';
 
 interface Divisao1 {
   id: string;
@@ -463,8 +464,15 @@ export default function CongregacoesPage() {
           is_active: true,
         };
 
-        const { error } = await supabase.from('campos').insert([payload]);
-        if (error) throw error;
+        const res = await authenticatedFetch('/api/v1/secretaria/campos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => null as any);
+          throw new Error(errJson?.error || 'Erro ao inserir campo.');
+        }
         ok++;
       } catch (err: any) {
         errors.push(`"${row.nome}": ${err?.message || String(err)}`);
@@ -502,8 +510,15 @@ export default function CongregacoesPage() {
           is_active: true,
         };
 
-        const { error } = await supabase.from('supervisoes').insert([payload]);
-        if (error) throw error;
+        const res = await authenticatedFetch('/api/v1/secretaria/supervisoes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => null as any);
+          throw new Error(errJson?.error || 'Erro ao inserir supervisao.');
+        }
         ok++;
         nextCodigo++;
       } catch (err: any) {
@@ -822,11 +837,15 @@ export default function CongregacoesPage() {
   useEffect(() => {
     const initPage = async () => {
       try {
-        // Obter usuário
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) {
+        const meRes = await authenticatedFetch('/api/auth/me');
+        if (!meRes.ok) {
+          router.push('/login');
+          return;
+        }
+
+        const me = await meRes.json().catch(() => null as any);
+        const resolvedMinistryId = String(me?.userId || '');
+        if (!resolvedMinistryId) {
           router.push('/login');
           return;
         }
@@ -835,21 +854,18 @@ export default function CongregacoesPage() {
         const orgNomenclaturas = await loadOrgNomenclaturasFromSupabaseOrMigrate(supabase);
         setNomenclaturasState(orgNomenclaturas);
 
-        if (user) {
-          // Single-tenant: usar user.id como namespace (sem ministry_id/ministries)
-          const resolvedMinistryId = user.id;
-          setMinistryId(resolvedMinistryId);
+        // Single-tenant: usar user.id como namespace (sem ministry_id/ministries)
+        setMinistryId(resolvedMinistryId);
 
-          // Sem limites de plano no single-tenant
-          setPlanLimits({ max_divisao1: 999, max_divisao2: 999, max_divisao3: -1, planName: '' });
+        // Sem limites de plano no single-tenant
+        setPlanLimits({ max_divisao1: 999, max_divisao2: 999, max_divisao3: -1, planName: '' });
 
-          // Carregar dados do Supabase
-          await Promise.all([
-            loadDivisoes1(),
-            loadDivisoes2(),
-            loadDivisoes3(),
-          ]);
-        }
+        // Carregar dados via API protegida
+        await Promise.all([
+          loadDivisoes1(),
+          loadDivisoes2(),
+          loadDivisoes3(),
+        ]);
 
         setLoading(false);
       } catch (error) {
@@ -862,11 +878,6 @@ export default function CongregacoesPage() {
   }, [router]);
 
   const onlyDigits = (value: string) => (value || '').replace(/\D/g, '');
-
-  const getAccessToken = async (): Promise<string | null> => {
-    const { data } = await supabase.auth.getSession();
-    return data?.session?.access_token || null;
-  };
 
   const compressImageToJpeg = async (file: File, maxBytes: number): Promise<File> => {
     const bitmap = await createImageBitmap(file);
@@ -903,18 +914,14 @@ export default function CongregacoesPage() {
   };
 
   const uploadFotoIgreja = async (file: File, congregacaoId: string) => {
-    const token = await getAccessToken();
-    if (!token) throw new Error('Sessão expirada. Faça login novamente.');
-
     const compressed = await compressImageToJpeg(file, 600 * 1024);
 
     const form = new FormData();
     form.append('file', compressed);
     form.append('congregacaoId', congregacaoId);
 
-    const resp = await fetch('/api/v1/secretaria/uploads/igreja-foto', {
+    const resp = await authenticatedFetch('/api/v1/secretaria/uploads/igreja-foto', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
       body: form,
     });
 
@@ -932,15 +939,9 @@ export default function CongregacoesPage() {
   };
 
   const deleteFotoIgreja = async (bucket: string, path: string) => {
-    const token = await getAccessToken();
-    if (!token) return;
-
-    await fetch('/api/v1/secretaria/uploads/igreja-foto', {
+    await authenticatedFetch('/api/v1/secretaria/uploads/igreja-foto', {
       method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bucket, path }),
     }).catch(() => null);
   };
@@ -1002,18 +1003,12 @@ export default function CongregacoesPage() {
       setSupervisorCpfStatus('loading');
       setSupervisorCpfMsg('Buscando sugestões...');
 
-      const selectFields = 'id, name, cpf, data_nascimento, role, profissao, phone, custom_fields';
-      const { data, error } = await supabase
-        .from('members')
-        .select(selectFields)
-        
-        .like('cpf', `${cpfDigits}%`)
-        .limit(8)
-        .order('cpf');
+      const res = await authenticatedFetch(`/api/v1/members/lookup?search=${encodeURIComponent(cpfDigits)}&limit=20`);
+      const payload = await res.json().catch(() => null as any);
+      if (!res.ok) throw new Error(payload?.error || 'Erro ao buscar membros.');
 
-      if (error) throw error;
-
-      const all = ((data as any) || []) as MemberLookup[];
+      const all = ((payload?.data as any) || [])
+        .filter((m: any) => String(m?.cpf || '').startsWith(cpfDigits)) as MemberLookup[];
       const ministros = all.filter(m => m && m.cpf && isMinisterMember(m));
 
       if (!ministros.length) {
@@ -1058,30 +1053,11 @@ export default function CongregacoesPage() {
       setSupervisorStatus('loading');
       setSupervisorMsg('Aguardando dados...');
 
-      const selectFields = 'id, name, cpf, data_nascimento, role, profissao, phone, custom_fields';
-      const { data: dataDigits, error: errDigits } = await supabase
-        .from('members')
-        .select(selectFields)
-        
-        .eq('cpf', cpfDigits)
-        .maybeSingle();
+      const res = await authenticatedFetch(`/api/v1/members/lookup?cpf=${encodeURIComponent(cpfDigits)}`);
+      const payload = await res.json().catch(() => null as any);
+      if (!res.ok) throw new Error(payload?.error || 'Erro ao buscar membros.');
 
-      if (errDigits) throw errDigits;
-
-      let member: MemberLookup | null = (dataDigits as any) || null;
-      if (!member) {
-        const cpfRaw = (cpfInput || '').trim();
-        if (cpfRaw && cpfRaw !== cpfDigits) {
-          const { data: dataRaw, error: errRaw } = await supabase
-            .from('members')
-            .select(selectFields)
-            
-            .eq('cpf', cpfRaw)
-            .maybeSingle();
-          if (errRaw) throw errRaw;
-          member = (dataRaw as any) || null;
-        }
-      }
+      const member: MemberLookup | null = ((payload?.data as any) || [])?.[0] || null;
 
       if (!member) {
         setSupervisorStatus('not_found');
@@ -1191,14 +1167,10 @@ export default function CongregacoesPage() {
 
   const loadDivisoes1 = async () => {
     try {
-      const { data, error } = await supabase
-        .from('supervisoes')
-        .select('*')
-        
-        .order('nome');
-      
-      if (error) throw error;
-      setDivisoes1(data || []);
+      const res = await authenticatedFetch('/api/v1/secretaria/supervisoes?includeInactive=true');
+      const payload = await res.json().catch(() => null as any);
+      if (!res.ok) throw new Error(payload?.error || 'Erro ao carregar supervisoes.');
+      setDivisoes1((payload?.data as any[]) || []);
     } catch (error) {
       setDivisoes1([]);
       const msg = (error as any)?.message || (error as any)?.error_description || '';
@@ -1208,21 +1180,10 @@ export default function CongregacoesPage() {
 
   const loadDivisoes2 = async (_ministryId?: string) => {
     try {
-      const PAGE = 1000;
-      let all: any[] = [];
-      let from = 0;
-      while (true) {
-        const { data, error } = await supabase
-          .from('campos')
-          .select('*')
-          .order('nome')
-          .range(from, from + PAGE - 1);
-        if (error) throw error;
-        all = all.concat(data || []);
-        if (!data || data.length < PAGE) break;
-        from += PAGE;
-      }
-      setDivisoes2(all as any);
+      const res = await authenticatedFetch('/api/v1/secretaria/campos?includeInactive=true');
+      const payload = await res.json().catch(() => null as any);
+      if (!res.ok) throw new Error(payload?.error || 'Erro ao carregar campos.');
+      setDivisoes2(((payload?.data as any[]) || []) as any);
     } catch (error) {
       setDivisoes2([] as any);
       const msg = (error as any)?.message || (error as any)?.error_description || '';
@@ -1232,14 +1193,10 @@ export default function CongregacoesPage() {
 
   const loadDivisoes3 = async () => {
     try {
-      const { data, error } = await supabase
-        .from('congregacoes')
-        .select('*')
-        
-        .order('nome');
-
-      if (error) throw error;
-      setDivisoes3((data as any) || []);
+      const res = await authenticatedFetch('/api/v1/secretaria/congregacoes?includeInactive=true');
+      const payload = await res.json().catch(() => null as any);
+      if (!res.ok) throw new Error(payload?.error || 'Erro ao carregar congregacoes.');
+      setDivisoes3((payload?.data as any) || []);
     } catch (error) {
       setDivisoes3([] as any);
       const msg = (error as any)?.message || (error as any)?.error_description || '';
@@ -1274,16 +1231,11 @@ export default function CongregacoesPage() {
       setPastorStatus('loading');
       setPastorMsg('Buscando...');
 
-      const { data, error } = await supabase
-        .from('members')
-        .select('id, name, cpf, data_nascimento, role, profissao, phone, custom_fields')
-        
-        .ilike('name', `%${q}%`)
-        .limit(7);
+      const res = await authenticatedFetch(`/api/v1/members/lookup?search=${encodeURIComponent(q)}&limit=7`);
+      const payload = await res.json().catch(() => null as any);
+      if (!res.ok) throw new Error(payload?.error || 'Erro ao buscar membros.');
 
-      if (error) throw error;
-
-      const results = ((data as any) || []) as MemberLookup[];
+      const results = ((payload?.data as any) || []) as MemberLookup[];
       setPastorResults(results);
 
       if (!results.length) {
@@ -1322,13 +1274,10 @@ export default function CongregacoesPage() {
     }
     try {
       setSupervisorSearchStatus('loading');
-      const { data, error } = await supabase
-        .from('members')
-        .select('id, name, cpf, role')
-        .ilike('name', `%${q}%`)
-        .limit(7);
-      if (error) throw error;
-      const results = ((data as any) || []) as MemberLookup[];
+      const res = await authenticatedFetch(`/api/v1/members/lookup?search=${encodeURIComponent(q)}&limit=7`);
+      const payload = await res.json().catch(() => null as any);
+      if (!res.ok) throw new Error(payload?.error || 'Erro ao buscar membros.');
+      const results = ((payload?.data as any) || []) as MemberLookup[];
       setSupervisorResults(results);
       setSupervisorSearchStatus(results.length ? 'idle' : 'not_found');
     } catch {
@@ -1362,16 +1311,11 @@ export default function CongregacoesPage() {
       setDirigenteStatus('loading');
       setDirigenteMsg('Buscando...');
 
-      const { data, error } = await supabase
-        .from('members')
-        .select('id, name, cpf, data_nascimento, role, profissao, phone, custom_fields')
-        
-        .ilike('name', `%${q}%`)
-        .limit(8);
+      const res = await authenticatedFetch(`/api/v1/members/lookup?search=${encodeURIComponent(q)}&limit=8`);
+      const payload = await res.json().catch(() => null as any);
+      if (!res.ok) throw new Error(payload?.error || 'Erro ao buscar membros.');
 
-      if (error) throw error;
-
-      const results = (((data as any) || []) as MemberLookup[])
+      const results = (((payload?.data as any) || []) as MemberLookup[])
         .filter(Boolean)
         .filter(isMinisterMember);
 
@@ -1484,28 +1428,47 @@ export default function CongregacoesPage() {
     try {
       // Se marcar como sede, desmarcar os demais da mesma supervisão (best-effort)
       if (payload.is_sede && payload.supervisao_id) {
-        await supabase
-          .from('campos')
-          .update({ is_sede: false, updated_at: new Date().toISOString() })
-          .eq('supervisao_id', payload.supervisao_id);
+        const nowIso = new Date().toISOString();
+        const toUnset = divisoes2
+          .filter((c) => c.supervisao_id === payload.supervisao_id && c.is_sede && c.id !== editingD2?.id)
+          .map((c) => c.id);
+
+        if (toUnset.length) {
+          await Promise.all(
+            toUnset.map((id) =>
+              authenticatedFetch('/api/v1/secretaria/campos', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, is_sede: false, updated_at: nowIso }),
+              })
+            )
+          );
+        }
       }
 
       let campoId = editingD2?.id || null;
 
       if (editingD2) {
-        const { error } = await supabase
-          .from('campos')
-          .update(payload)
-          .eq('id', editingD2.id);
-        if (error) throw error;
+        const res = await authenticatedFetch('/api/v1/secretaria/campos', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: editingD2.id, ...payload }),
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => null as any);
+          throw new Error(errJson?.error || 'Erro ao atualizar campo.');
+        }
       } else {
-        const { data, error } = await supabase
-          .from('campos')
-          .insert([{ ...payload }])
-          .select('id')
-          .single();
-        if (error) throw error;
-        campoId = (data as any)?.id || null;
+        const res = await authenticatedFetch('/api/v1/secretaria/campos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...payload }),
+        });
+        const payloadRes = await res.json().catch(() => null as any);
+        if (!res.ok) {
+          throw new Error(payloadRes?.error || 'Erro ao criar campo.');
+        }
+        campoId = payloadRes?.data?.id || null;
       }
 
       const isMissingCongregacoesTableError = (err: any) => {
@@ -1529,32 +1492,37 @@ export default function CongregacoesPage() {
         const toRemove = existing.filter(id => !selected.includes(id));
 
         if (toAdd.length) {
-          const { error: addErr } = await supabase
-            .from('congregacoes')
-            .update({ campo_id: campoId, updated_at: nowIso })
-            
-            .in('id', toAdd);
-          if (addErr) {
-            if (isMissingCongregacoesTableError(addErr)) {
-              console.warn('Tabela public.congregacoes ausente; associação D1 -> D2 ignorada neste ambiente.');
-            } else {
-              throw addErr;
+          for (const id of toAdd) {
+            const res = await authenticatedFetch('/api/v1/secretaria/congregacoes', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id, campo_id: campoId, updated_at: nowIso }),
+            });
+            if (!res.ok) {
+              const errJson = await res.json().catch(() => null as any);
+              if (isMissingCongregacoesTableError(errJson?.error)) {
+                console.warn('Tabela public.congregacoes ausente; associação D1 -> D2 ignorada neste ambiente.');
+              } else {
+                throw new Error(errJson?.error || 'Erro ao associar congregacoes.');
+              }
             }
           }
         }
 
         if (toRemove.length) {
-          const { error: removeErr } = await supabase
-            .from('congregacoes')
-            .update({ campo_id: null, updated_at: nowIso })
-            
-            .eq('campo_id', campoId)
-            .in('id', toRemove);
-          if (removeErr) {
-            if (isMissingCongregacoesTableError(removeErr)) {
-              console.warn('Tabela public.congregacoes ausente; desassociação D1 -> D2 ignorada neste ambiente.');
-            } else {
-              throw removeErr;
+          for (const id of toRemove) {
+            const res = await authenticatedFetch('/api/v1/secretaria/congregacoes', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id, campo_id: null, updated_at: nowIso }),
+            });
+            if (!res.ok) {
+              const errJson = await res.json().catch(() => null as any);
+              if (isMissingCongregacoesTableError(errJson?.error)) {
+                console.warn('Tabela public.congregacoes ausente; desassociação D1 -> D2 ignorada neste ambiente.');
+              } else {
+                throw new Error(errJson?.error || 'Erro ao desassociar congregacoes.');
+              }
             }
           }
         }
@@ -1569,38 +1537,18 @@ export default function CongregacoesPage() {
         const supNome = divisoes1.find(d => d.id === payload.supervisao_id)?.nome || '';
 
         try {
-          // Carrega membros em lotes para não exceder limite do Supabase
-          const membrosParaSync: { id: string; custom_fields: any }[] = [];
-          let mFrom = 0;
-          while (true) {
-            const { data: chunk, error: chunkErr } = await supabase
-              .from('members')
-              .select('id, custom_fields')
-              .filter('custom_fields->>campo', 'ilike', campoNomeBusca)
-              .range(mFrom, mFrom + 999);
-            if (chunkErr) throw chunkErr;
-            if (!chunk || chunk.length === 0) break;
-            membrosParaSync.push(...(chunk as any[]));
-            if (chunk.length < 1000) break;
-            mFrom += 1000;
-          }
-
-          if (membrosParaSync.length > 0) {
-            const updates = membrosParaSync.map(m => ({
-              id: m.id,
+          const res = await authenticatedFetch('/api/v1/secretaria/members/sync-supervisao', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              campo_nome: campoNomeBusca,
               supervisao_id: payload.supervisao_id,
-              custom_fields: { ...(m.custom_fields || {}), supervisao: supNome },
-            }));
-
-            const BATCH = 500;
-            for (let bi = 0; bi < updates.length; bi += BATCH) {
-              const { error: syncErr } = await supabase
-                .from('members')
-                .upsert(updates.slice(bi, bi + BATCH), { onConflict: 'id' });
-              if (syncErr) throw syncErr;
-            }
-
-            console.info(`[Sync] ${updates.length} membro(s) do campo "${campoNomeBusca}" vinculados à supervisão "${supNome}".`);
+              supervisao_nome: supNome,
+            }),
+          });
+          if (!res.ok) {
+            const errJson = await res.json().catch(() => null as any);
+            throw new Error(errJson?.error || 'Erro ao sincronizar membros.');
           }
         } catch (syncErr) {
           // Não bloqueia o fluxo principal — apenas avisa no console
@@ -1692,11 +1640,15 @@ export default function CongregacoesPage() {
     const ok = await dialog.confirm({ title: 'Confirmar', type: 'warning', message: 'Tem certeza que deseja deletar?', confirmText: 'OK', cancelText: 'Cancelar' });
     if (!ok) return;
     try {
-      const { error } = await supabase
-        .from('campos')
-        .delete()
-        .eq('id', id);
-      if (error) throw error;
+      const res = await authenticatedFetch('/api/v1/secretaria/campos', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null as any);
+        throw new Error(errJson?.error || 'Erro ao deletar campo.');
+      }
       await loadDivisoes2();
     } catch (error) {
       console.error('Erro ao deletar divisão 02:', error);
@@ -1887,19 +1839,13 @@ export default function CongregacoesPage() {
       let savedId = editingD3?.id || null;
 
       const saveToDb = async (payloadToUse: any) => {
-        if (editingD3) {
-          return await supabase
-            .from('congregacoes')
-            .update(payloadToUse)
-            .eq('id', editingD3.id)
-            ;
-        }
-
-        return await supabase
-          .from('congregacoes')
-          .insert([payloadToUse])
-          .select('id')
-          .single();
+        const res = await authenticatedFetch('/api/v1/secretaria/congregacoes', {
+          method: editingD3 ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(editingD3 ? { id: editingD3.id, ...payloadToUse } : payloadToUse),
+        });
+        const json = await res.json().catch(() => null as any);
+        return { data: json?.data, error: res.ok ? null : json?.error } as any;
       };
 
       let saveResult: any = await saveToDb(payload);
@@ -1952,33 +1898,41 @@ export default function CongregacoesPage() {
 
       if (fotoIgrejaChange.kind === 'file') {
         const uploaded = await uploadFotoIgreja(fotoIgrejaChange.file, savedId);
-        const { error: upErr } = await supabase
-          .from('congregacoes')
-          .update({
+        const upRes = await authenticatedFetch('/api/v1/secretaria/congregacoes', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: savedId,
             foto_url: uploaded.url,
             foto_bucket: uploaded.bucket,
             foto_path: uploaded.path,
             updated_at: nowIso,
-          })
-          .eq('id', savedId)
-          ;
-        if (upErr) throw upErr;
+          }),
+        });
+        if (!upRes.ok) {
+          const errJson = await upRes.json().catch(() => null as any);
+          throw new Error(errJson?.error || 'Erro ao atualizar foto.');
+        }
         didChangePhoto = true;
       }
 
       if (fotoIgrejaChange.kind === 'url') {
         const url = fotoIgrejaChange.url.trim();
-        const { error: upErr } = await supabase
-          .from('congregacoes')
-          .update({
+        const upRes = await authenticatedFetch('/api/v1/secretaria/congregacoes', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: savedId,
             foto_url: url,
             foto_bucket: null,
             foto_path: null,
             updated_at: nowIso,
-          })
-          .eq('id', savedId)
-          ;
-        if (upErr) throw upErr;
+          }),
+        });
+        if (!upRes.ok) {
+          const errJson = await upRes.json().catch(() => null as any);
+          throw new Error(errJson?.error || 'Erro ao atualizar foto.');
+        }
         didChangePhoto = true;
       }
 
@@ -2029,12 +1983,15 @@ export default function CongregacoesPage() {
     const ok = await dialog.confirm({ title: 'Confirmar', type: 'warning', message: 'Tem certeza que deseja deletar?', confirmText: 'OK', cancelText: 'Cancelar' });
     if (!ok) return;
     try {
-      const { error } = await supabase
-        .from('congregacoes')
-        .delete()
-        .eq('id', id)
-        ;
-      if (error) throw error;
+      const res = await authenticatedFetch('/api/v1/secretaria/congregacoes', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null as any);
+        throw new Error(errJson?.error || 'Erro ao deletar congregacao.');
+      }
       await loadDivisoes3();
     } catch (error) {
       console.error('Erro ao deletar divisão 03:', error);
@@ -2116,56 +2073,62 @@ export default function CongregacoesPage() {
 
       if (editingD1) {
         // Atualizar
-        const { error } = await supabase
-          .from('supervisoes')
-          .update({
+        const res = await authenticatedFetch('/api/v1/secretaria/supervisoes', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: editingD1.id,
             codigo: codigoToSave,
             nome: formD1.nome,
             uf,
             ...supervisorPayload,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', editingD1.id)
-          ;
-        
-        if (error) throw error;
+            updated_at: new Date().toISOString(),
+          }),
+        });
+
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => null as any);
+          throw new Error(errJson?.error || 'Erro ao atualizar supervisao.');
+        }
       } else {
         // Criar
-        const { data: createdRow, error } = await supabase
-          .from('supervisoes')
-          .insert([{
-                        codigo: codigoToSave,
+        const res = await authenticatedFetch('/api/v1/secretaria/supervisoes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            codigo: codigoToSave,
             nome: formD1.nome,
             uf,
             ...supervisorPayload,
-            is_active: true
-          }])
-          .select('id')
-          .single();
+            is_active: true,
+          }),
+        });
 
-        createdSupervisaoId = (createdRow as any)?.id || null;
-        
-        if (error) {
+        let resJson = await res.json().catch(() => null as any);
+        createdSupervisaoId = resJson?.data?.id || null;
+
+        if (!res.ok) {
           // Em caso de corrida (código duplicado), recalcular e tentar 1 vez.
-          const msg = (error as any)?.message || '';
-          if (String(msg).includes('idx_supervisoes_ministry_codigo_unique') || String(msg).includes('duplicate key')) {
+          const msg = String(resJson?.error || '');
+          if (msg.includes('idx_supervisoes_ministry_codigo_unique') || msg.includes('duplicate key')) {
             await loadDivisoes1();
             const retryCodigo = getNextCodigo();
-            const { data: retryRow, error: retryErr } = await supabase
-              .from('supervisoes')
-              .insert([{
-                                codigo: retryCodigo,
+            const retryRes = await authenticatedFetch('/api/v1/secretaria/supervisoes', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                codigo: retryCodigo,
                 nome: formD1.nome,
                 uf,
                 ...supervisorPayload,
-                is_active: true
-              }])
-              .select('id')
-              .single();
-            if (retryErr) throw retryErr;
-            createdSupervisaoId = (retryRow as any)?.id || null;
+                is_active: true,
+              }),
+            });
+            resJson = await retryRes.json().catch(() => null as any);
+            if (!retryRes.ok) throw new Error(resJson?.error || 'Erro ao criar supervisao.');
+            createdSupervisaoId = resJson?.data?.id || null;
           } else {
-            throw error;
+            throw new Error(resJson?.error || 'Erro ao criar supervisao.');
           }
         }
       }
@@ -2201,22 +2164,31 @@ export default function CongregacoesPage() {
           const toRemove = existing.filter(id => !selected.includes(id));
 
           if (toAdd.length) {
-            const { error: addErr } = await supabase
-              .from('campos')
-              .update({ supervisao_id: resolvedId, updated_at: nowIso })
-              
-              .in('id', toAdd);
-            if (addErr) throw addErr;
+            for (const id of toAdd) {
+              const res = await authenticatedFetch('/api/v1/secretaria/campos', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, supervisao_id: resolvedId, updated_at: nowIso }),
+              });
+              if (!res.ok) {
+                const errJson = await res.json().catch(() => null as any);
+                throw new Error(errJson?.error || 'Erro ao associar campo.');
+              }
+            }
           }
 
           if (toRemove.length) {
-            const { error: removeErr } = await supabase
-              .from('campos')
-              .update({ supervisao_id: null, updated_at: nowIso })
-              
-              .eq('supervisao_id', resolvedId)
-              .in('id', toRemove);
-            if (removeErr) throw removeErr;
+            for (const id of toRemove) {
+              const res = await authenticatedFetch('/api/v1/secretaria/campos', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, supervisao_id: null, updated_at: nowIso }),
+              });
+              if (!res.ok) {
+                const errJson = await res.json().catch(() => null as any);
+                throw new Error(errJson?.error || 'Erro ao desassociar campo.');
+              }
+            }
           }
         }
       }
@@ -2256,13 +2228,16 @@ export default function CongregacoesPage() {
     if (!ok) return;
 
     try {
-      const { error } = await supabase
-        .from('supervisoes')
-        .delete()
-        .eq('id', id)
-        ;
-      
-      if (error) throw error;
+      const res = await authenticatedFetch('/api/v1/secretaria/supervisoes', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null as any);
+        throw new Error(errJson?.error || 'Erro ao deletar supervisao.');
+      }
       
       await loadDivisoes1();
     } catch (error) {

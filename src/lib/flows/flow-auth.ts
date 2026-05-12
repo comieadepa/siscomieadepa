@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { createServerClient, createServerClientFromRequest } from '@/lib/supabase-server';
+import { normalizeRole } from '@/lib/auth/roles';
 
 export type FlowAuthContext = {
   supabase: ReturnType<typeof createServerClientFromRequest>;
@@ -10,10 +11,11 @@ export type FlowAuthContext = {
 };
 
 function mapBaseRole(role: string | null | undefined): string[] {
-  switch ((role || '').toLowerCase()) {
+  const normalized = normalizeRole(role);
+  switch (normalized) {
     case 'super':
       return ['ADMINISTRADOR', 'SUPER'];
-    case 'admin':
+    case 'administrador':
       return ['ADMINISTRADOR'];
     case 'cgadb':
       return ['CGADB'];
@@ -23,22 +25,6 @@ function mapBaseRole(role: string | null | undefined): string[] {
       return ['INSCRICAO'];
     case 'financeiro':
       return ['FINANCEIRO'];
-    // legados (compatibilidade)
-    case 'manager':
-    case 'supervisor':
-      return ['ADMINISTRADOR'];
-    case 'superintendent':
-    case 'superintendente':
-      return ['ADMINISTRADOR'];
-    case 'coordinator':
-    case 'coordenador':
-      return ['ADMINISTRADOR'];
-    case 'financial':
-      return ['FINANCEIRO'];
-    case 'operator':
-      return ['ADMINISTRADOR'];
-    case 'viewer':
-      return ['ADMINISTRADOR'];
     default:
       return [];
   }

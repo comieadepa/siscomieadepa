@@ -676,19 +676,20 @@ export default function MembrosPage() {
 
 useEffect(() => {
     const loadEstruturaOptions = async () => {
-      const [s, c, g] = await Promise.all([
-        supabase.from('supervisoes').select('id,nome,is_active').neq('is_active', false).order('nome'),
-        supabase.from('campos').select('id,nome,supervisao_id,is_active').neq('is_active', false).order('nome'),
-        supabase.from('congregacoes').select('id,nome,supervisao_id,campo_id,is_active').neq('is_active', false).order('nome'),
-      ]);
+      const res = await authenticatedFetch('/api/v1/secretaria/estrutura?includeInactive=true');
+      const payload = await res.json().catch(() => null as any);
+      if (!res.ok) {
+        console.warn('Falha ao carregar estrutura:', payload?.error || 'Erro');
+        return;
+      }
 
-      if (s.error) console.warn('Falha ao carregar 1a divisao:', s.error);
-      if (c.error) console.warn('Falha ao carregar 2a divisao:', c.error);
-      if (g.error) console.warn('Falha ao carregar 3a divisao:', g.error);
+      const supers = (payload?.supervisoes as any[]) || [];
+      const camposRows = (payload?.campos as any[]) || [];
+      const congs = (payload?.congregacoes as any[]) || [];
 
-      setSupervisoes(((s.data as any[]) || []).map((row: any) => ({ id: row.id, nome: row.nome })));
-      setCampos(((c.data as any[]) || []).map((row: any) => ({ id: row.id, nome: row.nome, supervisao_id: row.supervisao_id })));
-      setCongregacoes(((g.data as any[]) || []).map((row: any) => ({ id: row.id, nome: row.nome, supervisao_id: row.supervisao_id, campo_id: row.campo_id })));
+      setSupervisoes(supers.map((row: any) => ({ id: row.id, nome: row.nome })));
+      setCampos(camposRows.map((row: any) => ({ id: row.id, nome: row.nome, supervisao_id: row.supervisao_id })));
+      setCongregacoes(congs.map((row: any) => ({ id: row.id, nome: row.nome, supervisao_id: row.supervisao_id, campo_id: row.campo_id })));
     };
 
     loadEstruturaOptions().catch(() => null);
@@ -1312,11 +1313,15 @@ useEffect(() => {
     setShowFilhoForm(false);
     setNovoFilho({ nome: '', sexo: 'MASCULINO', data_nascimento: '', cpf: '' });
     Promise.all([
-      supabase.from('hds').select('id, nome, sexo, data_nascimento, cpf').eq('membro_id', membro.id).order('nome'),
-      supabase.from('juventude_comieadepa').select('hds_id').eq('membro_id', membro.id)
-    ]).then(([hdsRes, juvRes]) => {
-      const juvIds = new Set<string>((juvRes.data || []).map((r: any) => r.hds_id).filter(Boolean));
-      const combined = (hdsRes.data || []).map((r: any) => ({ ...r, emJuventude: juvIds.has(r.id) }));
+      authenticatedFetch(`/api/v1/secretaria/hds?membro_id=${membro.id}`),
+      authenticatedFetch(`/api/v1/secretaria/juventude?membro_id=${membro.id}`)
+    ]).then(async ([hdsRes, juvRes]) => {
+      const hdsJson = hdsRes.ok ? await hdsRes.json().catch(() => null as any) : null;
+      const juvJson = juvRes.ok ? await juvRes.json().catch(() => null as any) : null;
+      const hdsRows = (hdsJson?.data as any[]) || [];
+      const juvRows = (juvJson?.data as any[]) || [];
+      const juvIds = new Set<string>(juvRows.map((r: any) => r.hds_id).filter(Boolean));
+      const combined = hdsRows.map((r: any) => ({ ...r, emJuventude: juvIds.has(r.id) }));
       setFilhosRegistros(combined);
       setQtdFilhos(combined.length);
     });
@@ -2128,18 +2133,21 @@ useEffect(() => {
                 onClick={async () => {
                   setSalvandoStatus(true);
                   try {
-                    const sb = createClient();
                     const dbStatus = uiStatusToDb(novoStatus as Membro['status']);
                     const payload: Record<string, unknown> = {
                       status: dbStatus,
                       jubilado: isJubilado,
                       observacoes: motivoStatus || null,
                     };
-                    const { error } = await sb
-                      .from('members')
-                      .update(payload)
-                      .eq('id', membroAlterandoStatus.id);
-                    if (error) throw error;
+                    const res = await authenticatedFetch(`/api/v1/members/${membroAlterandoStatus.id}`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(payload),
+                    });
+                    if (!res.ok) {
+                      const errJson = await res.json().catch(() => null as any);
+                      throw new Error(errJson?.error || 'Erro ao salvar.');
+                    }
                     setMembros(prev => prev.map(m =>
                       m.id === membroAlterandoStatus.id
                         ? { ...m, status: novoStatus as Membro['status'], jubilado: isJubilado }
@@ -4266,19 +4274,22 @@ useEffect(() => {
                                     setSalvandoFilho(true);
 
                                     // 1. SEMPRE insere em HDS (Heranças do Senhor) — todos os filhos de pastores
-                                    const { data: hdsData, error: hdsError } = await supabase
-                                      .from('hds')
-                                      .insert({
+                                    const hdsRes = await authenticatedFetch('/api/v1/secretaria/hds', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
                                         membro_id: membroEditando.id,
                                         nome: novoFilho.nome.trim(),
                                         sexo: novoFilho.sexo,
                                         data_nascimento: novoFilho.data_nascimento,
-                                        cpf: novoFilho.cpf || null
-                                      })
-                                      .select('id, nome, sexo, data_nascimento, cpf')
-                                      .single();
+                                        cpf: novoFilho.cpf || null,
+                                      }),
+                                    });
                                     setSalvandoFilho(false);
-                                    if (hdsError || !hdsData) return;
+                                    if (!hdsRes.ok) return;
+                                    const hdsJson = await hdsRes.json().catch(() => null as any);
+                                    const hdsData = hdsJson?.data as any;
+                                    if (!hdsData) return;
 
                                     // 2. Verifica elegibilidade para Juventude COMIEADEPA:
                                     //    • Idade >= 12 e < 33 anos
@@ -4290,19 +4301,21 @@ useEffect(() => {
 
                                     let emJuventude = false;
                                     if (idadeElegivel) {
-                                      const { count } = await supabase
-                                        .from('members')
-                                        .select('id', { count: 'exact', head: true })
-                                        .ilike('name', novoFilho.nome.trim());
-                                      const naoEhMembro = (count ?? 0) === 0;
+                                      const memberRes = await authenticatedFetch(`/api/v1/members?search=${encodeURIComponent(novoFilho.nome.trim())}&limit=1`);
+                                      const memberJson = memberRes.ok ? await memberRes.json().catch(() => null as any) : null;
+                                      const naoEhMembro = ((memberJson?.data as any[]) || []).length === 0;
                                       if (naoEhMembro) {
-                                        await supabase.from('juventude_comieadepa').insert({
-                                          membro_id: membroEditando.id,
-                                          hds_id: hdsData.id,
-                                          nome: hdsData.nome,
-                                          sexo: hdsData.sexo,
-                                          data_nascimento: hdsData.data_nascimento,
-                                          cpf: hdsData.cpf
+                                        await authenticatedFetch('/api/v1/secretaria/juventude', {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({
+                                            membro_id: membroEditando.id,
+                                            hds_id: hdsData.id,
+                                            nome: hdsData.nome,
+                                            sexo: hdsData.sexo,
+                                            data_nascimento: hdsData.data_nascimento,
+                                            cpf: hdsData.cpf,
+                                          }),
                                         });
                                         emJuventude = true;
                                       }
@@ -4353,7 +4366,11 @@ useEffect(() => {
                                         type="button"
                                         onClick={async () => {
                                           // Deleta de HDS; juventude_comieadepa é deletado em cascata via hds_id FK
-                                          await supabase.from('hds').delete().eq('id', filho.id);
+                                          await authenticatedFetch('/api/v1/secretaria/hds', {
+                                            method: 'DELETE',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ id: filho.id }),
+                                          });
                                           setFilhosRegistros(prev => { const upd = prev.filter(f => f.id !== filho.id); setQtdFilhos(upd.length); return upd; });
                                         }}
                                         className="text-red-400 hover:text-red-600 text-xs font-semibold"

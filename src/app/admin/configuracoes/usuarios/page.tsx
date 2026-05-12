@@ -3,11 +3,13 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import AdminSidebar from '@/components/AdminSidebar'
 import { authenticatedFetch } from '@/lib/api-client'
 import { useAppDialog } from '@/providers/AppDialogProvider'
 import { Plus, Trash2, Edit2, Shield, CreditCard, Headphones } from 'lucide-react'
 import { useAdminAuth } from '@/providers/AdminAuthProvider'
+import AccessRestricted from '@/components/AccessRestricted'
 
 interface AdminUser {
   id: string
@@ -40,6 +42,9 @@ const ROLE_CONFIG = {
 
 export default function UsuariosPage() {
   const dialog = useAppDialog()
+  const { adminUser, isLoading, isAuthenticated, isAdmin } = useAdminAuth()
+  const router = useRouter()
+  const isSuperAdmin = adminUser?.role === 'super_admin'
   const [users, setUsers] = useState<AdminUser[]>([])
   const [loadingUsers, setLoadingUsers] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
@@ -71,6 +76,12 @@ export default function UsuariosPage() {
 
   const [showForm, setShowForm] = useState(false)
 
+  useEffect(() => {
+    if (!isLoading && (!isAuthenticated || !isAdmin)) {
+      router.push('/admin/login')
+    }
+  }, [isLoading, isAuthenticated, isAdmin, router])
+
   const fetchUsers = async () => {
     try {
       setLoadingUsers(true)
@@ -92,7 +103,31 @@ export default function UsuariosPage() {
     }
   }
 
-  useEffect(() => { fetchUsers() }, [])
+  useEffect(() => { if (isSuperAdmin) fetchUsers() }, [isSuperAdmin])
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen bg-gray-900">
+        <AdminSidebar />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-gray-300">Verificando autenticacao...</div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!isAuthenticated || !isAdmin) return null
+
+  if (!isSuperAdmin) {
+    return (
+      <div className="flex h-screen bg-gray-900">
+        <AdminSidebar />
+        <div className="flex-1 p-6">
+          <AccessRestricted message="Acesso restrito ao time tecnico (super admin)." />
+        </div>
+      </div>
+    )
+  }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
@@ -184,8 +219,6 @@ export default function UsuariosPage() {
       setActionLoading(false)
     }
   }
-
-  const { adminUser } = useAdminAuth()
 
   // Função utilitária para saber se é o próprio usuário logado
   const isSelf = (user: AdminUser): boolean => {

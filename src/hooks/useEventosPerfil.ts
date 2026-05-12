@@ -20,6 +20,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@/lib/supabase-client';
 import { getEquipeSession } from '@/lib/equipe-session';
 import { resolveEventoPermissoes, type PermissaoEvento } from '@/lib/evento-permissions';
+import { normalizeRole } from '@/lib/auth/roles';
 
 export type TabEventoId =
   | 'inscritos'
@@ -108,10 +109,10 @@ export function useEventosPerfil(): EventosPerfil {
         }
 
         // 1. Determina nível do usuário
-        let nivel: string = (user.user_metadata?.nivel as string | undefined) || '';
+        let nivelRaw: string = (user.user_metadata?.nivel as string | undefined) || '';
 
         // Fallback via API se user_metadata não tiver nivel
-        if (!nivel) {
+        if (!nivelRaw) {
           try {
             const { data: sessData } = await supabase.auth.getSession();
             const token = sessData.session?.access_token;
@@ -121,13 +122,15 @@ export function useEventosPerfil(): EventosPerfil {
               });
               if (res.ok) {
                 const json = await res.json() as { nivel?: string };
-                nivel = json.nivel || 'admin';
+                nivelRaw = json.nivel || 'admin';
               }
             }
           } catch {
-            nivel = 'admin';
+            nivelRaw = 'admin';
           }
         }
+
+        const nivel = normalizeRole(nivelRaw) || 'administrador';
 
         if (cancelled) return;
         setUserId(user.id);
@@ -138,7 +141,7 @@ export function useEventosPerfil(): EventosPerfil {
         if (departamento) setDepartamentoUsuario(departamento);
 
         // 2. Se global (super/admin), não precisa buscar vínculos
-        const isGlobal = nivel === 'super' || nivel === 'admin';
+        const isGlobal = nivel === 'super' || nivel === 'administrador';
         if (isGlobal) {
           setEventoIds(null);
           setPermissoesPorEvento({});
@@ -182,7 +185,7 @@ export function useEventosPerfil(): EventosPerfil {
   }, [supabase]);
 
   // ── Derivações ────────────────────────────────────────────
-  const isGlobal    = nivelSistema === 'super' || nivelSistema === 'admin';
+  const isGlobal    = nivelSistema === 'super' || nivelSistema === 'administrador';
   const isDeptAdmin = nivelSistema === 'inscricao' && !!departamentoUsuario;
 
   // Permissão mais ampla do usuário (para decidir tabs padrão)

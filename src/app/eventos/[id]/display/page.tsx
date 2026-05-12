@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useEventosPerfil } from '@/hooks/useEventosPerfil';
+import { authenticatedFetch } from '@/lib/api-client';
 
 // ─── Tipos ───────────────────────────────────────────────────
 interface Evento {
@@ -84,14 +85,17 @@ export default function DisplayPage() {
   // ── Carrega dados base ───────────────────────────────────
   const fetchTudo = useCallback(async () => {
     if (!id) return;
-    const [evRes, inRes, supRes] = await Promise.all([
+    const [evRes, inRes, estruturaRes] = await Promise.all([
       supabase.from('eventos').select('id,nome,departamento,data_inicio,data_fim,local,cidade,banner_url,publico_alvo,limite_vagas,status').eq('id', id).single(),
       supabase.from('evento_inscricoes').select('id,nome_inscrito,supervisao_id,campo_id,checkin_realizado,checkin_at,status_pagamento').eq('evento_id', id).order('checkin_at', { ascending: false, nullsFirst: false }),
-      supabase.from('supervisoes').select('id,nome').order('nome'),
+      authenticatedFetch('/api/v1/estrutura'),
     ]);
     if (evRes.data)  setEvento(evRes.data as Evento);
     if (inRes.data)  setInscricoes(inRes.data as Inscricao[]);
-    if (supRes.data) setSupervisoes(supRes.data as Supervisao[]);
+    if (estruturaRes.ok) {
+      const estrutura = await estruturaRes.json().catch(() => null as any);
+      setSupervisoes((estrutura?.supervisoes as Supervisao[]) || []);
+    }
     setUltimaAtu(new Date());
     setLoading(false);
   }, [id, supabase]);

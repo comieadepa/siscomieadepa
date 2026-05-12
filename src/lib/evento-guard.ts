@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient, createServerClientFromCookies } from '@/lib/supabase-server';
 import { resolveEventoPermissoes, type PermissaoEvento, type EventoPermissoes } from '@/lib/evento-permissions';
+import { normalizeRole } from '@/lib/auth/roles';
 
 type EventoRow = {
   id: string;
@@ -26,9 +27,10 @@ export async function requireEventoAccess(
     return { ok: false, response: NextResponse.json({ error: 'Nao autorizado.' }, { status: 401 }) };
   }
 
-  const nivel = (user.user_metadata?.nivel as string | undefined) ?? '';
+  const nivelRaw = (user.user_metadata?.nivel as string | undefined) ?? '';
+  const nivel = normalizeRole(nivelRaw);
   const departamento = (user.user_metadata?.subcategoria as string | undefined) ?? '';
-  const isGlobal = nivel === 'super' || nivel === 'admin';
+  const isGlobal = nivel === 'super' || nivel === 'administrador';
   const isDeptAdmin = nivel === 'inscricao' && !!departamento;
 
   const supabaseAdmin = createServerClient();

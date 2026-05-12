@@ -5,9 +5,9 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import NotificationModal from '@/components/NotificationModal';
-import { createClient } from '@/lib/supabase-client';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { formatPhone } from '@/lib/mascaras';
+import { authenticatedFetch } from '@/lib/api-client';
 
 interface Membro {
   id: string;
@@ -96,7 +96,6 @@ const normalizeOptionValue = (value: string) =>
     .replace(/^_+|_+$/g, '');
 
 export default function GerenciarFuncionarios() {
-  const supabase = createClient();
   const { loading: authLoading } = useRequireSupabaseAuth();
 
   const [membros, setMembros] = useState<Membro[]>([]);
@@ -136,22 +135,9 @@ export default function GerenciarFuncionarios() {
     obs: ''
   });
 
-  const getAccessTokenOrThrow = async () => {
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) throw new Error('Não autenticado');
-    return token;
-  };
-
   const carregarMembros = async () => {
     try {
-      const accessToken = await getAccessTokenOrThrow();
-      const response = await fetch('/api/v1/members?limit=1000', {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
+      const response = await authenticatedFetch('/api/v1/members?limit=1000');
 
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Erro ao carregar membros');
@@ -175,13 +161,7 @@ export default function GerenciarFuncionarios() {
 
   const carregarFuncionarios = async () => {
     try {
-      const accessToken = await getAccessTokenOrThrow();
-      const response = await fetch('/api/v1/employees?limit=1000', {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
+      const response = await authenticatedFetch('/api/v1/employees?limit=1000');
 
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Erro ao carregar funcionários');
