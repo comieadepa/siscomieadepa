@@ -21,7 +21,7 @@ export const DEPARTAMENTOS: DepartamentoConfig[] = [
     key: 'AGO',
     slug: 'ago',
     nome: 'AGO',
-    resumo: 'Eventos e congressos da area ministerial.',
+    resumo: 'Assembleia Geral Ordinaria.',
     banner: '/img/ago.png',
     tonalidade: {
       chip: 'bg-amber-100 text-amber-800',
@@ -34,7 +34,7 @@ export const DEPARTAMENTOS: DepartamentoConfig[] = [
     key: 'UMADESPA',
     slug: 'umadespa',
     nome: 'UMADESPA',
-    resumo: 'Juventude e mobilizacao missionaria.',
+    resumo: 'Uniao de Mocidade das Assembleias de Deus no Estado do Para.',
     banner: '/img/umadespa.png',
     tonalidade: {
       chip: 'bg-blue-100 text-blue-800',
@@ -47,7 +47,7 @@ export const DEPARTAMENTOS: DepartamentoConfig[] = [
     key: 'COADESPA',
     slug: 'coadespa',
     nome: 'COADESPA',
-    resumo: 'Areas de cooperacao e lideranca.',
+    resumo: 'Congresso do Circulo de Oracao das Assembleias de Deus do Estado do Para.',
     banner: '/img/coadespa.jpg',
     tonalidade: {
       chip: 'bg-emerald-100 text-emerald-800',
@@ -60,7 +60,7 @@ export const DEPARTAMENTOS: DepartamentoConfig[] = [
     key: 'SEIADEPA',
     slug: 'seiadepa',
     nome: 'SEIADEPA',
-    resumo: 'Secretaria e suporte institucional.',
+    resumo: 'Secretaria de Educacao Infantil das Assembleias de Deus do Estado do Para.',
     banner: '/img/seiadepa.jpg',
     tonalidade: {
       chip: 'bg-cyan-100 text-cyan-800',
@@ -72,8 +72,8 @@ export const DEPARTAMENTOS: DepartamentoConfig[] = [
   {
     key: 'AVULSO',
     slug: 'avulso',
-    nome: 'AVULSO',
-    resumo: 'Eventos gerais e iniciativas locais.',
+    nome: 'OUTROS EVENTOS',
+    resumo: 'Eventos especiais, conferencias e iniciativas regionais da convencao.',
     banner: '/img/avulso.png',
     tonalidade: {
       chip: 'bg-slate-100 text-slate-800',

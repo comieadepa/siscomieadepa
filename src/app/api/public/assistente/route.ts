@@ -151,11 +151,13 @@ async function responderEventosComIntro(
   return { resposta: intro, cards };
 }
 
-function statusPagamentoLabel(status: string) {
-  if (status === 'pago') return 'Pago';
-  if (status === 'isento') return 'Isento';
-  if (status === 'pendente') return 'Pendente';
-  return status;
+function buildWhatsAppLink(raw: unknown, message?: string) {
+  if (raw === null || raw === undefined) return null;
+  const digits = String(raw).replace(/\D/g, '');
+  if (!digits) return null;
+  const base = digits.startsWith('55') ? `https://wa.me/${digits}` : `https://wa.me/55${digits}`;
+  if (!message) return base;
+  return `${base}?text=${encodeURIComponent(message)}`;
 }
 
 async function responderCpfConsulta(
@@ -165,10 +167,9 @@ async function responderCpfConsulta(
   const supabase = createServerClient();
   let query = supabase
     .from('evento_inscricoes')
-    .select('id, nome_inscrito, status_pagamento, invoice_url, pix_copia_cola, valor_final, created_at, eventos!inner(id,nome,slug,departamento,data_inicio,data_fim)')
+    .select('id, nome_inscrito, status_pagamento, invoice_url, pix_copia_cola, valor_final, created_at, updated_at, asaas_due_date, eventos!inner(id,nome,slug,departamento,data_inicio,data_fim,suporte_whatsapp)')
     .eq('cpf', cpf)
-    .order('created_at', { ascending: false })
-    .limit(5);
+    .order('created_at', { ascending: false });
 
   if (departamento) {
     query = query.eq('eventos.departamento', departamento.key);
@@ -184,47 +185,134 @@ async function responderCpfConsulta(
     return { resposta: 'Nao encontrei inscricoes para este CPF.' };
   }
 
-  const cards = lista.map(item => {
+  const eventosMap = new Map<string, { evento: Record<string, unknown>; items: Array<Record<string, unknown>> }>();
+  for (const item of lista) {
     const ev = item.eventos as Record<string, unknown> | null;
-    const nome = String(ev?.nome || 'Evento');
-    const slug = String(ev?.slug || '');
-    const dataInicio = typeof ev?.data_inicio === 'string' ? ev?.data_inicio as string : '';
-    const dataFim = typeof ev?.data_fim === 'string' ? ev?.data_fim as string : null;
-    const statusRaw = String(item.status_pagamento || '');
-    const status = statusPagamentoLabel(statusRaw);
-    const valor = typeof item.valor_final === 'number' ? fmtMoeda(item.valor_final as number) : null;
-    const link = slug ? `/inscricao/${slug}` : '';
-    const invoiceUrl = typeof item.invoice_url === 'string' ? item.invoice_url : '';
-    const pixCopia = typeof item.pix_copia_cola === 'string' ? item.pix_copia_cola : '';
-    const meta: string[] = [`Status: ${status}${valor ? ` · Valor: ${valor}` : ''}`];
-    if (dataInicio) {
-      meta.push(`📅 ${formatDateRange(dataInicio, dataFim)}`);
+    const evId = String(ev?.id || '');
+    if (!evId) continue;
+    const entry = eventosMap.get(evId);
+    if (entry) {
+      entry.items.push(item);
+    } else {
+      eventosMap.set(evId, { evento: ev ?? {}, items: [item] });
+    }
+  }
+
+  const invoiceCards: AssistenteCard[] = [];
+  const supportCards: AssistenteCard[] = [];
+  let hasConfirmada = false;
+  let hasPendenteSemCobranca = false;
+  let hasPendenteSemSuporte = false;
+
+  const toTimestamp = (value: unknown) => {
+    if (typeof value !== 'string' || !value) return 0;
+    const time = Date.parse(value);
+    return Number.isNaN(time) ? 0 : time;
+  };
+
+  for (const { evento, items } of eventosMap.values()) {
+    const nomeEvento = String(evento?.nome || 'Evento');
+    const suporteLink = buildWhatsAppLink(
+      (evento as Record<string, unknown>)?.suporte_whatsapp ??
+      (evento as Record<string, unknown>)?.whatsapp_suporte,
+      'Ola, preciso de suporte sobre pagamento da minha inscricao!'
+    );
+    const quitado = items.some(item => ['pago', 'isento'].includes(String(item.status_pagamento || '')));
+    if (quitado) {
+      hasConfirmada = true;
+      continue;
     }
 
-    const actions: AssistenteAction[] = [];
-    if (link) {
-      actions.push({ label: '🔗 Abrir inscricao', href: link, variant: 'ghost' });
+    const pendentes = items.filter(item => String(item.status_pagamento || '') === 'pendente');
+    const elegiveis = pendentes.filter(item => {
+      const invoiceUrl = typeof item.invoice_url === 'string' ? item.invoice_url : '';
+      const pixCopia = typeof item.pix_copia_cola === 'string' ? item.pix_copia_cola : '';
+      return Boolean(invoiceUrl || pixCopia);
+    });
+
+    if (elegiveis.length === 0) {
+      if (pendentes.length > 0) {
+        hasPendenteSemCobranca = true;
+        if (suporteLink) {
+          supportCards.push({
+            id: `suporte-${String(evento?.id || nomeEvento)}`,
+            title: '💬 Falar com suporte',
+            meta: [`Evento: ${nomeEvento}`],
+            actions: [{ label: '💬 Falar com suporte', href: suporteLink, variant: 'primary' }],
+          });
+        } else {
+          hasPendenteSemSuporte = true;
+        }
+      }
+      continue;
     }
-    if (statusRaw === 'pendente' && invoiceUrl) {
+
+    elegiveis.sort((a, b) => {
+      const createdDiff = toTimestamp(b.created_at) - toTimestamp(a.created_at);
+      if (createdDiff !== 0) return createdDiff;
+      const dueDiff = toTimestamp(b.asaas_due_date) - toTimestamp(a.asaas_due_date);
+      if (dueDiff !== 0) return dueDiff;
+      return toTimestamp(b.updated_at) - toTimestamp(a.updated_at);
+    });
+
+    const latest = elegiveis[0];
+    const invoiceUrl = typeof latest.invoice_url === 'string' ? latest.invoice_url : '';
+    const pixCopia = typeof latest.pix_copia_cola === 'string' ? latest.pix_copia_cola : '';
+    const valorFinal = typeof latest.valor_final === 'number' ? latest.valor_final : null;
+    const vencimentoRaw = typeof latest.asaas_due_date === 'string' ? latest.asaas_due_date : '';
+    const vencimento = vencimentoRaw ? formatDate(vencimentoRaw) : '-';
+
+    const meta: string[] = [
+      `Evento: ${nomeEvento}`,
+      `Valor: ${valorFinal !== null ? fmtMoeda(valorFinal) : 'Nao informado'}`,
+      `Vencimento: ${vencimento}`,
+    ];
+
+    const actions: AssistenteAction[] = [];
+    if (invoiceUrl) {
       actions.push({ label: '💳 Abrir pagamento', href: invoiceUrl, variant: 'primary' });
     }
-    if (statusRaw === 'pendente' && pixCopia) {
+    if (pixCopia) {
       actions.push({ label: 'Copiar PIX', copyText: pixCopia, variant: 'ghost' });
     }
 
-    return {
-      id: String(item.id || `${nome}-${Date.now()}`),
-      title: `🎫 ${nome}`,
+    invoiceCards.push({
+      id: String(latest.id || `${nomeEvento}-${Date.now()}`),
+      title: '💳 Segunda via disponivel',
       meta,
       actions,
+    });
+  }
+
+  if (invoiceCards.length > 0 && supportCards.length > 0) {
+    return {
+      resposta: 'Segunda via disponivel. Para eventos sem link, fale com o suporte:',
+      cards: [...invoiceCards, ...supportCards],
     };
-  });
+  }
 
-  const header = lista.length > 1
-    ? 'Encontrei mais de uma inscricao para este CPF:'
-    : 'Encontrei sua inscricao:';
+  if (invoiceCards.length > 0) {
+    return { resposta: 'Segunda via disponivel:', cards: invoiceCards };
+  }
 
-  return { resposta: header, cards };
+  if (supportCards.length > 0) {
+    return {
+      resposta: 'Encontrei uma inscricao pendente 😊\nMas os dados de pagamento nao estao disponiveis no sistema no momento.\n\nNossa equipe pode te ajudar rapidamente pelo WhatsApp.',
+      cards: supportCards,
+    };
+  }
+
+  if (hasPendenteSemCobranca || hasPendenteSemSuporte) {
+    return {
+      resposta: 'Encontrei uma inscricao pendente 😊\nMas os dados de pagamento nao estao disponiveis no sistema no momento.\n\nEntre em contato com a organizacao do evento.',
+    };
+  }
+
+  if (hasConfirmada) {
+    return { resposta: 'Sua inscricao ja consta como confirmada.' };
+  }
+
+  return { resposta: 'Nao encontrei pagamentos pendentes para este CPF 😊' };
 }
 
 export async function POST(req: NextRequest) {
