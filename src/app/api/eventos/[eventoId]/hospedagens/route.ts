@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
+import { requireEventoAccess } from '@/lib/evento-guard';
 
 // GET /api/eventos/[eventoId]/hospedagens
 // Lista todas as hospedagens com dados do inscrito
@@ -8,7 +8,12 @@ export async function GET(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const supabase = createServerClient();
+  const guard = await requireEventoAccess(_req, eventoId);
+  if (!guard.ok) return guard.response;
+  if (!guard.ctx.perms.podeHospedagem) {
+    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
+  }
+  const supabase = guard.ctx.supabaseAdmin;
   const { data, error } = await supabase
     .from('evento_hospedagens')
     .select(`
@@ -73,6 +78,11 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
+  const guard = await requireEventoAccess(request, eventoId);
+  if (!guard.ok) return guard.response;
+  if (!guard.ctx.perms.podeHospedagem) {
+    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
+  }
   const body = await request.json();
   const { inscricao_id, alojamento_id, tipo_cama, status, prioridade,
           necessidade_especial, descricao_necessidade, cama_inferior,
@@ -82,7 +92,7 @@ export async function POST(
     return NextResponse.json({ error: 'inscricao_id obrigatório' }, { status: 400 });
   }
 
-  const supabase = createServerClient();
+  const supabase = guard.ctx.supabaseAdmin;
   const { data, error } = await supabase
     .from('evento_hospedagens')
     .upsert([{
@@ -113,6 +123,11 @@ export async function PATCH(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
+  const guard = await requireEventoAccess(request, eventoId);
+  if (!guard.ok) return guard.response;
+  if (!guard.ctx.perms.podeHospedagem) {
+    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
+  }
   const body = await request.json();
   const { id, ...updates } = body;
   if (!id) return NextResponse.json({ error: 'id obrigatório' }, { status: 400 });
@@ -122,7 +137,7 @@ export async function PATCH(
     updates.alocacao_automatica = false;
   }
 
-  const supabase = createServerClient();
+  const supabase = guard.ctx.supabaseAdmin;
 
   // Verificar limite de vagas se está confirmando e mudando alojamento
   if (updates.alojamento_id && updates.status === 'confirmada') {
@@ -183,10 +198,15 @@ export async function DELETE(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
+  const guard = await requireEventoAccess(request, eventoId);
+  if (!guard.ok) return guard.response;
+  if (!guard.ctx.perms.podeHospedagem) {
+    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
+  }
   const id = request.nextUrl.searchParams.get('id');
   if (!id) return NextResponse.json({ error: 'id obrigatório' }, { status: 400 });
 
-  const supabase = createServerClient();
+  const supabase = guard.ctx.supabaseAdmin;
   const { error } = await supabase
     .from('evento_hospedagens')
     .delete()

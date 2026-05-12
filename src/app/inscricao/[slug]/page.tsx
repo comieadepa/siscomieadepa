@@ -29,6 +29,8 @@ interface Evento {
   publico_alvo: string | null;
   usar_tipos_inscricao: boolean;
   status: 'programado' | 'realizado' | 'cancelado';
+  suporte_nome: string | null;
+  suporte_whatsapp: string | null;
 }
 
 interface FormData {
@@ -77,6 +79,15 @@ const fmtData = (d: string | null) => {
 const fmtMoeda = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+function dedupeTipos(tipos: TipoInscricao[]): TipoInscricao[] {
+  const seen = new Map<string, TipoInscricao>();
+  for (const t of tipos) {
+    const key = `${t.nome.trim().toLowerCase()}|${t.inclui_alimentacao ? 1 : 0}|${t.inclui_hospedagem ? 1 : 0}`;
+    if (!seen.has(key)) seen.set(key, t);
+  }
+  return Array.from(seen.values()).sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
+}
+
 function substituirVariaveis(mensagem: string, vars: Record<string, string>) {
   return mensagem.replace(/\{([A-Z_]+)\}/g, (_, key) => vars[key] ?? `{${key}}`);
 }
@@ -116,6 +127,9 @@ export default function InscricaoPublicaPage() {
   const [cupomStatus,     setCupomStatus]     = useState<'idle' | 'validando' | 'ok' | 'erro'>('idle');
   const [cupomDesconto,   setCupomDesconto]   = useState(0);
   const [cupomMensagem,   setCupomMensagem]   = useState('');
+
+  // Termos/LGPD
+  const [modalTermosAberto, setModalTermosAberto] = useState(false);
 
   // Lote (participantes extras)
   const [modoLote,          setModoLote]          = useState(false);
@@ -201,7 +215,8 @@ export default function InscricaoPublicaPage() {
       .eq('evento_id', ev.id)
       .eq('ativo', true)
       .order('ordem');
-    setTipos((tiposData as TipoInscricao[]) ?? []);
+    const tiposLimpos = dedupeTipos((tiposData as TipoInscricao[]) ?? []);
+    setTipos(tiposLimpos);
 
     setEvento(ev);
     setSupervisoes((supRes.data as Supervisao[]) || []);
@@ -212,16 +227,26 @@ export default function InscricaoPublicaPage() {
   useEffect(() => { fetchEvento(); }, [fetchEvento]);
 
   // ── Busca CPF ────────────────────────────────────────────
+  // Para AGO: consulta a tabela `members` (base de ministros) e traz
+  //   sexo, data_nascimento e cargo_ministerial além dos dados básicos.
+  // Para outros eventos: consulta a mesma tabela `members` (base geral).
   async function buscarCPF(cpf: string) {
     const limpo = cpf.replace(/\D/g, '');
-    if (limpo.length < 11) return;
+    if (limpo.length < 11 || !evento) return;
     setBuscandoCPF(true);
     setCpfStatus('idle');
+
+    const isAGO = evento.departamento === 'AGO';
+    const campos_select = isAGO
+      ? 'id, nome, cpf, celular, whatsapp, email, supervisao, campo, supervisao_id, campo_id, sexo, data_nascimento, cargo_ministerial'
+      : 'id, nome, cpf, celular, whatsapp, email, supervisao, campo, supervisao_id, campo_id';
+
     const { data } = await supabase
-      .from('members')
-      .select('id, nome, cpf, celular, whatsapp, email, supervisao, campo, supervisao_id, campo_id')
-      .or(`cpf.ilike.%${limpo}%`)
+      .from('members')   // base de membros/ministros do sistema
+      .select(campos_select)
+      .eq('cpf', limpo)  // busca exata pelo CPF limpo (apenas dígitos)
       .limit(1);
+
     setBuscandoCPF(false);
     if (data && data.length > 0) {
       const m = data[0] as {
@@ -229,17 +254,21 @@ export default function InscricaoPublicaPage() {
         celular: string | null; whatsapp: string | null; email: string | null;
         supervisao: string | null; campo: string | null;
         supervisao_id: string | null; campo_id: string | null;
+        sexo?: string | null; data_nascimento?: string | null;
+        cargo_ministerial?: string | null;
       };
       setCpfStatus('encontrado');
       const sup = supervisoes.find(s => s.id === m.supervisao_id || s.nome === m.supervisao);
       const cam = campos.find(c => c.id === m.campo_id || c.nome === m.campo);
       setForm(f => ({
         ...f,
-        nome_inscrito: m.nome       || f.nome_inscrito,
-        whatsapp:      m.whatsapp   || m.celular || f.whatsapp,
-        email:         m.email      || f.email,
-        supervisao_id: sup?.id      || f.supervisao_id,
-        campo_id:      cam?.id      || f.campo_id,
+        nome_inscrito: m.nome                       || f.nome_inscrito,
+        whatsapp:      m.whatsapp || m.celular       || f.whatsapp,
+        email:         m.email                       || f.email,
+        supervisao_id: sup?.id                       || f.supervisao_id,
+        campo_id:      cam?.id                       || f.campo_id,
+        ...(isAGO && m.sexo             ? { sexo: m.sexo } : {}),
+        ...(isAGO && m.data_nascimento  ? { data_nascimento: m.data_nascimento } : {}),
       }));
     } else {
       setCpfStatus('nao_encontrado');
@@ -311,6 +340,34 @@ export default function InscricaoPublicaPage() {
   const qtdTotal   = modoLote ? 1 + participantesExtra.length : 1;
   const totalLote  = valorFinal * qtdTotal;
 
+  function termosSuporteTexto() {
+    if (!evento?.suporte_whatsapp) return 'Canal de suporte: secretaria do evento.';
+    const tel = evento.suporte_whatsapp.replace(/\D/g, '');
+    const nome = evento.suporte_nome ? ` ${evento.suporte_nome}` : '';
+    return `Canal de suporte:${nome} https://wa.me/55${tel}`;
+  }
+
+  function termoParagrafos() {
+    if (!evento) return [] as string[];
+    const depto = evento.departamento ? ` (${evento.departamento})` : '';
+    const linhas = [
+      `Termos de Uso e Politica de Privacidade — ${evento.nome}${depto}.`,
+      'Ao realizar esta inscricao, voce declara estar ciente e concordar com as regras abaixo.',
+      '1) Coleta de dados pessoais: Nome, CPF, e-mail, telefone/WhatsApp e dados de supervisao/campo sao coletados para fins de credenciamento e controle do evento.',
+      '2) Uso dos dados: Os dados serao usados para comunicacoes do evento, confirmacao de inscricao, check-in, hospedagem (quando aplicavel), emissao de certificados e suporte ao participante.',
+      '3) Comunicacao: Autorizo o envio de mensagens por e-mail e WhatsApp relacionadas ao evento e aos servicos contratados.',
+      '4) Hospedagem e check-in: Caso eu solicite hospedagem, meus dados poderao ser usados para organizacao de alojamentos e controle de acesso.',
+      '5) Certificados: Caso o evento gere certificados, meus dados serao usados para emissao e validacao.',
+      '6) Armazenamento e seguranca: As informacoes sao armazenadas de forma segura e usadas apenas para os fins descritos neste termo.',
+      '7) Nao compartilhamento indevido: Os dados nao serao compartilhados com terceiros sem necessidade operacional ou obrigacao legal.',
+      '8) Consentimento LGPD: Autorizo o tratamento dos meus dados pessoais para as finalidades descritas, nos termos da Lei 13.709/2018 (LGPD).',
+      '9) Uso de imagem: Autorizo, de forma gratuita, o uso de minha imagem em fotos e videos captados no evento para fins institucionais e de divulgacao.',
+      '10) Responsabilidade do participante: Declaro que as informacoes fornecidas sao verdadeiras e de minha responsabilidade.',
+      termosSuporteTexto(),
+    ];
+    return linhas;
+  }
+
   // ── Envio do formulário — chama API server-side ─────────
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -357,6 +414,7 @@ export default function InscricaoPublicaPage() {
         hosp_descricao_necessidade: form.hosp_descricao_necessidade.trim() || null,
         hosp_cama_inferior:         form.hosp_cama_inferior,
         hosp_observacoes:           form.hosp_observacoes.trim() || null,
+        lgpd_aceito:                true,
       };
 
       if (modoLote && participantesExtra.length > 0) {
@@ -367,6 +425,7 @@ export default function InscricaoPublicaPage() {
           alimentacao:   tipoSelecionado?.inclui_alimentacao ?? false,
           brinde:        false,
           qr_code:       generateQRCodeToken(),
+          lgpd_aceito:   true,
         }));
       }
 
@@ -464,12 +523,14 @@ export default function InscricaoPublicaPage() {
             </p>
           </div>
 
-          {/* Código de inscrição */}
-          <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-4 mb-5 text-center">
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Código de inscrição</p>
-            <p className="text-base font-mono font-bold text-[#123b63] tracking-widest">{confirmacao.qr_code}</p>
-            <p className="text-xs text-gray-400 mt-1">Apresente este código no check-in do evento.</p>
-          </div>
+          {/* Código de inscrição — exibido somente após confirmação do pagamento */}
+          {(pago || isento) && (
+            <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-4 mb-5 text-center">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Código de inscrição</p>
+              <p className="text-base font-mono font-bold text-[#123b63] tracking-widest">{confirmacao.qr_code}</p>
+              <p className="text-xs text-gray-400 mt-1">Apresente este código no check-in do evento.</p>
+            </div>
+          )}
 
           {/* ── Bloco de pagamento ── */}
           {!isento && (
@@ -575,20 +636,29 @@ export default function InscricaoPublicaPage() {
             </div>
           )}
 
-          {/* Mensagem de confirmação personalizada */}
-          {mensagem && (
-            <div className="bg-[#123b63]/5 border border-[#123b63]/20 rounded-xl p-5 mb-5">
-              <p className="text-xs font-semibold text-[#123b63] mb-3 uppercase tracking-wide">📢 Informações importantes</p>
-              <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">{mensagem}</pre>
+          {/* Aviso quando pagamento ainda pendente */}
+          {!pago && !isento && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-5 text-sm text-blue-800">
+              ℹ️ Após a confirmação do pagamento, você receberá por e-mail o código de check-in, o link do grupo do WhatsApp e as informações do evento.
             </div>
           )}
 
-          {/* Grupo WhatsApp */}
-          {evento.link_whatsapp && (
-            <a href={evento.link_whatsapp} target="_blank" rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 w-full bg-emerald-500 text-white px-6 py-3 rounded-xl font-semibold text-sm hover:bg-emerald-600 transition mb-4">
-              📲 Entrar no grupo do WhatsApp
-            </a>
+          {/* Mensagem de confirmação e grupo WhatsApp — somente após pagamento confirmado */}
+          {(pago || isento) && (
+            <>
+              {mensagem && (
+                <div className="bg-[#123b63]/5 border border-[#123b63]/20 rounded-xl p-5 mb-5">
+                  <p className="text-xs font-semibold text-[#123b63] mb-3 uppercase tracking-wide">📢 Informações importantes</p>
+                  <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">{mensagem}</pre>
+                </div>
+              )}
+              {evento.link_whatsapp && (
+                <a href={evento.link_whatsapp} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full bg-emerald-500 text-white px-6 py-3 rounded-xl font-semibold text-sm hover:bg-emerald-600 transition mb-4">
+                  📲 Entrar no grupo do WhatsApp
+                </a>
+              )}
+            </>
           )}
         </div>
       </PaginaPublica>
@@ -629,7 +699,7 @@ export default function InscricaoPublicaPage() {
             </div>
 
             {evento.descricao && (
-              <p className="text-sm text-gray-600 leading-relaxed border-t border-gray-100 pt-4 mb-4">{evento.descricao}</p>
+              <p className="text-sm text-gray-600 leading-relaxed border-t border-gray-100 pt-4 mb-4 whitespace-pre-line">{evento.descricao}</p>
             )}
 
             <div className="flex flex-wrap items-center gap-3">
@@ -685,7 +755,7 @@ export default function InscricaoPublicaPage() {
                 <p className="mt-1 text-xs text-emerald-600 font-semibold">✅ Ministro localizado — dados preenchidos automaticamente</p>
               )}
               {cpfStatus === 'nao_encontrado' && (
-                <p className="mt-1 text-xs text-yellow-600">⚠️ CPF não encontrado na base — preencha os dados manualmente</p>
+                <p className="mt-1 text-xs text-yellow-600">⚠️ CPF não localizado. Você pode continuar preenchendo manualmente.</p>
               )}
             </div>
 
@@ -966,13 +1036,62 @@ export default function InscricaoPublicaPage() {
                   ? `✅ Confirmar ${qtdTotal} inscrições — ${fmtMoeda(totalLote)}`
                   : '✅ Confirmar Inscrição'}
             </button>
-
-            <p className="text-xs text-gray-400 text-center mt-4">
-              Ao se inscrever, você concorda com as condições do evento.
+            <p className="mt-4 text-xs text-gray-500 leading-relaxed">
+              Ao clicar em Confirmar Inscrição, você declara que leu e concorda com os{' '}
+              <button
+                type="button"
+                onClick={() => setModalTermosAberto(true)}
+                className="text-[#123b63] font-semibold underline underline-offset-2"
+              >
+                Termos de Uso
+              </button>
+              {' '}e a{' '}
+              <button
+                type="button"
+                onClick={() => setModalTermosAberto(true)}
+                className="text-[#123b63] font-semibold underline underline-offset-2"
+              >
+                Política de Privacidade
+              </button>
+              .
             </p>
           </form>
         </div>
       </div>
+
+      {modalTermosAberto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-3">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-base font-bold text-gray-800">Termos de Uso e Política de Privacidade</h3>
+              <button
+                type="button"
+                onClick={() => setModalTermosAberto(false)}
+                className="text-gray-400 hover:text-gray-600"
+                aria-label="Fechar"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="px-5 py-4 max-h-[70vh] overflow-y-auto text-sm text-gray-700 leading-relaxed">
+              {termoParagrafos().map((p, idx) => (
+                <p key={idx} className="mb-3">
+                  {p}
+                </p>
+              ))}
+            </div>
+            <div className="px-5 py-4 border-t border-gray-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setModalTermosAberto(false)}
+                className="px-4 py-2 rounded-lg bg-[#123b63] text-white text-sm font-semibold hover:bg-[#0f2a45] transition"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </PaginaPublica>
   );
 }
@@ -988,8 +1107,8 @@ function PaginaPublica({ evento, children }: { evento: Evento; children: React.R
             <span className="text-white font-black text-sm">GS</span>
           </div>
           <div>
-            <p className="font-bold text-sm leading-tight">GestãoServus</p>
-            <p className="text-xs text-blue-300 leading-tight">Sistema de Gestão Ministerial</p>
+            <p className="font-bold text-sm leading-tight">SISCOMIEADEPA</p>
+            <p className="text-xs text-blue-300 leading-tight">Sistema de Gestão Convencional v.2.0</p>
           </div>
           <div className="ml-auto hidden sm:block">
             <span className="text-xs text-blue-300 font-medium">📅 {evento.nome}</span>
@@ -1002,7 +1121,7 @@ function PaginaPublica({ evento, children }: { evento: Evento; children: React.R
       </main>
 
       <footer className="text-center py-8 mt-8 text-xs text-gray-400 border-t border-gray-200">
-        GestãoServus • Sistema de Gestão Ministerial
+        SISCOMIEADEPA • Sistema de Gestão Convencional v.2.0
       </footer>
 
       {/* Assistente flutuante do evento */}

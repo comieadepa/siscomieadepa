@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
+import { requireEventoAccess } from '@/lib/evento-guard';
 import { sendEmail } from '@/services/email';
 import { sendWhatsApp } from '@/services/whatsapp';
 
@@ -10,6 +10,12 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
+  const guard = await requireEventoAccess(request, eventoId);
+  if (!guard.ok) return guard.response;
+  if (!guard.ctx.perms.podeComunicacao) {
+    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
+  }
+
   const body = await request.json();
   const ids: string[] = Array.isArray(body?.ids) ? body.ids.slice(0, 50) : [];
 
@@ -17,7 +23,7 @@ export async function POST(
     return NextResponse.json({ error: 'Informe ao menos um ID.' }, { status: 400 });
   }
 
-  const supabase = createServerClient();
+  const supabase = guard.ctx.supabaseAdmin;
 
   const { data: notifs, error } = await supabase
     .from('evento_notificacoes')
@@ -47,6 +53,7 @@ export async function POST(
         assunto:          notif.assunto ?? '',
         mensagem:         notif.mensagem,
         nomeDestinatario: insc.nome_inscrito,
+        fromEmail:        'inscricoes@siscomieadepa.org',
       });
     } else if (notif.tipo === 'whatsapp' && insc.whatsapp) {
       res = await sendWhatsApp({ para: insc.whatsapp, mensagem: notif.mensagem });

@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase-client';
 import { loadOrgNomenclaturasFromSupabaseOrMigrate } from '@/lib/org-nomenclaturas';
 import { loadTemplatesWithLocalCache } from '@/lib/cartoes-templates-sync';
 import { fetchConfiguracaoIgrejaFromSupabase } from '@/lib/igreja-config-utils';
+import { buildUrl, getAppBaseUrl } from '@/lib/urls';
 
 interface Membro {
   id: string;
@@ -265,7 +266,7 @@ export default function CartãoMembro({ membro, onClose }: CartãoMembroProps) {
         return (
           <div key={elemento.id} style={estilo}>
             <QRCode
-              value={`${process.env.NEXT_PUBLIC_APP_URL || ''}/autentica_qrcode-05985642/${membro.uniqueId || membro.id}`}
+              value={buildUrl(getAppBaseUrl(), `/autentica_qrcode-05985642/${membro.uniqueId || membro.id}`)}
               size={Math.min(elemento.largura, elemento.altura)}
               level="H"
               includeMargin={false}

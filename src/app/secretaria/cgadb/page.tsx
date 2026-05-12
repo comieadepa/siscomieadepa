@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import NotificationModal from '@/components/NotificationModal';
 import { createClient } from '@/lib/supabase-client';
+import { buildUrl, getAppBaseUrl } from '@/lib/urls';
 
 export const dynamic = 'force-dynamic';
 
@@ -380,14 +381,14 @@ function AbaMinistros({ notify }: { notify: (t: string, m: string, tp: 'success'
 </head>
 <body>
   <div class="header">
-    <img class="header-logo" src="${window.location.origin}/img/logo_comieadepa.png" alt="COMIEADEPA"/>
+    <img class="header-logo" src="${buildUrl(getAppBaseUrl(), '/img/logo_comieadepa.png')}" alt="COMIEADEPA"/>
     <div class="header-center">
       <div class="org">COMIEADEPA - CONVENÇÃO INTERESTADUAL DE MINISTROS E IGREJAS<br/>EVANGÉLICAS ASSEMBLEIA DE DEUS NO PARÁ</div>
       <div class="contact">Emails: comieadepa@bol.com.br / Site: www.comieadepa.org</div>
       <div class="address">RODOVIA DO MÁRIO COVAS, 2500, 67115-000 / COQUEIRO, ANANINDEUA - PA</div>
       <div class="presidente">PRESIDENTE: PR. OCELIO NAUAR</div>
     </div>
-    <img class="header-logo" src="${window.location.origin}/img/cgadb.png" alt="CGADB"/>
+    <img class="header-logo" src="${buildUrl(getAppBaseUrl(), '/img/cgadb.png')}" alt="CGADB"/>
   </div>
   <div class="report-title">${titulo} <span class="total">${tituloTotal}</span></div>
   <table>

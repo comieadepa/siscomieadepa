@@ -12,10 +12,10 @@ interface SidebarProps {
 // Quais menus (por id) cada nível pode ver. 'super' vê tudo.
 const MENU_POR_NIVEL: Record<string, string[]> = {
   super: ['*'],
-  administrador: ['dashboard', 'secretaria', 'comissao', 'patrimonio', 'missoes', 'configuracoes'],
+  administrador: ['dashboard', 'secretaria', 'comissao', 'patrimonio', 'missoes', 'configuracoes', 'eventos', 'eventos-lista', 'eventos-dashboard'],
   cgadb: ['cgadb'],
   comissao: ['dashboard', 'secretaria', 'comissao'],
-  inscricao: ['eventos'],
+  inscricao: ['eventos', 'eventos-lista'],
   financeiro: ['financeiro'],
 };
 
@@ -92,7 +92,17 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
   ];
 
   // Filtra menus apenas por nível de acesso do usuário
-  const menuItems = allMenuItems.filter(i => menuVisivel(nivelUsuario, i.id));
+  const menuItems = allMenuItems
+    .filter(i => menuVisivel(nivelUsuario, i.id))
+    .map(i => {
+      if ((i as { submenu?: { id: string }[] }).submenu) {
+        return {
+          ...i,
+          submenu: (i as { submenu: { id: string }[] }).submenu.filter(s => menuVisivel(nivelUsuario, s.id)),
+        };
+      }
+      return i;
+    });
 
   const handleNavigate = (id: string, path: string) => {
     setActiveMenu(id);

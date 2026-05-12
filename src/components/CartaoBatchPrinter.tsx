@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase-client';
 import { loadOrgNomenclaturasFromSupabaseOrMigrate } from '@/lib/org-nomenclaturas';
 import { loadTemplatesWithLocalCache } from '@/lib/cartoes-templates-sync';
 import { fetchConfiguracaoIgrejaFromSupabase } from '@/lib/igreja-config-utils';
+import { buildUrl, getAppBaseUrl } from '@/lib/urls';
 
 interface Membro {
   id: string;
@@ -352,7 +353,7 @@ export default function CartaoBatchPrinter({ membros, onComplete }: CartaoBatchP
       <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
         {membros.map((membro) => (
           <div key={`qr-${membro.id}`} id={`source-qr-${membro.id}`}>
-            <QRCode value={`${process.env.NEXT_PUBLIC_APP_URL || ''}/autentica_qrcode-05985642/${membro.uniqueId}`} size={128} level="H" />
+            <QRCode value={buildUrl(getAppBaseUrl(), `/autentica_qrcode-05985642/${membro.uniqueId}`)} size={128} level="H" />
           </div>
         ))}
       </div>

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
+import { requireEventoAccess } from '@/lib/evento-guard';
 
 // GET /api/eventos/[eventoId]/tipos-inscricao
 // Lista os tipos de inscrição ativos de um evento (público)
@@ -8,7 +9,12 @@ export async function GET(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const supabase = createServerClient();
+  const guard = await requireEventoAccess(_req, eventoId);
+  if (!guard.ok) return guard.response;
+  if (!guard.ctx.perms.podeEditarEvento) {
+    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
+  }
+  const supabase = guard.ctx.supabaseAdmin;
   const { data, error } = await supabase
     .from('evento_tipos_inscricao')
     .select('id, nome, valor, inclui_alimentacao, inclui_hospedagem, ordem')
@@ -44,9 +50,8 @@ export async function POST(
 
   const supabase = createServerClient();
 
-  // Remove os tipos antigos e insere os novos (upsert por id)
+  // Remove os tipos antigos e insere os novos (evita duplicados)
   const rows = tipos.map(t => ({
-    ...(t.id ? { id: t.id } : {}),
     evento_id:         eventoId,
     nome:              t.nome,
     valor:             t.valor,
@@ -56,9 +61,16 @@ export async function POST(
     ordem:             t.ordem,
   }));
 
+  const { error: deleteError } = await supabase
+    .from('evento_tipos_inscricao')
+    .delete()
+    .eq('evento_id', eventoId);
+
+  if (deleteError) return NextResponse.json({ error: deleteError.message }, { status: 500 });
+
   const { error } = await supabase
     .from('evento_tipos_inscricao')
-    .upsert(rows, { onConflict: 'id' });
+    .insert(rows);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ sucesso: true });

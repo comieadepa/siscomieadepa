@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { gerarCertificadoPDF, CertConfig, CertDados } from '@/lib/certificado-pdf';
+import CertificadoEditor, { Elemento } from './CertificadoEditor';
 
 // ─── Tipos ────────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -11,6 +11,7 @@ interface InscricaoElegivel {
   id:                  string;
   nome_inscrito:       string;
   cpf:                 string | null;
+  email:               string | null;
   supervisao_id:       string | null;
   campo_id:            string | null;
   tipo_inscricao:      string | null;
@@ -28,72 +29,36 @@ interface Stats {
   sem_checkin: number;
 }
 
-interface FormConfig {
-  arte_url:         string;
-  texto_corpo:      string;
-  rodape_texto:     string;
-  assinatura_nome:  string;
-  assinatura_cargo: string;
-  orientacao:       'landscape' | 'portrait';
-  fonte_tamanho:    string;
-}
-
-const DEFAULT_TEXTO = 'Certificamos que {NOME} participou do evento {EVENTO}, realizado em {DATA_EVENTO}.';
-const DEFAULT_FORM: FormConfig = {
-  arte_url:         '',
-  texto_corpo:      DEFAULT_TEXTO,
-  rodape_texto:     'Belém, {DATA_EMISSAO}',
-  assinatura_nome:  '',
-  assinatura_cargo: '',
-  orientacao:       'landscape',
-  fonte_tamanho:    '14',
-};
-
 // ─── Componente ───────────────────────────────────────────────
 export default function TabCertificados({
   eventoId,
-  eventoNome,
-  eventoDataInicio,
-  eventoDataFim,
   gerarCertificado,
   podeEditar,
   supervisoes,
   campos,
 }: {
   eventoId:         string;
-  eventoNome:       string;
-  eventoDataInicio: string;
-  eventoDataFim:    string;
+
   gerarCertificado: boolean;
   podeEditar:       boolean;
   supervisoes:      Supervisao[];
   campos:           Campo[];
 }) {
-  const [config,      setConfig]      = useState<CertConfig | null>(null);
-  const [form,        setForm]        = useState<FormConfig>(DEFAULT_FORM);
+  const [config,      setConfig]      = useState<Record<string, unknown> | null>(null);
+  const [initElementos,  setInitElementos]  = useState<Elemento[]>([]);
+  const [initBackground, setInitBackground] = useState<string | null>(null);
   const [inscricoes,  setInscricoes]  = useState<InscricaoElegivel[]>([]);
   const [semCheckin,  setSemCheckin]  = useState<InscricaoElegivel[]>([]);
   const [stats,       setStats]       = useState<Stats | null>(null);
   const [loading,     setLoading]     = useState(true);
-  const [salvando,    setSalvando]    = useState(false);
   const [msg,         setMsg]         = useState('');
   const [filtro,      setFiltro]      = useState<'todos' | 'pendentes' | 'gerados'>('todos');
-  const [baixando,    setBaixando]    = useState<Record<string, boolean>>({});
-  const [marcando,    setMarcando]    = useState<Record<string, boolean>>({});
+  const [enviando,    setEnviando]    = useState<Record<string, boolean>>({});
   const [loteAtivo,   setLoteAtivo]   = useState(false);
 
   // ── Helpers ─────────────────────────────────────────────────
   const nomeSup   = (id: string | null) => supervisoes.find(s => s.id === id)?.nome ?? '';
   const nomeCampo = (id: string | null) => campos.find(c => c.id === id)?.nome ?? '';
-
-  const fmtData = (d: string) => {
-    const [y, m, day] = d.split('-');
-    return `${day}/${m}/${y}`;
-  };
-
-  const dataEvento = eventoDataInicio === eventoDataFim
-    ? fmtData(eventoDataInicio)
-    : `${fmtData(eventoDataInicio)} a ${fmtData(eventoDataFim)}`;
 
   // ── Carrega dados ────────────────────────────────────────────
   const carregar = useCallback(async () => {
@@ -105,16 +70,12 @@ export default function TabCertificados({
       ]);
 
       if (cfgRes.config) {
-        setConfig(cfgRes.config as CertConfig);
-        setForm({
-          arte_url:         cfgRes.config.arte_url        ?? '',
-          texto_corpo:      cfgRes.config.texto_corpo     ?? DEFAULT_TEXTO,
-          rodape_texto:     cfgRes.config.rodape_texto    ?? 'Belém, {DATA_EMISSAO}',
-          assinatura_nome:  cfgRes.config.assinatura_nome  ?? '',
-          assinatura_cargo: cfgRes.config.assinatura_cargo ?? '',
-          orientacao:       cfgRes.config.orientacao      ?? 'landscape',
-          fonte_tamanho:    String(cfgRes.config.fonte_tamanho ?? 14),
-        });
+        const cfg = cfgRes.config as Record<string, unknown>;
+        setConfig(cfg);
+        const rawBg = (cfg.background_url ?? cfg.arte_url) as string | null;
+        setInitBackground(rawBg || null);
+        const rawElem = cfg.elementos_json;
+        setInitElementos(Array.isArray(rawElem) ? (rawElem as Elemento[]) : []);
       }
 
       setStats(listRes.stats ?? null);
@@ -129,88 +90,29 @@ export default function TabCertificados({
 
   useEffect(() => { carregar(); }, [carregar]);
 
-  // ── Salvar configuração ──────────────────────────────────────
-  async function salvarConfig(e: React.FormEvent) {
-    e.preventDefault();
-    setSalvando(true);
-    setMsg('');
+  // ── Enviar link do certificado individual ────────────────────
+  async function enviarLink(ins: InscricaoElegivel, reenviar = false) {
+    setEnviando(e => ({ ...e, [ins.id]: true }));
     try {
-      const res = await fetch(`/api/eventos/${eventoId}/certificado-config`, {
+      const res = await fetch(`/api/eventos/${eventoId}/certificados/enviar-link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...form,
-          fonte_tamanho: parseInt(form.fonte_tamanho) || 14,
-        }),
+        body: JSON.stringify({ inscricao_id: ins.id, reenviar }),
       });
       const json = await res.json();
-      if (!res.ok) {
-        setMsg('❌ ' + (json.error ?? 'Erro ao salvar.'));
-      } else {
-        setConfig(json.config);
-        setMsg('✅ Configuração salva!');
+      if (json.jaEnviado) {
+        setMsg('⚠️ Já enviado anteriormente. Use "Reenviar" para enviar novamente.');
+      } else if (res.ok) {
+        setMsg('✅ Link enviado para ' + ins.nome_inscrito);
         setTimeout(() => setMsg(''), 3000);
+        await carregar();
+      } else {
+        setMsg('❌ ' + (json.error ?? 'Erro ao enviar.'));
       }
     } catch {
       setMsg('❌ Erro de conexão.');
     } finally {
-      setSalvando(false);
-    }
-  }
-
-  // ── Monta dados para PDF ─────────────────────────────────────
-  function montarDados(ins: InscricaoElegivel): CertDados {
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
-    return {
-      nome:          ins.nome_inscrito,
-      evento:        eventoNome,
-      data_evento:   dataEvento,
-      cargo:         ins.tipo_inscricao ?? null,
-      supervisao:    nomeSup(ins.supervisao_id),
-      campo:         nomeCampo(ins.campo_id),
-      codigo:        ins.qr_code ?? ins.id.slice(0, 8).toUpperCase(),
-      validacao_url: `${baseUrl}/certificado/${ins.qr_code ?? ins.id}`,
-    };
-  }
-
-  // ── Config efetiva para PDF ──────────────────────────────────
-  function configParaPDF(): CertConfig {
-    return config ?? {
-      arte_url:         form.arte_url || null,
-      texto_corpo:      form.texto_corpo,
-      rodape_texto:     form.rodape_texto || null,
-      assinatura_nome:  form.assinatura_nome || null,
-      assinatura_cargo: form.assinatura_cargo || null,
-      orientacao:       form.orientacao,
-      fonte_tamanho:    parseInt(form.fonte_tamanho) || 14,
-    };
-  }
-
-  // ── Baixar certificado individual ────────────────────────────
-  async function baixarCertificado(ins: InscricaoElegivel) {
-    setBaixando(b => ({ ...b, [ins.id]: true }));
-    try {
-      await gerarCertificadoPDF(configParaPDF(), montarDados(ins), 'save');
-    } catch (err) {
-      alert('Erro ao gerar PDF: ' + String(err));
-    } finally {
-      setBaixando(b => ({ ...b, [ins.id]: false }));
-    }
-  }
-
-  // ── Marcar como enviado ──────────────────────────────────────
-  async function marcarEnviado(ins: InscricaoElegivel) {
-    setMarcando(m => ({ ...m, [ins.id]: true }));
-    try {
-      const res = await fetch(`/api/eventos/${eventoId}/certificados/${ins.id}`, { method: 'PATCH' });
-      if (res.ok) {
-        setInscricoes(prev => prev.map(i => i.id === ins.id ? { ...i, certificado_enviado: true } : i));
-        setStats(s => s ? { ...s, pendentes: s.pendentes - 1, gerados: s.gerados + 1 } : s);
-      }
-    } catch {
-      alert('Erro ao marcar como enviado.');
-    } finally {
-      setMarcando(m => ({ ...m, [ins.id]: false }));
+      setEnviando(e => ({ ...e, [ins.id]: false }));
     }
   }
 
@@ -223,21 +125,27 @@ export default function TabCertificados({
     }
   }
 
-  // ── Baixar em lote ──────────────────────────────────────────
-  async function baixarLote() {
+  // ── Enviar links em lote ─────────────────────────────────────
+  async function enviarLote() {
     if (loteAtivo) return;
-    const alvo = filtroLista;
+    const alvo = filtroLista.filter(i => !i.certificado_enviado);
     if (alvo.length === 0) return;
     setLoteAtivo(true);
+    let ok = 0; let fail = 0;
     for (const ins of alvo) {
       try {
-        await gerarCertificadoPDF(configParaPDF(), montarDados(ins), 'save');
-        await new Promise(r => setTimeout(r, 600)); // delay entre downloads
-      } catch {
-        // continua para o próximo
-      }
+        const res = await fetch(`/api/eventos/${eventoId}/certificados/enviar-link`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ inscricao_id: ins.id }),
+        });
+        if ((await res.json()).ok) ok++; else fail++;
+      } catch { fail++; }
+      await new Promise(r => setTimeout(r, 300));
     }
     setLoteAtivo(false);
+    setMsg(`✅ ${ok} links enviados${fail > 0 ? ` · ❌ ${fail} erros` : ''}`);
+    await carregar();
   }
 
   // ── Lista filtrada ───────────────────────────────────────────
@@ -285,129 +193,30 @@ export default function TabCertificados({
         </div>
       )}
 
-      {/* ── Configuração ────────────────────────────────────── */}
-      {podeEditar && (
-        <details className="bg-blue-50 border border-blue-200 rounded-2xl overflow-hidden" open={!config}>
-          <summary className="px-5 py-4 cursor-pointer select-none font-bold text-[#123b63] flex items-center gap-2">
-            <span>⚙️ Configurar arte do certificado</span>
-            <span className="text-xs text-blue-500 font-normal ml-auto">Clique para {!config ? 'fechar' : 'expandir'}</span>
+      {/* ── Editor Visual do Certificado ────────────────────── */}
+      <div className="bg-blue-50 border border-blue-200 rounded-2xl overflow-hidden">
+        <details open={!config}>
+          <summary className="px-5 py-4 cursor-pointer select-none font-bold text-[#123b63] flex items-center gap-2 hover:bg-blue-100/50 transition">
+            <span>🎨 Editor Visual do Certificado</span>
+            <span className="text-xs text-blue-500 font-normal ml-auto">
+              {config ? 'Configurado ✓' : 'Clique para configurar'}
+            </span>
           </summary>
-          <form onSubmit={salvarConfig} className="px-5 pb-5 space-y-4 border-t border-blue-200 pt-4">
-
-            {/* Arte de fundo */}
-            <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1">URL da arte de fundo</label>
-              <input
-                type="url"
-                value={form.arte_url}
-                onChange={e => setForm(f => ({ ...f, arte_url: e.target.value }))}
-                placeholder="https://... (imagem JPG ou PNG)"
-                className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]/30"
-              />
-              {form.arte_url && (
-                <div className="mt-2 relative h-24 bg-gray-100 rounded-lg overflow-hidden border border-gray-200">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={form.arte_url} alt="Preview" className="w-full h-full object-cover" />
-                </div>
-              )}
-              <p className="text-xs text-gray-400 mt-1">Faça upload no Supabase Storage ou use qualquer URL pública acessível.</p>
-            </div>
-
-            {/* Texto do certificado */}
-            <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1">Texto do certificado</label>
-              <textarea
-                value={form.texto_corpo}
-                onChange={e => setForm(f => ({ ...f, texto_corpo: e.target.value }))}
-                rows={3}
-                className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]/30 resize-none font-mono"
-              />
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {['{NOME}', '{EVENTO}', '{DATA_EVENTO}', '{CARGO}', '{SUPERVISAO}', '{CAMPO}', '{CODIGO}'].map(ph => (
-                  <button
-                    key={ph}
-                    type="button"
-                    onClick={() => setForm(f => ({ ...f, texto_corpo: f.texto_corpo + ph }))}
-                    className="text-[11px] bg-white border border-gray-300 hover:border-[#123b63] px-2 py-0.5 rounded font-mono text-gray-600 hover:text-[#123b63] transition"
-                  >
-                    {ph}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Rodapé */}
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">Rodapé / Data de emissão</label>
-                <input
-                  type="text"
-                  value={form.rodape_texto}
-                  onChange={e => setForm(f => ({ ...f, rodape_texto: e.target.value }))}
-                  placeholder="Belém, {DATA_EMISSAO}"
-                  className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]/30"
-                />
-              </div>
-              {/* Orientação */}
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">Orientação</label>
-                <select
-                  value={form.orientacao}
-                  onChange={e => setForm(f => ({ ...f, orientacao: e.target.value as 'landscape' | 'portrait' }))}
-                  className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]/30"
-                >
-                  <option value="landscape">Paisagem (A4 horizontal) — recomendado</option>
-                  <option value="portrait">Retrato (A4 vertical)</option>
-                </select>
-              </div>
-              {/* Assinatura */}
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">Nome do signatário</label>
-                <input
-                  type="text"
-                  value={form.assinatura_nome}
-                  onChange={e => setForm(f => ({ ...f, assinatura_nome: e.target.value }))}
-                  placeholder="Ex: Pr. João Silva"
-                  className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]/30"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">Cargo do signatário</label>
-                <input
-                  type="text"
-                  value={form.assinatura_cargo}
-                  onChange={e => setForm(f => ({ ...f, assinatura_cargo: e.target.value }))}
-                  placeholder="Ex: Presidente da ADESPA"
-                  className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]/30"
-                />
-              </div>
-              {/* Tamanho da fonte */}
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">Tamanho da fonte</label>
-                <select
-                  value={form.fonte_tamanho}
-                  onChange={e => setForm(f => ({ ...f, fonte_tamanho: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]/30"
-                >
-                  {[10, 12, 13, 14, 15, 16, 18, 20].map(v => (
-                    <option key={v} value={v}>{v}pt</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="flex gap-3 pt-1">
-              <button
-                type="submit"
-                disabled={salvando}
-                className="bg-[#123b63] hover:bg-[#0f2a45] text-white px-6 py-2.5 rounded-xl text-sm font-bold transition disabled:opacity-50"
-              >
-                {salvando ? 'Salvando...' : '✅ Salvar configuração'}
-              </button>
-            </div>
-          </form>
+          <div className="px-5 pb-5 border-t border-blue-200 pt-4">
+            <CertificadoEditor
+              eventoId={eventoId}
+              podeEditar={podeEditar}
+              initElementos={initElementos}
+              initBackground={initBackground}
+              onSaved={(elems, bg) => {
+                setInitElementos(elems);
+                setInitBackground(bg);
+                setConfig(c => ({ ...(c ?? {}), background_url: bg, elementos_json: elems }));
+              }}
+            />
+          </div>
         </details>
-      )}
+      </div>
 
       {/* ── Lista de elegíveis ──────────────────────────────── */}
       <div>
@@ -430,12 +239,11 @@ export default function TabCertificados({
             ))}
             {/* Botão lote */}
             <button
-              onClick={baixarLote}
-              disabled={loteAtivo || filtroLista.length === 0 || !config}
-              title={!config ? 'Salve a configuração antes de gerar em lote' : ''}
+              onClick={enviarLote}
+              disabled={loteAtivo || filtroLista.filter(i => !i.certificado_enviado).length === 0}
               className="text-xs bg-amber-500 hover:bg-amber-400 text-white px-3 py-1.5 rounded-lg font-bold transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
             >
-              {loteAtivo ? '⏳ Gerando...' : `📥 Baixar ${filtroLista.length} em lote`}
+              {loteAtivo ? '⏳ Enviando...' : `📤 Enviar ${filtroLista.filter(i => !i.certificado_enviado).length} links`}
             </button>
           </div>
         </div>
@@ -481,32 +289,35 @@ export default function TabCertificados({
 
                 {/* Ações */}
                 <div className="flex gap-2 flex-shrink-0">
-                  <button
-                    onClick={() => baixarCertificado(ins)}
-                    disabled={baixando[ins.id] || !config}
-                    title={!config ? 'Configure o certificado antes de gerar' : 'Baixar PDF'}
-                    className="text-xs bg-[#123b63] hover:bg-[#0f2a45] text-white px-3 py-1.5 rounded-lg font-bold transition disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {baixando[ins.id] ? '⏳' : '📄 PDF'}
-                  </button>
-
                   {!ins.certificado_enviado ? (
                     <button
-                      onClick={() => marcarEnviado(ins)}
-                      disabled={marcando[ins.id]}
-                      className="text-xs border border-emerald-300 text-emerald-600 hover:bg-emerald-50 px-3 py-1.5 rounded-lg font-bold transition disabled:opacity-50"
+                      onClick={() => enviarLink(ins)}
+                      disabled={enviando[ins.id]}
+                      title="Enviar link do certificado por e-mail"
+                      className="text-xs bg-[#123b63] hover:bg-[#0f2a45] text-white px-3 py-1.5 rounded-lg font-bold transition disabled:opacity-40"
                     >
-                      {marcando[ins.id] ? '...' : '✓ Marcar'}
+                      {enviando[ins.id] ? '⏳' : '📤 Enviar'}
                     </button>
                   ) : (
-                    <button
-                      onClick={() => desfazerEnviado(ins)}
-                      className="text-xs border border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-500 px-2 py-1.5 rounded-lg transition"
-                      title="Desfazer marcação"
-                    >
-                      ↩
-                    </button>
+                    <>
+                      <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1">✅ Enviado</span>
+                      <button
+                        onClick={() => enviarLink(ins, true)}
+                        disabled={enviando[ins.id]}
+                        title="Reenviar link do certificado"
+                        className="text-xs border border-gray-200 text-gray-500 hover:border-gray-400 px-2 py-1.5 rounded-lg transition"
+                      >
+                        {enviando[ins.id] ? '⏳' : '↩ Reenviar'}
+                      </button>
+                    </>
                   )}
+                  <button
+                    onClick={() => desfazerEnviado(ins)}
+                    className="text-xs border border-gray-200 text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded-lg transition"
+                    title="Desfazer marcação"
+                  >
+                    ✕
+                  </button>
                 </div>
               </div>
             ))}
@@ -534,7 +345,7 @@ export default function TabCertificados({
       {/* ── Dica: sem config ────────────────────────────────── */}
       {!config && inscricoes.length > 0 && podeEditar && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700">
-          💡 Configure a arte do certificado acima antes de gerar os PDFs.
+          💡 Configure o editor visual acima para personalizar o certificado dos participantes.
         </div>
       )}
     </div>

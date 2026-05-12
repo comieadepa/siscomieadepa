@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
+import { requireEventoAccess } from '@/lib/evento-guard';
 import {
   calcularPrioridadeHospedagem,
   sugerirAlojamento,
@@ -19,7 +19,12 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const supabase = createServerClient();
+  const guard = await requireEventoAccess(_req, eventoId);
+  if (!guard.ok) return guard.response;
+  if (!guard.ctx.perms.podeHospedagem) {
+    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
+  }
+  const supabase = guard.ctx.supabaseAdmin;
 
   // Busca alojamentos ativos com vagas
   const { data: alojamentosRaw, error: errAloj } = await supabase

@@ -19,7 +19,7 @@ export async function GET(
   const { data: inscricao, error: insError } = await supabase
     .from('evento_inscricoes')
     .select([
-      'id', 'evento_id', 'nome_inscrito', 'supervisao_id', 'campo_id',
+      'id', 'evento_id', 'nome_inscrito', 'cpf', 'supervisao_id', 'campo_id',
       'tipo_inscricao', 'status_pagamento', 'checkin_realizado',
       'certificado_enviado', 'qr_code', 'created_at',
     ].join(','))
@@ -36,7 +36,7 @@ export async function GET(
   }
 
   const insc = inscricao as unknown as {
-    id: string; evento_id: string; nome_inscrito: string;
+    id: string; evento_id: string; nome_inscrito: string; cpf: string | null;
     supervisao_id: string | null; campo_id: string | null;
     tipo_inscricao: string | null; status_pagamento: string;
     checkin_realizado: boolean; certificado_enviado: boolean;
@@ -62,7 +62,7 @@ export async function GET(
   const [evRes, cfgRes, supRes, camRes] = await Promise.all([
     supabase
       .from('eventos')
-      .select('id,nome,slug,departamento,data_inicio,data_fim,local,cidade,gerar_certificado')
+      .select('id,nome,slug,departamento,data_inicio,data_fim,local,cidade,gerar_certificado,suporte_nome,suporte_whatsapp')
       .eq('id', insc.evento_id)
       .single(),
     supabase
@@ -85,7 +85,22 @@ export async function GET(
     });
   }
 
+  // Verifica prazo de 48h após data_fim
   const evento = evRes.data;
+  const dataFimStr = evento.data_fim ?? evento.data_inicio;
+  const dataFim = new Date(`${dataFimStr}T23:59:59-03:00`);
+  const prazoExpiracao = new Date(dataFim.getTime() + 48 * 60 * 60 * 1000);
+  const expirado = new Date() > prazoExpiracao;
+
+  if (expirado) {
+    return NextResponse.json({
+      valido: false,
+      expirado: true,
+      suporte_nome:      evento.suporte_nome ?? null,
+      suporte_whatsapp:  evento.suporte_whatsapp ?? null,
+      motivo: 'O prazo para emissão online deste certificado expirou. Entre em contato com a organização do evento para solicitar uma nova emissão.',
+    });
+  }
   const fmtData = (d: string | null) => {
     if (!d) return '';
     const [y, m, day] = d.split('-');
@@ -98,6 +113,7 @@ export async function GET(
   return NextResponse.json({
     valido: true,
     config: cfgRes.data ?? null,
+    prazo_expiracao: prazoExpiracao.toISOString(),
     dados: {
       nome:        insc.nome_inscrito,
       evento:      evento.nome,
@@ -106,6 +122,7 @@ export async function GET(
       supervisao:  supRes.data?.nome ?? null,
       campo:       camRes.data?.nome ?? null,
       codigo:      insc.qr_code ?? codigo,
+      cpf:         insc.cpf ?? null,
     },
   });
 }

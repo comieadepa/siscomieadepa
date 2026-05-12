@@ -100,7 +100,17 @@ export default function DisplayPage() {
   useEffect(() => {
     if (authLoading || perfil.loading) return;
     if (perfil.isGlobal) { setAcesso('ok'); fetchTudo(); return; }
-    if (id && perfil.podeAcessarEvento(id)) { setAcesso('ok'); fetchTudo(); return; }
+    if (id && perfil.podeAcessarEvento(id)) {
+      const perm = perfil.permissaoParaEvento(id);
+      if (perm === 'checkin') {
+        setAcesso('negado');
+        setLoading(false);
+        return;
+      }
+      setAcesso('ok');
+      fetchTudo();
+      return;
+    }
     setAcesso('negado');
     setLoading(false);
   }, [authLoading, perfil.loading, perfil.isGlobal, id, fetchTudo, perfil]);

@@ -3,30 +3,57 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
-import { EventBadge, BadgeInscricao, BadgeEvento, BadgeSize } from '@/components/EventBadge';
+import { EtiquetaDepartamento, EtiquetaAGO } from '@/components/EtiquetaLabels';
+import type { EtiquetaEvento, EtiquetaInscricaoAGO } from '@/components/EtiquetaLabels';
 
+// ─── Tipos ────────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
 interface Campo      { id: string; nome: string; }
 
-// Grid de impressão por tamanho
-const GRID_COLS: Record<BadgeSize, string> = {
-  small:  'grid-cols-3',
-  medium: 'grid-cols-2',
-  large:  'grid-cols-2',
-};
+interface InscricaoLabel {
+  id: string;
+  nome_inscrito: string;
+  cpf: string | null;
+  supervisao_id: string | null;
+  campo_id: string | null;
+  status_pagamento: string;
+  tipo_inscricao: string | null;
+  hospedagem: boolean;
+  alimentacao: boolean;
+  brinde: boolean;
+  qr_code: string | null;
+  checkin_realizado: boolean;
+  etiqueta_impressa: boolean;
+  // AGO-specific (populated only for AGO events)
+  ministro_id?: string | null;
+  matricula?: string | null;
+  numero_cama?: string | null;
+  tipo_cama?: string | null;
+  hosp_status?: string | null;
+  nome_alojamento?: string | null;
+}
 
+interface EventoData extends EtiquetaEvento {
+  id: string;
+  data_inicio: string;
+  data_fim: string;
+  local: string | null;
+  cidade: string | null;
+}
+
+// ─── Página principal ─────────────────────────────────────────
 export default function EtiquetasPrintPage() {
-  const params = useParams();
+  const params      = useParams();
   const searchParams = useSearchParams();
-  const id = params?.id as string;
-
-  const size    = (searchParams?.get('size')  ?? 'medium') as BadgeSize;
-  const ids     = searchParams?.get('ids');   // csv de IDs; null = todos
-  const apenas  = searchParams?.get('apenas'); // 'pendentes' | null
+  const id    = params?.id as string;
+  // mode: 'a4' (default, batch A4 portrait 2-col) | 'thermal' (individual Zebra/termica)
+  const mode  = (searchParams?.get('mode') ?? 'a4') as 'a4' | 'thermal';
+  const ids   = searchParams?.get('ids');    // CSV de IDs; null = todos
+  const apenas = searchParams?.get('apenas'); // 'pendentes'
 
   const supabase = useMemo(() => createClient(), []);
-  const [evento,      setEvento]      = useState<BadgeEvento | null>(null);
-  const [inscricoes,  setInscricoes]  = useState<BadgeInscricao[]>([]);
+  const [evento,      setEvento]      = useState<EventoData | null>(null);
+  const [inscricoes,  setInscricoes]  = useState<InscricaoLabel[]>([]);
   const [supervisoes, setSupervisoes] = useState<Supervisao[]>([]);
   const [campos,      setCampos]      = useState<Campo[]>([]);
   const [loading,     setLoading]     = useState(true);
@@ -34,135 +61,287 @@ export default function EtiquetasPrintPage() {
 
   useEffect(() => {
     async function load() {
-      const [evRes, supRes, camRes] = await Promise.all([
-        supabase.from('eventos').select('id,nome,departamento,data_inicio,data_fim,local,cidade,banner_url').eq('id', id).single(),
-        supabase.from('supervisoes').select('id,nome'),
-        supabase.from('campos').select('id,nome'),
-      ]);
-      if (evRes.data) setEvento(evRes.data as BadgeEvento);
-      if (supRes.data) setSupervisoes(supRes.data as Supervisao[]);
-      if (camRes.data) setCampos(camRes.data as Campo[]);
-
-      // Busca inscrições conforme filtros da URL
-      let query = supabase
+      let inscrQuery = supabase
         .from('evento_inscricoes')
-        .select('id,nome_inscrito,cpf,supervisao_id,campo_id,status_pagamento,hospedagem,alimentacao,brinde,qr_code,checkin_realizado,etiqueta_impressa')
+        .select('id,nome_inscrito,cpf,supervisao_id,campo_id,status_pagamento,tipo_inscricao,hospedagem,alimentacao,brinde,qr_code,checkin_realizado,etiqueta_impressa,ministro_id')
         .eq('evento_id', id)
         .order('nome_inscrito');
 
-      if (ids) {
-        query = query.in('id', ids.split(','));
-      } else if (apenas === 'pendentes') {
-        query = query.eq('etiqueta_impressa', false);
+      if (ids)                         inscrQuery = inscrQuery.in('id', ids.split(','));
+      else if (apenas === 'pendentes') inscrQuery = inscrQuery.eq('etiqueta_impressa', false);
+
+      const [evRes, supRes, camRes, inscRes] = await Promise.all([
+        supabase.from('eventos').select('id,nome,departamento,data_inicio,data_fim,local,cidade').eq('id', id).single(),
+        supabase.from('supervisoes').select('id,nome'),
+        supabase.from('campos').select('id,nome'),
+        inscrQuery,
+      ]);
+
+      if (evRes.data)  setEvento(evRes.data as EventoData);
+      if (supRes.data) setSupervisoes(supRes.data as Supervisao[]);
+      if (camRes.data) setCampos(camRes.data as Campo[]);
+
+      const inscBase = (inscRes.data ?? []) as InscricaoLabel[];
+      const dept = (evRes.data as EventoData | null)?.departamento;
+
+      if (dept === 'AGO' && inscBase.length > 0) {
+        // Enriquecer com dados hospedagem + matrícula
+        const inscIds    = inscBase.map(i => i.id);
+        const ministroIds = [...new Set(inscBase.map(i => i.ministro_id).filter((x): x is string => !!x))];
+
+        const [hospRes, membersRes] = await Promise.all([
+          supabase.from('evento_hospedagens')
+            .select('inscricao_id,numero_cama,tipo_cama,status,alojamento_id')
+            .in('inscricao_id', inscIds),
+          ministroIds.length > 0
+            ? supabase.from('members').select('id,matricula').in('id', ministroIds)
+            : Promise.resolve({ data: [] as { id: string; matricula: string | null }[] }),
+        ]);
+
+        type HospRow = { inscricao_id: string; numero_cama: string | null; tipo_cama: string | null; status: string; alojamento_id: string | null };
+        const hospRows = (hospRes.data ?? []) as HospRow[];
+
+        const aloIds = [...new Set(
+          hospRows.map(h => h.alojamento_id).filter((x): x is string => x !== null)
+        )];
+        const aloRes = aloIds.length > 0
+          ? await supabase.from('evento_alojamentos').select('id,nome').in('id', aloIds)
+          : { data: [] as { id: string; nome: string }[] };
+
+        const hospMap   = new Map(hospRows.map(h => [h.inscricao_id, h]));
+        const aloMap    = new Map(((aloRes.data ?? []) as { id: string; nome: string }[]).map(a => [a.id, a.nome]));
+        const memberMap = new Map(((membersRes as { data: { id: string; matricula: string | null }[] | null }).data ?? []).map(m => [m.id, m.matricula]));
+
+        const merged = inscBase.map(ins => {
+          const hosp = ins.id ? hospMap.get(ins.id) : undefined;
+          return {
+            ...ins,
+            matricula:       ins.ministro_id ? (memberMap.get(ins.ministro_id) ?? null) : null,
+            numero_cama:     hosp?.numero_cama     ?? null,
+            tipo_cama:       hosp?.tipo_cama       ?? null,
+            hosp_status:     hosp?.status          ?? null,
+            nome_alojamento: hosp?.alojamento_id   ? (aloMap.get(hosp.alojamento_id) ?? null) : null,
+          };
+        });
+        setInscricoes(merged as InscricaoLabel[]);
+      } else {
+        setInscricoes(inscBase);
       }
 
-      const { data } = await query;
-      setInscricoes((data ?? []) as (BadgeInscricao & { etiqueta_impressa: boolean })[]);
       setLoading(false);
     }
     load();
   }, [id, ids, apenas, supabase]);
 
-  // Marca todas como impressas após imprimir
-  async function marcarTodasImpressas() {
+  async function marcarImpressas() {
     if (!inscricoes.length) return;
     setMarcando(true);
-    const idsParaMarcar = inscricoes.map(i => i.id);
-    await supabase
-      .from('evento_inscricoes')
-      .update({ etiqueta_impressa: true })
-      .in('id', idsParaMarcar);
+    await supabase.from('evento_inscricoes').update({ etiqueta_impressa: true }).in('id', inscricoes.map(i => i.id));
     setMarcando(false);
   }
 
   function handlePrint() {
-    marcarTodasImpressas();
+    marcarImpressas();
     window.print();
   }
 
   const nomeSup   = (sid: string | null) => supervisoes.find(s => s.id === sid)?.nome ?? '-';
   const nomeCampo = (cid: string | null) => campos.find(c => c.id === cid)?.nome ?? '-';
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-gray-500">Carregando crachás...</p>
-      </div>
-    );
-  }
+  // ── CSS de impressão dinâmico ─────────────────────────────
+  const printCSS = mode === 'thermal'
+    ? `
+      @media print {
+        @page {
+          size: 100mm 30mm;
+          margin: 0;
+        }
+        html, body {
+          margin: 0 !important;
+          padding: 0 !important;
+          width: 100mm !important;
+          height: 30mm !important;
+          overflow: hidden !important;
+          background: #fff !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        .no-print { display: none !important; }
+        .print-area {
+          padding: 0 !important;
+          margin: 0 !important;
+          background: none !important;
+          min-height: 0 !important;
+          display: block !important;
+        }
+        .label-grid {
+          display: block !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          width: 100mm !important;
+          height: 30mm !important;
+        }
+        .label-item {
+          display: block !important;
+          width: 100mm !important;
+          height: 30mm !important;
+          overflow: hidden !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          box-shadow: none !important;
+          transform: none !important;
+          break-after: page;
+          page-break-after: always;
+        }
+        .label-item:last-child {
+          break-after: avoid;
+          page-break-after: avoid;
+        }
+      }
+    `
+    : `
+      @media print {
+        @page { size: A4 portrait; margin: 12.5mm 5.9mm; }
+        body   { margin: 0; padding: 0; background: #fff !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        .no-print { display: none !important; }
+        .print-area { padding: 0 !important; margin: 0 !important; background: none !important; min-height: 0 !important; }
+        .label-grid {
+          display: grid !important;
+          grid-template-columns: repeat(2, 99.1mm) !important;
+          grid-auto-rows: 34mm !important;
+          gap: 0 !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          width: 198.2mm !important;
+        }
+        .label-item {
+          width: 99.1mm !important;
+          height: 34mm !important;
+          overflow: hidden !important;
+          box-shadow: none !important;
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
+      }
+    `;
 
-  if (!evento) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-red-500">Evento não encontrado.</p>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div style={{ display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center' }}>
+      <p style={{ color: '#6b7280', fontFamily: 'Arial' }}>Carregando etiquetas...</p>
+    </div>
+  );
+
+  if (!evento) return (
+    <div style={{ display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center' }}>
+      <p style={{ color: '#ef4444', fontFamily: 'Arial' }}>Evento não encontrado.</p>
+    </div>
+  );
+
+  const isThermal = mode === 'thermal';
 
   return (
     <>
-      {/* ── Barra de controle (só na tela, não imprime) ─────── */}
-      <div className="print:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200 shadow-sm px-6 py-3 flex items-center justify-between gap-4">
+      {/* ── CSS injetado ── */}
+      <style dangerouslySetInnerHTML={{ __html: printCSS }} />
+
+      {/* ── Barra de controle (não imprime) ── */}
+      <div className="no-print" style={{
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50,
+        backgroundColor: '#fff', borderBottom: '1px solid #e5e7eb',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.1)', padding: '12px 24px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px',
+        fontFamily: 'Arial, sans-serif',
+      }}>
         <div>
-          <p className="font-bold text-[#123b63] text-sm">{evento.nome}</p>
-          <p className="text-xs text-gray-500">
-            {inscricoes.length} crachá{inscricoes.length !== 1 ? 's' : ''} •{' '}
-            Tamanho: <span className="font-semibold capitalize">{size}</span>
-            {apenas === 'pendentes' ? ' • Somente não impressos' : ''}
+          <p style={{ fontWeight: 700, color: '#123b63', fontSize: '14px', margin: 0 }}>{evento.nome}</p>
+          <p style={{ fontSize: '12px', color: '#6b7280', margin: '2px 0 0' }}>
+            {inscricoes.length} etiqueta{inscricoes.length !== 1 ? 's' : ''}
+            {' • '}{isThermal ? 'Térmica 100 × 30 mm (individual)' : 'A4 retrato • CA4362 • 99,1 × 34 mm • 2 col × 8 lin'}
+            {apenas === 'pendentes' ? ' • Somente não impressas' : ''}
           </p>
+          {!isThermal && (
+            <p style={{ fontSize: '11px', color: '#9ca3af', margin: '1px 0 0' }}>
+              16 etiquetas por página (2 colunas × 8 linhas)
+            </p>
+          )}
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => window.history.back()}
-            className="px-4 py-2 rounded-lg text-sm border border-gray-300 text-gray-600 hover:bg-gray-50 transition">
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => window.history.back()}
+            style={{ padding: '8px 16px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '13px', color: '#374151', backgroundColor: '#fff', cursor: 'pointer', fontFamily: 'Arial' }}>
             ← Voltar
           </button>
-          <button
-            onClick={handlePrint}
-            disabled={marcando}
-            className="px-5 py-2 rounded-lg text-sm font-semibold bg-[#123b63] text-white hover:bg-[#0f2a45] transition disabled:opacity-50">
-            {marcando ? 'Marcando...' : '🖨️ Imprimir'}
+          <button onClick={handlePrint} disabled={marcando}
+            style={{ padding: '8px 20px', borderRadius: '8px', fontSize: '13px', fontWeight: 700, backgroundColor: '#123b63', color: '#fff', border: 'none', cursor: 'pointer', opacity: marcando ? 0.5 : 1, fontFamily: 'Arial' }}>
+            {marcando ? 'Marcando...' : '🖨️ Imprimir e marcar como impressas'}
           </button>
         </div>
       </div>
 
-      {/* ── Área de impressão ────────────────────────────────── */}
-      <div className="print:pt-0 pt-16 p-6 print:p-0 bg-gray-100 print:bg-white min-h-screen">
-        <div className={`grid ${GRID_COLS[size]} gap-4 print:gap-3`}
-          style={size === 'small' ? { gridTemplateColumns: 'repeat(3, 8cm)' } : { gridTemplateColumns: 'repeat(2, 9cm)' }}>
-          {inscricoes.map(ins => (
-            <EventBadge
-              key={ins.id}
-              inscricao={ins}
-              evento={evento}
-              nomeSup={nomeSup(ins.supervisao_id)}
-              nomeCampo={nomeCampo(ins.campo_id)}
-              size={size}
-              printMode={true}
-            />
-          ))}
-        </div>
-
-        {inscricoes.length === 0 && (
-          <div className="flex items-center justify-center min-h-[50vh]">
-            <p className="text-gray-400 text-center">Nenhum crachá para imprimir.</p>
+      {/* ── Área com etiquetas ── */}
+      <div
+        className="print-area"
+        style={isThermal
+          ? { paddingTop: '80px', backgroundColor: '#e5e7eb', minHeight: '100vh', display: 'flex', flexWrap: 'wrap', gap: '16px', padding: '96px 24px 24px' }
+          : { paddingTop: '80px', backgroundColor: '#f3f4f6', minHeight: '100vh' }
+        }
+      >
+        {inscricoes.length === 0 ? (
+          <div style={{ display: 'flex', minHeight: '60vh', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+            <p style={{ color: '#9ca3af', fontFamily: 'Arial' }}>Nenhuma etiqueta para imprimir.</p>
+          </div>
+        ) : (
+          <div
+            className="label-grid"
+            style={isThermal
+              ? {
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: '22px',
+                  padding: '0',
+                  justifyContent: 'flex-start',
+                  alignItems: 'flex-start',
+                }
+              : {
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 99.1mm)',
+                  gridAutoRows: '34mm',
+                  gap: '1px',
+                  padding: '24px',
+                  justifyContent: 'start',
+                  alignItems: 'start',
+                }
+            }
+          >
+            {inscricoes.map(ins => (
+              <div
+                key={ins.id}
+                className="label-item"
+                style={isThermal
+                  ? { boxShadow: '0 2px 8px rgba(0,0,0,0.18)', borderRadius: '1px', flexShrink: 0, transform: 'scale(1.2)', transformOrigin: 'top left' }
+                  : { boxShadow: '0 1px 4px rgba(0,0,0,0.12)' }
+                }
+              >
+                {evento.departamento === 'AGO'
+                  ? <EtiquetaAGO
+                      inscricao={ins as EtiquetaInscricaoAGO}
+                      evento={evento}
+                      nomeSup={nomeSup(ins.supervisao_id)}
+                      nomeCampo={nomeCampo(ins.campo_id)}
+                      variant={isThermal ? 'thermal' : 'a4'}
+                    />
+                  : <EtiquetaDepartamento
+                      inscricao={ins}
+                      evento={evento}
+                      nomeSup={nomeSup(ins.supervisao_id)}
+                      nomeCampo={nomeCampo(ins.campo_id)}
+                      variant={isThermal ? 'thermal' : 'a4'}
+                    />
+                }
+              </div>
+            ))}
           </div>
         )}
       </div>
-
-      {/* ── Estilos de impressão ────────────────────────────── */}
-      <style jsx global>{`
-        @media print {
-          @page {
-            size: A4;
-            margin: 0.8cm;
-          }
-          body {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-        }
-      `}</style>
     </>
   );
 }

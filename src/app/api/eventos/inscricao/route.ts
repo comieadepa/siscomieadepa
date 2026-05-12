@@ -243,6 +243,8 @@ export async function POST(request: NextRequest) {
         valor_pago:       valorFinal,
         status_pagamento: isGratuito ? 'isento' : 'pendente',
         qr_code:          p.qr_code || null,
+        lgpd_aceito:      true,
+        lgpd_aceito_em:   new Date().toISOString(),
       }));
 
       const { error: insRowsErr } = await supabase.from('evento_inscricoes').insert(rows);
@@ -256,9 +258,16 @@ export async function POST(request: NextRequest) {
 
       try {
         const customerId = await createOrFindAsaasCustomer({ nome: nome_inscrito.trim(), email: email?.trim() || null, cpf: cpf || null, whatsapp: whatsapp || null });
-        const pagamento  = await createEventoPayment({ customerId, value: valorTotalLote, dueDate: dueDateFromNow(), description: `Lote ${codigoLote} — ${evento.nome} (${todos.length} insc.)`, externalReference: `lote:${lote.id}` });
-        await supabase.from('evento_lotes_inscricao').update({ asaas_payment_id: pagamento.id }).eq('id', lote.id);
-        return NextResponse.json({ loteId: lote.id, inscricoes: todos.length, statusPagamento: 'pendente', pagamento: { asaasId: pagamento.id, invoiceUrl: pagamento.invoiceUrl, pixQrCode: pagamento.pixQrCode, pixCopiaECola: pagamento.pixCopiaECola, valor: valorTotalLote, vencimento: dueDateFromNow() } });
+        const dueDateLote = dueDateFromNow();
+        const pagamento  = await createEventoPayment({ customerId, value: valorTotalLote, dueDate: dueDateLote, description: `Lote ${codigoLote} — ${evento.nome} (${todos.length} insc.)`, externalReference: `lote:${lote.id}` });
+        await supabase.from('evento_lotes_inscricao').update({
+          asaas_payment_id: pagamento.id,
+          invoice_url:      pagamento.invoiceUrl,
+          pix_copia_cola:   pagamento.pixCopiaECola,
+          pix_qr_code:      pagamento.pixQrCode,
+          asaas_due_date:   dueDateLote,
+        }).eq('id', lote.id);
+        return NextResponse.json({ loteId: lote.id, inscricoes: todos.length, statusPagamento: 'pendente', pagamento: { asaasId: pagamento.id, invoiceUrl: pagamento.invoiceUrl, pixQrCode: pagamento.pixQrCode, pixCopiaECola: pagamento.pixCopiaECola, valor: valorTotalLote, vencimento: dueDateLote } });
       } catch {
         return NextResponse.json({ loteId: lote.id, inscricoes: todos.length, statusPagamento: 'pendente', pagamento: null, asaasError: 'Pagamento online indisponível.' });
       }
@@ -297,6 +306,8 @@ export async function POST(request: NextRequest) {
         hosp_descricao_necessidade: hosp_descricao_necessidade?.trim() || null,
         hosp_cama_inferior:         !!hosp_cama_inferior,
         hosp_observacoes:           hosp_observacoes?.trim() || null,
+        lgpd_aceito:      true,
+        lgpd_aceito_em:   new Date().toISOString(),
       }])
       .select('id')
       .single();
@@ -357,11 +368,16 @@ export async function POST(request: NextRequest) {
       });
 
       // Salva dados ASAAS na inscrição
+      const dueDate = dueDateFromNow();
       await supabase
         .from('evento_inscricoes')
         .update({
           asaas_payment_id: pagamento.id,
           forma_pagamento:  'pix',
+          invoice_url:      pagamento.invoiceUrl,
+          pix_copia_cola:   pagamento.pixCopiaECola,
+          pix_qr_code:      pagamento.pixQrCode,
+          asaas_due_date:   dueDate,
         })
         .eq('id', inscricao.id);
 
@@ -374,7 +390,7 @@ export async function POST(request: NextRequest) {
           pixQrCode:    pagamento.pixQrCode,
           pixCopiaECola:pagamento.pixCopiaECola,
           valor:        valorFinal,
-          vencimento:   dueDateFromNow(),
+          vencimento:   dueDate,
         },
       });
     } catch (asaasErr) {

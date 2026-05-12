@@ -45,6 +45,7 @@ export async function POST(
       assunto:          notif.assunto ?? notif.mensagem.slice(0, 80),
       mensagem:         notif.mensagem,
       nomeDestinatario: inscricao.nome_inscrito,
+      fromEmail:        'inscricoes@siscomieadepa.org',
     });
   } else if (notif.tipo === 'whatsapp') {
     if (!inscricao.whatsapp) {

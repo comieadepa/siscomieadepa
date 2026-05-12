@@ -3,11 +3,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
+import { buildUrl, getAppBaseUrl } from '@/lib/urls';
 
 // ─── Tipos locais ─────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
 interface Campo      { id: string; nome: string; supervisao_id: string; }
-interface Evento     { id: string; nome: string; data_inicio: string; data_fim: string; cidade: string | null; }
+interface Evento     { id: string; nome: string; departamento: string; data_inicio: string; data_fim: string; cidade: string | null; }
 interface Inscricao  {
   id: string; nome_inscrito: string; cpf: string | null;
   whatsapp: string | null; supervisao_id: string | null; campo_id: string | null;
@@ -33,6 +34,21 @@ const fmtDT = (d: string | null) => {
 
 const STATUS_LABEL: Record<string, string> = {
   pago: 'Pago', pendente: 'Pendente', isento: 'Isento', cancelado: 'Cancelado',
+};
+
+const DEPT_LOGOS: Record<string, string> = {
+  AGO: '/img/logo_ago.png',
+  COADESPA: '/img/logo_comieadepa.png',
+  UMADESPA: '/img/logo_comieadepa.png',
+  SEIADEPA: '/img/logo_comieadepa.png',
+  AVULSO: '/img/logo_comieadepa.png',
+  CONEC: '/img/logo_conec.png',
+  CGADB: '/img/logo_cgadb.png',
+};
+
+const getDeptLogo = (dept?: string | null) => {
+  if (!dept) return '/img/logo_comieadepa.png';
+  return DEPT_LOGOS[dept] ?? '/img/logo_comieadepa.png';
 };
 
 // ─── Estilos de tabela ────────────────────────────────────────
@@ -69,7 +85,7 @@ export default function RelatoriosPrintPage() {
   useEffect(() => {
     async function load() {
       const [evRes, supRes, camRes, insRes] = await Promise.all([
-        supabase.from('eventos').select('id,nome,data_inicio,data_fim,cidade').eq('id', id).single(),
+        supabase.from('eventos').select('id,nome,departamento,data_inicio,data_fim,cidade').eq('id', id).single(),
         supabase.from('supervisoes').select('id,nome'),
         supabase.from('campos').select('id,nome,supervisao_id'),
         supabase.from('evento_inscricoes')
@@ -197,19 +213,35 @@ export default function RelatoriosPrintPage() {
       {/* ── Conteúdo do relatório ─────────────────────────────── */}
       <div style={{ padding: '80px 32px 32px', fontFamily: 'Arial, sans-serif', maxWidth: '1100px', margin: '0 auto' }}
         className="print:p-0 print:max-w-none">
-        {/* Cabeçalho do relatório */}
-        <div style={{ marginBottom: '24px', borderBottom: '3px solid #0D2B4E', paddingBottom: '12px' }}>
-          <h1 style={{ fontSize: '20px', fontWeight: 900, color: '#0D2B4E', margin: 0 }}>{TITULOS[tipo]}</h1>
-          <p style={{ fontSize: '13px', color: '#6B7280', margin: '4px 0 0' }}>
-            {evento?.nome}{evento?.cidade ? ` — ${evento.cidade}` : ''}
-            {evento?.data_inicio ? ` • ${fmtData(evento.data_inicio)} a ${fmtData(evento.data_fim)}` : ''}
-          </p>
-          {filtrosAplicados && (
-            <p style={{ fontSize: '11px', color: '#9CA3AF', margin: '4px 0 0' }}>Filtros: {filtrosAplicados}</p>
-          )}
-          <p style={{ fontSize: '10px', color: '#D1D5DB', margin: '6px 0 0' }}>
-            Gerado em {new Date().toLocaleString('pt-BR')} • {filtradas.length} registro{filtradas.length !== 1 ? 's' : ''}
-          </p>
+        {/* Cabeçalho com timbre */}
+        <div style={{ marginBottom: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+            <img src={buildUrl(getAppBaseUrl(), '/img/logo_comieadepa.png')} alt="COMIEADEPA" style={{ width: '58px', height: 'auto' }} />
+            <div style={{ maxWidth: '640px', textAlign: 'center' }}>
+              <div style={{ fontSize: '16px', fontWeight: 800 }}>COMIEADEPA</div>
+              <div style={{ fontSize: '10px', color: '#333', marginTop: '2px' }}>
+                Rodovia Mario Covas, 2500 - do km 3.123 ao km 6.001 - lado impar lado par pertence a(o) Ananindeua - Coqueiro, Belem - PA, 66650-000
+              </div>
+              <div style={{ fontSize: '10px', color: '#333', marginTop: '2px' }}>
+                CNPJ: 04.760.047/0001-04 | Tel: (91) 99223-4022 | contato@comieadepa.org
+              </div>
+            </div>
+            <img src={buildUrl(getAppBaseUrl(), getDeptLogo(evento?.departamento))} alt={evento?.departamento ?? 'Departamento'} style={{ width: '58px', height: 'auto' }} />
+          </div>
+          <div style={{ borderBottom: '2px solid #14b8a6', marginTop: '8px' }} />
+        </div>
+
+        <div style={{ textAlign: 'center', fontSize: '14px', fontWeight: 700, margin: '8px 0 6px' }}>{TITULOS[tipo]}</div>
+        <div style={{ fontSize: '11px', color: '#6B7280', textAlign: 'center', marginBottom: '6px' }}>
+          {evento?.nome}{evento?.cidade ? ` — ${evento.cidade}` : ''}
+          {evento?.data_inicio ? ` • ${fmtData(evento.data_inicio)} a ${fmtData(evento.data_fim)}` : ''}
+        </div>
+        {filtrosAplicados && (
+          <div style={{ fontSize: '10px', color: '#9CA3AF', textAlign: 'center', marginBottom: '6px' }}>Filtros: {filtrosAplicados}</div>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginBottom: '12px' }}>
+          <div>Total de registros: {filtradas.length}</div>
+          <div>Data: {new Date().toLocaleDateString('pt-BR')}</div>
         </div>
 
         {/* ── RESUMO ─────────────────────────────────────────── */}

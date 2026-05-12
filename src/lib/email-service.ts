@@ -1,4 +1,5 @@
 // Serviço de Email para SISCOMIEADEPA
+import { buildUrl, getAppBaseUrl } from '@/lib/urls';
 
 export interface EmailValidacao {
   ministryId: string;
@@ -330,7 +331,7 @@ export function gerarEmailHTML(
 
           <p style="color: #666; line-height: 1.6; margin-top: 20px;">
             Se você não solicitou este cadastro ou tem dúvidas, entre em contato conosco no email 
-            <strong>suporte@comieadepa.org.br</strong>
+            <strong>suporte@siscomieadepa.org</strong>
           </p>
         </div>
 
@@ -363,7 +364,7 @@ export async function enviarEmailBoasVindas(
     armazenarTokenValidacao(ministryId, emailAdmin, token);
 
     // Gerar link de validação
-    const linkValidacao = `${window.location.origin}/validar-senha?ministry_id=${ministryId}&token=${token}`;
+    const linkValidacao = buildUrl(getAppBaseUrl(), `/validar-senha?ministry_id=${ministryId}&token=${token}`);
 
     // Gerar HTML do email
     const htmlEmail = gerarEmailHTML(nomePastor, nomeMinisterio, linkValidacao, tipoCadastro);

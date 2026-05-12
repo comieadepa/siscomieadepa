@@ -6,6 +6,7 @@ import PageLayout from '@/components/PageLayout';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useEventosPerfil } from '@/hooks/useEventosPerfil';
 import { createClient } from '@/lib/supabase-client';
+import { buildUrl, getPublicBaseUrl } from '@/lib/urls';
 
 // ─── Tipos ───────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -197,7 +198,7 @@ export default function EventosPage() {
   if (authLoading || perfil.loading) return <div className="p-8 text-gray-500">Carregando...</div>;
 
   // ── Dashboard simplificada para perfil checkin ───────────
-  if (!perfil.isGlobal && perfil.permissaoEvento === 'checkin') {
+  if (perfil.somenteCheckin) {
     return (
       <PageLayout title="Eventos" description="Seus eventos de check-in" activeMenu="eventos">
         {loadingData ? (
@@ -223,7 +224,7 @@ export default function EventosPage() {
                   </p>
                 </div>
                 <button
-                  onClick={() => router.push(`/eventos/${ev.id}/gerenciar`)}
+                  onClick={() => router.push(`/eventos/${ev.id}/checkin`)}
                   className="whitespace-nowrap bg-[#123b63] text-white px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-[#0f2a45] transition flex items-center gap-2"
                 >
                   ✅ Abrir Check-in
@@ -379,10 +380,8 @@ export default function EventosPage() {
             <EventoCard
               key={ev.id}
               evento={ev}
-              podeEditar={perfil.podeEditar}
               podeVerFinanceiro={perfil.podeVerFinanceiro}
-              onEditar={() => router.push(`/eventos/${ev.id}/editar`)}
-              onGerenciar={() => router.push(`/eventos/${ev.id}/gerenciar`)}
+              onGerenciar={() => router.push(`/eventos/${ev.id}`)}
             />
           ))}
         </div>
@@ -409,11 +408,9 @@ function SummaryCard({ label, value, color, textColor, icon, small = false }: {
 }
 
 // ─── EventoCard ───────────────────────────────────────────────
-function EventoCard({ evento, podeEditar, podeVerFinanceiro, onEditar, onGerenciar }: {
+function EventoCard({ evento, podeVerFinanceiro, onGerenciar }: {
   evento: EventoComStats;
-  podeEditar: boolean;
   podeVerFinanceiro: boolean;
-  onEditar: () => void;
   onGerenciar: () => void;
 }) {
   const cfg = STATUS_CONFIG[evento.status] ?? STATUS_CONFIG.programado;
@@ -477,10 +474,8 @@ function EventoCard({ evento, podeEditar, podeVerFinanceiro, onEditar, onGerenci
 
           {/* Botões */}
           <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t border-gray-100">
-            <ActionBtn label="Gerenciar"    icon="⚙️"  onClick={onGerenciar} primary />
-            {podeEditar && <ActionBtn label="Editar" icon="✏️" onClick={onEditar} />}
-            <ActionBtn label="Pág. Pública" icon="🌐"  onClick={() => window.open(`/inscricao/${evento.slug}`, '_blank')} />
-            {podeEditar && <ActionBtn label="Relatórios" icon="📊" onClick={() => {}} disabled />}
+            <ActionBtn label="Gerenciar" icon="⚙️" onClick={onGerenciar} primary tooltip="Abrir painel completo do evento" />
+            <ActionBtn label="Pág. Pública" icon="🌐" onClick={() => window.open(buildUrl(getPublicBaseUrl(), `/inscricao/${evento.slug}`), '_blank')} />
           </div>
         </div>
       </div>
@@ -500,13 +495,14 @@ function StatBadge({ label, value, color, small = false }: {
   );
 }
 
-function ActionBtn({ label, icon, onClick, primary = false, disabled = false }: {
-  label: string; icon: string; onClick: () => void; primary?: boolean; disabled?: boolean;
+function ActionBtn({ label, icon, onClick, primary = false, disabled = false, tooltip }: {
+  label: string; icon: string; onClick: () => void; primary?: boolean; disabled?: boolean; tooltip?: string;
 }) {
   return (
     <button
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
+      title={tooltip}
       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
         disabled
           ? 'bg-gray-100 text-gray-400 cursor-not-allowed'

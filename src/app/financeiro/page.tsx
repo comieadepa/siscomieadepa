@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import PageLayout from '@/components/PageLayout';
 import { createClient } from '@/lib/supabase-client';
+import { buildUrl, getAppBaseUrl } from '@/lib/urls';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 
 // ─── Tipos ─────────────────────────────────────────────────────────────
@@ -268,7 +269,7 @@ export default function FinanceiroPage() {
 </style></head>
 <body>
 <div class="header">
-  <img src="${window.location.origin}/img/logo_comieadepa.png" alt="COMIEADEPA"/>
+  <img src="${buildUrl(getAppBaseUrl(), '/img/logo_comieadepa.png')}" alt="COMIEADEPA"/>
   <div>
     <div class="org">COMIEADEPA — CONTRIBUIÇÃO ESTATUTÁRIA</div>
     <div class="sub">Gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</div>

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createServerClientFromCookies } from '@/lib/supabase-server';
+import { requireEventoAccess } from '@/lib/evento-guard';
 
 // GET /api/eventos/[eventoId]/certificados
 // Retorna inscrições elegíveis para certificado (pago/isento + checkin)
@@ -9,11 +9,13 @@ export async function GET(
 ) {
   const { eventoId } = await params;
   // ── Auth: somente usuários autenticados ──
-  const userClient = await createServerClientFromCookies();
-  const { data: { user } } = await userClient.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+  const guard = await requireEventoAccess(_req, eventoId);
+  if (!guard.ok) return guard.response;
+  if (!guard.ctx.perms.podeCertificados) {
+    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
+  }
 
-  const supabase = createServerClient();
+  const supabase = guard.ctx.supabaseAdmin;
 
   // Verifica se o evento tem certificado habilitado
   const { data: evento } = await supabase

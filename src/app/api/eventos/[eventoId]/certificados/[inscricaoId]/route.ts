@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createServerClientFromCookies } from '@/lib/supabase-server';
+import { requireEventoAccess } from '@/lib/evento-guard';
 
 // ── Helper de auth ──────────────────────────────────────────────
-async function requireAuth() {
-  const userClient = await createServerClientFromCookies();
-  const { data: { user } } = await userClient.auth.getUser();
-  return user;
+async function requireAuth(request: NextRequest, eventoId: string) {
+  return requireEventoAccess(request, eventoId);
 }
 
 // PATCH /api/eventos/[eventoId]/certificados/[inscricaoId]
@@ -15,10 +13,13 @@ export async function PATCH(
   { params }: { params: Promise<{ eventoId: string; inscricaoId: string }> }
 ) {
   const { eventoId, inscricaoId } = await params;
-  const user = await requireAuth();
-  if (!user) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+  const guard = await requireAuth(_req, eventoId);
+  if (!guard.ok) return guard.response;
+  if (!guard.ctx.perms.podeCertificados) {
+    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
+  }
 
-  const supabase = createServerClient();
+  const supabase = guard.ctx.supabaseAdmin;
 
   // Valida que a inscrição pertence ao evento e é elegível
   const { data: inscricao, error: fetchError } = await supabase
@@ -56,10 +57,13 @@ export async function DELETE(
   { params }: { params: Promise<{ eventoId: string; inscricaoId: string }> }
 ) {
   const { eventoId, inscricaoId } = await params;
-  const user = await requireAuth();
-  if (!user) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+  const guard = await requireAuth(_req, eventoId);
+  if (!guard.ok) return guard.response;
+  if (!guard.ctx.perms.podeCertificados) {
+    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
+  }
 
-  const supabase = createServerClient();
+  const supabase = guard.ctx.supabaseAdmin;
   const { error } = await supabase
     .from('evento_inscricoes')
     .update({ certificado_enviado: false })

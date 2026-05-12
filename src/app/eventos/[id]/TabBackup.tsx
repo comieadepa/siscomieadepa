@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@/lib/supabase-client';
+import { buildUrl, getAppBaseUrl } from '@/lib/urls';
 
 // ─── Tipos locais ─────────────────────────────────────────────────────────
 interface Evento {
@@ -92,6 +93,21 @@ interface TabBackupProps {
 // ═══════════════════════════════════════════════════════════════════════════
 const BOM = '\uFEFF';
 
+const DEPT_LOGOS: Record<string, string> = {
+  AGO: '/img/logo_ago.png',
+  COADESPA: '/img/logo_comieadepa.png',
+  UMADESPA: '/img/logo_comieadepa.png',
+  SEIADEPA: '/img/logo_comieadepa.png',
+  AVULSO: '/img/logo_comieadepa.png',
+  CONEC: '/img/logo_conec.png',
+  CGADB: '/img/logo_cgadb.png',
+};
+
+function getDeptLogo(dept?: string | null): string {
+  if (!dept) return '/img/logo_comieadepa.png';
+  return DEPT_LOGOS[dept] ?? '/img/logo_comieadepa.png';
+}
+
 function esc(val: unknown): string {
   if (val === null || val === undefined) return '';
   if (typeof val === 'boolean') return val ? 'Sim' : 'Não';
@@ -133,9 +149,11 @@ function fmtMoeda(v: number | null): string {
 // ═══════════════════════════════════════════════════════════════════════════
 // Utilitários de Impressão
 // ═══════════════════════════════════════════════════════════════════════════
-function abrirJanelaPrint(titulo: string, conteudoHTML: string) {
-  const janela = window.open('', '_blank', 'width=900,height=700');
+function abrirJanelaPrint(titulo: string, conteudoHTML: string, logoDireita?: string) {
+  const janela = window.open('', '_blank', 'width=1100,height=750');
   if (!janela) { alert('Permita pop-ups para esta página para imprimir.'); return; }
+  const appBaseUrl = getAppBaseUrl();
+  const logoDir = logoDireita ? buildUrl(appBaseUrl, logoDireita) : '';
   janela.document.write(`<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -143,18 +161,35 @@ function abrirJanelaPrint(titulo: string, conteudoHTML: string) {
 <title>${titulo}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; font-size: 11px; color: #000; padding: 16px; }
-  h1 { font-size: 14px; font-weight: bold; margin-bottom: 4px; }
-  h2 { font-size: 11px; color: #666; margin-bottom: 12px; font-weight: normal; }
+  body { font-family: Arial, sans-serif; font-size: 10px; color: #000; padding: 16px; }
+  .header { display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .header-logo { width: 58px; height: auto; flex-shrink: 0; }
+  .header-center { max-width: 640px; text-align: center; }
+  .header-center .org { font-size: 14px; font-weight: bold; }
+  .header-center .info { font-size: 9px; color: #333; margin-top: 2px; }
+  .divider { border-bottom: 2px solid #14b8a6; margin: 8px 0 10px; }
+  .report-title { text-align: center; font-size: 13px; font-weight: bold; margin: 8px 0 6px; }
+  .report-meta { display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 8px; }
   table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-  th { background: #0D2B4E; color: #fff; padding: 5px 8px; text-align: left; font-size: 10px; }
+  thead tr { background: #14b8a6; color: #fff; }
+  th { padding: 5px 6px; text-align: left; font-size: 9px; font-weight: bold; }
   td { padding: 4px 8px; border-bottom: 1px solid #e5e7eb; font-size: 10px; }
   tr:nth-child(even) td { background: #f9fafb; }
   .cb { width: 18px; height: 18px; border: 1.5px solid #888; display: inline-block; }
-  @media print { body { padding: 0; } }
+  @media print { body { padding: 8px; } @page { margin: 10mm; size: A4 landscape; } }
 </style>
 </head>
 <body>
+<div class="header">
+  <img class="header-logo" src="${buildUrl(appBaseUrl, '/img/logo_comieadepa.png')}" alt="COMIEADEPA" />
+  <div class="header-center">
+    <div class="org">COMIEADEPA</div>
+    <div class="info">Rodovia Mario Covas, 2500 - do km 3.123 ao km 6.001 - lado impar lado par pertence a(o) Ananindeua - Coqueiro, Belem - PA, 66650-000</div>
+    <div class="info">CNPJ: 04.760.047/0001-04 | Tel: (91) 99223-4022 | contato@comieadepa.org</div>
+  </div>
+  ${logoDir ? `<img class="header-logo" src="${logoDir}" alt="Departamento" />` : ''}
+</div>
+<div class="divider"></div>
 ${conteudoHTML}
 <script>window.onload = () => { window.print(); }<\/script>
 </body>
@@ -599,6 +634,7 @@ export default function TabBackup({
 
   function imprimirLista() {
     const titulo = `${evento.nome} — Lista Geral de Inscritos`;
+    const logoDept = getDeptLogo(evento.departamento);
     const linhas = inscricoes.map((i, idx) => `
       <tr>
         <td>${idx + 1}</td>
@@ -610,16 +646,20 @@ export default function TabBackup({
         <td>${i.hospedagem ? 'Sim' : '-'}</td>
       </tr>`).join('');
     abrirJanelaPrint(titulo, `
-      <h1>${titulo}</h1>
-      <h2>${evento.departamento} &bull; ${fmtData(evento.data_inicio)} – ${fmtData(evento.data_fim)} &bull; ${inscricoes.length} inscrito(s) &bull; Impresso em ${new Date().toLocaleString('pt-BR')}</h2>
+      <div class="report-title">${titulo}</div>
+      <div class="report-meta">
+        <div>Total de registros: ${inscricoes.length}</div>
+        <div>Data: ${new Date().toLocaleDateString('pt-BR')}</div>
+      </div>
       <table>
-        <thead><tr><th>#</th><th>Nome</th><th>CPF</th><th>Supervisão</th><th>Campo</th><th>Pagamento</th><th>Hosp.</th></tr></thead>
+        <thead><tr><th>#</th><th>Nome</th><th>CPF</th><th>Supervisao</th><th>Campo</th><th>Pagamento</th><th>Hosp.</th></tr></thead>
         <tbody>${linhas}</tbody>
-      </table>`);
+      </table>`, logoDept);
   }
 
   function imprimirPresenca() {
     const titulo = `${evento.nome} — Lista de Presença`;
+    const logoDept = getDeptLogo(evento.departamento);
     const linhas = inscricoes.map((i, idx) => `
       <tr>
         <td>${idx + 1}</td>
@@ -631,16 +671,20 @@ export default function TabBackup({
         <td>${esc(fmtData(i.checkin_at))}</td>
       </tr>`).join('');
     abrirJanelaPrint(titulo, `
-      <h1>${titulo}</h1>
-      <h2>${evento.departamento} &bull; ${fmtData(evento.data_inicio)} – ${fmtData(evento.data_fim)} &bull; ${stats.checkins} presente(s) de ${inscricoes.length}</h2>
+      <div class="report-title">${titulo}</div>
+      <div class="report-meta">
+        <div>Total de registros: ${inscricoes.length}</div>
+        <div>Data: ${new Date().toLocaleDateString('pt-BR')}</div>
+      </div>
       <table>
-        <thead><tr><th>#</th><th>Nome</th><th>CPF</th><th>Supervisão</th><th>Campo</th><th>✓</th><th>Hora Check-in</th></tr></thead>
+        <thead><tr><th>#</th><th>Nome</th><th>CPF</th><th>Supervisao</th><th>Campo</th><th>✓</th><th>Hora Check-in</th></tr></thead>
         <tbody>${linhas}</tbody>
-      </table>`);
+      </table>`, logoDept);
   }
 
   function imprimirHospedagem() {
     const titulo = `${evento.nome} — Lista de Hospedagem`;
+    const logoDept = getDeptLogo(evento.departamento);
     const linhas = hospedagens.map((h, idx) => `
       <tr>
         <td>${idx + 1}</td>
@@ -653,17 +697,21 @@ export default function TabBackup({
         <td>${esc(h.status)}</td>
       </tr>`).join('');
     abrirJanelaPrint(titulo, `
-      <h1>${titulo}</h1>
-      <h2>${evento.departamento} &bull; ${hospedagens.length} solicitação(ões) &bull; ${stats.hospConfirmadas} confirmada(s)</h2>
+      <div class="report-title">${titulo}</div>
+      <div class="report-meta">
+        <div>Total de registros: ${hospedagens.length}</div>
+        <div>Data: ${new Date().toLocaleDateString('pt-BR')}</div>
+      </div>
       <table>
         <thead><tr><th>#</th><th>Nome</th><th>CPF</th><th>Sexo</th><th>Alojamento</th><th>Cama</th><th>Nº</th><th>Status</th></tr></thead>
         <tbody>${linhas}</tbody>
-      </table>`);
+      </table>`, logoDept);
   }
 
   function imprimirFinanceiro() {
     if (!podeVerFinanceiro) return;
     const titulo = `${evento.nome} — Relatório Financeiro`;
+    const logoDept = getDeptLogo(evento.departamento);
     const linhas = inscricoes.map((i, idx) => `
       <tr>
         <td>${idx + 1}</td>
@@ -675,12 +723,15 @@ export default function TabBackup({
         <td>${esc(i.forma_pagamento)}</td>
       </tr>`).join('');
     abrirJanelaPrint(titulo, `
-      <h1>${titulo}</h1>
-      <h2>${evento.departamento} &bull; Total arrecadado: ${fmtMoeda(stats.arrecadado)} &bull; ${stats.pagos} pago(s), ${stats.pendentes} pendente(s)</h2>
+      <div class="report-title">${titulo}</div>
+      <div class="report-meta">
+        <div>Total de registros: ${inscricoes.length}</div>
+        <div>Data: ${new Date().toLocaleDateString('pt-BR')}</div>
+      </div>
       <table>
         <thead><tr><th>#</th><th>Nome</th><th>CPF</th><th>Valor</th><th>Valor Pago</th><th>Status</th><th>Forma Pag.</th></tr></thead>
         <tbody>${linhas}</tbody>
-      </table>`);
+      </table>`, logoDept);
   }
 
   // ════════════════════════════════════════════════════════════

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createServerClientFromCookies } from '@/lib/supabase-server';
+import { createServerClient } from '@/lib/supabase-server';
+import { requireEventoAccess } from '@/lib/evento-guard';
 
 // GET /api/eventos/[eventoId]/certificado-config
 // Público — necessário para página de download de certificado
@@ -26,32 +27,36 @@ export async function POST(
 ) {
   const { eventoId } = await params;
   // ── Auth: somente usuários autenticados ──
-  const userClient = await createServerClientFromCookies();
-  const { data: { user } } = await userClient.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+  const guard = await requireEventoAccess(req, eventoId);
+  if (!guard.ok) return guard.response;
+  if (!guard.ctx.perms.podeEditarEvento) {
+    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
+  }
 
   const body = await req.json();
   const {
-    arte_url, texto_corpo, rodape_texto,
+    arte_url, background_url, texto_corpo, rodape_texto,
     assinatura_nome, assinatura_cargo,
     orientacao, fonte_tamanho,
+    elementos_json,
   } = body;
 
-  if (!texto_corpo) {
-    return NextResponse.json({ error: 'Texto do certificado é obrigatório.' }, { status: 400 });
-  }
+  // texto_corpo is optional when using elementos_json editor
+  const textoFinal = texto_corpo?.trim() || 'Certificamos que {NOME} participou do evento {EVENTO}, realizado em {DATA_EVENTO}.';
 
-  const supabase = createServerClient();
+  const supabase = guard.ctx.supabaseAdmin;
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     evento_id:        eventoId,
-    arte_url:         arte_url?.trim() || null,
-    texto_corpo:      String(texto_corpo).trim(),
+    arte_url:         arte_url?.trim() || background_url?.trim() || null,
+    background_url:   background_url?.trim() || arte_url?.trim() || null,
+    texto_corpo:      textoFinal,
     rodape_texto:     rodape_texto?.trim() || null,
     assinatura_nome:  assinatura_nome?.trim() || null,
     assinatura_cargo: assinatura_cargo?.trim() || null,
     orientacao:       orientacao === 'portrait' ? 'portrait' : 'landscape',
     fonte_tamanho:    Number(fonte_tamanho) || 14,
+    elementos_json:   elementos_json ?? null,
     updated_at:       new Date().toISOString(),
   };
 

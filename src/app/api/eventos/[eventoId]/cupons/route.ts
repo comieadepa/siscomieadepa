@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
+import { requireEventoAccess } from '@/lib/evento-guard';
 
 // GET /api/eventos/[eventoId]/cupons  — lista cupons (admin)
 export async function GET(
@@ -7,7 +7,12 @@ export async function GET(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const supabase = createServerClient();
+  const guard = await requireEventoAccess(_req, eventoId);
+  if (!guard.ok) return guard.response;
+  if (!guard.ctx.perms.podeEditarEvento) {
+    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
+  }
+  const supabase = guard.ctx.supabaseAdmin;
   const { data, error } = await supabase
     .from('evento_cupons')
     .select('*')
@@ -24,6 +29,11 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
+  const guard = await requireEventoAccess(request, eventoId);
+  if (!guard.ok) return guard.response;
+  if (!guard.ctx.perms.podeEditarEvento) {
+    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
+  }
   const body = await request.json();
   const { codigo, tipo, valor, limite_uso, validade, ativo } = body;
 
@@ -31,7 +41,7 @@ export async function POST(
     return NextResponse.json({ error: 'Campos obrigatórios ausentes.' }, { status: 400 });
   }
 
-  const supabase = createServerClient();
+  const supabase = guard.ctx.supabaseAdmin;
 
   const { data, error } = await supabase
     .from('evento_cupons')
@@ -63,10 +73,15 @@ export async function PATCH(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
+  const guard = await requireEventoAccess(request, eventoId);
+  if (!guard.ok) return guard.response;
+  if (!guard.ctx.perms.podeEditarEvento) {
+    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
+  }
   const { id, ativo } = await request.json();
   if (!id) return NextResponse.json({ error: 'ID não informado.' }, { status: 400 });
 
-  const supabase = createServerClient();
+  const supabase = guard.ctx.supabaseAdmin;
   const { error } = await supabase
     .from('evento_cupons')
     .update({ ativo })

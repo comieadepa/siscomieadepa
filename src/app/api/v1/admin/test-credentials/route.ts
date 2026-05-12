@@ -6,6 +6,7 @@ import { requireAdmin } from '@/lib/admin-guard';
 import { consumeRateLimit } from '@/lib/rate-limit-db';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+import { buildUrl, getAppBaseUrl } from '@/lib/urls'
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
 
@@ -188,6 +189,8 @@ export async function POST(request: NextRequest) {
         .eq('id', pre_registration_id);
     }
 
+    const appUrl = getAppBaseUrl({ request });
+
     return NextResponse.json({
       success: true,
       data: {
@@ -200,7 +203,7 @@ export async function POST(request: NextRequest) {
         plan: ministry.plan,
         expires_at: endDate?.toISOString() || null,
         is_permanent: isPermanent,
-        access_url: `${process.env.NEXT_PUBLIC_APP_URL}/auth/login`,
+        access_url: buildUrl(appUrl, '/auth/login'),
       },
       message: isPermanent 
         ? '✅ Credenciais DEFINITIVAS geradas com sucesso! Acesso permanente ativado.'

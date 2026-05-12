@@ -10,6 +10,7 @@
 import { google } from 'googleapis';
 import type { drive_v3 } from 'googleapis';
 import { Readable } from 'stream';
+import { buildUrl, getAppBaseUrl } from '@/lib/urls';
 
 function getOAuth2Client() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -26,7 +27,7 @@ function getOAuth2Client() {
   const oauth2 = new google.auth.OAuth2(
     clientId,
     clientSecret,
-    `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/google/drive/callback`,
+    buildUrl(getAppBaseUrl(), '/api/auth/google/drive/callback'),
   );
 
   oauth2.setCredentials({ refresh_token: refreshToken });
@@ -48,7 +49,7 @@ export function getOAuth2ClientForSetup() {
   return new google.auth.OAuth2(
     clientId,
     clientSecret,
-    `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/google/drive/callback`,
+    buildUrl(getAppBaseUrl(), '/api/auth/google/drive/callback'),
   );
 }
 

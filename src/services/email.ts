@@ -7,13 +7,18 @@
  * Para ativar: trocar SIMULATE_EMAIL para false e descomentar o bloco Resend.
  */
 
-const SIMULATE_EMAIL = true; // Mude para false quando pronto para produção
+// Para simular envio: defina SIMULATE_EMAIL=true nas variáveis de ambiente
+const SIMULATE_EMAIL = process.env.SIMULATE_EMAIL === 'true';
 
 export interface EmailPayload {
   para:     string;         // e-mail do destinatário
   assunto:  string;
   mensagem: string;         // texto puro (será convertido para HTML)
   nomeDestinatario?: string;
+  html?:    string;         // HTML opcional para templates customizados
+  fromName?: string;
+  fromEmail?: string;
+  from?: string;
 }
 
 export interface EmailResult {
@@ -81,6 +86,9 @@ export async function sendEmail(payload: EmailPayload): Promise<EmailResult> {
 
   // ── Envio real via Resend ───────────────────────────────────
   try {
+    const fromEmail = payload.fromEmail || process.env.RESEND_FROM_EMAIL || 'naoresponda@siscomieadepa.org';
+    const fromName = payload.fromName || process.env.RESEND_FROM_NAME || 'SISCOMIEADEPA';
+    const from = payload.from || process.env.RESEND_FROM || `${fromName} <${fromEmail}>`;
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -88,10 +96,10 @@ export async function sendEmail(payload: EmailPayload): Promise<EmailResult> {
         'Content-Type':  'application/json',
       },
       body: JSON.stringify({
-        from:    process.env.RESEND_FROM ?? 'noreply@siscomieadepa.com',
+        from,
         to:      [payload.para],
         subject: payload.assunto,
-        html:    renderHtml(payload),
+        html:    payload.html ?? renderHtml(payload),
         text:    payload.mensagem,
       }),
     });

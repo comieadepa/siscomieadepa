@@ -1,13 +1,17 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import PageLayout from '@/components/PageLayout';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useEventosPerfil } from '@/hooks/useEventosPerfil';
 import { createClient } from '@/lib/supabase-client';
+import { getEquipeSession } from '@/lib/equipe-session';
+import type { EquipeSession } from '@/lib/equipe-session';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
-import { EventBadge } from '@/components/EventBadge';
+import { buildUrl, getAppBaseUrl, getPublicBaseUrl } from '@/lib/urls';
+import { EtiquetaPreviewDepartamento, EtiquetaPreviewAGO } from '@/components/EtiquetaLabels';
+import type { EtiquetaInscricaoAGO } from '@/components/EtiquetaLabels';
 import TabHospedagem    from './TabHospedagem';
 import TabBackup        from './TabBackup';
 import TabProgramacao   from './TabProgramacao';
@@ -31,6 +35,7 @@ interface Evento {
   limite_hospedagem: number | null; limite_brindes: number | null;
   publico_alvo: string | null;
   status: 'programado' | 'realizado' | 'cancelado';
+  checkin_ativo: boolean;
   created_at: string;
 }
 
@@ -56,9 +61,57 @@ interface Inscricao {
   observacoes: string | null; created_at: string;
 }
 
+interface EventoResumo {
+  id: string;
+  nome: string;
+  departamento: string;
+  status: 'programado' | 'realizado' | 'cancelado';
+  data_inicio: string | null;
+  data_fim: string | null;
+  valor_inscricao: number;
+  usar_tipos_inscricao: boolean;
+  permite_hospedagem: boolean;
+  permite_alimentacao: boolean;
+  permite_brinde: boolean;
+  limite_vagas: number | null;
+  limite_hospedagem: number | null;
+  limite_brindes: number | null;
+}
+
+interface TipoInscricao {
+  id: string;
+  nome: string;
+  valor: number;
+  inclui_alimentacao: boolean;
+  inclui_hospedagem: boolean;
+  ativo: boolean;
+  ordem: number;
+}
+
+interface EditForm {
+  evento_id: string;
+  nome_inscrito: string;
+  cpf: string;
+  email: string;
+  whatsapp: string;
+  sexo: string;
+  data_nascimento: string;
+  supervisao_id: string;
+  campo_id: string;
+  tipo_inscricao: string;
+  hospedagem: boolean;
+  alimentacao: boolean;
+  brinde: boolean;
+  observacoes: string;
+}
+
 interface Equipe {
   id: string; evento_id: string; email: string;
   tipo: 'admin' | 'checkin'; ativo: boolean; created_at: string;
+  convite_token: string | null;
+  convite_expira_em: string | null;
+  convite_usado_em: string | null;
+  ultimo_acesso_em: string | null;
 }
 
 interface Ministro {
@@ -69,6 +122,7 @@ interface Ministro {
 }
 
 type TabId = 'inscritos' | 'inscricao-manual' | 'checkin' | 'etiquetas' | 'financeiro' | 'relatorios' | 'comunicacao' | 'equipe' | 'configuracoes' | 'hospedagem' | 'backup' | 'programacao' | 'certificados';
+// Nota: 'inscricao-manual' e 'configuracoes' mantidos no tipo para compatibilidade com ?tab= mas removidos da nav
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 const fmtData = (d: string | null) => {
@@ -82,6 +136,21 @@ const fmtDT = (d: string | null) => {
   if (!d) return '-';
   const dt = new Date(d);
   return dt.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+};
+
+const DEPT_LOGOS: Record<string, string> = {
+  AGO: '/img/logo_ago.png',
+  COADESPA: '/img/logo_comieadepa.png',
+  UMADESPA: '/img/logo_comieadepa.png',
+  SEIADEPA: '/img/logo_comieadepa.png',
+  AVULSO: '/img/logo_comieadepa.png',
+  CONEC: '/img/logo_conec.png',
+  CGADB: '/img/logo_cgadb.png',
+};
+
+const getDeptLogo = (dept?: string | null) => {
+  if (!dept) return '/img/logo_comieadepa.png';
+  return DEPT_LOGOS[dept] ?? '/img/logo_comieadepa.png';
 };
 
 const STATUS_PAG_CFG: Record<string, { label: string; cls: string }> = {
@@ -102,12 +171,14 @@ const labelCls = 'block text-xs font-semibold text-gray-600 mb-1';
 
 // ─── Componente principal ─────────────────────────────────────────────────
 export default function GerenciarEventoPage() {
-  const { loading: authLoading } = useRequireSupabaseAuth();
-  const perfil = useEventosPerfil();
-  const router = useRouter();
   const params = useParams();
   const id = params?.id as string;
+  const { loading: authLoading } = useRequireSupabaseAuth({ allowEquipeSession: { eventoId: id } });
+  const perfil = useEventosPerfil();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
+  const [equipeSessao, setEquipeSessao] = useState<EquipeSession | null>(null);
 
   const [evento,     setEvento]     = useState<Evento | null>(null);
   const [inscricoes, setInscricoes] = useState<Inscricao[]>([]);
@@ -126,28 +197,43 @@ export default function GerenciarEventoPage() {
     [id, perfil]
   );
 
+  const podeEditarInscritos = perfil.podeEditarInscricoes;
+  const podeRemoverInscricao = perfil.podeRemoverInscricao;
+  const podeMoverInscricao = perfil.podeMoverInscricao;
+  const podeComunicacao = perfil.podeComunicacao;
+  const podeCertificados = perfil.podeCertificados;
+
   // Abas visíveis baseadas na permissão do usuário neste evento
   const TODAS_TABS: { id: TabId; label: string; icon: string }[] = [
-    { id: 'inscritos',        label: 'Inscritos',        icon: '👥' },
-    { id: 'inscricao-manual', label: 'Inscrição Manual', icon: '✍️' },
-    { id: 'checkin',          label: 'Check-in',          icon: '✅' },
-    { id: 'etiquetas',        label: 'Etiquetas',         icon: '🏷️' },
-    { id: 'financeiro',       label: 'Financeiro',        icon: '💳' },
-    { id: 'relatorios',       label: 'Relatórios',        icon: '📊' },
-    { id: 'comunicacao',      label: 'Comunicação',       icon: '📣' },
-    { id: 'hospedagem',       label: 'Hospedagem',        icon: '🏨' },
-    { id: 'equipe',           label: 'Equipe',            icon: '👤' },
-    { id: 'configuracoes',    label: 'Configurações',     icon: '⚙️' },
-    { id: 'programacao',      label: 'Programação',       icon: '📋' },
-    { id: 'certificados',     label: 'Certificados',       icon: '🎓' },
-    { id: 'backup',           label: 'Backup / Exportação', icon: '💾' },
+    { id: 'inscritos',    label: 'Inscritos',          icon: '👥' },
+    { id: 'checkin',     label: 'Check-in',            icon: '✅' },
+    { id: 'etiquetas',   label: 'Etiquetas',           icon: '🏷️' },
+    { id: 'hospedagem',  label: 'Hospedagem',          icon: '🏨' },
+    { id: 'equipe',      label: 'Equipe',              icon: '👤' },
+    { id: 'comunicacao', label: 'Comunicação',         icon: '📣' },
+    { id: 'financeiro',  label: 'Financeiro',          icon: '💳' },
+    { id: 'backup',      label: 'Backup / Exportação', icon: '💾' },
+    { id: 'certificados',label: 'Certificados',        icon: '🎓' },
+    { id: 'programacao', label: 'Programação',         icon: '📋' },
+    { id: 'relatorios',  label: 'Relatórios',          icon: '📊' },
   ];
+
+  const tabsPermitidasEvento = useMemo(() => (
+    id ? perfil.tabsPermitidasParaEvento(id) : perfil.tabsPermitidas
+  ), [id, perfil.tabsPermitidasParaEvento, perfil.tabsPermitidas]);
 
   const tabsVisiveis = useMemo(() => {
     if (perfil.loading) return TODAS_TABS;
     if (perfil.isGlobal) return TODAS_TABS;
-    return TODAS_TABS.filter(t => perfil.tabsPermitidas.includes(t.id));
-  }, [perfil.loading, perfil.isGlobal, perfil.tabsPermitidas]);
+    return TODAS_TABS.filter(t => tabsPermitidasEvento.includes(t.id as import('@/hooks/useEventosPerfil').TabEventoId));
+  }, [perfil.loading, perfil.isGlobal, tabsPermitidasEvento]);
+
+  useEffect(() => {
+    if (perfil.loading) return;
+    if (!tabsVisiveis.some(t => t.id === activeTab)) {
+      setActiveTab(tabsVisiveis[0]?.id ?? 'inscritos');
+    }
+  }, [tabsVisiveis, activeTab, perfil.loading]);
 
   // ── Carrega dados base ───────────────────────────────────────
   const fetchEvento = useCallback(async () => {
@@ -182,7 +268,16 @@ export default function GerenciarEventoPage() {
   }, [id, supabase]);
 
   useEffect(() => {
+    setEquipeSessao(getEquipeSession());
+  }, [id]);
+
+  useEffect(() => {
     if (authLoading || perfil.loading) return;
+
+    if (equipeSessao && equipeSessao.eventoId === id && equipeSessao.tipo === 'checkin') {
+      router.replace(`/eventos/${id}/checkin`);
+      return;
+    }
 
     // Gate de acesso: bloqueia acesso direto por URL
     if (!perfil.isGlobal && id && !perfil.podeAcessarEvento(id)) {
@@ -194,6 +289,13 @@ export default function GerenciarEventoPage() {
     // Para perfil checkin, redireciona direto para a aba checkin
     if (!perfil.isGlobal && permissaoNesseEvento === 'checkin') {
       setActiveTab('checkin');
+    } else {
+      // Aplica aba inicial via query param ?tab=X
+      const tabParam = searchParams?.get('tab') as TabId | null;
+      const TABS_VALIDAS: TabId[] = ['inscritos','inscricao-manual','checkin','etiquetas','financeiro','relatorios','comunicacao','equipe','configuracoes','hospedagem','backup','programacao','certificados']; // inscricao-manual e configuracoes acessíveis via ?tab= mas não mostrados na nav
+      if (tabParam && TABS_VALIDAS.includes(tabParam)) {
+        setActiveTab(tabParam);
+      }
     }
 
     Promise.all([
@@ -203,7 +305,7 @@ export default function GerenciarEventoPage() {
       supabase.from('supervisoes').select('id,nome').order('nome').then((r: { data: unknown }) => setSupervisoes((r.data as Supervisao[]) || [])),
       supabase.from('campos').select('id,nome,supervisao_id').order('nome').then((r: { data: unknown }) => setCampos((r.data as Campo[]) || [])),
     ]);
-  }, [authLoading, perfil.loading, perfil.isGlobal, perfil.loading, id, permissaoNesseEvento, fetchEvento, fetchInscricoes, fetchEquipe, supabase]);
+  }, [authLoading, perfil.loading, perfil.isGlobal, id, permissaoNesseEvento, equipeSessao, fetchEvento, fetchInscricoes, fetchEquipe, supabase, router, searchParams]);
 
   // ── Stats calculadas ─────────────────────────────────────────
   const stats = useMemo(() => {
@@ -271,103 +373,164 @@ export default function GerenciarEventoPage() {
     >
 
       {/* ── HEADER DO EVENTO ─────────────────────────────────── */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6 overflow-hidden">
+      <div className="bg-white rounded-2xl shadow border border-gray-200 mb-6 overflow-hidden">
+        {/* Faixa superior azul com banner */}
         <div className="flex flex-col md:flex-row">
-          {/* Banner */}
-          <div className="md:w-48 md:flex-shrink-0 bg-gradient-to-br from-[#123b63] to-[#1A5276] flex items-center justify-center min-h-[140px]">
+          {/* Banner / imagem */}
+          <div className="relative md:w-52 md:flex-shrink-0 bg-gradient-to-br from-[#0D2B4E] to-[#1a4a7a] flex items-center justify-center min-h-[160px] md:min-h-0">
             {evento.banner_url
-              ? <img src={evento.banner_url} alt={evento.nome} className="w-full h-full object-cover" />
-              : <span className="text-6xl select-none">📅</span>
+              ? <img src={evento.banner_url} alt={evento.nome} className="w-full h-full object-cover absolute inset-0" />
+              : <span className="text-7xl select-none opacity-80">📅</span>
             }
+            {/* Sobreposição dourada na borda esquerda */}
+            <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#D9A520]" />
           </div>
 
-          {/* Info */}
-          <div className="flex-1 p-6">
+          {/* Info principal */}
+          <div className="flex-1 p-5 md:p-6">
             <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-              <div>
-                <div className="flex flex-wrap gap-2 mb-2">
-                  <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${evCfg.cls}`}>{evCfg.label}</span>
-                  <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-[#123b63]/10 text-[#123b63]">{evento.departamento}</span>
+              <div className="flex-1 min-w-0">
+                {/* Badges de status */}
+                <div className="flex flex-wrap gap-1.5 mb-2.5">
+                  <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${evCfg.cls}`}>{evCfg.label}</span>
+                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-[#0D2B4E]/10 text-[#0D2B4E]">{evento.departamento}</span>
                   {evento.inscricoes_abertas
-                    ? <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Inscrições abertas</span>
-                    : <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-500">Inscrições fechadas</span>
+                    ? <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">✅ Inscrições abertas</span>
+                    : <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-gray-100 text-gray-500">🔒 Inscrições fechadas</span>
                   }
                 </div>
-                <h1 className="text-xl font-bold text-gray-900 mb-1">{evento.nome}</h1>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
-                  <span>📅 {fmtData(evento.data_inicio)} → {fmtData(evento.data_fim)}</span>
-                  {(evento.local || evento.cidade) && <span>📍 {[evento.local, evento.cidade].filter(Boolean).join(' — ')}</span>}
-                  {evento.supervisao_id && <span>🗂️ {nomeSup(evento.supervisao_id)}</span>}
-                  {evento.campo_id      && <span>⛪ {nomeCampo(evento.campo_id)}</span>}
+                <h1 className="text-xl font-black text-[#0D2B4E] mb-1.5 leading-snug">{evento.nome}</h1>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+                  <span className="flex items-center gap-1">📅 {fmtData(evento.data_inicio)}{evento.data_fim !== evento.data_inicio ? ` → ${fmtData(evento.data_fim)}` : ''}</span>
+                  {(evento.local || evento.cidade) && <span className="flex items-center gap-1">📍 {[evento.local, evento.cidade].filter(Boolean).join(' — ')}</span>}
+                  {evento.supervisao_id && <span className="flex items-center gap-1">🗂️ {nomeSup(evento.supervisao_id)}</span>}
+                  {evento.campo_id      && <span className="flex items-center gap-1">⛪ {nomeCampo(evento.campo_id)}</span>}
                 </div>
               </div>
 
-              {/* Botões header — controlados pelo perfil */}
-              <div className="flex flex-wrap gap-2">
+              {/* Botões de ação — agrupados à direita */}
+              <div className="flex flex-wrap md:flex-col lg:flex-row gap-2 flex-shrink-0">
                 {perfil.podeEditar && (
                   <button onClick={() => router.push(`/eventos/${id}/editar`)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition">
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200 transition">
                     ✏️ Editar
                   </button>
                 )}
-                <a href={`/inscricao/${evento.slug}`} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition">
+                <a href={buildUrl(getPublicBaseUrl(), `/inscricao/${evento.slug}`)} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition">
                   🌐 Pág. Pública
                 </a>
                 <a href={`/eventos/${id}/display`} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0D2B4E] text-white hover:bg-[#0a1e38] transition">
-                  📺 Abrir Display
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#0D2B4E] text-white hover:bg-[#0a1e38] transition">
+                  📺 Display
                 </a>
-                {perfil.podeEditar && (
-                  <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-400 cursor-not-allowed" disabled>
-                    📊 Relatórios
-                  </button>
-                )}
+                <a href={`/eventos/${id}/balcao`} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#D9A520] text-white hover:bg-[#b8861a] transition">
+                  🏪 Balcão
+                </a>
               </div>
             </div>
+          </div>
+        </div>
 
-            {/* Stats do header */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mt-5 pt-4 border-t border-gray-100">
-              {[
-                { label: 'Inscritos',  value: stats.total,     color: 'text-[#123b63]',    show: true },
-                { label: 'Pagos',      value: stats.pagos,     color: 'text-emerald-600',  show: true },
-                { label: 'Pendentes',  value: stats.pendentes, color: 'text-yellow-600',   show: perfil.podeVerFinanceiro },
-                { label: 'Isentos',    value: stats.isentos,   color: 'text-blue-600',     show: perfil.podeVerFinanceiro },
-                { label: 'Check-ins',  value: stats.checkins,  color: 'text-purple-600',   show: true },
-                { label: 'Etiquetas',  value: stats.etiquetas, color: 'text-gray-600',     show: true },
-                { label: 'Arrecadado', value: fmtMoeda(stats.arrecadado), color: 'text-[#F39C12]', show: perfil.podeVerFinanceiro },
-              ].filter(s => s.show).map(s => (
-                <div key={s.label} className="text-center">
-                  <p className="text-xs text-gray-400 mb-0.5">{s.label}</p>
-                  <p className={`font-bold text-sm ${s.color}`}>{s.value}</p>
+        {/* Faixa de métricas — fundo gradiente sutil */}
+        <div className="border-t border-gray-100 bg-gradient-to-r from-[#0D2B4E]/[0.03] to-transparent">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 divide-x divide-gray-100">
+            {[
+              { label: 'Inscritos',  value: stats.total,               icon: '👥', color: 'text-[#0D2B4E]',   bgIcon: 'bg-[#0D2B4E]/10', show: true },
+              { label: 'Pagos',      value: stats.pagos,               icon: '💳', color: 'text-emerald-700', bgIcon: 'bg-emerald-100',   show: true },
+              { label: 'Pendentes',  value: stats.pendentes,           icon: '⏳', color: 'text-amber-600',   bgIcon: 'bg-amber-100',     show: perfil.podeVerFinanceiro },
+              { label: 'Isentos',    value: stats.isentos,             icon: '🎟️', color: 'text-blue-600',    bgIcon: 'bg-blue-100',      show: perfil.podeVerFinanceiro },
+              { label: 'Check-ins',  value: stats.checkins,            icon: '✅', color: 'text-purple-700',  bgIcon: 'bg-purple-100',    show: true },
+              { label: 'Etiquetas',  value: stats.etiquetas,           icon: '🏷️', color: 'text-gray-600',    bgIcon: 'bg-gray-100',      show: true },
+              { label: 'Arrecadado', value: fmtMoeda(stats.arrecadado),icon: '💰', color: 'text-[#D9A520]',   bgIcon: 'bg-amber-100',     show: perfil.podeVerFinanceiro },
+            ].filter(s => s.show).map(s => (
+              <div key={s.label} className="flex items-center gap-3 px-4 py-3 first:col-span-1">
+                <div className={`w-8 h-8 rounded-lg ${s.bgIcon} flex items-center justify-center text-sm flex-shrink-0`}>{s.icon}</div>
+                <div>
+                  <p className={`font-black text-base leading-tight ${s.color}`}>{s.value}</p>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wide">{s.label}</p>
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
       {/* ── ABAS ────────────────────────────────────────────────── */}
-      <div className="border-b border-gray-300 mb-6">
-        <div className="flex overflow-x-auto">
+      <div className="relative">
+        {/* Trilho com scroll horizontal */}
+        <div
+          className="flex overflow-x-auto gap-1 px-0 pb-0"
+          style={{ scrollbarWidth: 'none' }}
+        >
           {tabsVisiveis.map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1.5 whitespace-nowrap px-5 py-3 text-sm font-semibold border-b-2 transition ${
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-1.5 whitespace-nowrap px-4 py-2.5 text-xs font-bold rounded-t-xl border border-b-0 transition-all flex-shrink-0 ${
                 activeTab === tab.id
-                  ? 'border-[#123b63] text-[#123b63]'
-                  : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300'
+                  ? 'bg-[#0D2B4E] text-white border-[#0D2B4E] shadow-md relative z-10'
+                  : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200 hover:text-gray-700'
               }`}
             >
-              <span>{tab.icon}</span>{tab.label}
+              <span className="text-sm">{tab.icon}</span>
+              <span>{tab.label}</span>
               {tab.id === 'inscritos' && (
-                <span className={`ml-1 text-xs px-1.5 py-0.5 rounded-full font-bold ${activeTab === tab.id ? 'bg-[#123b63] text-white' : 'bg-gray-200 text-gray-600'}`}>
+                <span
+                  className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full font-black ${
+                    activeTab === tab.id ? 'bg-white/25 text-white' : 'bg-white text-[#0D2B4E] border border-gray-200'
+                  }`}
+                >
                   {stats.total}
                 </span>
               )}
             </button>
           ))}
         </div>
+        {/* Linha de base que conecta as abas ao conteúdo */}
+        <div className="h-0.5 bg-[#0D2B4E] rounded-b" />
       </div>
+
+      {/* ── CABEÇALHO DA ABA ATIVA ─────────────────────────────── */}
+      {(() => {
+        const tab = tabsVisiveis.find(t => t.id === activeTab) ?? TODAS_TABS.find(t => t.id === activeTab);
+        if (!tab) return null;
+        const TAB_DESCS: Partial<Record<TabId, string>> = {
+          inscritos:    'Lista completa de inscrições com filtros, ações e envio de certificados',
+          checkin:      'Realize check-ins manuais ou via QR Code no celular',
+          etiquetas:    'Impressão em massa e controle de crachás',
+          financeiro:   'Visão financeira, baixas manuais e movimentações',
+          comunicacao:  'Histórico de notificações e reenvio de confirmações',
+          equipe:       'Operadores e permissões de acesso a este evento',
+          hospedagem:   'Gestão de alojamentos e alocação de participantes',
+          backup:       'Exportação de dados e backup do evento',
+          certificados: 'Emissão, envio e configuração visual dos certificados',
+          programacao:  'Agenda, sessões e grade do evento',
+          relatorios:   'Relatórios gerenciais por supervisão, campo e financeiro',
+        };
+        const desc = TAB_DESCS[tab.id];
+        const BADGE: Partial<Record<TabId, React.ReactNode>> = {
+          inscritos:    <span className="bg-white/20 text-white text-xs font-black px-3 py-1 rounded-full">{stats.total} inscrito{stats.total !== 1 ? 's' : ''}</span>,
+          checkin:      <span className="bg-white/20 text-white text-xs font-black px-3 py-1 rounded-full">{stats.checkins} check-in{stats.checkins !== 1 ? 's' : ''}</span>,
+          etiquetas:    <span className="bg-white/20 text-white text-xs font-black px-3 py-1 rounded-full">{stats.etiquetas} impressa{stats.etiquetas !== 1 ? 's' : ''}</span>,
+          financeiro:   perfil.podeVerFinanceiro ? <span className="bg-[#D9A520]/30 text-[#D9A520] text-xs font-black px-3 py-1 rounded-full">{fmtMoeda(stats.arrecadado)}</span> : null,
+        };
+        return (
+          <div className="bg-gradient-to-r from-[#163B66] to-[#1B4B80] px-6 py-4 rounded-b-xl mb-6 flex items-center justify-between shadow-md border-b border-white/10">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white/15 rounded-xl flex items-center justify-center text-xl flex-shrink-0">
+                {tab.icon}
+              </div>
+              <div>
+                <h2 className="text-white font-black text-base leading-tight">{tab.label}</h2>
+                {desc && <p className="text-white/55 text-xs mt-0.5">{desc}</p>}
+              </div>
+            </div>
+            {BADGE[tab.id] ?? null}
+          </div>
+        );
+      })()}
 
       {/* ── CONTEÚDO DAS ABAS ────────────────────────────────────── */}
       {activeTab === 'inscritos' && (
@@ -380,6 +543,12 @@ export default function GerenciarEventoPage() {
           nomeCampo={nomeCampo}
           onRefresh={fetchInscricoes}
           supabase={supabase}
+          evento={evento}
+          podeEditar={podeEditarInscritos}
+          podeRemover={podeRemoverInscricao}
+          podeMover={podeMoverInscricao}
+          podeComunicacao={podeComunicacao}
+          podeCertificados={podeCertificados}
         />
       )}
       {activeTab === 'inscricao-manual' && (
@@ -395,6 +564,7 @@ export default function GerenciarEventoPage() {
       {activeTab === 'checkin' && (
         <TabCheckin
           eventoId={id}
+          evento={evento}
           inscricoes={inscricoes}
           loading={loadingInsc}
           nomeSup={nomeSup}
@@ -440,7 +610,7 @@ export default function GerenciarEventoPage() {
         />
       )}
       {activeTab === 'comunicacao' && (
-        <TabComunicacao eventoId={id} />
+        <TabComunicacao eventoId={id} supabase={supabase} />
       )}
       {activeTab === 'hospedagem' && (
         <TabHospedagem eventoId={id} evento={evento} supervisoes={supervisoes} campos={campos} nomeSup={nomeSup} nomeCampo={nomeCampo} supabase={supabase} />
@@ -448,6 +618,7 @@ export default function GerenciarEventoPage() {
       {activeTab === 'equipe' && (
         <TabEquipe
           eventoId={id}
+          evento={evento}
           equipe={equipe}
           supabase={supabase}
           onRefresh={fetchEquipe}
@@ -468,14 +639,11 @@ export default function GerenciarEventoPage() {
         />
       )}
       {activeTab === 'programacao' && (
-        <TabProgramacao eventoId={id} podeEditar={perfil.podeEditar} />
+        <TabProgramacao eventoId={id} podeEditar={perfil.podeProgramacao} />
       )}
       {activeTab === 'certificados' && (
         <TabCertificados
           eventoId={id}
-          eventoNome={evento?.nome ?? ''}
-          eventoDataInicio={evento?.data_inicio ?? ''}
-          eventoDataFim={evento?.data_fim ?? evento?.data_inicio ?? ''}
           gerarCertificado={(evento as unknown as Record<string, unknown>)?.gerar_certificado === true}
           podeEditar={perfil.podeEditar}
           supervisoes={supervisoes}
@@ -490,13 +658,19 @@ export default function GerenciarEventoPage() {
 // ═══════════════════════════════════════════════════════════════
 // ABA INSCRITOS
 // ═══════════════════════════════════════════════════════════════
-function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeCampo, onRefresh, supabase }: {
+function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeCampo, onRefresh, supabase, evento, podeEditar, podeRemover, podeMover, podeComunicacao, podeCertificados }: {
   inscricoes: Inscricao[]; loading: boolean;
   supervisoes: Supervisao[]; campos: Campo[];
   nomeSup: (id: string | null) => string;
   nomeCampo: (id: string | null) => string;
   onRefresh: () => void;
   supabase: ReturnType<typeof createClient>;
+  evento: Evento;
+  podeEditar: boolean;
+  podeRemover: boolean;
+  podeMover: boolean;
+  podeComunicacao: boolean;
+  podeCertificados: boolean;
 }) {
   const [busca,       setBusca]       = useState('');
   const [filtroSup,   setFiltroSup]   = useState('');
@@ -507,6 +681,18 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   const [filtroAlim,  setFiltroAlim]  = useState('');
   const [pagina,      setPagina]      = useState(1);
   const [salvando,    setSalvando]    = useState<string | null>(null);
+  const [enviandoCert, setEnviandoCert] = useState<Record<string, boolean>>({});
+  const [certMsg,      setCertMsg]      = useState<Record<string, string>>({});
+  const [enviandoEmail, setEnviandoEmail] = useState<Record<string, boolean>>({});
+  const [emailMsg,      setEmailMsg]      = useState<Record<string, string>>({});
+  const [editando,      setEditando]      = useState<Inscricao | null>(null);
+  const [editForm,      setEditForm]      = useState<EditForm | null>(null);
+  const [eventosDept,   setEventosDept]   = useState<EventoResumo[]>([]);
+  const [tiposPorEvento, setTiposPorEvento] = useState<Record<string, TipoInscricao[]>>({});
+  const [carregandoEventos, setCarregandoEventos] = useState(false);
+  const [salvandoEdit,  setSalvandoEdit]  = useState(false);
+  const [erroEdit,      setErroEdit]      = useState<string | null>(null);
+  const timeoutsRef = useRef<number[]>([]);
   const POR_PAG = 20;
 
   const filtrados = useMemo(() => {
@@ -528,17 +714,15 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
 
   useEffect(() => { setPagina(1); }, [busca, filtroSup, filtroCampo, filtroPag, filtroCI, filtroHosp, filtroAlim]);
 
-  async function baixaManual(inscricao: Inscricao) {
-    setSalvando(inscricao.id);
-    if (inscricao.lote_id) {
-      // Inscrição de lote: atualiza o lote (trigger fn_sync_lote_pagamento cuida das inscrições)
-      await supabase.from('evento_lotes_inscricao').update({ status_pagamento: 'pago' }).eq('id', inscricao.lote_id);
-    } else {
-      await supabase.from('evento_inscricoes').update({ status_pagamento: 'pago', valor_pago: inscricao.valor_pago || 0 }).eq('id', inscricao.id);
-    }
-    setSalvando(null);
-    onRefresh();
-  }
+  useEffect(() => () => {
+    timeoutsRef.current.forEach(t => clearTimeout(t));
+    timeoutsRef.current = [];
+  }, []);
+
+  const scheduleClear = useCallback((fn: () => void, ms = 4000) => {
+    const id = window.setTimeout(fn, ms);
+    timeoutsRef.current.push(id);
+  }, []);
 
   async function marcarEtiqueta(inscricao: Inscricao) {
     setSalvando(inscricao.id);
@@ -548,6 +732,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   }
 
   async function excluir(id: string) {
+    if (!podeRemover) return;
     if (!confirm('Excluir esta inscrição?')) return;
     setSalvando(id);
     await supabase.from('evento_inscricoes').delete().eq('id', id);
@@ -555,7 +740,508 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
     onRefresh();
   }
 
-  const camposFiltrados = filtroSup ? campos.filter(c => c.supervisao_id === filtroSup) : campos;
+  async function enviarCertificado(ins: Inscricao, reenviar = false) {
+    setEnviandoCert(p => ({ ...p, [ins.id]: true }));
+    setCertMsg(p => ({ ...p, [ins.id]: '' }));
+    try {
+      const res = await fetch(`/api/eventos/${ins.evento_id}/certificados/enviar-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inscricao_id: ins.id, reenviar }),
+      });
+      const json = await res.json();
+      if (json.jaEnviado) {
+        setCertMsg(p => ({ ...p, [ins.id]: '✅ Já enviado' }));
+      } else if (res.ok) {
+        setCertMsg(p => ({ ...p, [ins.id]: '✅ Enviado!' }));
+        onRefresh();
+      } else {
+        setCertMsg(p => ({ ...p, [ins.id]: '❌ ' + (json.error ?? 'Erro') }));
+      }
+    } catch {
+      setCertMsg(p => ({ ...p, [ins.id]: '❌ Erro de rede' }));
+    } finally {
+      setEnviandoCert(p => ({ ...p, [ins.id]: false }));
+      scheduleClear(() => setCertMsg(p => ({ ...p, [ins.id]: '' })));
+    }
+  }
+
+  function avisarCertificado(id: string, msg: string) {
+    setCertMsg(p => ({ ...p, [id]: msg }));
+    scheduleClear(() => setCertMsg(p => ({ ...p, [id]: '' })));
+  }
+
+  function handleEnviarCertificado(ins: Inscricao) {
+    if (!ins.email) {
+      avisarCertificado(ins.id, '⚠️ E-mail não cadastrado.');
+      return;
+    }
+    if (!['pago', 'isento'].includes(ins.status_pagamento)) {
+      avisarCertificado(ins.id, '⚠️ Pagamento pendente.');
+      return;
+    }
+    if (!ins.checkin_realizado) {
+      avisarCertificado(ins.id, '⚠️ Check-in pendente.');
+      return;
+    }
+    enviarCertificado(ins, ins.certificado_enviado);
+  }
+
+  async function enviarEmailConfirmacao(ins: Inscricao) {
+    if (!ins.email) {
+      setEmailMsg(p => ({ ...p, [ins.id]: '⚠️ E-mail não cadastrado.' }));
+      scheduleClear(() => setEmailMsg(p => ({ ...p, [ins.id]: '' })));
+      return;
+    }
+    setEnviandoEmail(p => ({ ...p, [ins.id]: true }));
+    setEmailMsg(p => ({ ...p, [ins.id]: '' }));
+    try {
+      const res = await fetch(`/api/eventos/${ins.evento_id}/notificacoes/reenviar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inscricao_id: ins.id }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        setEmailMsg(p => ({ ...p, [ins.id]: '✅ E-mail enviado!' }));
+      } else {
+        setEmailMsg(p => ({ ...p, [ins.id]: '❌ ' + (json.error ?? 'Erro ao enviar') }));
+      }
+    } catch {
+      setEmailMsg(p => ({ ...p, [ins.id]: '❌ Erro de rede' }));
+    } finally {
+      setEnviandoEmail(p => ({ ...p, [ins.id]: false }));
+      scheduleClear(() => setEmailMsg(p => ({ ...p, [ins.id]: '' })));
+    }
+  }
+
+  function abrirEdicao(ins: Inscricao) {
+    if (!podeEditar) return;
+    setErroEdit(null);
+    setEditando(ins);
+    setEditForm({
+      evento_id: ins.evento_id,
+      nome_inscrito: ins.nome_inscrito,
+      cpf: ins.cpf ?? '',
+      email: ins.email ?? '',
+      whatsapp: ins.whatsapp ?? '',
+      sexo: ins.sexo ?? '',
+      data_nascimento: ins.data_nascimento ?? '',
+      supervisao_id: ins.supervisao_id ?? '',
+      campo_id: ins.campo_id ?? '',
+      tipo_inscricao: ins.tipo_inscricao ?? '',
+      hospedagem: ins.hospedagem,
+      alimentacao: ins.alimentacao,
+      brinde: ins.brinde,
+      observacoes: ins.observacoes ?? '',
+    });
+    if (eventosDept.length === 0) {
+      carregarEventosDepartamento();
+    }
+    if (evento.usar_tipos_inscricao && !tiposPorEvento[ins.evento_id]) {
+      carregarTiposEvento(ins.evento_id);
+    }
+  }
+
+  async function carregarEventosDepartamento() {
+    if (carregandoEventos) return;
+    setCarregandoEventos(true);
+    const { data } = await supabase
+      .from('eventos')
+      .select('id,nome,departamento,status,data_inicio,data_fim,valor_inscricao,usar_tipos_inscricao,permite_hospedagem,permite_alimentacao,permite_brinde,limite_vagas,limite_hospedagem,limite_brindes')
+      .eq('departamento', evento.departamento)
+      .order('data_inicio', { ascending: false });
+    const list = ((data as EventoResumo[]) || []).filter(e => e.status !== 'cancelado' || e.id === evento.id);
+    setEventosDept(list);
+    setCarregandoEventos(false);
+  }
+
+  async function carregarTiposEvento(eventoId: string) {
+    const { data } = await supabase
+      .from('evento_tipos_inscricao')
+      .select('id,nome,valor,inclui_alimentacao,inclui_hospedagem,ativo,ordem')
+      .eq('evento_id', eventoId)
+      .eq('ativo', true)
+      .order('ordem');
+    setTiposPorEvento(p => ({ ...p, [eventoId]: (data as TipoInscricao[]) || [] }));
+  }
+
+  async function salvarEdicao() {
+    if (!editando || !editForm || !eventoDestino) return;
+    if (!podeEditar) return;
+    setErroEdit(null);
+
+    if (!podeMover && editForm.evento_id !== editando.evento_id) {
+      setErroEdit('Sem permissao para mover inscricoes entre eventos.');
+      return;
+    }
+
+    if (!editForm.nome_inscrito.trim()) {
+      setErroEdit('Nome e obrigatorio.');
+      return;
+    }
+    if (!editForm.supervisao_id) {
+      setErroEdit('Supervisao e obrigatoria.');
+      return;
+    }
+    if (eventoDestino.usar_tipos_inscricao && !tipoSelecionado) {
+      setErroEdit('Selecione um tipo de inscricao.');
+      return;
+    }
+    if (eventoDestino.status === 'cancelado') {
+      setErroEdit('Evento destino cancelado.');
+      return;
+    }
+
+    if (eventoDestino.limite_vagas && eventoDestino.id !== editando.evento_id) {
+      const { count } = await supabase
+        .from('evento_inscricoes')
+        .select('id', { count: 'exact', head: true })
+        .eq('evento_id', eventoDestino.id);
+      if ((count ?? 0) >= eventoDestino.limite_vagas) {
+        setErroEdit('Evento destino sem vagas disponiveis.');
+        return;
+      }
+    }
+
+    if (hospedagemEfetiva && eventoDestino.limite_hospedagem) {
+      const precisaChecar = eventoDestino.id !== editando.evento_id || !editando.hospedagem;
+      if (precisaChecar) {
+        const { count } = await supabase
+          .from('evento_inscricoes')
+          .select('id', { count: 'exact', head: true })
+          .eq('evento_id', eventoDestino.id)
+          .eq('hospedagem', true);
+        if ((count ?? 0) >= eventoDestino.limite_hospedagem) {
+          setErroEdit('Limite de hospedagem atingido no evento destino.');
+          return;
+        }
+      }
+    }
+
+    const valorNovoFinal = valorNovo ?? 0;
+
+    let novoStatus = editando.status_pagamento;
+    if ((diferencaValor ?? 0) > 0) {
+      novoStatus = 'pendente';
+    }
+
+    const cpfLimpo = editForm.cpf.replace(/\D/g, '') || null;
+    const emailLimpo = editForm.email.trim();
+    const whatsappLimpo = editForm.whatsapp.trim();
+    const dataNasc = editForm.data_nascimento || null;
+
+    const mudancas: string[] = [];
+    if (editando.evento_id !== editForm.evento_id) {
+      mudancas.push(`Inscricao movida de \"${eventoAtualResumo.nome}\" para \"${eventoDestino.nome}\".`);
+    }
+    if ((editando.tipo_inscricao ?? '') !== (tipoSelecionado?.nome ?? '')) {
+      mudancas.push(`Tipo de inscricao: ${editando.tipo_inscricao ?? '-'} -> ${tipoSelecionado?.nome ?? '-'}.`);
+    }
+    if (editando.hospedagem !== hospedagemEfetiva) {
+      mudancas.push(`Hospedagem: ${editando.hospedagem ? 'Sim' : 'Nao'} -> ${hospedagemEfetiva ? 'Sim' : 'Nao'}.`);
+    }
+    if (editando.alimentacao !== alimentacaoEfetiva) {
+      mudancas.push(`Alimentacao: ${editando.alimentacao ? 'Sim' : 'Nao'} -> ${alimentacaoEfetiva ? 'Sim' : 'Nao'}.`);
+    }
+    if (editando.brinde !== brindeEfetivo) {
+      mudancas.push(`Brinde: ${editando.brinde ? 'Sim' : 'Nao'} -> ${brindeEfetivo ? 'Sim' : 'Nao'}.`);
+    }
+
+    const dadosAlterados =
+      editando.nome_inscrito !== editForm.nome_inscrito.trim() ||
+      (editando.cpf ?? '') !== (cpfLimpo ?? '') ||
+      (editando.email ?? '') !== emailLimpo ||
+      (editando.whatsapp ?? '') !== whatsappLimpo ||
+      (editando.sexo ?? '') !== (editForm.sexo || '') ||
+      (editando.data_nascimento ?? '') !== (dataNasc ?? '') ||
+      (editando.supervisao_id ?? '') !== (editForm.supervisao_id || '') ||
+      (editando.campo_id ?? '') !== (editForm.campo_id || '');
+
+    if (dadosAlterados) {
+      mudancas.push('Dados cadastrais atualizados.');
+    }
+
+    if (diferencaValor !== null && diferencaValor !== 0) {
+      if (diferencaValor > 0) {
+        mudancas.push(`Diferenca: ${fmtMoeda(diferencaValor)} (cobranca complementar).`);
+      } else {
+        mudancas.push(`Diferenca: ${fmtMoeda(Math.abs(diferencaValor))} (reembolso manual).`);
+      }
+    }
+
+    if (mudancas.length === 0) {
+      mudancas.push('Dados cadastrais atualizados.');
+    }
+
+    const log = `[${new Date().toLocaleString('pt-BR')}] ${mudancas.join(' ')}`;
+    const obsBase = editForm.observacoes.trim();
+    const obsFinal = obsBase ? `${obsBase}\n${log}` : log;
+
+    const payload: Record<string, unknown> = {
+      evento_id: editForm.evento_id,
+      nome_inscrito: editForm.nome_inscrito.trim(),
+      cpf: cpfLimpo,
+      email: emailLimpo || null,
+      whatsapp: whatsappLimpo || null,
+      sexo: editForm.sexo || null,
+      data_nascimento: dataNasc,
+      supervisao_id: editForm.supervisao_id || null,
+      campo_id: editForm.campo_id || null,
+      tipo_inscricao: eventoDestino.usar_tipos_inscricao ? (tipoSelecionado?.nome ?? null) : null,
+      hospedagem: hospedagemEfetiva,
+      alimentacao: alimentacaoEfetiva,
+      brinde: brindeEfetivo,
+      observacoes: obsFinal,
+      valor_original: valorNovoFinal,
+      valor_final: valorNovoFinal,
+      status_pagamento: novoStatus,
+    };
+
+    setSalvandoEdit(true);
+    const { error } = await supabase
+      .from('evento_inscricoes')
+      .update(payload)
+      .eq('id', editando.id);
+
+    if (error) {
+      setErroEdit('Erro ao salvar: ' + error.message);
+      setSalvandoEdit(false);
+      return;
+    }
+
+    setSalvandoEdit(false);
+    setEditando(null);
+    setEditForm(null);
+    onRefresh();
+  }
+
+  const escHtml = (val: unknown) => String(val ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  function limparFiltros() {
+    setBusca('');
+    setFiltroSup('');
+    setFiltroCampo('');
+    setFiltroPag('');
+    setFiltroCI('');
+    setFiltroHosp('');
+    setFiltroAlim('');
+  }
+
+  function imprimirLista() {
+    const titulo = `${evento.nome} — Listagem de Inscritos`;
+    const logoDir = getDeptLogo(evento.departamento);
+    const dataHoje = new Date().toLocaleDateString('pt-BR');
+    const linhas = filtrados.map(i => {
+      const status = STATUS_PAG_CFG[i.status_pagamento]?.label ?? i.status_pagamento;
+      return `
+        <tr>
+          <td>${escHtml(i.nome_inscrito)}</td>
+          <td>${escHtml(i.cpf ?? '-')}</td>
+          <td>${escHtml(i.whatsapp ?? '-')}</td>
+          <td>${escHtml(nomeSup(i.supervisao_id))}</td>
+          <td>${escHtml(nomeCampo(i.campo_id))}</td>
+          <td>${escHtml(fmtMoeda(i.valor_pago))}</td>
+          <td>${escHtml(status)}</td>
+          <td>${i.checkin_realizado ? escHtml(fmtDT(i.checkin_at)) : '—'}</td>
+          <td>${escHtml(fmtDT(i.created_at))}</td>
+        </tr>`;
+    }).join('');
+
+    const appBaseUrl = getAppBaseUrl();
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>${escHtml(titulo)}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; font-size: 10px; color: #000; padding: 16px; }
+    .header { display: flex; align-items: center; justify-content: center; gap: 10px; }
+    .header-logo { width: 58px; height: auto; flex-shrink: 0; }
+    .header-center { max-width: 640px; text-align: center; }
+    .header-center .org { font-size: 14px; font-weight: bold; }
+    .header-center .info { font-size: 9px; color: #333; margin-top: 2px; }
+    .divider { border-bottom: 2px solid #14b8a6; margin: 8px 0 10px; }
+    .report-title { text-align: center; font-size: 13px; font-weight: bold; margin: 8px 0 6px; }
+    .report-meta { display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 8px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    thead tr { background: #14b8a6; color: #fff; }
+    th { padding: 5px 6px; text-align: left; font-size: 9px; font-weight: bold; }
+    td { padding: 4px 6px; font-size: 9px; border-bottom: 1px solid #ddd; vertical-align: top; }
+    tr:nth-child(even) td { background: #f5f5f5; }
+    @media print { body { padding: 8px; } @page { margin: 10mm; size: A4 landscape; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img class="header-logo" src="${buildUrl(appBaseUrl, '/img/logo_comieadepa.png')}" alt="COMIEADEPA" />
+    <div class="header-center">
+      <div class="org">COMIEADEPA</div>
+      <div class="info">Rodovia Mario Covas, 2500 - do km 3.123 ao km 6.001 - lado impar lado par pertence a(o) Ananindeua - Coqueiro, Belem - PA, 66650-000</div>
+      <div class="info">CNPJ: 04.760.047/0001-04 | Tel: (91) 99223-4022 | contato@comieadepa.org</div>
+    </div>
+    <img class="header-logo" src="${buildUrl(appBaseUrl, logoDir)}" alt="${escHtml(evento.departamento)}" />
+  </div>
+  <div class="divider"></div>
+  <div class="report-title">${escHtml(titulo)}</div>
+  <div class="report-meta">
+    <div>Total de registros: ${filtrados.length}</div>
+    <div>Data: ${dataHoje}</div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Nome</th>
+        <th>CPF</th>
+        <th>WhatsApp</th>
+        <th>Supervisao</th>
+        <th>Campo</th>
+        <th>Valor</th>
+        <th>Pagamento</th>
+        <th>Check-in</th>
+        <th>Inscricao</th>
+      </tr>
+    </thead>
+    <tbody>${linhas}</tbody>
+  </table>
+</body>
+</html>`;
+
+    const win = window.open('', '_blank', 'width=1100,height=750');
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 600);
+  }
+
+  const supervisaoById = useMemo(
+    () => new Map(supervisoes.map(s => [s.id, s.nome])),
+    [supervisoes]
+  );
+  const campoById = useMemo(
+    () => new Map(campos.map(c => [c.id, c.nome])),
+    [campos]
+  );
+
+  const supervisoesDisponiveis = useMemo(() => {
+    const map = new Map<string, string>();
+    inscricoes.forEach(i => {
+      const id = i.supervisao_id;
+      if (!id) return;
+      const nome = (supervisaoById.get(id) ?? '').trim() || id;
+      if (!nome) return;
+      map.set(id, nome);
+    });
+    return Array.from(map.entries())
+      .map(([id, nome]) => ({ id, nome }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  }, [inscricoes, supervisaoById]);
+
+  const camposDisponiveis = useMemo(() => {
+    const map = new Map<string, { id: string; nome: string; supervisao_id: string | null }>();
+    inscricoes.forEach(i => {
+      const id = i.campo_id;
+      if (!id) return;
+      const nome = (campoById.get(id) ?? '').trim() || id;
+      if (!nome) return;
+      map.set(id, { id, nome, supervisao_id: i.supervisao_id ?? null });
+    });
+    return Array.from(map.values())
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  }, [inscricoes, campoById]);
+
+  const camposFiltrados = useMemo(
+    () => (filtroSup ? camposDisponiveis.filter(c => c.supervisao_id === filtroSup) : camposDisponiveis),
+    [camposDisponiveis, filtroSup]
+  );
+
+  useEffect(() => {
+    if (editando && eventosDept.length === 0 && podeMover) {
+      carregarEventosDepartamento();
+    }
+  }, [editando, eventosDept.length, podeMover]);
+
+  useEffect(() => {
+    if (!editForm?.evento_id) return;
+    const ev = eventosDept.find(e => e.id === editForm.evento_id) ?? null;
+    if (ev?.usar_tipos_inscricao) {
+      carregarTiposEvento(editForm.evento_id);
+    }
+  }, [editForm?.evento_id, eventosDept]);
+
+  const eventoAtualResumo = useMemo<EventoResumo>(() => ({
+    id: evento.id,
+    nome: evento.nome,
+    departamento: evento.departamento,
+    status: evento.status,
+    data_inicio: evento.data_inicio,
+    data_fim: evento.data_fim,
+    valor_inscricao: evento.valor_inscricao,
+    usar_tipos_inscricao: evento.usar_tipos_inscricao,
+    permite_hospedagem: evento.permite_hospedagem,
+    permite_alimentacao: evento.permite_alimentacao,
+    permite_brinde: evento.permite_brinde,
+    limite_vagas: evento.limite_vagas,
+    limite_hospedagem: evento.limite_hospedagem,
+    limite_brindes: evento.limite_brindes,
+  }), [evento]);
+
+  const eventosVisiveis = useMemo(
+    () => (eventosDept.length > 0 ? eventosDept : [eventoAtualResumo]),
+    [eventosDept, eventoAtualResumo]
+  );
+
+  const eventoDestino = useMemo(
+    () => (editForm?.evento_id ? (eventosVisiveis.find(e => e.id === editForm.evento_id) ?? null) : null),
+    [editForm?.evento_id, eventosVisiveis]
+  );
+
+  const tiposDestino = useMemo(
+    () => (editForm?.evento_id ? (tiposPorEvento[editForm.evento_id] ?? []) : []),
+    [editForm?.evento_id, tiposPorEvento]
+  );
+
+  const tipoSelecionado = useMemo(() => {
+    if (!eventoDestino?.usar_tipos_inscricao) return null;
+    return tiposDestino.find(t => t.nome === editForm?.tipo_inscricao) ?? null;
+  }, [eventoDestino?.usar_tipos_inscricao, tiposDestino, editForm?.tipo_inscricao]);
+
+  const hospedagemEfetiva = !!(
+    eventoDestino && (
+      eventoDestino.usar_tipos_inscricao
+        ? tipoSelecionado?.inclui_hospedagem
+        : (eventoDestino.permite_hospedagem && editForm?.hospedagem)
+    )
+  );
+
+  const alimentacaoEfetiva = !!(
+    eventoDestino && (
+      eventoDestino.usar_tipos_inscricao
+        ? tipoSelecionado?.inclui_alimentacao
+        : (eventoDestino.permite_alimentacao && editForm?.alimentacao)
+    )
+  );
+
+  const brindeEfetivo = !!(eventoDestino?.permite_brinde && editForm?.brinde);
+
+  const valorNovo = eventoDestino
+    ? (eventoDestino.usar_tipos_inscricao ? (tipoSelecionado ? tipoSelecionado.valor : null) : eventoDestino.valor_inscricao)
+    : null;
+
+  const valorPagoAtual = editando?.valor_pago ?? 0;
+  const diferencaValor = valorNovo !== null ? valorNovo - valorPagoAtual : null;
+
+  const camposModal = useMemo(() => {
+    if (!editForm?.supervisao_id) return campos;
+    return campos.filter(c => c.supervisao_id === editForm.supervisao_id);
+  }, [editForm?.supervisao_id, campos]);
 
   if (loading) return <LoadingSkeleton />;
 
@@ -569,12 +1255,12 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
             className="flex-1 min-w-[200px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]" />
           <select value={filtroSup} onChange={e => { setFiltroSup(e.target.value); setFiltroCampo(''); }}
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-            <option value="">Supervisão</option>
-            {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+            <option value="">Todas supervisões</option>
+            {supervisoesDisponiveis.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
           </select>
           <select value={filtroCampo} onChange={e => setFiltroCampo(e.target.value)}
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-            <option value="">Campo</option>
+            <option value="">Todos campos</option>
             {camposFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
           </select>
           <select value={filtroPag} onChange={e => setFiltroPag(e.target.value)}
@@ -603,6 +1289,14 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
             <option value="true">Sim</option>
             <option value="false">Não</option>
           </select>
+          <button type="button" onClick={limparFiltros}
+            className="px-4 py-2 text-sm rounded-lg border border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100 transition">
+            Limpar
+          </button>
+          <button type="button" onClick={imprimirLista}
+            className="px-4 py-2 text-sm rounded-lg bg-[#123b63] text-white font-semibold hover:bg-[#0f2a45] transition">
+            🖨️ Imprimir
+          </button>
         </div>
         <p className="text-xs text-gray-500 mt-2">{filtrados.length} resultado(s)</p>
       </div>
@@ -614,7 +1308,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
+                <tr className="border-b border-[#D4DCEA] bg-[#E3ECF7]">
                   {['Nome', 'CPF', 'WhatsApp', 'Supervisão', 'Campo', 'Valor', 'Pagamento', 'Check-in', 'Etiq.', 'Cert.', 'Inscrição', 'Ações'].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-600 whitespace-nowrap">{h}</th>
                   ))}
@@ -624,6 +1318,10 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                 {paginados.map(ins => {
                   const pagCfg = STATUS_PAG_CFG[ins.status_pagamento] ?? STATUS_PAG_CFG.pendente;
                   const isSalvando = salvando === ins.id;
+                  const linhaMsg = emailMsg[ins.id] || certMsg[ins.id];
+                  const certLabel = certMsg[ins.id]?.startsWith('✅')
+                    ? certMsg[ins.id]
+                    : (ins.certificado_enviado ? '🎓 ✓' : '🎓');
                   return (
                     <tr key={ins.id} className="border-b border-gray-50 hover:bg-gray-50 transition">
                       <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{ins.nome_inscrito}</td>
@@ -648,22 +1346,55 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                       </td>
                       <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">{fmtDT(ins.created_at)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="flex gap-1">
-                          {ins.status_pagamento !== 'pago' && (
-                            <button onClick={() => baixaManual(ins)} disabled={isSalvando}
-                              className="text-xs px-2 py-1 bg-emerald-100 text-emerald-700 rounded font-semibold hover:bg-emerald-200 transition disabled:opacity-50">
-                              💳 Pago
+                        <div className="flex gap-1 flex-wrap">
+                          <button
+                            title={podeEditar ? 'Editar dados da inscrição' : 'Sem permissão para editar'}
+                            onClick={() => podeEditar && abrirEdicao(ins)}
+                            disabled={isSalvando || !podeEditar}
+                            className="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded font-semibold hover:bg-amber-200 transition disabled:opacity-50">
+                            ✏️
+                          </button>
+                          {podeComunicacao && (
+                            <button
+                              title="Reenviar e-mail de confirmação"
+                              onClick={() => enviarEmailConfirmacao(ins)}
+                              disabled={isSalvando || enviandoEmail[ins.id]}
+                              className="text-xs px-2 py-1 bg-sky-100 text-sky-700 rounded font-semibold hover:bg-sky-200 transition disabled:opacity-50">
+                              {enviandoEmail[ins.id] ? '⏳' : '✉️'}
                             </button>
                           )}
-                          <button onClick={() => marcarEtiqueta(ins)} disabled={isSalvando}
-                            className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded font-semibold hover:bg-gray-200 transition disabled:opacity-50">
+                          <button
+                            title="Imprimir etiqueta térmica individual (100×30mm)"
+                            onClick={() => window.open(`/eventos/${ins.evento_id}/etiquetas/print?mode=thermal&ids=${ins.id}`, '_blank', 'width=520,height=420')}
+                            disabled={isSalvando}
+                            className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded font-semibold hover:bg-purple-200 transition disabled:opacity-50">
                             🏷️
                           </button>
-                          <button onClick={() => excluir(ins.id)} disabled={isSalvando}
-                            className="text-xs px-2 py-1 bg-red-100 text-red-600 rounded font-semibold hover:bg-red-200 transition disabled:opacity-50">
-                            🗑️
+                          <button title="Marcar/desmarcar etiqueta como impressa" onClick={() => marcarEtiqueta(ins)} disabled={isSalvando}
+                            className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded font-semibold hover:bg-gray-200 transition disabled:opacity-50">
+                            ✅
                           </button>
+                          {podeCertificados && evento.gerar_certificado && (
+                            <button
+                              title={certMsg[ins.id] || 'Enviar certificado por e-mail'}
+                              onClick={() => handleEnviarCertificado(ins)}
+                              disabled={isSalvando || enviandoCert[ins.id]}
+                              className={`text-xs px-2 py-1 rounded font-semibold transition disabled:opacity-50 ${ins.certificado_enviado ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}>
+                              {enviandoCert[ins.id] ? '⏳' : certLabel}
+                            </button>
+                          )}
+                          {podeRemover && (
+                            <button title="Excluir inscrição" onClick={() => excluir(ins.id)} disabled={isSalvando}
+                              className="text-xs px-2 py-1 bg-red-100 text-red-600 rounded font-semibold hover:bg-red-200 transition disabled:opacity-50">
+                              🗑️
+                            </button>
+                          )}
                         </div>
+                        {linhaMsg && (
+                          <div className={`mt-1 text-[11px] font-semibold ${linhaMsg.startsWith('✅') ? 'text-emerald-700' : linhaMsg.startsWith('⚠️') ? 'text-amber-600' : 'text-red-600'}`}>
+                            {linhaMsg}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
@@ -688,6 +1419,206 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
             </div>
           )}
         </>
+      )}
+
+      {editando && editForm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => { setEditando(null); setEditForm(null); }}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h3 className="font-bold text-[#123b63] text-base">✏️ Editar Inscrição</h3>
+                <p className="text-xs text-gray-500 mt-0.5">{editando.nome_inscrito}</p>
+              </div>
+              <button onClick={() => { setEditando(null); setEditForm(null); }} className="text-gray-400 hover:text-gray-700 text-xl font-bold leading-none">×</button>
+            </div>
+
+            {erroEdit && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{erroEdit}</div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label className={labelCls}>Evento</label>
+                <select
+                  value={editForm.evento_id}
+                  onChange={e => setEditForm(f => f ? { ...f, evento_id: e.target.value, tipo_inscricao: '' } : f)}
+                  className={inputCls}
+                  disabled={carregandoEventos || !podeMover}
+                >
+                  {eventosVisiveis.map(ev => (
+                    <option key={ev.id} value={ev.id} disabled={ev.status === 'cancelado'}>
+                      {ev.nome} {ev.status === 'cancelado' ? '(Cancelado)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className={labelCls}>Nome completo</label>
+                <input
+                  value={editForm.nome_inscrito}
+                  onChange={e => setEditForm(f => f ? { ...f, nome_inscrito: e.target.value } : f)}
+                  className={inputCls}
+                />
+              </div>
+
+              <div>
+                <label className={labelCls}>CPF</label>
+                <input
+                  value={editForm.cpf}
+                  onChange={e => setEditForm(f => f ? { ...f, cpf: e.target.value } : f)}
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>E-mail</label>
+                <input
+                  type="email"
+                  value={editForm.email}
+                  onChange={e => setEditForm(f => f ? { ...f, email: e.target.value } : f)}
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>WhatsApp</label>
+                <input
+                  value={editForm.whatsapp}
+                  onChange={e => setEditForm(f => f ? { ...f, whatsapp: e.target.value } : f)}
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Sexo</label>
+                <select
+                  value={editForm.sexo}
+                  onChange={e => setEditForm(f => f ? { ...f, sexo: e.target.value } : f)}
+                  className={inputCls}
+                >
+                  <option value="">-</option>
+                  <option value="M">Masculino</option>
+                  <option value="F">Feminino</option>
+                </select>
+              </div>
+              <div>
+                <label className={labelCls}>Data de nascimento</label>
+                <input
+                  type="date"
+                  value={editForm.data_nascimento}
+                  onChange={e => setEditForm(f => f ? { ...f, data_nascimento: e.target.value } : f)}
+                  className={inputCls}
+                />
+              </div>
+
+              <div>
+                <label className={labelCls}>Supervisão</label>
+                <select
+                  value={editForm.supervisao_id}
+                  onChange={e => setEditForm(f => f ? { ...f, supervisao_id: e.target.value, campo_id: '' } : f)}
+                  className={inputCls}
+                >
+                  <option value="">Selecione...</option>
+                  {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={labelCls}>Campo</label>
+                <select
+                  value={editForm.campo_id}
+                  onChange={e => setEditForm(f => f ? { ...f, campo_id: e.target.value } : f)}
+                  className={inputCls}
+                >
+                  <option value="">Selecione...</option>
+                  {camposModal.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                </select>
+              </div>
+
+              {eventoDestino?.usar_tipos_inscricao && (
+                <div className="md:col-span-2">
+                  <label className={labelCls}>Tipo de inscrição</label>
+                  <select
+                    value={editForm.tipo_inscricao}
+                    onChange={e => setEditForm(f => f ? { ...f, tipo_inscricao: e.target.value } : f)}
+                    className={inputCls}
+                  >
+                    <option value="">Selecione...</option>
+                    {tiposDestino.map(t => (
+                      <option key={t.id} value={t.nome}>{t.nome} — {t.valor === 0 ? 'Gratuito' : fmtMoeda(t.valor)}</option>
+                    ))}
+                  </select>
+                  <div className="mt-2 text-xs text-gray-500">
+                    Hospedagem: <span className="font-semibold text-gray-700">{hospedagemEfetiva ? 'Sim' : 'Nao'}</span>
+                    {' · '}Alimentacao: <span className="font-semibold text-gray-700">{alimentacaoEfetiva ? 'Sim' : 'Nao'}</span>
+                  </div>
+                </div>
+              )}
+
+              {!eventoDestino?.usar_tipos_inscricao && (
+                <div className="md:col-span-2">
+                  <label className={labelCls}>Serviços</label>
+                  <div className="flex flex-wrap gap-4 mt-1">
+                    {eventoDestino?.permite_hospedagem && (
+                      <CheckItem name="hospedagem" label="Hospedagem" checked={editForm.hospedagem} onChange={e => setEditForm(f => f ? { ...f, hospedagem: e.target.checked } : f)} />
+                    )}
+                    {eventoDestino?.permite_alimentacao && (
+                      <CheckItem name="alimentacao" label="Alimentação" checked={editForm.alimentacao} onChange={e => setEditForm(f => f ? { ...f, alimentacao: e.target.checked } : f)} />
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {eventoDestino?.permite_brinde && (
+                <div className="md:col-span-2">
+                  <label className={labelCls}>Brinde</label>
+                  <div className="mt-1">
+                    <CheckItem name="brinde" label="Brinde" checked={editForm.brinde} onChange={e => setEditForm(f => f ? { ...f, brinde: e.target.checked } : f)} />
+                  </div>
+                </div>
+              )}
+
+              <div className="md:col-span-2">
+                <label className={labelCls}>Observações</label>
+                <textarea
+                  rows={3}
+                  value={editForm.observacoes}
+                  onChange={e => setEditForm(f => f ? { ...f, observacoes: e.target.value } : f)}
+                  className={inputCls + ' resize-y'}
+                />
+              </div>
+            </div>
+
+            {valorNovo !== null && (
+              <div className="mt-4 text-xs text-gray-600">
+                <div>Valor atual pago: {fmtMoeda(valorPagoAtual)}</div>
+                <div>Valor novo: {fmtMoeda(valorNovo)}</div>
+                {diferencaValor !== null && diferencaValor > 0 && (
+                  <div className="text-amber-600 font-semibold">Diferença a pagar: {fmtMoeda(diferencaValor)} (cobrança complementar)</div>
+                )}
+                {diferencaValor !== null && diferencaValor === 0 && (
+                  <div className="text-emerald-700 font-semibold">Sem diferença de valor.</div>
+                )}
+                {diferencaValor !== null && diferencaValor < 0 && (
+                  <div className="text-red-600 font-semibold">Há diferença a menor. Reembolso deve ser tratado manualmente.</div>
+                )}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 mt-6">
+              <button
+                onClick={() => { setEditando(null); setEditForm(null); }}
+                className="px-4 py-2 text-sm rounded-lg border border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarEdicao}
+                disabled={salvandoEdit}
+                className="px-4 py-2 text-sm rounded-lg bg-[#123b63] text-white font-semibold hover:bg-[#0f2a45] transition disabled:opacity-50"
+              >
+                {salvandoEdit ? 'Salvando...' : 'Salvar alterações'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -973,30 +1904,59 @@ function TabInscricaoManual({ eventoId, evento, supervisoes, campos, supabase, o
 // ═══════════════════════════════════════════════════════════════
 // ABA CHECK-IN
 // ═══════════════════════════════════════════════════════════════
-function TabCheckin({ eventoId, inscricoes, loading, nomeSup, nomeCampo, supabase, onRefresh }: {
-  eventoId: string; inscricoes: Inscricao[]; loading: boolean;
+function TabCheckin({ eventoId, evento, inscricoes, loading, nomeSup, nomeCampo, supabase, onRefresh }: {
+  eventoId: string; evento: Evento; inscricoes: Inscricao[]; loading: boolean;
   nomeSup: (id: string | null) => string;
   nomeCampo: (id: string | null) => string;
   supabase: ReturnType<typeof createClient>;
   onRefresh: () => void;
 }) {
-  const [busca,    setBusca]    = useState('');
-  const [salvando, setSalvando] = useState<string | null>(null);
+  const [busca,       setBusca]       = useState('');
+  const [salvando,    setSalvando]    = useState<string | null>(null);
+  const [checkinAtivo, setCheckinAtivo] = useState(evento.checkin_ativo);
+  const [togglingAtivo, setTogglingAtivo] = useState(false);
+  const [linkCopiado, setLinkCopiado] = useState(false);
+
+  async function toggleCheckinAtivo() {
+    setTogglingAtivo(true);
+    const novoValor = !checkinAtivo;
+    await supabase.from('eventos').update({ checkin_ativo: novoValor }).eq('id', eventoId);
+    setCheckinAtivo(novoValor);
+    setTogglingAtivo(false);
+  }
+
+  function copiarLink() {
+    const link = buildUrl(getPublicBaseUrl(), `/eventos/${eventoId}/checkin`);
+    navigator.clipboard.writeText(link).then(() => {
+      setLinkCopiado(true);
+      setTimeout(() => setLinkCopiado(false), 2500);
+    });
+  }
 
   const resultado = useMemo(() => {
     if (!busca.trim()) return [];
     const q = busca.toLowerCase();
     return inscricoes.filter(i =>
-      i.nome_inscrito.toLowerCase().includes(q) || (i.cpf || '').includes(busca)
+      (i.status_pagamento === 'pago' || i.status_pagamento === 'isento') &&
+      (i.nome_inscrito.toLowerCase().includes(q) || (i.cpf || '').includes(busca))
     ).slice(0, 10);
   }, [inscricoes, busca]);
 
   async function fazerCheckin(inscricao: Inscricao) {
     if (inscricao.checkin_realizado) return;
+    if (inscricao.status_pagamento !== 'pago' && inscricao.status_pagamento !== 'isento') return;
     setSalvando(inscricao.id);
     const now = new Date().toISOString();
     await supabase.from('evento_inscricoes').update({ checkin_realizado: true, checkin_at: now }).eq('id', inscricao.id);
     await supabase.from('evento_checkins').insert([{ evento_id: eventoId, inscricao_id: inscricao.id, metodo: 'manual' }]);
+    // Envia link do certificado automaticamente (sem esperar)
+    if (evento.gerar_certificado && inscricao.email) {
+      fetch(`/api/eventos/${eventoId}/certificados/enviar-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inscricao_id: inscricao.id }),
+      }).catch(() => { /* silencioso — não bloqueia o checkin */ });
+    }
     setSalvando(null);
     onRefresh();
   }
@@ -1005,16 +1965,34 @@ function TabCheckin({ eventoId, inscricoes, loading, nomeSup, nomeCampo, supabas
 
   return (
     <div className="max-w-2xl">
-      {/* Botão modo mobile */}
-      <div className="bg-gradient-to-r from-[#0D2B4E] to-[#123b63] rounded-xl p-5 mb-6 flex items-center justify-between gap-4">
-        <div>
-          <p className="text-white font-bold text-base">📱 Modo Check-in Mobile</p>
-          <p className="text-white/60 text-xs mt-0.5">Tela otimizada para celular com câmera e scanner QR Code</p>
+      {/* Card modo mobile + toggle ativo */}
+      <div className="bg-gradient-to-r from-[#0D2B4E] to-[#123b63] rounded-xl p-5 mb-6">
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <div>
+            <p className="text-white font-bold text-base">📱 Modo Check-in Mobile</p>
+            <p className="text-white/60 text-xs mt-0.5">Tela otimizada para celular com câmera e scanner QR Code</p>
+          </div>
+          <button
+            onClick={copiarLink}
+            className="flex-shrink-0 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white font-bold py-3 px-5 rounded-xl text-sm transition">
+            {linkCopiado ? '✅ Link copiado!' : '📋 Copiar link'}
+          </button>
         </div>
-        <a href={`/eventos/${eventoId}/checkin`} target="_blank" rel="noopener noreferrer"
-          className="flex-shrink-0 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white font-bold py-3 px-5 rounded-xl text-sm transition">
-          Abrir ↗
-        </a>
+        <div className="flex items-center gap-3 bg-white/10 rounded-lg px-4 py-3">
+          <span className="text-white text-sm font-semibold flex-1">
+            Check-in mobile {checkinAtivo ? '🟢 Ativo' : '🔴 Inativo'}
+          </span>
+          <button
+            onClick={toggleCheckinAtivo}
+            disabled={togglingAtivo}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition disabled:opacity-50 ${
+              checkinAtivo
+                ? 'bg-red-500 hover:bg-red-400 text-white'
+                : 'bg-emerald-500 hover:bg-emerald-400 text-white'
+            }`}>
+            {togglingAtivo ? '...' : checkinAtivo ? 'Desativar' : 'Ativar'}
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
@@ -1092,25 +2070,40 @@ function TabCheckin({ eventoId, inscricoes, loading, nomeSup, nomeCampo, supabas
 // ═══════════════════════════════════════════════════════════════
 // ABA ETIQUETAS
 // ═══════════════════════════════════════════════════════════════
-// ─── Tipos de tamanho para o crachá ──────────────────────────
-type EtiquetaSize = 'small' | 'medium';
-
 // ─── Modal de preview do crachá ───────────────────────────────
-function BadgeModal({ ins, evento, nomeSup, nomeCampo, onClose }: {
+function BadgeModal({ ins, evento, nomeSup, nomeCampo, onClose, agoData }: {
   ins: Inscricao; evento: { id: string; nome: string; departamento: string; data_inicio: string; data_fim: string; local: string | null; cidade: string | null; banner_url: string | null };
   nomeSup: string; nomeCampo: string; onClose: () => void;
+  agoData?: { matricula?: string | null; numero_cama?: string | null; tipo_cama?: string | null; hosp_status?: string | null; nome_alojamento?: string | null };
 }) {
+  const isAGO  = evento.departamento === 'AGO';
+  const agoIns = { ...ins, ...(agoData ?? {}) } as EtiquetaInscricaoAGO;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full" onClick={e => e.stopPropagation()}>
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="font-bold text-[#123b63] text-base">Pré-visualização do Crachá</h3>
+      <div className="bg-white rounded-2xl shadow-2xl p-5 max-w-sm w-full" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="font-bold text-[#123b63] text-sm">
+            {isAGO ? 'Pré-visualização AGO — A4 (99,1×34 mm)' : 'Pré-visualização — A4 (99,1×34 mm)'}
+          </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none">✕</button>
         </div>
-        <div className="flex justify-center">
-          <EventBadge inscricao={ins} evento={evento} nomeSup={nomeSup} nomeCampo={nomeCampo} size="medium" printMode={false} />
+        <div className="flex justify-center mb-3">
+          {isAGO
+            ? <EtiquetaPreviewAGO inscricao={agoIns} evento={evento} nomeSup={nomeSup} nomeCampo={nomeCampo} variant="a4" scale={0.92} />
+            : <EtiquetaPreviewDepartamento inscricao={ins} evento={evento} nomeSup={nomeSup} nomeCampo={nomeCampo} variant="a4" scale={0.92} />
+          }
         </div>
-        <p className="text-center text-xs text-gray-400 mt-4">Clique fora para fechar</p>
+        <div className="border-t border-gray-100 pt-3">
+          <p className="text-center text-xs text-gray-400 font-semibold mb-2">Térmica (100×30 mm)</p>
+          <div className="flex justify-center">
+            {isAGO
+              ? <EtiquetaPreviewAGO  inscricao={agoIns} evento={evento} nomeSup={nomeSup} nomeCampo={nomeCampo} variant="thermal" scale={0.88} />
+              : <EtiquetaPreviewDepartamento inscricao={ins} evento={evento} nomeSup={nomeSup} nomeCampo={nomeCampo} variant="thermal" scale={0.88} />
+            }
+          </div>
+        </div>
+        <p className="text-center text-xs text-gray-400 mt-3">Clique fora para fechar</p>
       </div>
     </div>
   );
@@ -1131,11 +2124,63 @@ function TabEtiquetas({ inscricoes, loading, nomeSup, nomeCampo, supabase, onRef
   const [filtroSup,   setFiltroSup]   = useState('');
   const [filtroHosp,  setFiltroHosp]  = useState(false);
   const [filtroAlim,  setFiltroAlim]  = useState(false);
-  const [size,        setSize]        = useState<EtiquetaSize>('medium');
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [salvando,    setSalvando]    = useState<Set<string>>(new Set());
   const [preview,     setPreview]     = useState<Inscricao | null>(null);
   const [pag,         setPag]         = useState(1);
+
+  // AGO: mapa de dados extras (matricula, hospedagem) por inscricao.id
+  type AgoExtra = { matricula: string | null; numero_cama: string | null; tipo_cama: string | null; hosp_status: string | null; nome_alojamento: string | null };
+  const [agoDataMap, setAgoDataMap] = useState<Map<string, AgoExtra>>(new Map());
+
+  useEffect(() => {
+    if (evento?.departamento !== 'AGO' || inscricoes.length === 0) return;
+    let cancelled = false;
+    async function loadAgo() {
+      const inscIds    = inscricoes.map(i => i.id);
+      const ministroIds = [...new Set(inscricoes.map(i => i.ministro_id).filter((x): x is string => !!x))];
+
+      const [hospRes, membersRes] = await Promise.all([
+        supabase.from('evento_hospedagens')
+          .select('inscricao_id,numero_cama,tipo_cama,status,alojamento_id')
+          .in('inscricao_id', inscIds),
+        ministroIds.length > 0
+          ? supabase.from('members').select('id,matricula').in('id', ministroIds)
+          : Promise.resolve({ data: [] as { id: string; matricula: string | null }[] }),
+      ]);
+
+      type HospRow2 = { inscricao_id: string; numero_cama: string | null; tipo_cama: string | null; status: string; alojamento_id: string | null };
+      const hospRows2 = (hospRes.data ?? []) as HospRow2[];
+
+      const aloIds = [...new Set(
+        hospRows2.map(h => h.alojamento_id).filter((x): x is string => x !== null)
+      )];
+      const aloRes = aloIds.length > 0
+        ? await supabase.from('evento_alojamentos').select('id,nome').in('id', aloIds)
+        : { data: [] as { id: string; nome: string }[] };
+
+      if (cancelled) return;
+
+      const hospMap   = new Map(hospRows2.map(h => [h.inscricao_id, h]));
+      const aloMap    = new Map(((aloRes.data ?? []) as { id: string; nome: string }[]).map(a => [a.id, a.nome]));
+      const memberMap = new Map(((membersRes as { data: { id: string; matricula: string | null }[] | null }).data ?? []).map(m => [m.id, m.matricula]));
+
+      const map = new Map<string, AgoExtra>();
+      inscricoes.forEach(ins => {
+        const hosp = hospMap.get(ins.id);
+        map.set(ins.id, {
+          matricula:       ins.ministro_id ? (memberMap.get(ins.ministro_id) ?? null) : null,
+          numero_cama:     hosp?.numero_cama     ?? null,
+          tipo_cama:       hosp?.tipo_cama       ?? null,
+          hosp_status:     hosp?.status          ?? null,
+          nome_alojamento: hosp?.alojamento_id   ? (aloMap.get(hosp.alojamento_id) ?? null) : null,
+        });
+      });
+      setAgoDataMap(map);
+    }
+    loadAgo();
+    return () => { cancelled = true; };
+  }, [evento, inscricoes, supabase]);
   const POR_PAG = 48;
 
   // Supervisões únicas para filtro
@@ -1204,11 +2249,10 @@ function TabEtiquetas({ inscricoes, loading, nomeSup, nomeCampo, supabase, onRef
 
   // Abrir janela de impressão
   function abrirImpressao(idsParam?: string[], apenas?: 'pendentes') {
-    const base = `/eventos/${eventoId}/etiquetas/print?size=${size}`;
-    let url = base;
+    let url = `/eventos/${eventoId}/etiquetas/print?mode=a4`;
     if (idsParam?.length) url += `&ids=${idsParam.join(',')}`;
-    else if (apenas) url += `&apenas=pendentes`;
-    window.open(url, '_blank', 'width=900,height=700');
+    else if (apenas)      url += `&apenas=pendentes`;
+    window.open(url, '_blank', 'width=1000,height=780');
   }
 
   if (loading) return <LoadingSkeleton />;
@@ -1226,6 +2270,7 @@ function TabEtiquetas({ inscricoes, loading, nomeSup, nomeCampo, supabase, onRef
           nomeSup={nomeSup(preview.supervisao_id)}
           nomeCampo={nomeCampo(preview.campo_id)}
           onClose={() => setPreview(null)}
+          agoData={agoDataMap.get(preview.id)}
         />
       )}
 
@@ -1247,11 +2292,7 @@ function TabEtiquetas({ inscricoes, loading, nomeSup, nomeCampo, supabase, onRef
 
       {/* ── Barra de ações de impressão em massa ── */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 mb-4 flex flex-wrap items-center gap-2">
-        {/* Tamanho */}
-        <div className="flex items-center gap-1 border border-gray-200 rounded-lg overflow-hidden">
-          <button onClick={() => setSize('small')}  className={`px-3 py-1.5 text-xs font-semibold transition ${size === 'small'  ? 'bg-[#123b63] text-white' : 'text-gray-600 hover:bg-gray-50'}`}>Térmica</button>
-          <button onClick={() => setSize('medium')} className={`px-3 py-1.5 text-xs font-semibold transition ${size === 'medium' ? 'bg-[#123b63] text-white' : 'text-gray-600 hover:bg-gray-50'}`}>Crachá</button>
-        </div>
+        <span className="text-xs text-gray-400 font-semibold">Formato: CA4362 • 99,1×34 mm • 16 por página</span>
 
         <div className="flex-1" />
 
@@ -1372,10 +2413,26 @@ function TabEtiquetas({ inscricoes, loading, nomeSup, nomeCampo, supabase, onRef
                   </span>
                 )}
 
-                {/* Preview do crachá (clicável) */}
-                <div className="cursor-pointer p-3 flex justify-center" onClick={() => setPreview(ins)}>
+                {/* Preview da etiqueta (clicável) */}
+                <div className="cursor-pointer p-2 flex justify-center bg-gray-50 rounded-t-lg" onClick={() => setPreview(ins)}>
                   {evento ? (
-                    <EventBadge inscricao={ins} evento={evento} nomeSup={nomeSup(ins.supervisao_id)} nomeCampo={nomeCampo(ins.campo_id)} size="small" printMode={false} />
+                    evento.departamento === 'AGO'
+                      ? <EtiquetaPreviewAGO
+                          inscricao={{ ...ins, ...(agoDataMap.get(ins.id) ?? {}) } as EtiquetaInscricaoAGO}
+                          evento={evento}
+                          nomeSup={nomeSup(ins.supervisao_id)}
+                          nomeCampo={nomeCampo(ins.campo_id)}
+                          variant="a4"
+                          scale={0.62}
+                        />
+                      : <EtiquetaPreviewDepartamento
+                          inscricao={ins}
+                          evento={evento}
+                          nomeSup={nomeSup(ins.supervisao_id)}
+                          nomeCampo={nomeCampo(ins.campo_id)}
+                          variant="a4"
+                          scale={0.62}
+                        />
                   ) : (
                     <div className="w-full bg-gray-50 rounded-lg p-3">
                       <p className="font-bold text-gray-800 text-sm">{ins.nome_inscrito}</p>
@@ -1392,9 +2449,14 @@ function TabEtiquetas({ inscricoes, loading, nomeSup, nomeCampo, supabase, onRef
                     👁 Ver
                   </button>
                   <button
+                    onClick={() => window.open(`/eventos/${eventoId}/etiquetas/print?mode=thermal&ids=${ins.id}`, '_blank', 'width=520,height=420')}
+                    className="flex-1 text-xs py-1.5 rounded-lg font-medium bg-purple-600 text-white hover:bg-purple-700 transition">
+                    🏷️ Térmica
+                  </button>
+                  <button
                     onClick={() => abrirImpressao([ins.id])}
                     className="flex-1 text-xs py-1.5 rounded-lg font-medium bg-[#123b63] text-white hover:bg-[#0f2a45] transition">
-                    🖨️ Imprimir
+                    🖨️ A4
                   </button>
                   <button
                     onClick={() => marcar(ins)}
@@ -2062,8 +3124,8 @@ function TabFinanceiro({ inscricoes, loading, stats, nomeSup, nomeCampo, supabas
 // ═══════════════════════════════════════════════════════════════
 // ABA EQUIPE
 // ═══════════════════════════════════════════════════════════════
-function TabEquipe({ eventoId, equipe, supabase, onRefresh }: {
-  eventoId: string; equipe: Equipe[];
+function TabEquipe({ eventoId, evento, equipe, supabase, onRefresh }: {
+  eventoId: string; evento: Evento; equipe: Equipe[];
   supabase: ReturnType<typeof createClient>;
   onRefresh: () => void;
 }) {
@@ -2071,22 +3133,138 @@ function TabEquipe({ eventoId, equipe, supabase, onRefresh }: {
   const [tipo,     setTipo]     = useState<'admin' | 'checkin'>('checkin');
   const [salvando, setSalvando] = useState(false);
   const [erro,     setErro]     = useState<string | null>(null);
+  const [conviteMsg, setConviteMsg] = useState<string | null>(null);
+  const [conviteLink, setConviteLink] = useState<string | null>(null);
+  const [acaoId, setAcaoId] = useState<string | null>(null);
+  const timeoutsRef = useRef<number[]>([]);
+
+  useEffect(() => () => {
+    timeoutsRef.current.forEach(t => clearTimeout(t));
+    timeoutsRef.current = [];
+  }, []);
+
+  const scheduleClear = useCallback((fn: () => void, ms = 5000) => {
+    const id = window.setTimeout(fn, ms);
+    timeoutsRef.current.push(id);
+  }, []);
+
+  function mostrarConvite(msg: string, link?: string | null) {
+    setConviteMsg(msg);
+    setConviteLink(link || null);
+    scheduleClear(() => {
+      setConviteMsg(null);
+      setConviteLink(null);
+    });
+  }
+
+  if (evento.status === 'realizado' || evento.status === 'cancelado') {
+    return (
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-8 text-center max-w-md mx-auto">
+        <span className="text-4xl mb-4 block">🔒</span>
+        <p className="font-bold text-amber-800">Acesso encerrado</p>
+        <p className="text-sm text-amber-600 mt-1">Evento finalizado. Acesso da equipe foi encerrado.</p>
+      </div>
+    );
+  }
 
   async function adicionar(e: React.FormEvent) {
     e.preventDefault();
     setErro(null);
     if (!email.trim()) return setErro('E-mail obrigatório.');
     setSalvando(true);
-    const { error } = await supabase.from('evento_equipe').insert([{ evento_id: eventoId, email: email.trim(), tipo, ativo: true }]);
-    setSalvando(false);
-    if (error) return setErro('Erro: ' + error.message);
-    setEmail('');
-    onRefresh();
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/equipe/convite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), tipo }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setErro(json.error || 'Erro ao enviar convite.');
+        return;
+      }
+      setEmail('');
+      onRefresh();
+      if (json.simulado && json.link) {
+        mostrarConvite('Convite gerado (simulacao). Copie o link abaixo.', json.link);
+      } else {
+        mostrarConvite('Convite enviado por e-mail.');
+      }
+    } catch {
+      setErro('Erro ao enviar convite.');
+    } finally {
+      setSalvando(false);
+    }
   }
 
-  async function toggleAtivo(eq: Equipe) {
-    await supabase.from('evento_equipe').update({ ativo: !eq.ativo }).eq('id', eq.id);
-    onRefresh();
+  function buildConviteLink(token: string) {
+    return buildUrl(getPublicBaseUrl(), `/eventos/equipe/acesso?token=${token}`);
+  }
+
+  async function reenviarConvite(eq: Equipe) {
+    setAcaoId(eq.id);
+    setErro(null);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/equipe/convite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ equipe_id: eq.id, tipo: eq.tipo }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setErro(json.error || 'Erro ao reenviar convite.');
+        return;
+      }
+      onRefresh();
+      if (json.simulado && json.link) {
+        mostrarConvite('Convite gerado (simulacao). Copie o link abaixo.', json.link);
+      } else {
+        mostrarConvite('Convite reenviado por e-mail.');
+      }
+    } catch {
+      setErro('Erro ao reenviar convite.');
+    } finally {
+      setAcaoId(null);
+    }
+  }
+
+  async function copiarLink(eq: Equipe) {
+    setErro(null);
+    if (!eq.convite_token) {
+      setErro('Convite ainda nao gerado. Reenvie o convite.');
+      return;
+    }
+    const link = buildConviteLink(eq.convite_token);
+    try {
+      await navigator.clipboard.writeText(link);
+      mostrarConvite('Link copiado.', link);
+    } catch {
+      setErro('Nao foi possivel copiar o link.');
+    }
+  }
+
+  async function revogarAcesso(eq: Equipe) {
+    if (!confirm('Revogar o acesso deste membro?')) return;
+    setAcaoId(eq.id);
+    setErro(null);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/equipe/revogar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ equipe_id: eq.id }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setErro(json.error || 'Erro ao revogar acesso.');
+        return;
+      }
+      onRefresh();
+      mostrarConvite('Acesso revogado.');
+    } catch {
+      setErro('Erro ao revogar acesso.');
+    } finally {
+      setAcaoId(null);
+    }
   }
 
   async function remover(id: string) {
@@ -2115,6 +3293,23 @@ function TabEquipe({ eventoId, equipe, supabase, onRefresh }: {
             {salvando ? 'Salvando...' : 'Adicionar'}
           </button>
         </form>
+        {conviteMsg && (
+          <div className="mt-3 text-sm bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg px-3 py-2">
+            <p className="font-semibold">{conviteMsg}</p>
+            {conviteLink && (
+              <div className="flex gap-2 mt-2 items-center">
+                <input readOnly value={conviteLink}
+                  className="flex-1 min-w-0 border border-emerald-200 rounded-lg px-3 py-2 text-xs bg-white font-mono" />
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(conviteLink)}
+                  className="text-xs px-3 py-2 rounded-lg bg-emerald-600 text-white font-semibold hover:bg-emerald-700 transition">
+                  Copiar link
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Lista */}
@@ -2125,7 +3320,7 @@ function TabEquipe({ eventoId, equipe, supabase, onRefresh }: {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['E-mail', 'Tipo', 'Status', 'Ações'].map(h => (
+                {['E-mail', 'Tipo', 'Status', 'Ultimo acesso', 'Ações'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-600">{h}</th>
                 ))}
               </tr>
@@ -2144,11 +3339,29 @@ function TabEquipe({ eventoId, equipe, supabase, onRefresh }: {
                       {eq.ativo ? 'Ativo' : 'Inativo'}
                     </span>
                   </td>
+                  <td className="px-4 py-3 text-xs text-gray-500">
+                    {eq.ultimo_acesso_em ? fmtDT(eq.ultimo_acesso_em) : '—'}
+                  </td>
                   <td className="px-4 py-3">
-                    <div className="flex gap-2">
-                      <button onClick={() => toggleAtivo(eq)}
-                        className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded font-semibold hover:bg-gray-200 transition">
-                        {eq.ativo ? 'Desativar' : 'Ativar'}
+                    <div className="flex gap-2 flex-wrap">
+                      <button
+                        onClick={() => reenviarConvite(eq)}
+                        disabled={acaoId === eq.id}
+                        className="text-xs px-2 py-1 bg-sky-100 text-sky-700 rounded font-semibold hover:bg-sky-200 transition disabled:opacity-50">
+                        Reenviar convite
+                      </button>
+                      <button
+                        onClick={() => copiarLink(eq)}
+                        disabled={!eq.convite_token}
+                        className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded font-semibold hover:bg-gray-200 transition disabled:opacity-50"
+                        title={!eq.convite_token ? 'Convite nao gerado' : 'Copiar link'}>
+                        Copiar link
+                      </button>
+                      <button
+                        onClick={() => revogarAcesso(eq)}
+                        disabled={!eq.ativo || acaoId === eq.id}
+                        className="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded font-semibold hover:bg-amber-200 transition disabled:opacity-50">
+                        Revogar acesso
                       </button>
                       <button onClick={() => remover(eq.id)}
                         className="text-xs px-2 py-1 bg-red-100 text-red-600 rounded font-semibold hover:bg-red-200 transition">
@@ -2199,7 +3412,7 @@ const STATUS_NOTIF_CFG = {
   erro:     { label: 'Erro',     cls: 'bg-red-100    text-red-700'    },
 };
 
-function TabComunicacao({ eventoId }: { eventoId: string }) {
+function TabComunicacao({ eventoId, supabase }: { eventoId: string; supabase: ReturnType<typeof createClient> }) {
   const [notifs,       setNotifs]       = useState<Notificacao[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [filtroStatus, setFiltroStatus] = useState('');
@@ -2211,6 +3424,41 @@ function TabComunicacao({ eventoId }: { eventoId: string }) {
   const [total,        setTotal]        = useState(0);
   const [page,         setPage]         = useState(1);
   const [loteResult,   setLoteResult]   = useState<{ enviados: number; erros: number } | null>(null);
+
+  // Busca por inscrito
+  const [buscaInscrito,   setBuscaInscrito]   = useState('');
+  const [buscandoInscrito, setBuscandoInscrito] = useState(false);
+  const [resultadosBusca,  setResultadosBusca]  = useState<{ id: string; nome_inscrito: string; cpf: string | null; email: string | null; whatsapp: string | null; status_pagamento: string }[]>([]);
+  const [reenvioMsg,       setReenvioMsg]       = useState<string | null>(null);
+
+  async function buscarInscrito() {
+    if (!buscaInscrito.trim()) return;
+    setBuscandoInscrito(true);
+    setResultadosBusca([]);
+    setReenvioMsg(null);
+    const { data } = await supabase
+      .from('evento_inscricoes')
+      .select('id,nome_inscrito,cpf,email,whatsapp,status_pagamento')
+      .eq('evento_id', eventoId)
+      .or(`nome_inscrito.ilike.%${buscaInscrito}%,cpf.ilike.%${buscaInscrito}%,email.ilike.%${buscaInscrito}%,whatsapp.ilike.%${buscaInscrito}%`)
+      .limit(10);
+    setResultadosBusca((data ?? []) as typeof resultadosBusca);
+    setBuscandoInscrito(false);
+  }
+
+  async function reenviarConfirmacao(ins: typeof resultadosBusca[number]) {
+    setReenvioMsg(null);
+    const res = await fetch(`/api/eventos/${eventoId}/notificacoes/reenviar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inscricao_id: ins.id }),
+    });
+    if (res.ok) {
+      setReenvioMsg(`✅ Confirmação reenviada para ${ins.nome_inscrito}`);
+    } else {
+      setReenvioMsg(`❌ Erro ao reenviar para ${ins.nome_inscrito}`);
+    }
+  }
 
   const fetchNotifs = useCallback(async () => {
     setLoading(true);
@@ -2266,6 +3514,50 @@ function TabComunicacao({ eventoId }: { eventoId: string }) {
 
   return (
     <div className="space-y-5">
+      {/* Busca por inscrito */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h3 className="font-bold text-[#123b63] mb-3">🔍 Reenviar confirmação por inscrito</h3>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Nome, CPF, e-mail ou WhatsApp..."
+            value={buscaInscrito}
+            onChange={e => setBuscaInscrito(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && buscarInscrito()}
+            className={inputCls + ' flex-1'}
+          />
+          <button
+            onClick={buscarInscrito}
+            disabled={buscandoInscrito}
+            className="px-4 py-2 text-sm font-semibold bg-[#123b63] text-white rounded-lg hover:bg-[#0f2a45] transition disabled:opacity-50">
+            {buscandoInscrito ? '⏳' : 'Buscar'}
+          </button>
+        </div>
+        {reenvioMsg && (
+          <p className={`mt-2 text-sm font-semibold ${reenvioMsg.startsWith('✅') ? 'text-emerald-700' : 'text-red-600'}`}>{reenvioMsg}</p>
+        )}
+        {resultadosBusca.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {resultadosBusca.map(ins => (
+              <div key={ins.id} className="flex items-center justify-between gap-3 border border-gray-100 rounded-lg px-4 py-2">
+                <div>
+                  <p className="text-sm font-medium text-gray-800">{ins.nome_inscrito}</p>
+                  <p className="text-xs text-gray-500">{ins.cpf ?? ''} {ins.email ?? ''} {ins.whatsapp ?? ''}</p>
+                </div>
+                <button
+                  onClick={() => reenviarConfirmacao(ins)}
+                  className="text-xs px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded font-semibold hover:bg-emerald-200 transition">
+                  📤 Reenviar
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {!buscandoInscrito && buscaInscrito.trim() && resultadosBusca.length === 0 && (
+          <p className="mt-2 text-sm text-gray-500">Nenhum inscrito encontrado.</p>
+        )}
+      </div>
+
       {/* Header com stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
@@ -2446,6 +3738,7 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
   podeEditar: boolean;
 }) {
   const supabase = useMemo(() => createClient(), []);
+  const router = useRouter();
 
   // ── Cupons ───────────────────────────────────────────────
   const [cupons,        setCupons]        = useState<Array<{id:string;codigo:string;tipo:string;valor:number;limite_uso:number|null;usados:number;ativo:boolean;validade:string|null}>>([]);
@@ -2466,7 +3759,9 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
 
   // ── Página pública ─────────────────────────────────────────────
   const [copiado, setCopiado] = useState(false);
-  const urlPublica = `${typeof window !== 'undefined' ? window.location.origin : ''}/inscricao/${evento.slug}`;
+  const urlPublica = buildUrl(getPublicBaseUrl(), `/inscricao/${evento.slug}`);
+  const editarHref = `/eventos/${evento.id}/editar`;
+  const handleEditar = () => router.push(editarHref);
 
   useEffect(() => {
     fetch(`/api/eventos/${evento.id}/cupons`)
@@ -2479,7 +3774,14 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
       .then(j => {
         const t = (j.tipos ?? []) as Array<{id?:string;nome:string;valor:number;inclui_alimentacao:boolean;inclui_hospedagem:boolean;ativo:boolean;ordem:number}>;
         if (t.length > 0) {
-          setTipos(t.map(x => ({ ...x, valor: String(x.valor) })));
+          setTipos(t.map((x, i) => ({
+            ...x,
+            valor: String(x.valor ?? ''),
+            ativo: x.ativo ?? true,
+            inclui_alimentacao: !!x.inclui_alimentacao,
+            inclui_hospedagem: !!x.inclui_hospedagem,
+            ordem: x.ordem ?? (i + 1),
+          })));
         } else {
           setTipos([
             { nome: 'Plenárias',                              valor: '', inclui_alimentacao: false, inclui_hospedagem: false, ativo: true, ordem: 1 },
@@ -2570,10 +3872,10 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
         <div className={hd}>
           <h3 className={hdT}>📋 Dados do Evento</h3>
           {podeEditar && (
-            <a href={`/eventos/${evento.id}/editar`}
+            <button type="button" onClick={handleEditar}
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition">
               ✏️ Editar
-            </a>
+            </button>
           )}
         </div>
         <div className="p-6">
@@ -2615,10 +3917,10 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
         <div className={hd}>
           <h3 className={hdT}>🎟️ Inscrições e Valores</h3>
           {podeEditar && (
-            <a href={`/eventos/${evento.id}/editar`}
+            <button type="button" onClick={handleEditar}
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition">
               ✏️ Editar limites
-            </a>
+            </button>
           )}
         </div>
         <div className="p-6 space-y-5">
@@ -2709,7 +4011,7 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
                     <div className="flex flex-wrap items-center gap-2">
                       {/* Ativo */}
                       <label className="flex items-center gap-1 cursor-pointer shrink-0">
-                        <input type="checkbox" checked={t.ativo}
+                        <input type="checkbox" checked={!!t.ativo}
                           onChange={e => setTipos(prev => prev.map((x, j) => j===i ? {...x, ativo: e.target.checked} : x))}
                           className="accent-[#123b63]" disabled={!podeEditar} />
                         <span className="text-xs font-semibold text-gray-600">Ativo</span>
@@ -2729,14 +4031,14 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
                       </div>
                       {/* Inclui Alimentação */}
                       <label className="flex items-center gap-1 cursor-pointer shrink-0">
-                        <input type="checkbox" checked={t.inclui_alimentacao}
+                        <input type="checkbox" checked={!!t.inclui_alimentacao}
                           onChange={e => setTipos(prev => prev.map((x, j) => j===i ? {...x, inclui_alimentacao: e.target.checked} : x))}
                           className="accent-[#123b63]" disabled={!podeEditar || !t.ativo} />
                         <span className="text-xs text-gray-600">🍽️ Aliment.</span>
                       </label>
                       {/* Inclui Hospedagem */}
                       <label className="flex items-center gap-1 cursor-pointer shrink-0">
-                        <input type="checkbox" checked={t.inclui_hospedagem}
+                        <input type="checkbox" checked={!!t.inclui_hospedagem}
                           onChange={e => setTipos(prev => prev.map((x, j) => j===i ? {...x, inclui_hospedagem: e.target.checked} : x))}
                           className="accent-[#123b63]" disabled={!podeEditar || !t.ativo} />
                         <span className="text-xs text-gray-600">🏨 Hosp.</span>
@@ -2764,10 +4066,10 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
         <div className={hd}>
           <h3 className={hdT}>📣 Comunicação</h3>
           {podeEditar && (
-            <a href={`/eventos/${evento.id}/editar`}
+            <button type="button" onClick={handleEditar}
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition">
               ✏️ Editar
-            </a>
+            </button>
           )}
         </div>
         <div className="p-6 space-y-5">
@@ -2784,7 +4086,7 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
               </div>
             ) : (
               <p className="text-sm text-gray-400 italic">Não configurado
-                {podeEditar && <a href={`/eventos/${evento.id}/editar`} className="ml-2 text-[#123b63] underline">→ Editar</a>}
+                {podeEditar && <button type="button" onClick={handleEditar} className="ml-2 text-[#123b63] underline">→ Editar</button>}
               </p>
             )}
           </div>
@@ -2796,7 +4098,7 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
               </pre>
             ) : (
               <p className="text-sm text-gray-400 italic">Não configurada
-                {podeEditar && <a href={`/eventos/${evento.id}/editar`} className="ml-2 text-[#123b63] underline">→ Editar</a>}
+                {podeEditar && <button type="button" onClick={handleEditar} className="ml-2 text-[#123b63] underline">→ Editar</button>}
               </p>
             )}
           </div>

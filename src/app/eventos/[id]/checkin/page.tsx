@@ -1,15 +1,19 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, type FormEvent } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useEventosPerfil } from '@/hooks/useEventosPerfil';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { createClient } from '@/lib/supabase-client';
+import { clearEquipeSession, getEquipeSession } from '@/lib/equipe-session';
+import type { EquipeSession } from '@/lib/equipe-session';
 
 // ─── Tipos ────────────────────────────────────────────────────
 interface Evento {
   id: string; nome: string; slug: string;
   departamento: string; data_inicio: string; data_fim: string;
+  status: 'programado' | 'realizado' | 'cancelado';
+  checkin_ativo: boolean | null;
 }
 
 interface Inscricao {
@@ -39,11 +43,33 @@ interface ResultadoScan {
   nomeCampo?: string;
 }
 
+type AcessoMotivo = 'nao_autorizado' | 'evento_encerrado' | 'checkin_desativado';
+
 // ─── Helpers ─────────────────────────────────────────────────
 const fmtDT = (d: string | null) => {
   if (!d) return '-';
   return new Date(d).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
 };
+
+function extractQrToken(raw: string): string {
+  const value = raw.trim();
+  if (!value) return '';
+  if (!/^https?:\/\//i.test(value)) return value;
+
+  try {
+    const url = new URL(value);
+    const fromQuery = url.searchParams.get('qr') || url.searchParams.get('token') || url.searchParams.get('code');
+    if (fromQuery) return fromQuery;
+
+    const match = url.pathname.match(/\/qr\/([^/]+)/i);
+    if (match?.[1]) return decodeURIComponent(match[1]);
+
+    const parts = url.pathname.split('/').filter(Boolean);
+    return parts.length ? decodeURIComponent(parts[parts.length - 1]) : value;
+  } catch {
+    return value;
+  }
+}
 
 function emitirSom(tipo: 'sucesso' | 'erro') {
   try {
@@ -76,18 +102,26 @@ function vibrar(tipo: 'sucesso' | 'erro') {
 
 // ─── Componente principal ─────────────────────────────────────
 export default function CheckinMobilePage() {
-  const { loading: authLoading } = useRequireSupabaseAuth();
-  const perfil = useEventosPerfil();
-  const router = useRouter();
   const params = useParams();
   const id = params?.id as string;
+  const { user, loading: authLoading } = useRequireSupabaseAuth({ allowEquipeSession: { eventoId: id }, allowAnonymous: true });
+  const perfil = useEventosPerfil();
+  const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
+
+  const [equipeSessao, setEquipeSessao] = useState<EquipeSession | null>(null);
+  const [emailAcesso, setEmailAcesso] = useState('');
+  const [solicitando, setSolicitando] = useState(false);
+  const [gateMsg, setGateMsg] = useState<string | null>(null);
+  const [gateMsgTipo, setGateMsgTipo] = useState<'success' | 'error'>('success');
+  const [linkSimulado, setLinkSimulado] = useState<string | null>(null);
 
   const [evento,      setEvento]      = useState<Evento | null>(null);
   const [supervisoes, setSupervisoes] = useState<Supervisao[]>([]);
   const [campos,      setCampos]      = useState<Campo[]>([]);
   const [loadingEvento, setLoadingEvento] = useState(true);
   const [acessoNegado,  setAcessoNegado]  = useState(false);
+  const [acessoMotivo,  setAcessoMotivo]  = useState<AcessoMotivo | null>(null);
 
   // Contadores em tempo real
   const [totalCheckins, setTotalCheckins] = useState(0);
@@ -108,35 +142,16 @@ export default function CheckinMobilePage() {
   const [buscandoManual,   setBuscandoManual]   = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Carrega evento e dados base ───────────────────────────
+  const precisaGate = !authLoading && !perfil.loading && !user && !equipeSessao;
+
   useEffect(() => {
-    if (authLoading || perfil.loading) return;
-
-    // Gate de acesso
-    if (!perfil.isGlobal && id && !perfil.podeAcessarEvento(id)) {
-      setAcessoNegado(true);
-      setLoadingEvento(false);
-      return;
+    const sess = getEquipeSession();
+    if (sess && sess.eventoId === id) {
+      setEquipeSessao(sess);
+    } else {
+      setEquipeSessao(null);
     }
-
-    async function load() {
-      const [evRes, supRes, camRes] = await Promise.all([
-        supabase.from('eventos').select('id,nome,slug,departamento,data_inicio,data_fim').eq('id', id).single(),
-        supabase.from('supervisoes').select('id,nome').order('nome'),
-        supabase.from('campos').select('id,nome').order('nome'),
-      ]);
-      // Gate de departamento: isDeptAdmin só acessa eventos do seu dept
-      if (evRes.data && perfil.isDeptAdmin && (evRes.data as Evento).departamento !== perfil.departamentoUsuario) {
-        setAcessoNegado(true); setLoadingEvento(false); return;
-      }
-      if (evRes.data) setEvento(evRes.data as Evento);
-      if (supRes.data) setSupervisoes(supRes.data as Supervisao[]);
-      if (camRes.data) setCampos(camRes.data as Campo[]);
-      setLoadingEvento(false);
-      await carregarContadores();
-    }
-    load();
-  }, [authLoading, perfil.loading, perfil.isGlobal, perfil.isDeptAdmin, perfil.departamentoUsuario, id, supabase]);
+  }, [id]);
 
   const carregarContadores = useCallback(async () => {
     if (!id) return;
@@ -150,6 +165,142 @@ export default function CheckinMobilePage() {
     setTotalCheckins(count ?? 0);
     setUltimosCheckins((data ?? []) as Inscricao[]);
   }, [id, supabase]);
+
+  const validarSessaoEquipe = useCallback(async () => {
+    if (!equipeSessao || !id) return true;
+    try {
+      const res = await fetch(`/api/eventos/${id}/checkin/validar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ equipe_id: equipeSessao.equipeId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        const erro = (json?.error as string | undefined) || '';
+        if (erro.includes('Convite expirado')) {
+          setGateMsg('Link expirado. Solicite novo acesso à organização.');
+          setGateMsgTipo('error');
+        } else if (erro.includes('Evento encerrado')) {
+          setAcessoMotivo('evento_encerrado');
+          setAcessoNegado(true);
+        } else if (erro.includes('Check-in desativado')) {
+          setAcessoMotivo('checkin_desativado');
+          setAcessoNegado(true);
+        } else {
+          setGateMsg('Seu acesso ao check-in foi encerrado. Solicite novo acesso à organização.');
+          setGateMsgTipo('error');
+        }
+        throw new Error('Sessao invalida');
+      }
+      return true;
+    } catch {
+      clearEquipeSession();
+      setEquipeSessao(null);
+      setScannerAtivo(false);
+      setAcessoNegado(false);
+      setLoadingEvento(false);
+      return false;
+    }
+  }, [equipeSessao, id]);
+
+  // ── Carrega evento e dados base ───────────────────────────
+  useEffect(() => {
+    if (authLoading || perfil.loading) return;
+
+    if (precisaGate) {
+      setLoadingEvento(false);
+      return;
+    }
+
+    // Gate de acesso
+    if (!perfil.isGlobal && id && !perfil.podeAcessarEvento(id)) {
+      setAcessoMotivo('nao_autorizado');
+      setAcessoNegado(true);
+      setLoadingEvento(false);
+      return;
+    }
+
+    async function load() {
+      if (equipeSessao) {
+        const ok = await validarSessaoEquipe();
+        if (!ok) return;
+      }
+      const [evRes, supRes, camRes] = await Promise.all([
+        supabase.from('eventos').select('id,nome,slug,departamento,data_inicio,data_fim,status,checkin_ativo').eq('id', id).single(),
+        supabase.from('supervisoes').select('id,nome').order('nome'),
+        supabase.from('campos').select('id,nome').order('nome'),
+      ]);
+      if (evRes.data && (evRes.data as Evento).status !== 'programado') {
+        setAcessoMotivo('evento_encerrado');
+        setAcessoNegado(true);
+        setLoadingEvento(false);
+        return;
+      }
+      if (evRes.data && (evRes.data as Evento).checkin_ativo !== true) {
+        setAcessoMotivo('checkin_desativado');
+        setAcessoNegado(true);
+        setLoadingEvento(false);
+        return;
+      }
+      // Gate de departamento: isDeptAdmin só acessa eventos do seu dept
+      if (evRes.data && perfil.isDeptAdmin && (evRes.data as Evento).departamento !== perfil.departamentoUsuario) {
+        setAcessoMotivo('nao_autorizado');
+        setAcessoNegado(true); setLoadingEvento(false); return;
+      }
+      if (evRes.data) setEvento(evRes.data as Evento);
+      if (supRes.data) setSupervisoes(supRes.data as Supervisao[]);
+      if (camRes.data) setCampos(camRes.data as Campo[]);
+      setLoadingEvento(false);
+      await carregarContadores();
+    }
+    load();
+  }, [authLoading, perfil.loading, perfil.isGlobal, perfil.isDeptAdmin, perfil.departamentoUsuario, id, supabase, precisaGate, perfil.podeAcessarEvento, carregarContadores, equipeSessao, validarSessaoEquipe]);
+
+  async function solicitarAcesso(e: FormEvent) {
+    e.preventDefault();
+    setGateMsg(null);
+    setGateMsgTipo('success');
+    setLinkSimulado(null);
+    if (!id) {
+      setGateMsg('Evento invalido.');
+      setGateMsgTipo('error');
+      return;
+    }
+    const email = emailAcesso.trim().toLowerCase();
+    if (!email) {
+      setGateMsg('Informe o e-mail autorizado.');
+      setGateMsgTipo('error');
+      return;
+    }
+
+    setSolicitando(true);
+    try {
+      const res = await fetch(`/api/eventos/${id}/checkin/solicitar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setGateMsg(json.error || 'Erro ao enviar acesso.');
+        setGateMsgTipo('error');
+        return;
+      }
+      if (json.simulado && json.link) {
+        setGateMsg('Convite gerado (simulacao). Copie o link abaixo.');
+        setGateMsgTipo('success');
+        setLinkSimulado(json.link);
+      } else {
+        setGateMsg('Link de acesso enviado para seu e-mail.');
+        setGateMsgTipo('success');
+      }
+    } catch {
+      setGateMsg('Erro ao enviar acesso.');
+      setGateMsgTipo('error');
+    } finally {
+      setSolicitando(false);
+    }
+  }
 
   // ── Inicia / para câmera ──────────────────────────────────
   useEffect(() => {
@@ -200,11 +351,20 @@ export default function CheckinMobilePage() {
     }
 
     try {
+      const qrToken = extractQrToken(qrText);
+      if (!qrToken) {
+        setResultado({ estado: 'invalid' });
+        emitirSom('erro');
+        vibrar('erro');
+        setTimeout(() => voltarParaScan(), 4000);
+        return;
+      }
+
       // Busca inscrição pelo token do QR Code
       const { data: insc } = await supabase
         .from('evento_inscricoes')
         .select('id,evento_id,nome_inscrito,cpf,supervisao_id,campo_id,status_pagamento,checkin_realizado,checkin_at,qr_code')
-        .eq('qr_code', qrText.trim())
+        .eq('qr_code', qrToken)
         .single();
 
       if (!insc) {
@@ -234,6 +394,15 @@ export default function CheckinMobilePage() {
         vibrar('erro');
         setTimeout(() => voltarParaScan(), 5000);
         return;
+      }
+
+      if (equipeSessao) {
+        const ok = await validarSessaoEquipe();
+        if (!ok) {
+          ignorandoRef.current = false;
+          setResultado(null);
+          return;
+        }
       }
 
       // Registra check-in
@@ -278,6 +447,10 @@ export default function CheckinMobilePage() {
     setProcessando(true);
     const now = new Date().toISOString();
     try {
+      if (equipeSessao) {
+        const ok = await validarSessaoEquipe();
+        if (!ok) return;
+      }
       await Promise.all([
         supabase.from('evento_inscricoes')
           .update({ checkin_realizado: true, checkin_at: now })
@@ -332,28 +505,97 @@ export default function CheckinMobilePage() {
   const nomeCampo = (cid: string | null) => campos.find(c => c.id === cid)?.nome ?? '-';
 
   // ── Loading / Acesso negado ───────────────────────────────
+  if (acessoNegado || !evento) {
+    const mensagens: Record<AcessoMotivo, { titulo: string; corpo: string }> = {
+      nao_autorizado: {
+        titulo: 'Acesso não autorizado',
+        corpo: 'Você não tem permissão para este evento.',
+      },
+      evento_encerrado: {
+        titulo: 'Evento encerrado',
+        corpo: 'Este evento foi finalizado ou cancelado.',
+      },
+      checkin_desativado: {
+        titulo: 'Check-in desativado',
+        corpo: 'O check-in deste evento ainda não foi iniciado. Aguarde a liberação pela organização.',
+      },
+    };
+
+    const msg = mensagens[acessoMotivo || 'nao_autorizado'];
+
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6">
+        <div className="text-center max-w-sm">
+          <span className="text-6xl mb-4 block">🔒</span>
+          <p className="text-white font-bold text-xl mb-2">{msg.titulo}</p>
+          <p className="text-gray-400 text-sm mb-6">{msg.corpo}</p>
+          <button onClick={() => router.push('/eventos')}
+            className="bg-white text-gray-900 px-6 py-3 rounded-xl font-semibold text-sm">
+            ← Voltar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (precisaGate) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 w-full max-w-md text-center text-gray-800">
+          <div className="text-3xl mb-3">🔐</div>
+          <h1 className="text-lg font-bold text-[#123b63]">Acesso ao Check-in</h1>
+          <p className="text-sm text-gray-500 mt-2">Informe o e-mail autorizado para receber o link de acesso.</p>
+
+          <form onSubmit={solicitarAcesso} className="mt-4 space-y-3">
+            <input
+              type="email"
+              placeholder="email@exemplo.com"
+              value={emailAcesso}
+              onChange={e => setEmailAcesso(e.target.value)}
+              className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+              required
+            />
+            <button
+              type="submit"
+              disabled={solicitando}
+              className="w-full bg-[#123b63] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#0f2a45] transition disabled:opacity-50">
+              {solicitando ? 'Enviando...' : 'Enviar link de acesso'}
+            </button>
+          </form>
+
+          {gateMsg && (
+            <div className={`mt-4 text-sm rounded-lg px-3 py-2 border ${gateMsgTipo === 'error'
+              ? 'text-red-700 bg-red-50 border-red-200'
+              : 'text-emerald-700 bg-emerald-50 border-emerald-200'}`}>
+              {gateMsg}
+            </div>
+          )}
+          {linkSimulado && (
+            <div className="mt-3 flex gap-2 items-center">
+              <input
+                readOnly
+                value={linkSimulado}
+                className="flex-1 min-w-0 border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => navigator.clipboard.writeText(linkSimulado)}
+                className="text-xs px-3 py-2 rounded-lg bg-emerald-600 text-white font-semibold hover:bg-emerald-700 transition">
+                Copiar
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (authLoading || perfil.loading || loadingEvento) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
         <div className="text-white text-center">
           <div className="w-10 h-10 border-4 border-white border-t-transparent rounded-full animate-spin mx-auto mb-3" />
           <p className="text-sm text-gray-400">Carregando...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (acessoNegado || !evento) {
-    return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6">
-        <div className="text-center max-w-sm">
-          <span className="text-6xl mb-4 block">🔒</span>
-          <p className="text-white font-bold text-xl mb-2">Acesso não autorizado</p>
-          <p className="text-gray-400 text-sm mb-6">Você não tem permissão para este evento.</p>
-          <button onClick={() => router.push('/eventos')}
-            className="bg-white text-gray-900 px-6 py-3 rounded-xl font-semibold text-sm">
-            ← Voltar
-          </button>
         </div>
       </div>
     );
@@ -431,7 +673,7 @@ export default function CheckinMobilePage() {
       {/* ── HEADER ──────────────────────────────────────────── */}
       <div className="bg-[#0D2B4E] px-4 py-3 flex items-center justify-between gap-4 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <button onClick={() => router.push(`/eventos/${id}`)}
+          <button onClick={() => router.push('/eventos')}
             className="text-white/70 hover:text-white text-xl leading-none">
             ‹
           </button>

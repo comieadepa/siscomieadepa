@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import PageLayout from '@/components/PageLayout';
 import { createClient } from '@/lib/supabase-client';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
+import { buildUrl, getAppBaseUrl } from '@/lib/urls';
 
 interface Supervisao { id: string; nome: string; }
 interface Campo { id: string; nome: string; supervisao_id: string; pastor_member_id?: string | null; presidente_nome?: string | null; }
@@ -459,7 +460,7 @@ export default function PermutasPage() {
 </head>
 <body>
   <div class="header">
-    <img class="header-logo" src="${window.location.origin}/img/logo_comieadepa.png" alt="COMIEADEPA"/>
+    <img class="header-logo" src="${buildUrl(getAppBaseUrl(), '/img/logo_comieadepa.png')}" alt="COMIEADEPA"/>
     <div class="header-center">
       <div class="org">COMIEADEPA - CONVENÇÃO INTERESTADUAL DE MINISTROS E IGREJAS<br/>EVANGÉLICAS ASSEMBLEIA DE DEUS NO PARÁ</div>
       <div class="contact">Emails: comieadepa@bol.com.br / Site: www.comieadepa.org</div>

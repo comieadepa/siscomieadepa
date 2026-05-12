@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-guard'
-import { Resend } from 'resend'
+import { sendEmail } from '@/services/email'
 import { ensureAsaasCustomer, createAsaasPayment, buildBillingInstallments } from '@/lib/asaas'
+import { buildUrl, getAppBaseUrl } from '@/lib/urls'
 
 export async function POST(request: NextRequest) {
   try {
@@ -264,14 +265,10 @@ export async function POST(request: NextRequest) {
       })
 
     // Enviar email de confirmação de efetivação ao cliente
-    const resendKey = process.env.RESEND_API_KEY
-    const resendFrom = process.env.RESEND_FROM || 'noreply@comieadepa.org.br'
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-    if (resendKey) {
-      try {
-        const resend = new Resend(resendKey)
-        const planLabel = planFinal.charAt(0).toUpperCase() + planFinal.slice(1)
-        const html = `
+    const appUrl = getAppBaseUrl({ request })
+    try {
+      const planLabel = planFinal.charAt(0).toUpperCase() + planFinal.slice(1)
+      const html = `
           <!DOCTYPE html>
           <html lang="pt-BR">
             <head>
@@ -302,13 +299,13 @@ export async function POST(request: NextRequest) {
                             <p style="margin:0 0 4px;font-size:13px;color:#475569;">Valido ate: ${subEndDate.toLocaleDateString('pt-BR')}</p>
                             <p style="margin:0;font-size:13px;color:#475569;">Email de acesso: ${preReg.email}</p>
                           </div>
-                          <a href="${appUrl}/login" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:bold;">Acessar o sistema</a>
+                          <a href="${buildUrl(appUrl, '/login')}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:bold;">Acessar o sistema</a>
                           <p style="margin:16px 0 0;font-size:12px;color:#64748b;">Suporte WhatsApp: <a href="https://wa.me/5591981755021" style="color:#2563eb;">(91) 98175-5021</a>.</p>
                         </td>
                       </tr>
                       <tr>
                         <td style="background:#f8fafc;color:#94a3b8;padding:16px 32px;font-size:11px;">
-                          SISCOMIEADEPA &copy; ${new Date().getFullYear()} - suporte@comieadepa.org.br
+                          SISCOMIEADEPA &copy; ${new Date().getFullYear()} - suporte@siscomieadepa.org
                         </td>
 
                       </tr>
@@ -319,22 +316,31 @@ export async function POST(request: NextRequest) {
             </body>
           </html>
         `
-        await resend.emails.send({
-          from: resendFrom,
-          to: preReg.email,
-          subject: 'Acesso Efetivado - SISCOMIEADEPA',
-          html,
-        })
-        console.log('[APPROVE_TRIAL] ✅ Email de efetivacao enviado para:', preReg.email)
-      } catch (emailError: any) {
+
+      const text = `Ola, ${preReg.pastor_name}!\n\nO acesso da instituicao ${preReg.ministry_name} foi efetivado com sucesso no plano ${planLabel}.\n\nDetalhes da assinatura:\nPlano: ${planLabel}\nValido ate: ${subEndDate.toLocaleDateString('pt-BR')}\nEmail de acesso: ${preReg.email}\n\nAcessar o sistema: ${buildUrl(appUrl, '/login')}\n\nSuporte WhatsApp: (91) 98175-5021.`
+
+      const resultado = await sendEmail({
+        para: preReg.email,
+        assunto: 'Acesso Efetivado - SISCOMIEADEPA',
+        mensagem: text,
+        html,
+        fromEmail: 'suporte@siscomieadepa.org',
+      })
+
+      if (!resultado.sucesso) {
         console.warn('[APPROVE_TRIAL] Falha ao enviar email de efetivacao (nao-critico):', {
-          message: emailError?.message,
-          statusCode: emailError?.statusCode,
+          message: resultado.erro,
+          provider: resultado.provider,
           to: preReg.email,
         })
+      } else {
+        console.log('[APPROVE_TRIAL] ✅ Email de efetivacao enviado para:', preReg.email)
       }
-    } else {
-      console.warn('[APPROVE_TRIAL] RESEND_API_KEY ausente - email de efetivacao nao enviado')
+    } catch (emailError: any) {
+      console.warn('[APPROVE_TRIAL] Falha ao enviar email de efetivacao (nao-critico):', {
+        message: emailError?.message,
+        to: preReg.email,
+      })
     }
 
     console.log('[APPROVE_TRIAL] ✅ Usuário aprovado:', {

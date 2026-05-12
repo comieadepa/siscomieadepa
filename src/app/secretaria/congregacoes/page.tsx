@@ -8,6 +8,7 @@ import Section from '@/components/Section';
 import { createClient } from '@/lib/supabase-client';
 import { loadOrgNomenclaturasFromSupabaseOrMigrate } from '@/lib/org-nomenclaturas';
 import { useAppDialog } from '@/providers/AppDialogProvider';
+import { buildUrl, getAppBaseUrl } from '@/lib/urls';
 
 interface Divisao1 {
   id: string;
@@ -2291,7 +2292,7 @@ export default function CongregacoesPage() {
 
   const PRINT_HEADER = `
     <div class="header">
-      <img class="header-logo" src="${typeof window !== 'undefined' ? window.location.origin : ''}/img/logo_comieadepa.png" alt="COMIEADEPA"/>
+      <img class="header-logo" src="${buildUrl(getAppBaseUrl(), '/img/logo_comieadepa.png')}" alt="COMIEADEPA"/>
       <div class="header-center">
         <div class="org">COMIEADEPA - CONVENÇÃO INTERESTADUAL DE MINISTROS E IGREJAS<br/>EVANGÉLICAS ASSEMBLEIA DE DEUS NO PARÁ</div>
         <div class="contact">Emails: comieadepa@bol.com.br / Site: www.comieadepa.org</div>

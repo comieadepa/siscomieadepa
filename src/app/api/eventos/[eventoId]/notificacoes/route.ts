@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
+import { requireEventoAccess } from '@/lib/evento-guard';
 
 // GET /api/eventos/[eventoId]/notificacoes
 // Lista a fila de notificações de um evento (paginada, filtrada)
@@ -10,6 +10,12 @@ export async function GET(
   const { eventoId } = await params;
   const { searchParams } = new URL(request.url);
 
+  const guard = await requireEventoAccess(request, eventoId);
+  if (!guard.ok) return guard.response;
+  if (!guard.ctx.perms.podeComunicacao) {
+    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
+  }
+
   const status     = searchParams.get('status');      // pendente|enviado|erro
   const tipo       = searchParams.get('tipo');         // email|whatsapp
   const gatilho    = searchParams.get('gatilho');
@@ -17,7 +23,7 @@ export async function GET(
   const perPage    = Math.min(parseInt(searchParams.get('per_page') ?? '50'), 100);
   const offset     = (page - 1) * perPage;
 
-  const supabase = createServerClient();
+  const supabase = guard.ctx.supabaseAdmin;
 
   let query = supabase
     .from('evento_notificacoes')

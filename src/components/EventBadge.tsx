@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { buildUrl, getPublicBaseUrl } from '@/lib/urls';
 
 // ─── Tipos ────────────────────────────────────────────────────
 export interface BadgeInscricao {
@@ -83,10 +84,16 @@ function QRCodeCanvas({ value, size }: { value: string; size: number }) {
   return <canvas ref={canvasRef} width={size} height={size} style={{ display: 'block' }} />;
 }
 
+function resolveQrValue(raw: string): string {
+  if (!raw) return '';
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+  return buildUrl(getPublicBaseUrl(), `/qr/${raw}`);
+}
+
 // ─── Crachá tamanho SMALL (etiqueta térmica ~8×5 cm) ─────────
 function BadgeSmall({ inscricao, evento, nomeSup, nomeCampo, printMode }: Omit<EventBadgeProps, 'size'>) {
   const dept = getDept(evento.departamento);
-  const qr = inscricao.qr_code ?? inscricao.id;
+  const qr = resolveQrValue(inscricao.qr_code ?? inscricao.id);
   const qrShort = qr.slice(-8).toUpperCase();
 
   return (
@@ -145,7 +152,7 @@ function BadgeSmall({ inscricao, evento, nomeSup, nomeCampo, printMode }: Omit<E
 function BadgeMedium({ inscricao, evento, nomeSup, nomeCampo, printMode }: Omit<EventBadgeProps, 'size'>) {
   const dept = getDept(evento.departamento);
   const pagCfg = STATUS_PAG[inscricao.status_pagamento] ?? STATUS_PAG.pendente;
-  const qr = inscricao.qr_code ?? inscricao.id;
+  const qr = resolveQrValue(inscricao.qr_code ?? inscricao.id);
   const qrShort = qr.slice(-8).toUpperCase();
 
   return (

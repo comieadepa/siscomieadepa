@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { Resend } from 'resend'
+import { sendEmail } from '@/services/email'
+import { buildUrl, getAppBaseUrl } from '@/lib/urls'
 import { getClientIp } from '@/lib/public-request'
 import { logPublicApiEvent } from '@/lib/public-api-audit'
 import { consumeRateLimit } from '@/lib/rate-limit-db'
 
 export async function POST(request: NextRequest) {
   try {
+    const appUrl = getAppBaseUrl({ request })
     const ip = getClientIp(request)
     const limit = Number(process.env.PUBLIC_RATE_LIMIT_SIGNUP_PER_10MIN || 5)
     const windowMs = 10 * 60 * 1000
@@ -163,7 +165,7 @@ export async function POST(request: NextRequest) {
       email,
       password: senha,
       options: {
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/callback`,
+        emailRedirectTo: buildUrl(appUrl, '/auth/callback'),
       },
     })
 
@@ -279,15 +281,9 @@ export async function POST(request: NextRequest) {
       // Não falhar se notificação não funcionar
     }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-    const resendKey = process.env.RESEND_API_KEY
-    const resendFrom = process.env.RESEND_FROM || 'noreply@comieadepa.org.br'
-
-    if (resendKey) {
-      try {
-        const resend = new Resend(resendKey)
-        const planLabel = planValue.charAt(0).toUpperCase() + planValue.slice(1)
-        const html = `
+    try {
+      const planLabel = planValue.charAt(0).toUpperCase() + planValue.slice(1)
+      const html = `
           <!DOCTYPE html>
           <html lang="pt-BR">
             <head>
@@ -321,14 +317,14 @@ export async function POST(request: NextRequest) {
                             <p style="margin:0;font-size:13px;color:#475569;">Email: ${email}</p>
                             <p style="margin:4px 0 0;font-size:13px;color:#475569;">Use o email e a senha que você cadastrou para acessar o sistema.</p>
                           </div>
-                          <a href="${appUrl}/login" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:bold;">Acessar o sistema</a>
+                          <a href="${buildUrl(appUrl, '/login')}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:bold;">Acessar o sistema</a>
                           <p style="margin:16px 0 0;font-size:12px;color:#64748b;">Suporte WhatsApp: <a href="https://wa.me/5591981755021" style="color:#2563eb;">(91) 98175-5021</a>.</p>
                           <p style="margin:8px 0 0;font-size:12px;color:#64748b;">Se você não solicitou este acesso, ignore este email.</p>
                         </td>
                       </tr>
                       <tr>
                         <td style="background:#f8fafc;color:#94a3b8;padding:16px 32px;font-size:11px;">
-                          SISCOMIEADEPA © ${new Date().getFullYear()} - suporte@comieadepa.org.br
+                          SISCOMIEADEPA © ${new Date().getFullYear()} - suporte@siscomieadepa.org
                         </td>
                       </tr>
                     </table>
@@ -339,24 +335,31 @@ export async function POST(request: NextRequest) {
           </html>
         `
 
-        await resend.emails.send({
-          from: resendFrom,
-          to: email,
-          subject: 'Bem-vindo ao SISCOMIEADEPA - acesso de teste',
-          html,
-        })
-        console.log('[SIGNUP] ✅ Email enviado para:', email)
-      } catch (emailError: any) {
+      const text = `Ola, ${pastor}!\n\nRecebemos o pre-cadastro da instituicao ${ministerio} no plano ${planLabel}.\n\nPeriodo de teste: 7 dias\nSeu acesso expira em ${trialExpiresAt.toLocaleDateString('pt-BR')}.\n\nDados de acesso:\nEmail: ${email}\nUse o email e a senha que voce cadastrou para acessar o sistema.\n\nAcesse: ${buildUrl(appUrl, '/login')}\n\nSuporte WhatsApp: (91) 98175-5021.\nSe voce nao solicitou este acesso, ignore este email.`
+
+      const resultado = await sendEmail({
+        para: email,
+        assunto: 'Bem-vindo ao SISCOMIEADEPA - acesso de teste',
+        mensagem: text,
+        html,
+        fromEmail: 'inscricoes@siscomieadepa.org',
+      })
+
+      if (!resultado.sucesso) {
         console.warn('[SIGNUP] Falha ao enviar email de boas-vindas:', {
-          message: emailError?.message,
-          statusCode: emailError?.statusCode,
-          name: emailError?.name,
-          from: resendFrom,
+          message: resultado.erro,
+          provider: resultado.provider,
           to: email,
         })
+      } else {
+        console.log('[SIGNUP] ✅ Email enviado para:', email)
       }
-    } else {
-      console.warn('[SIGNUP] RESEND_API_KEY não configurado — email não enviado.')
+    } catch (emailError: any) {
+      console.warn('[SIGNUP] Falha ao enviar email de boas-vindas:', {
+        message: emailError?.message,
+        name: emailError?.name,
+        to: email,
+      })
     }
 
     console.log('[SIGNUP] ✅ Pré-cadastro criado com sucesso:', {

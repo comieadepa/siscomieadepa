@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import PageLayout from '@/components/PageLayout';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
@@ -14,6 +14,7 @@ interface Campo       { id: string; nome: string; supervisao_id: string; }
 interface FormData {
   nome: string;
   descricao: string;
+  banner_url: string;
   departamento: string;
   data_inicio: string;
   data_fim: string;
@@ -35,6 +36,8 @@ interface FormData {
   gerar_certificado: boolean;
   inscricoes_abertas: boolean;
   status: string;
+  suporte_nome: string;
+  suporte_whatsapp: string;
 }
 
 interface TipoDraft {
@@ -56,6 +59,7 @@ const DEPARTAMENTOS = ['AGO', 'COADESPA', 'UMADESPA', 'SEIADEPA', 'AVULSO'];
 const FORM_INICIAL: FormData = {
   nome: '',
   descricao: '',
+  banner_url: '',
   departamento: '',
   data_inicio: '',
   data_fim: '',
@@ -76,8 +80,8 @@ const FORM_INICIAL: FormData = {
   permite_brinde: false,
   gerar_certificado: false,
   inscricoes_abertas: false,
-  status: 'programado',
-};
+  status: 'programado',  suporte_nome: '',
+  suporte_whatsapp: '',};
 
 // ─── Gerador de slug ─────────────────────────────────────────
 function gerarSlug(nome: string): string {
@@ -90,6 +94,59 @@ function gerarSlug(nome: string): string {
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     + '-' + Date.now();
+}
+
+async function loadImageFromFile(file: File): Promise<HTMLImageElement> {
+  const url = URL.createObjectURL(file);
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Falha ao carregar imagem.'));
+    };
+    img.src = url;
+  });
+}
+
+async function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality?: number) {
+  return new Promise<Blob | null>(resolve => {
+    canvas.toBlob(resolve, type, quality);
+  });
+}
+
+async function resizeBannerImage(file: File) {
+  const img = await loadImageFromFile(file);
+  const maxWidth = 1200;
+  const scale = img.width > maxWidth ? maxWidth / img.width : 1;
+  const width = Math.round(img.width * scale);
+  const height = Math.round(img.height * scale);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas não suportado.');
+  ctx.drawImage(img, 0, 0, width, height);
+
+  const quality = 0.8;
+  let blob = await canvasToBlob(canvas, 'image/webp', quality);
+  let type = 'image/webp';
+  if (!blob) {
+    blob = await canvasToBlob(canvas, 'image/jpeg', quality);
+    type = 'image/jpeg';
+  }
+  if (!blob) {
+    blob = await canvasToBlob(canvas, 'image/png');
+    type = 'image/png';
+  }
+  if (!blob) throw new Error('Falha ao processar a imagem.');
+
+  const ext = type === 'image/webp' ? 'webp' : type === 'image/png' ? 'png' : 'jpg';
+  return { blob, type, ext };
 }
 
 // ─── Componente ──────────────────────────────────────────────
@@ -106,6 +163,16 @@ export default function NovoEventoPage() {
   const [camposFiltrados, setCamposFiltrados] = useState<Campo[]>([]);
   const [salvando, setSalvando]       = useState(false);
   const [erro, setErro]               = useState<string | null>(null);
+  const [bannerPreview, setBannerPreview] = useState('');
+  const [bannerUploading, setBannerUploading] = useState(false);
+  const [bannerUploadErro, setBannerUploadErro] = useState<string | null>(null);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    return () => {
+      if (bannerPreview.startsWith('blob:')) URL.revokeObjectURL(bannerPreview);
+    };
+  }, [bannerPreview]);
 
   // Carrega supervisões e campos ao montar
   useEffect(() => {
@@ -162,6 +229,62 @@ export default function NovoEventoPage() {
     setForm(f => ({ ...f, [name]: checked }));
   }
 
+  function setBannerPreviewSafe(nextUrl: string) {
+    setBannerPreview(prev => {
+      if (prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+      return nextUrl;
+    });
+  }
+
+  async function handleBannerChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setBannerUploadErro('Tipo de arquivo não suportado. Use PNG, JPG ou WebP.');
+      return;
+    }
+
+    setBannerUploadErro(null);
+    setBannerUploading(true);
+
+    try {
+      const { blob, type, ext } = await resizeBannerImage(file);
+      const previewUrl = URL.createObjectURL(blob);
+      setBannerPreviewSafe(previewUrl);
+
+      const uploadFile = new File([blob], `banner.${ext}`, { type });
+      const formData = new FormData();
+      formData.append('file', uploadFile);
+
+      const res = await fetch('/api/eventos/banner/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      const json = await res.json();
+      if (!res.ok || !json?.url) {
+        throw new Error(json?.error || 'Erro ao fazer upload do banner.');
+      }
+
+      setForm(f => ({ ...f, banner_url: json.url }));
+      setBannerPreviewSafe(json.url);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setBannerUploadErro(msg);
+    } finally {
+      setBannerUploading(false);
+      if (bannerInputRef.current) bannerInputRef.current.value = '';
+    }
+  }
+
+  function handleBannerRemove() {
+    setForm(f => ({ ...f, banner_url: '' }));
+    setBannerPreviewSafe('');
+    setBannerUploadErro(null);
+    if (bannerInputRef.current) bannerInputRef.current.value = '';
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErro(null);
@@ -171,6 +294,7 @@ export default function NovoEventoPage() {
     if (!form.departamento)       return setErro('Selecione um departamento.');
     if (!form.data_inicio)        return setErro('A data de início é obrigatória.');
     if (!form.data_fim)           return setErro('A data de fim é obrigatória.');
+    if (bannerUploading)          return setErro('Aguarde o upload do banner terminar.');
     if (form.data_fim < form.data_inicio)
       return setErro('A data de fim não pode ser anterior à data de início.');
     // Validação de segurança: isDeptAdmin não pode criar evento fora do seu dept
@@ -183,6 +307,7 @@ export default function NovoEventoPage() {
         nome:                   form.nome.trim(),
         slug:                   gerarSlug(form.nome.trim()),
         descricao:              form.descricao.trim() || null,
+        banner_url:             form.banner_url.trim() || null,
         departamento:           form.departamento,
         data_inicio:            form.data_inicio,
         data_fim:               form.data_fim,
@@ -199,6 +324,8 @@ export default function NovoEventoPage() {
         link_whatsapp:          form.link_whatsapp.trim()          || null,
         mensagem_confirmacao:   form.mensagem_confirmacao.trim()   || null,
         inscricoes_abertas:     form.inscricoes_abertas,
+        suporte_nome:           form.suporte_nome.trim()           || null,
+        suporte_whatsapp:       form.suporte_whatsapp.trim().replace(/\D/g, '') || null,
         limite_vagas:           form.limite_vagas ? parseInt(form.limite_vagas) : null,
         limite_hospedagem:      form.limite_hospedagem ? parseInt(form.limite_hospedagem) : null,
         limite_brindes:         form.limite_brindes ? parseInt(form.limite_brindes) : null,
@@ -215,9 +342,12 @@ export default function NovoEventoPage() {
 
       // Salva tipos de inscrição se a opção estiver ativa
       if (form.usar_tipos_inscricao && novoEvento) {
-        const tiposPayload = tiposDraft
-          .filter(t => t.ativo)
-          .map((t, i) => ({
+        const unique = new Map<string, TipoDraft>();
+        for (const t of tiposDraft.filter(tp => tp.ativo)) {
+          const key = `${t.nome.trim().toLowerCase()}|${t.inclui_alimentacao ? 1 : 0}|${t.inclui_hospedagem ? 1 : 0}`;
+          if (!unique.has(key)) unique.set(key, t);
+        }
+        const tiposPayload = Array.from(unique.values()).map((t, i) => ({
             nome: t.nome.trim() || `Tipo ${i + 1}`,
             valor: parseFloat(t.valor) || 0,
             inclui_alimentacao: t.inclui_alimentacao,
@@ -345,14 +475,62 @@ export default function NovoEventoPage() {
 
             {/* Descrição */}
             <div className="md:col-span-2">
-              <label className={labelClass} htmlFor="descricao">Descrição</label>
+              <label className={labelClass} htmlFor="descricao">Descrição do Evento</label>
               <textarea
                 id="descricao" name="descricao"
                 value={form.descricao} onChange={handleText}
-                rows={4}
-                placeholder="Descreva o evento, programação, informações gerais..."
+                rows={7}
+                placeholder="Descreva o evento em detalhes: programação, horários, palestrantes, instruções gerais...\n\nEste texto é exibido na página pública e usado pelo Assistente IA para responder perguntas."
                 className={inputClass + ' resize-y'}
               />
+              <p className="text-xs text-gray-400 mt-1">Preserve as quebras de linha. Este conteúdo alimenta o Assistente IA.</p>
+            </div>
+
+            {/* Banner */}
+            <div className="md:col-span-2">
+              <label className={labelClass}>Banner do Evento</label>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={bannerInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={handleBannerChange}
+                />
+                <button
+                  type="button"
+                  onClick={() => bannerInputRef.current?.click()}
+                  disabled={bannerUploading}
+                  className="px-3 py-2 text-sm font-semibold rounded-lg border border-gray-300 text-gray-700 bg-white hover:border-[#123b63] hover:text-[#123b63] transition disabled:opacity-60"
+                >
+                  {form.banner_url ? 'Trocar banner' : 'Fazer upload'}
+                </button>
+                {form.banner_url && (
+                  <button
+                    type="button"
+                    onClick={handleBannerRemove}
+                    className="px-3 py-2 text-sm font-semibold rounded-lg border border-red-200 text-red-600 bg-white hover:border-red-300 hover:text-red-700 transition"
+                  >
+                    Remover
+                  </button>
+                )}
+                {bannerUploading && (
+                  <span className="text-xs text-gray-500">Enviando...</span>
+                )}
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Tamanho recomendado: 1200 × 360 px (proporção 10:3). Aceita PNG, JPG ou WebP.</p>
+              {bannerUploadErro && (
+                <p className="text-xs text-red-600 mt-1">{bannerUploadErro}</p>
+              )}
+              {(bannerPreview || form.banner_url.trim()) && (
+                <div className="mt-3 rounded-lg overflow-hidden border border-gray-200 h-32 bg-gray-50">
+                  <img
+                    src={bannerPreview || form.banner_url.trim()}
+                    alt="Preview do banner"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
             </div>
 
           </div>
@@ -661,6 +839,36 @@ export default function NovoEventoPage() {
               </p>
             </div>
 
+          </div>
+        </div>
+
+        {/* ── SEÇÃO 6: Suporte do Evento ─────────────────── */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
+            <span className="text-emerald-600 text-xl">📱</span>
+            <h2 className="text-base font-bold text-[#123b63]">Suporte do Evento</h2>
+            <span className="text-xs text-gray-400 ml-1">(exibido na página pública e no assistente)</span>
+          </div>
+          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <label className={labelClass} htmlFor="suporte_nome">Nome / Setor de Suporte</label>
+              <input
+                id="suporte_nome" name="suporte_nome" type="text"
+                value={form.suporte_nome} onChange={handleText}
+                placeholder='Ex: Secretaria UMADESPA ou Equipe de Inscrição'
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className={labelClass} htmlFor="suporte_whatsapp">WhatsApp de Suporte</label>
+              <input
+                id="suporte_whatsapp" name="suporte_whatsapp" type="tel"
+                value={form.suporte_whatsapp} onChange={handleText}
+                placeholder='(91) 99999-9999'
+                className={inputClass}
+              />
+              <p className="mt-1 text-xs text-gray-400">Somente números serão salvos. Será gerado um link wa.me automático.</p>
+            </div>
           </div>
         </div>
 

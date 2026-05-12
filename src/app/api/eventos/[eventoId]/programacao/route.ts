@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createServerClientFromCookies } from '@/lib/supabase-server';
+import { createServerClient } from '@/lib/supabase-server';
+import { requireEventoAccess } from '@/lib/evento-guard';
 
 // GET /api/eventos/[eventoId]/programacao — público (página de inscrição + assistente)
 export async function GET(
@@ -27,9 +28,11 @@ export async function POST(
 ) {
   const { eventoId } = await params;
   // ── Auth ──
-  const userClient = await createServerClientFromCookies();
-  const { data: { user } } = await userClient.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+  const guard = await requireEventoAccess(req, eventoId);
+  if (!guard.ok) return guard.response;
+  if (!guard.ctx.perms.podeProgramacao) {
+    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
+  }
 
   const body = await req.json();
   const { data: dataEvento, horario, titulo, descricao, palestrante, local, ordem } = body;
@@ -38,7 +41,7 @@ export async function POST(
     return NextResponse.json({ error: 'Data e título são obrigatórios.' }, { status: 400 });
   }
 
-  const supabase = createServerClient();
+  const supabase = guard.ctx.supabaseAdmin;
   const { data, error } = await supabase
     .from('evento_programacao')
     .insert([{

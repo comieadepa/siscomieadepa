@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createServerClientFromCookies } from '@/lib/supabase-server';
+import { requireEventoAccess } from '@/lib/evento-guard';
 
 // ── Helper de auth ──────────────────────────────────────────────
-async function requireAuth() {
-  const userClient = await createServerClientFromCookies();
-  const { data: { user } } = await userClient.auth.getUser();
-  return user;
+async function requireAuth(request: NextRequest, eventoId: string) {
+  return requireEventoAccess(request, eventoId);
 }
 
 // PATCH /api/eventos/[eventoId]/programacao/[itemId]
@@ -14,8 +12,11 @@ export async function PATCH(
   { params }: { params: Promise<{ eventoId: string; itemId: string }> }
 ) {
   const { eventoId, itemId } = await params;
-  const user = await requireAuth();
-  if (!user) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+  const guard = await requireAuth(req, eventoId);
+  if (!guard.ok) return guard.response;
+  if (!guard.ctx.perms.podeProgramacao) {
+    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
+  }
 
   const body = await req.json();
   const { data: dataEvento, horario, titulo, descricao, palestrante, local, ordem } = body;
@@ -24,7 +25,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Título é obrigatório.' }, { status: 400 });
   }
 
-  const supabase = createServerClient();
+  const supabase = guard.ctx.supabaseAdmin;
   const { data, error } = await supabase
     .from('evento_programacao')
     .update({
@@ -51,10 +52,13 @@ export async function DELETE(
   { params }: { params: Promise<{ eventoId: string; itemId: string }> }
 ) {
   const { eventoId, itemId } = await params;
-  const user = await requireAuth();
-  if (!user) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+  const guard = await requireAuth(_req, eventoId);
+  if (!guard.ok) return guard.response;
+  if (!guard.ctx.perms.podeProgramacao) {
+    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
+  }
 
-  const supabase = createServerClient();
+  const supabase = guard.ctx.supabaseAdmin;
   const { error } = await supabase
     .from('evento_programacao')
     .delete()

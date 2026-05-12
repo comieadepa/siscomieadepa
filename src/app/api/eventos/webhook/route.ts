@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase-server';
+import { sendEmail } from '@/services/email';
 
 const ASAAS_WEBHOOK_TOKEN = process.env.ASAAS_WEBHOOK_TOKEN;
 
@@ -9,6 +11,106 @@ function resolveToken(request: NextRequest): string | null {
   const auth = request.headers.get('authorization');
   if (!auth) return null;
   return auth.replace('Bearer ', '');
+}
+
+// ── Substitui {VAR} no template ──────────────────────────────
+function subst(msg: string, vars: Record<string, string>): string {
+  return msg.replace(/\{([A-Z_]+)\}/g, (_, k) => vars[k] ?? `{${k}}`);
+}
+
+/**
+ * Envia e-mail de confirmação de pagamento com deduplicação.
+ * Usa evento_notificacoes (UNIQUE inscricao_id, tipo, gatilho) para garantir
+ * que apenas um e-mail seja enviado por inscrição, mesmo com webhooks duplicados.
+ */
+async function enviarEmailComDeduplicacao(
+  supabase: SupabaseClient,
+  params: {
+    inscricaoId: string;
+    eventoId: string;
+    nome: string;
+    email: string;
+    qrCode: string;
+    nomeEvento: string;
+    mensagemConfirmacao: string | null;
+    linkWhatsapp: string | null;
+  }
+): Promise<void> {
+  const { inscricaoId, eventoId, nome, email, qrCode, nomeEvento, mensagemConfirmacao, linkWhatsapp } = params;
+
+  const assunto = `✅ Inscrição confirmada — ${nomeEvento}`;
+  const vars = { NOME: nome, EVENTO: nomeEvento, QR_CODE: qrCode, LINK_GRUPO: linkWhatsapp ?? '(em breve)' };
+  let mensagem = `Olá, ${nome}!\n\nSeu pagamento para o evento *${nomeEvento}* foi confirmado. ✅\n\n🎫 Código de check-in: ${qrCode}`;
+  if (mensagemConfirmacao) mensagem += `\n\n${subst(mensagemConfirmacao, vars)}`;
+  if (linkWhatsapp)        mensagem += `\n\n📲 Grupo do WhatsApp: ${linkWhatsapp}`;
+
+  // 1. Tenta inserir registro 'pendente'. A constraint UNIQUE (inscricao_id, tipo, gatilho)
+  //    rejeita silenciosamente duplicatas — isso é a trava de idempotência.
+  const { data: newRow, error: insErr } = await supabase
+    .from('evento_notificacoes')
+    .insert({
+      evento_id:    eventoId,
+      inscricao_id: inscricaoId,
+      tipo:         'email',
+      gatilho:      'pagamento_confirmado',
+      status:       'pendente',
+      assunto,
+      mensagem,
+    })
+    .select('id')
+    .single();
+
+  let notifId: string;
+
+  if (insErr || !newRow) {
+    // Conflict: registro já existe — verifica status atual
+    const { data: existing } = await supabase
+      .from('evento_notificacoes')
+      .select('id, status')
+      .eq('inscricao_id', inscricaoId)
+      .eq('tipo', 'email')
+      .eq('gatilho', 'pagamento_confirmado')
+      .single();
+
+    if (!existing) {
+      console.error(`[WEBHOOK] Falha ao registrar notificação para inscrição ${inscricaoId}:`, insErr?.message);
+      return;
+    }
+    if ((existing as { id: string; status: string }).status === 'enviado') {
+      console.log(`[WEBHOOK] E-mail já enviado para inscrição ${inscricaoId} — duplicata ignorada.`);
+      return;
+    }
+    notifId = (existing as { id: string; status: string }).id;
+  } else {
+    notifId = newRow.id as string;
+  }
+
+  // 2. Envia e-mail
+  const resultado = await sendEmail({
+    para: email,
+    assunto,
+    mensagem,
+    nomeDestinatario: nome,
+    fromEmail: 'inscricoes@siscomieadepa.org',
+  });
+
+  // 3. Registra resultado na tabela
+  const { error: updErr } = await supabase
+    .from('evento_notificacoes')
+    .update({
+      status:     resultado.sucesso ? 'enviado' : 'erro',
+      enviado_em: resultado.sucesso ? new Date().toISOString() : null,
+      erro:       resultado.sucesso ? null : (resultado.erro ?? 'Erro desconhecido'),
+    })
+    .eq('id', notifId);
+
+  if (updErr) {
+    console.error(`[WEBHOOK] Erro ao atualizar status da notificação ${notifId}:`, updErr.message);
+  }
+
+  if (!resultado.sucesso) {
+    console.error(`[WEBHOOK] Falha ao enviar e-mail para ${email}:`, resultado.erro);
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -72,6 +174,46 @@ export async function POST(request: NextRequest) {
       }
       // O trigger fn_sync_lote_pagamento cuida de atualizar as inscrições do lote
       console.log('[EVENTOS WEBHOOK] Lote atualizado:', loteId, '→', novoStatus);
+
+      // E-mails individuais para participantes do lote (com deduplicação por inscrição)
+      if (novoStatus === 'pago') {
+        try {
+          const { data: loteIns } = await supabase
+            .from('evento_inscricoes')
+            .select('id, nome_inscrito, email, qr_code, evento_id')
+            .eq('lote_id', loteId)
+            .not('email', 'is', null);
+          if (loteIns && loteIns.length > 0) {
+            const firstRow = loteIns[0] as unknown as Record<string, unknown>;
+            const { data: evData } = await supabase
+              .from('eventos')
+              .select('nome, mensagem_confirmacao, link_whatsapp')
+              .eq('id', firstRow.evento_id as string)
+              .single();
+            const evRow = evData as unknown as Record<string, unknown> | null;
+            if (evRow) {
+              for (const li of loteIns) {
+                const row = li as unknown as Record<string, unknown>;
+                if (row.email) {
+                  await enviarEmailComDeduplicacao(supabase, {
+                    inscricaoId:         row.id as string,
+                    eventoId:            row.evento_id as string,
+                    nome:                row.nome_inscrito as string,
+                    email:               row.email as string,
+                    qrCode:              row.qr_code as string,
+                    nomeEvento:          evRow.nome as string,
+                    mensagemConfirmacao: evRow.mensagem_confirmacao as string | null,
+                    linkWhatsapp:        evRow.link_whatsapp as string | null,
+                  });
+                }
+              }
+            }
+          }
+        } catch (emailErr) {
+          console.error('[EVENTOS WEBHOOK] Erro ao enviar e-mails do lote:', emailErr);
+        }
+      }
+
       return NextResponse.json({ received: true, loteId, status: novoStatus });
     }
 
@@ -118,6 +260,41 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('[EVENTOS WEBHOOK] Inscrição atualizada:', ins.id, '→', novoStatus);
+
+    // E-mail de confirmação quando pago (com deduplicação)
+    if (novoStatus === 'pago') {
+      try {
+        const { data: fullIns } = await supabase
+          .from('evento_inscricoes')
+          .select('id, nome_inscrito, email, qr_code, evento_id')
+          .eq('id', ins.id)
+          .single();
+        const fullRow = fullIns as unknown as Record<string, unknown> | null;
+        if (fullRow?.email) {
+          const { data: evData } = await supabase
+            .from('eventos')
+            .select('nome, mensagem_confirmacao, link_whatsapp')
+            .eq('id', fullRow.evento_id as string)
+            .single();
+          const evRow = evData as unknown as Record<string, unknown> | null;
+          if (evRow) {
+            await enviarEmailComDeduplicacao(supabase, {
+              inscricaoId:         fullRow.id as string,
+              eventoId:            fullRow.evento_id as string,
+              nome:                fullRow.nome_inscrito as string,
+              email:               fullRow.email as string,
+              qrCode:              fullRow.qr_code as string,
+              nomeEvento:          evRow.nome as string,
+              mensagemConfirmacao: evRow.mensagem_confirmacao as string | null,
+              linkWhatsapp:        evRow.link_whatsapp as string | null,
+            });
+          }
+        }
+      } catch (emailErr) {
+        console.error('[EVENTOS WEBHOOK] Erro ao enviar e-mail de confirmação:', emailErr);
+      }
+    }
+
     return NextResponse.json({ received: true, inscricaoId: ins.id, status: novoStatus });
 
   } catch (err: any) {
