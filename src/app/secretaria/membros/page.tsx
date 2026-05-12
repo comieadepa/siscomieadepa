@@ -1343,6 +1343,9 @@ useEffect(() => {
     if (!resp.ok) {
       throw new Error(payload?.error || 'Erro ao enviar foto');
     }
+    if (!payload?.url) {
+      throw new Error('Upload concluido sem URL publica.');
+    }
     return payload as { url?: string; bucket?: string; path?: string };
   };
 
@@ -1535,7 +1538,7 @@ useEffect(() => {
       if (membroEditando) {
         const payload: UpdateMemberRequest = payloadBase;
         await updateMember(membroEditando.id, payload);
-        await fetchMembers(1, 10000);
+        await fetchMembers(1, 10000, undefined, { force: true });
         setNotification({
           isOpen: true,
           title: 'Sucesso',
@@ -1556,7 +1559,7 @@ useEffect(() => {
           }
         }
 
-        await fetchMembers(1, 10000);
+        await fetchMembers(1, 10000, undefined, { force: true });
         setUltimoCadastro(createdUi);
         setNotification({
           isOpen: true,
@@ -1649,7 +1652,7 @@ useEffect(() => {
 
     try {
       await deleteMember(membroDeletando.id);
-      await fetchMembers(1, 10000);
+      await fetchMembers(1, 10000, undefined, { force: true });
       setNotification({
         isOpen: true,
         title: 'Sucesso',

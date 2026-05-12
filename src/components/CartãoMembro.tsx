@@ -280,7 +280,7 @@ export default function CartãoMembro({ membro, onClose }: CartãoMembroProps) {
           overflow: 'hidden',
           borderRadius: `${elemento.borderRadius || 0}px`,
           opacity: elemento.transparencia ?? 1,
-          backgroundColor: '#f3f4f6',
+          backgroundColor: elemento.imagemUrl ? (elemento.backgroundColor || 'transparent') : '#f3f4f6',
           border: elemento.imagemUrl ? undefined : '1px dashed #d1d5db',
           alignItems: 'center',
           justifyContent: 'center',
@@ -380,6 +380,7 @@ export default function CartãoMembro({ membro, onClose }: CartãoMembroProps) {
   };
 
   const temVerso = template.temVerso && template.elementosVerso && template.elementosVerso.length > 0;
+  const resolvePrintBackgroundColor = (bgUrl?: string) => (bgUrl ? 'transparent' : 'white');
 
   // Compõe background em alta resolução (carregado diretamente como Image) com os elementos
   const compositeWithBackground = (
@@ -391,7 +392,12 @@ export default function CartãoMembro({ membro, onClose }: CartãoMembroProps) {
       const out = document.createElement('canvas');
       out.width = foreground.width;
       out.height = foreground.height;
-      const ctx = out.getContext('2d')!;
+      const ctx = out.getContext('2d', { alpha: true });
+      if (!ctx) {
+        resolve(foreground);
+        return;
+      }
+      ctx.clearRect(0, 0, out.width, out.height);
       const img = new Image();
       // crossOrigin só em URLs externas; data: URLs não suportam crossOrigin
       if (!bgUrl.startsWith('data:')) img.crossOrigin = 'anonymous';
@@ -643,7 +649,7 @@ export default function CartãoMembro({ membro, onClose }: CartãoMembroProps) {
           backgroundImage: template.backgroundUrl ? `url(${template.backgroundUrl})` : 'none',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          backgroundColor: 'white',
+          backgroundColor: resolvePrintBackgroundColor(template.backgroundUrl),
           overflow: 'hidden' // Garante que nada saia do card
         }}>
           {template.elementos.map((elemento) => renderizarElemento(elemento, true))}
@@ -658,7 +664,7 @@ export default function CartãoMembro({ membro, onClose }: CartãoMembroProps) {
             backgroundImage: template.backgroundUrlVerso ? `url(${template.backgroundUrlVerso})` : 'none',
             backgroundSize: 'cover',
             backgroundPosition: 'center',
-            backgroundColor: 'white',
+            backgroundColor: resolvePrintBackgroundColor(template.backgroundUrlVerso),
             overflow: 'hidden'
           }}>
             {template.elementosVerso?.map((elemento) => renderizarElemento(elemento, true))}

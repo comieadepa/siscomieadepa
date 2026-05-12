@@ -44,10 +44,15 @@ export function useMembers() {
 
   // Listar membros
   const fetchMembers = useCallback(
-    async (page = 1, limit = 20, filters?: { status?: string; search?: string; tipoCadastro?: string }) => {
+    async (
+      page = 1,
+      limit = 20,
+      filters?: { status?: string; search?: string; tipoCadastro?: string },
+      options?: { force?: boolean }
+    ) => {
       // Se o cache estiver fresco e não houver filtros específicos, usa cache sem request
       const hasFilters = filters?.status || filters?.search || filters?.tipoCadastro;
-      if (!hasFilters && isCacheFresh()) {
+      if (!options?.force && !hasFilters && isCacheFresh()) {
         setMembers(_cache.members);
         return { data: _cache.members, pagination: { page: 1, limit: _cache.members.length, total: _cache.members.length, total_pages: 1 } };
       }

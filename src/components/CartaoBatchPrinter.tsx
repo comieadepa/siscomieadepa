@@ -130,7 +130,12 @@ export default function CartaoBatchPrinter({ membros, onComplete }: CartaoBatchP
         const out = document.createElement('canvas');
         out.width = foreground.width;
         out.height = foreground.height;
-        const ctx = out.getContext('2d')!;
+        const ctx = out.getContext('2d', { alpha: true });
+        if (!ctx) {
+          resolve(foreground);
+          return;
+        }
+        ctx.clearRect(0, 0, out.width, out.height);
         const img = new Image();
         // crossOrigin só em URLs externas; data: URLs não suportam crossOrigin
         if (!bgUrl.startsWith('data:')) img.crossOrigin = 'anonymous';
