@@ -50,6 +50,25 @@ export default function LoginPage() {
       });
 
       if (!authError && authData?.user) {
+        // Registrar log de login
+        try {
+          await fetch('/api/v1/audit-logs', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${authData.session?.access_token ?? ''}`,
+            },
+            body: JSON.stringify({
+              acao: 'login',
+              modulo: 'auth',
+              descricao: `Login realizado por ${authData.user.email}`,
+              usuario_email: authData.user.email,
+              status: 'sucesso',
+            }),
+          });
+        } catch {
+          // silencioso: não impede o login
+        }
         // Usuários de nível 'inscricao' vão direto para /eventos
         const nivel = authData.user.user_metadata?.nivel as string | undefined;
         router.push(nivel === 'inscricao' ? '/eventos' : '/dashboard');

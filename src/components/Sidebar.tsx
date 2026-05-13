@@ -229,7 +229,28 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
       {/* FOOTER */}
       <div className="p-4 border-t border-white/20 space-y-3 bg-[#0A1F3A]">
         <button
-          onClick={() => {
+          onClick={async () => {
+            try {
+              const { data: { session } } = await supabase.auth.getSession();
+              if (session?.access_token) {
+                await fetch('/api/v1/audit-logs', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${session.access_token}`,
+                  },
+                  body: JSON.stringify({
+                    acao: 'logout',
+                    modulo: 'auth',
+                    descricao: `Logout realizado por ${session.user?.email ?? ''}`,
+                    usuario_email: session.user?.email,
+                    status: 'sucesso',
+                  }),
+                });
+              }
+            } catch {
+              // silencioso
+            }
             supabase.auth.signOut().finally(() => router.push('/'));
           }}
           className="w-full px-4 py-2 bg-[#C0392B] text-white rounded-lg font-semibold hover:bg-[#a93226] transition"
