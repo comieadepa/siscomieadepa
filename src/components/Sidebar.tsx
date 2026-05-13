@@ -13,7 +13,7 @@ interface SidebarProps {
 // Quais menus de topo (por id) cada nível pode ver. 'super' vê tudo.
 const MENU_POR_NIVEL: Record<string, string[]> = {
   super: ['*'],
-  administrador: ['dashboard', 'secretaria', 'cgadb', 'comissao', 'patrimonio', 'missoes', 'configuracoes', 'eventos'],
+  administrador: ['dashboard', 'secretaria', 'cgadb', 'comissao', 'patrimonio', 'missoes', 'configuracoes', 'eventos', 'auditoria'],
   cgadb: ['dashboard', 'cgadb'],
   comissao: ['dashboard', 'secretaria', 'comissao'],
   inscricao: ['eventos'],
