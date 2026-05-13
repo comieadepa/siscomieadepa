@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { setEquipeSession } from '@/lib/equipe-session';
-import { buildUrl, getAppBaseUrl, getPublicBaseUrl } from '@/lib/urls';
+import { buildUrl, getPublicBaseUrl } from '@/lib/urls';
 
 export default function AcessoEquipePage() {
   const router = useRouter();
@@ -42,9 +42,11 @@ export default function AcessoEquipePage() {
           expiraEm,
         });
 
+        // Usa URL relativa para garantir navegação client-side (evita problemas em
+        // WebViews do Gmail/Outlook onde redirect absoluto pode perder o localStorage)
         const destino = json.tipo === 'checkin'
           ? buildUrl(getPublicBaseUrl(), `/eventos/${json.evento_id}/checkin`)
-          : buildUrl(getAppBaseUrl(), `/eventos/${json.evento_id}`);
+          : `/eventos/${json.evento_id}`;
         router.replace(destino);
       } catch {
         if (!cancelled) setErro('Erro ao validar convite.');

@@ -281,6 +281,19 @@ export default function GerenciarEventoPage() {
   const fetchEvento = useCallback(async () => {
     if (!id) return;
     setLoadingEvento(true);
+
+    // Usuários de equipe sem conta Supabase: usa endpoint dedicado (bypass RLS)
+    const equipeSessaoAtual = getEquipeSession();
+    if (equipeSessaoAtual && equipeSessaoAtual.eventoId === id) {
+      try {
+        const res = await fetch(`/api/eventos/${id}/equipe-dados?equipeId=${equipeSessaoAtual.equipeId}&tipo=evento`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.evento) { setEvento(json.evento as Evento); setLoadingEvento(false); return; }
+        }
+      } catch { /* cai no fallback abaixo */ }
+    }
+
     const { data, error } = await supabase.from('eventos').select('*').eq('id', id).single();
     if (error || !data) { setErro('Evento não encontrado.'); setLoadingEvento(false); return; }
     // Gate de departamento: isDeptAdmin só acessa eventos do seu dept
@@ -294,6 +307,21 @@ export default function GerenciarEventoPage() {
   const fetchInscricoes = useCallback(async () => {
     if (!id) return;
     setLoadingInsc(true);
+
+    // Usuários de equipe sem conta Supabase: usa endpoint dedicado (bypass RLS)
+    const equipeSessaoAtual = getEquipeSession();
+    if (equipeSessaoAtual && equipeSessaoAtual.eventoId === id) {
+      try {
+        const res = await fetch(`/api/eventos/${id}/equipe-dados?equipeId=${equipeSessaoAtual.equipeId}&tipo=inscricoes`);
+        if (res.ok) {
+          const json = await res.json();
+          setInscricoes((json.inscricoes as Inscricao[]) || []);
+          setLoadingInsc(false);
+          return;
+        }
+      } catch { /* cai no fallback abaixo */ }
+    }
+
     const { data } = await supabase
       .from('evento_inscricoes')
       .select('*')
@@ -323,9 +351,15 @@ export default function GerenciarEventoPage() {
 
     // Gate de acesso: bloqueia acesso direto por URL
     if (!perfil.isGlobal && id && !perfil.podeAcessarEvento(id)) {
-      setAcessoNegado(true);
-      setLoadingEvento(false);
-      return;
+      // Fallback: lê sessão de equipe diretamente do localStorage para cobrir edge cases
+      // de timing onde permissoesPorEvento ainda não foi populado quando este effect dispara
+      const sessCheck = getEquipeSession();
+      if (!sessCheck || sessCheck.eventoId !== id) {
+        setAcessoNegado(true);
+        setLoadingEvento(false);
+        return;
+      }
+      // Sessão de equipe válida — permite continuar
     }
 
     // Para perfil checkin, redireciona direto para a aba checkin
