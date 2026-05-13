@@ -92,9 +92,9 @@ export default function EventosPage() {
   const [filtroSup,   setFiltroSup]   = useState('');
   const [filtroCampo, setFiltroCampo] = useState('');
 
-  // Para isDeptAdmin, trava o filtro de departamento
+  // Para isDeptAdmin com dept específico, trava o filtro de departamento
   useEffect(() => {
-    if (!perfil.loading && perfil.isDeptAdmin && perfil.departamentoUsuario) {
+    if (!perfil.loading && perfil.isDeptAdmin && perfil.departamentoUsuario && perfil.departamentoUsuario !== 'TODOS') {
       setFiltroDept(perfil.departamentoUsuario);
     }
   }, [perfil.loading, perfil.isDeptAdmin, perfil.departamentoUsuario]);
@@ -120,10 +120,10 @@ export default function EventosPage() {
     try {
       // Busca eventos: filtra pelo dept (isDeptAdmin) ou IDs acessíveis (vinculados)
       let evQuery = supabase.from('eventos').select('*').order('data_inicio', { ascending: false });
-      if (perfil.isDeptAdmin && perfil.departamentoUsuario) {
-        // Admin de departamento: vê todos os eventos do próprio dept
+      if (perfil.isDeptAdmin && perfil.departamentoUsuario && perfil.departamentoUsuario !== 'TODOS') {
+        // Admin de departamento específico: filtra pelo dept
         evQuery = evQuery.eq('departamento', perfil.departamentoUsuario);
-      } else if (!perfil.isGlobal && perfil.eventoIds !== null) {
+      } else if (!perfil.isGlobal && !perfil.isDeptAdmin && perfil.eventoIds !== null) {
         if (perfil.eventoIds.length === 0) {
           setEventos([]);
           setInscricoes([]);
@@ -385,7 +385,7 @@ export default function EventosPage() {
           {/* isDeptAdmin: exibe departamento travado */}
           {perfil.isDeptAdmin && perfil.departamentoUsuario && (
             <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-[#123b63]/30 bg-[#123b63]/5 text-[#123b63] font-semibold">
-              🏷️ {perfil.departamentoUsuario}
+              🏷️ {perfil.departamentoUsuario === 'TODOS' ? 'Todos os Departamentos' : perfil.departamentoUsuario}
             </span>
           )}
           {/* Filtro de ano disponível para não-admin-global */}

@@ -296,8 +296,8 @@ export default function GerenciarEventoPage() {
 
     const { data, error } = await supabase.from('eventos').select('*').eq('id', id).single();
     if (error || !data) { setErro('Evento não encontrado.'); setLoadingEvento(false); return; }
-    // Gate de departamento: isDeptAdmin só acessa eventos do seu dept
-    if (perfil.isDeptAdmin && (data as Evento).departamento !== perfil.departamentoUsuario) {
+    // Gate de departamento: isDeptAdmin só acessa eventos do seu dept (exceto subcategoria TODOS)
+    if (perfil.isDeptAdmin && perfil.departamentoUsuario !== 'TODOS' && (data as Evento).departamento !== perfil.departamentoUsuario) {
       setAcessoNegado(true); setLoadingEvento(false); return;
     }
     setEvento(data as Evento);

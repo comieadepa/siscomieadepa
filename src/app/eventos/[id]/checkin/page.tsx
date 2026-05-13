@@ -253,8 +253,8 @@ export default function CheckinMobilePage() {
         setLoadingEvento(false);
         return;
       }
-      // Gate de departamento: isDeptAdmin só acessa eventos do seu dept
-      if (evRes.data && perfil.isDeptAdmin && (evRes.data as Evento).departamento !== perfil.departamentoUsuario) {
+      // Gate de departamento: isDeptAdmin só acessa eventos do seu dept (exceto subcategoria TODOS)
+      if (evRes.data && perfil.isDeptAdmin && perfil.departamentoUsuario !== 'TODOS' && (evRes.data as Evento).departamento !== perfil.departamentoUsuario) {
         setAcessoMotivo('nao_autorizado');
         setAcessoNegado(true); setLoadingEvento(false); return;
       }

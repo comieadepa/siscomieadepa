@@ -825,6 +825,7 @@ export default function UsuariosPage() {
                         className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-[#0284c7]"
                       >
                         <option value="">Sub-categoria</option>
+                        <option value="TODOS">TODOS OS DEPARTAMENTOS</option>
                         <option value="AGO">AGO</option>
                         <option value="UMADESPA">UMADESPA</option>
                         <option value="COADESPA">COADESPA</option>

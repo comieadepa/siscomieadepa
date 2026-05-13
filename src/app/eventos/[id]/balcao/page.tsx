@@ -225,8 +225,8 @@ export default function BalcaoPage() {
           authenticatedFetch('/api/v1/estrutura'),
           supabase.from('evento_tipos_inscricao').select('id,nome,valor,inclui_alimentacao,inclui_hospedagem').eq('evento_id', id).eq('ativo', true).order('ordem'),
         ]);
-        // Gate de departamento: isDeptAdmin só acessa eventos do seu dept
-        if (ev && perfil.isDeptAdmin && (ev as Evento).departamento !== perfil.departamentoUsuario) {
+        // Gate de departamento: isDeptAdmin só acessa eventos do seu dept (exceto subcategoria TODOS)
+        if (ev && perfil.isDeptAdmin && perfil.departamentoUsuario !== 'TODOS' && (ev as Evento).departamento !== perfil.departamentoUsuario) {
           setAcessoNegado(true); setLoadingInit(false); return;
         }
 

@@ -201,7 +201,7 @@ export default function EditarEventoPage() {
         return;
       }
 
-      if (perfil.isDeptAdmin && data.departamento !== perfil.departamentoUsuario) {
+      if (perfil.isDeptAdmin && perfil.departamentoUsuario !== 'TODOS' && data.departamento !== perfil.departamentoUsuario) {
         setErro(`Voce so pode editar eventos do departamento ${perfil.departamentoUsuario}.`);
         setLoadingEvento(false);
         return;
