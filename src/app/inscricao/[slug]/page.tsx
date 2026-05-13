@@ -1,8 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams } from 'next/navigation';
-import { createClient } from '@/lib/supabase-client';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { normalizePayloadUppercase } from '@/lib/text';
 import AssistenteWidget from '@/components/AssistenteWidget';
@@ -105,7 +104,6 @@ function formatarCPF(v: string) {
 export default function InscricaoPublicaPage() {
   const params = useParams();
   const slug = params?.slug as string;
-  const supabase = useMemo(() => createClient(), []);
 
   const [evento,      setEvento]      = useState<Evento | null>(null);
   const [supervisoes, setSupervisoes] = useState<Supervisao[]>([]);
@@ -172,59 +170,48 @@ export default function InscricaoPublicaPage() {
       .then(async (res) => (res.ok ? res.json() : null))
       .catch(() => null);
 
-    const evRes = await supabase.from('eventos').select('*').eq('slug', slug).single();
+    const evRes = await fetch(`/api/public/evento?slug=${encodeURIComponent(slug)}`);
+    const evJson = evRes.ok ? await evRes.json().catch(() => null as any) : null;
     const estrutura = await estruturaPromise;
 
-    if (evRes.error || !evRes.data) {
+    if (!evRes.ok || !evJson?.evento) {
       setEstadoErro('nao_encontrado');
       setLoading(false);
       return;
     }
 
-    const ev = evRes.data as Evento;
+    const ev = evJson.evento as Evento;
+    const totalInscritos = typeof evJson?.totalInscritos === 'number' ? evJson.totalInscritos : null;
+    const vagasHosp = typeof evJson?.vagasHospedagem === 'number' ? evJson.vagasHospedagem : null;
+    const tiposApi = (evJson?.tipos as TipoInscricao[]) || [];
 
     if (ev.status !== 'programado') { setEstadoErro('encerrado'); setLoading(false); return; }
     if (!ev.inscricoes_abertas)      { setEstadoErro('fechado');   setLoading(false); return; }
 
     // Verifica vagas
-    if (ev.limite_vagas) {
-      const { count } = await supabase
-        .from('evento_inscricoes')
-        .select('id', { count: 'exact', head: true })
-        .eq('evento_id', ev.id);
-      if ((count ?? 0) >= ev.limite_vagas) {
+    if (ev.limite_vagas && totalInscritos !== null) {
+      if (totalInscritos >= ev.limite_vagas) {
         setEstadoErro('esgotado');
         setLoading(false);
         return;
       }
-      setTotalInscritos(count ?? 0);
+      setTotalInscritos(totalInscritos);
     }
 
     // Verifica vagas de hospedagem
-    if (ev.limite_hospedagem) {
-      const { count: hCount } = await supabase
-        .from('evento_inscricoes')
-        .select('id', { count: 'exact', head: true })
-        .eq('evento_id', ev.id)
-        .eq('hospedagem', true);
-      setVagasHospedagem(Math.max(0, ev.limite_hospedagem - (hCount ?? 0)));
+    if (ev.limite_hospedagem && vagasHosp !== null) {
+      setVagasHospedagem(vagasHosp);
     }
 
     // Busca tipos de inscrição
-    const { data: tiposData } = await supabase
-      .from('evento_tipos_inscricao')
-      .select('id,nome,valor,inclui_alimentacao,inclui_hospedagem,ordem')
-      .eq('evento_id', ev.id)
-      .eq('ativo', true)
-      .order('ordem');
-    const tiposLimpos = dedupeTipos((tiposData as TipoInscricao[]) ?? []);
+    const tiposLimpos = dedupeTipos(tiposApi);
     setTipos(tiposLimpos);
 
     setEvento(ev);
     setSupervisoes((estrutura?.supervisoes as Supervisao[]) || []);
     setCampos((estrutura?.campos as Campo[]) || []);
     setLoading(false);
-  }, [slug, supabase]);
+  }, [slug]);
 
   useEffect(() => { fetchEvento(); }, [fetchEvento]);
 
