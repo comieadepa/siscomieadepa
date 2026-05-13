@@ -808,7 +808,7 @@ export default function InscricaoPublicaPage() {
                 <p className="text-sm font-semibold text-[#123b63] mb-3">📋 Modalidade de Inscrição</p>
                 <div className="space-y-2">
                   {tipos.map(t => (
-                    <label key={t.id} className={`flex items-center justify-between gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${tipoSelecionado?.id === t.id ? 'border-[#123b63] bg-white' : 'border-gray-200 bg-white hover:border-[#123b63]/50'}`}>
+                    <label key={t.id} className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${tipoSelecionado?.id === t.id ? 'border-[#123b63] bg-white' : 'border-gray-200 bg-white hover:border-[#123b63]/50'}`}>
                       <div className="flex items-center gap-3">
                         <input type="radio" name="tipo_inscricao" value={t.id}
                           checked={tipoSelecionado?.id === t.id}
@@ -821,7 +821,7 @@ export default function InscricaoPublicaPage() {
                           </p>
                         </div>
                       </div>
-                      <span className="text-sm font-bold text-[#123b63] whitespace-nowrap">
+                      <span className="text-sm font-bold text-[#123b63] sm:whitespace-nowrap">
                         {t.valor === 0 ? 'Gratuito' : fmtMoeda(t.valor)}
                       </span>
                     </label>
@@ -910,19 +910,19 @@ export default function InscricaoPublicaPage() {
             {(evento.usar_tipos_inscricao || evento.valor_inscricao > 0) && (
               <div className="mb-6">
                 <p className="text-sm font-semibold text-gray-700 mb-2">🏷️ Cupom de desconto</p>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <input value={cupomCodigo} onChange={e => { setCupomCodigo(e.target.value); setCupomStatus('idle'); setCupomDesconto(0); }}
                     placeholder="Código do cupom"
-                    className={INP + ' flex-1 uppercase'}
+                    className={INP + ' w-full sm:flex-1 uppercase'}
                     disabled={cupomStatus === 'ok'} />
                   {cupomStatus !== 'ok' ? (
                     <button type="button" onClick={validarCupom} disabled={!cupomCodigo.trim() || cupomStatus === 'validando'}
-                      className="px-4 py-2 bg-[#123b63] text-white text-sm font-semibold rounded-xl hover:bg-[#0f2a45] transition disabled:opacity-50 whitespace-nowrap">
+                      className="w-full sm:w-auto px-4 py-2 bg-[#123b63] text-white text-sm font-semibold rounded-xl hover:bg-[#0f2a45] transition disabled:opacity-50 whitespace-nowrap">
                       {cupomStatus === 'validando' ? 'Validando...' : 'Aplicar'}
                     </button>
                   ) : (
                     <button type="button" onClick={() => { setCupomStatus('idle'); setCupomCodigo(''); setCupomDesconto(0); }}
-                      className="px-4 py-2 bg-gray-200 text-gray-600 text-sm font-semibold rounded-xl hover:bg-gray-300 transition whitespace-nowrap">
+                      className="w-full sm:w-auto px-4 py-2 bg-gray-200 text-gray-600 text-sm font-semibold rounded-xl hover:bg-gray-300 transition whitespace-nowrap">
                       Remover
                     </button>
                   )}
@@ -1088,7 +1088,7 @@ function PaginaPublica({ evento, children }: { evento: Evento; children: React.R
     <div className="min-h-screen bg-gray-100">
       {/* Header institucional */}
       <header className="bg-[#0D2B4E] text-white shadow-md">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-3">
+        <div className="max-w-4xl mx-auto px-4 py-4 flex flex-wrap items-center gap-3">
           <div className="w-9 h-9 bg-[#F39C12] rounded-lg flex items-center justify-center flex-shrink-0">
             <span className="text-white font-black text-sm">GS</span>
           </div>
@@ -1096,7 +1096,7 @@ function PaginaPublica({ evento, children }: { evento: Evento; children: React.R
             <p className="font-bold text-sm leading-tight">SISCOMIEADEPA</p>
             <p className="text-xs text-blue-300 leading-tight">Sistema de Gestão Convencional v.2.0</p>
           </div>
-          <div className="ml-auto flex items-center gap-3">
+          <div className="w-full sm:w-auto sm:ml-auto flex flex-wrap items-center gap-3">
             <Link
               href="/eventos-publicos"
               className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/85 hover:bg-white/15"

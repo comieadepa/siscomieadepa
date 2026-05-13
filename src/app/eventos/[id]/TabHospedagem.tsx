@@ -295,14 +295,14 @@ export default function TabHospedagem({
     <div className="space-y-5">
 
       {/* ── Sub-abas ──────────────────────────────────────────── */}
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-full overflow-x-auto">
         {([
           { id: 'hospedagens', label: '🛏️ Alocações' },
           { id: 'alojamentos', label: '🏠 Alojamentos' },
           { id: 'relatorios',  label: '📊 Relatórios' },
         ] as { id: SubAba; label: string }[]).map(t => (
           <button key={t.id} onClick={() => setSubAba(t.id)}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold transition ${
+            className={`px-4 py-2 rounded-lg text-xs font-semibold transition whitespace-nowrap flex-shrink-0 ${
               subAba === t.id ? 'bg-white text-[#123b63] shadow-sm' : 'text-gray-500 hover:text-gray-800'
             }`}>
             {t.label}
@@ -311,7 +311,7 @@ export default function TabHospedagem({
       </div>
 
       {/* ── Cards de resumo ───────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
         {[
           { label: 'Total',        value: stats.total,       cor: 'text-[#123b63]' },
           { label: 'Solicitadas',  value: stats.solicitadas, cor: 'text-yellow-600' },
@@ -353,14 +353,14 @@ export default function TabHospedagem({
             <button
               onClick={autoalocar}
               disabled={autoalocando || stats.solicitadas === 0}
-              className="flex items-center gap-2 bg-[#0D2B4E] text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-[#0a1e38] transition disabled:opacity-50"
+              className="w-full sm:w-auto flex items-center gap-2 bg-[#0D2B4E] text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-[#0a1e38] transition disabled:opacity-50"
             >
               {autoalocando ? '⏳ Alocando...' : '🤖 Autoalocar'}
             </button>
 
-            <div className="flex flex-wrap gap-2 flex-1">
+            <div className="flex flex-wrap gap-2 flex-1 min-w-0">
               <select value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}
-                className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+                className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
                 <option value="">Todos os status</option>
                 <option value="solicitada">Solicitada</option>
                 <option value="confirmada">Confirmada</option>
@@ -369,33 +369,33 @@ export default function TabHospedagem({
               </select>
 
               <select value={filtroAloj} onChange={e => setFiltroAloj(e.target.value)}
-                className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+                className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
                 <option value="">Todos os alojamentos</option>
                 {alojamentos.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
               </select>
 
               <select value={filtroSexo} onChange={e => setFiltroSexo(e.target.value)}
-                className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+                className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
                 <option value="">Ambos os sexos</option>
                 <option value="M">Masculino</option>
                 <option value="F">Feminino</option>
               </select>
 
               <select value={filtroSup} onChange={e => setFiltroSup(e.target.value)}
-                className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+                className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
                 <option value="">Toda supervisão</option>
                 {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
               </select>
 
               <select value={filtroNecEsp} onChange={e => setFiltroNecEsp(e.target.value)}
-                className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+                className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
                 <option value="">Nec. especial?</option>
                 <option value="1">Sim</option>
                 <option value="0">Não</option>
               </select>
 
               <select value={filtroCamaInf} onChange={e => setFiltroCamaInf(e.target.value)}
-                className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+                className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
                 <option value="">Cama inferior?</option>
                 <option value="1">Sim</option>
                 <option value="0">Não</option>
@@ -403,7 +403,7 @@ export default function TabHospedagem({
             </div>
 
             <button onClick={() => exportarCSV(hospFiltradas, 'geral')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition">
+              className="w-full sm:w-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition">
               📥 CSV
             </button>
           </div>
@@ -419,7 +419,7 @@ export default function TabHospedagem({
             </div>
           ) : (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[980px] text-sm">
                 <thead>
                   <tr>
                     <th className={thCls}>Nome</th>
@@ -885,10 +885,10 @@ function SecaoRelatorios({
   return (
     <div className="space-y-4">
       {/* Sub-tabs relatório */}
-      <div className="flex flex-wrap gap-1 bg-gray-100 rounded-xl p-1">
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto">
         {REL_TABS.map(t => (
           <button key={t.id} onClick={() => setRelTipo(t.id)}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition whitespace-nowrap flex-shrink-0 ${
               relTipo === t.id ? 'bg-white text-[#123b63] shadow-sm' : 'text-gray-500 hover:text-gray-800'
             }`}>
             {t.icon} {t.label}
@@ -900,18 +900,18 @@ function SecaoRelatorios({
       <div className="flex flex-wrap gap-3 items-center">
         {relTipo === 'por_alojamento' && (
           <select value={filtroAloj} onChange={e => setFiltroAloj(e.target.value)}
-            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+            className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
             <option value="">Todos os alojamentos</option>
             {alojamentos.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
           </select>
         )}
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex flex-wrap gap-2">
           <button onClick={() => exportarCSV(lista, relTipo)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition">
+            className="w-full sm:w-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition">
             📥 CSV
           </button>
           <button onClick={imprimir}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#123b63] text-white text-xs font-semibold hover:bg-[#0f2a45] transition">
+            className="w-full sm:w-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#123b63] text-white text-xs font-semibold hover:bg-[#0f2a45] transition">
             🖨️ Imprimir
           </button>
         </div>
@@ -922,7 +922,7 @@ function SecaoRelatorios({
       {/* ── POR ALOJAMENTO (resumo) ─────── */}
       {relTipo === 'por_alojamento' && !filtroAloj && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full min-w-[720px]">
             <thead><tr>
               <th className={thR}>Alojamento</th>
               <th className={thR + ' text-right'}>Total</th>
@@ -951,7 +951,7 @@ function SecaoRelatorios({
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full min-w-[900px]">
               <thead><tr>
                 <th className={thR}>#</th>
                 <th className={thR}>Nome</th>

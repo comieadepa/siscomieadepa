@@ -190,8 +190,29 @@ export default function GerenciarEventoPage() {
   const [loadingEvento, setLoadingEvento] = useState(true);
   const [loadingInsc,   setLoadingInsc]   = useState(true);
   const [activeTab, setActiveTab] = useState<TabId>('inscritos');
+  const tabsTrackRef = useRef<HTMLDivElement | null>(null);
+  const tabButtonRefs = useRef(new Map<TabId, HTMLButtonElement | null>());
+  const [showLeftFade, setShowLeftFade] = useState(false);
+  const [showRightFade, setShowRightFade] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [acessoNegado, setAcessoNegado] = useState(false);
+
+  const updateTabFade = useCallback(() => {
+    const el = tabsTrackRef.current;
+    if (!el) return;
+    const maxScroll = el.scrollWidth - el.clientWidth;
+    if (maxScroll <= 0) {
+      setShowLeftFade(false);
+      setShowRightFade(false);
+      return;
+    }
+    setShowLeftFade(el.scrollLeft > 4);
+    setShowRightFade(el.scrollLeft < maxScroll - 4);
+  }, []);
+
+  const setTabRef = useCallback((tabId: TabId) => (el: HTMLButtonElement | null) => {
+    tabButtonRefs.current.set(tabId, el);
+  }, []);
 
   // Permissão específica para este evento
   const permissaoNesseEvento = useMemo(
@@ -236,6 +257,25 @@ export default function GerenciarEventoPage() {
       setActiveTab(tabsVisiveis[0]?.id ?? 'inscritos');
     }
   }, [tabsVisiveis, activeTab, perfil.loading]);
+
+  useEffect(() => {
+    const el = tabsTrackRef.current;
+    if (!el) return;
+    const onScroll = () => updateTabFade();
+    updateTabFade();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', updateTabFade);
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', updateTabFade);
+    };
+  }, [updateTabFade, tabsVisiveis]);
+
+  useEffect(() => {
+    const btn = tabButtonRefs.current.get(activeTab);
+    if (!btn) return;
+    btn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }, [activeTab, tabsVisiveis]);
 
   // ── Carrega dados base ───────────────────────────────────────
   const fetchEvento = useCallback(async () => {
@@ -381,9 +421,9 @@ export default function GerenciarEventoPage() {
       {/* ── HEADER DO EVENTO ─────────────────────────────────── */}
       <div className="bg-white rounded-2xl shadow border border-gray-200 mb-6 overflow-hidden">
         {/* Faixa superior azul com banner */}
-        <div className="flex flex-col md:flex-row">
+        <div className="flex flex-col lg:flex-row">
           {/* Banner / imagem */}
-          <div className="relative md:w-52 md:flex-shrink-0 bg-gradient-to-br from-[#0D2B4E] to-[#1a4a7a] flex items-center justify-center min-h-[160px] md:min-h-0">
+          <div className="relative lg:w-52 lg:flex-shrink-0 bg-gradient-to-br from-[#0D2B4E] to-[#1a4a7a] flex items-center justify-center min-h-[160px] lg:min-h-0">
             {evento.banner_url
               ? <img src={evento.banner_url} alt={evento.nome} className="w-full h-full object-cover absolute inset-0" />
               : <span className="text-7xl select-none opacity-80">📅</span>
@@ -393,8 +433,8 @@ export default function GerenciarEventoPage() {
           </div>
 
           {/* Info principal */}
-          <div className="flex-1 p-5 md:p-6">
-            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+          <div className="flex-1 min-w-0 p-5 md:p-6">
+            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
               <div className="flex-1 min-w-0">
                 {/* Badges de status */}
                 <div className="flex flex-wrap gap-1.5 mb-2.5">
@@ -473,12 +513,14 @@ export default function GerenciarEventoPage() {
       <div className="relative">
         {/* Trilho com scroll horizontal */}
         <div
-          className="flex overflow-x-auto gap-1 px-0 pb-0"
-          style={{ scrollbarWidth: 'none' }}
+          ref={tabsTrackRef}
+          className="flex flex-nowrap overflow-x-auto gap-1 px-1 sm:px-0 pb-0"
+          style={{ scrollbarWidth: 'thin', scrollBehavior: 'smooth' }}
         >
           {tabsVisiveis.map(tab => (
             <button
               key={tab.id}
+              ref={setTabRef(tab.id)}
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-1.5 whitespace-nowrap px-4 py-2.5 text-xs font-bold rounded-t-xl border border-b-0 transition-all flex-shrink-0 ${
                 activeTab === tab.id
@@ -500,6 +542,12 @@ export default function GerenciarEventoPage() {
             </button>
           ))}
         </div>
+        {showLeftFade && (
+          <div className="pointer-events-none absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-white to-white/0" />
+        )}
+        {showRightFade && (
+          <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white to-white/0" />
+        )}
         {/* Linha de base que conecta as abas ao conteúdo */}
         <div className="h-0.5 bg-[#0D2B4E] rounded-b" />
       </div>
@@ -529,8 +577,8 @@ export default function GerenciarEventoPage() {
           financeiro:   perfil.podeVerFinanceiro ? <span className="bg-[#D9A520]/30 text-[#D9A520] text-xs font-black px-3 py-1 rounded-full">{fmtMoeda(stats.arrecadado)}</span> : null,
         };
         return (
-          <div className="bg-gradient-to-r from-[#163B66] to-[#1B4B80] px-6 py-4 rounded-b-xl mb-6 flex items-center justify-between shadow-md border-b border-white/10">
-            <div className="flex items-center gap-3">
+          <div className="bg-gradient-to-r from-[#163B66] to-[#1B4B80] px-6 py-4 rounded-b-xl mb-6 flex flex-wrap items-center gap-3 shadow-md border-b border-white/10">
+            <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 bg-white/15 rounded-xl flex items-center justify-center text-xl flex-shrink-0">
                 {tab.icon}
               </div>
@@ -539,7 +587,7 @@ export default function GerenciarEventoPage() {
                 {desc && <p className="text-white/55 text-xs mt-0.5">{desc}</p>}
               </div>
             </div>
-            {BADGE[tab.id] ?? null}
+            <div className="sm:ml-auto">{BADGE[tab.id] ?? null}</div>
           </div>
         );
       })()}
@@ -1264,19 +1312,19 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
         <div className="flex flex-wrap gap-3">
           <input type="text" placeholder="🔍 Buscar nome, CPF, WhatsApp..." value={busca}
             onChange={e => setBusca(e.target.value)}
-            className="flex-1 min-w-[200px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]" />
+            className="w-full sm:flex-1 sm:min-w-[220px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]" />
           <select value={filtroSup} onChange={e => { setFiltroSup(e.target.value); setFiltroCampo(''); }}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+            className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
             <option value="">Todas supervisões</option>
             {supervisoesDisponiveis.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
           </select>
           <select value={filtroCampo} onChange={e => setFiltroCampo(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+            className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
             <option value="">Todos campos</option>
             {camposFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
           </select>
           <select value={filtroPag} onChange={e => setFiltroPag(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+            className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
             <option value="">Pagamento</option>
             <option value="pendente">Pendente</option>
             <option value="pago">Pago</option>
@@ -1284,29 +1332,29 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
             <option value="cancelado">Cancelado</option>
           </select>
           <select value={filtroCI} onChange={e => setFiltroCI(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+            className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
             <option value="">Check-in</option>
             <option value="true">Realizado</option>
             <option value="false">Pendente</option>
           </select>
           <select value={filtroHosp} onChange={e => setFiltroHosp(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+            className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
             <option value="">Hospedagem</option>
             <option value="true">Sim</option>
             <option value="false">Não</option>
           </select>
           <select value={filtroAlim} onChange={e => setFiltroAlim(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+            className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
             <option value="">Alimentação</option>
             <option value="true">Sim</option>
             <option value="false">Não</option>
           </select>
           <button type="button" onClick={limparFiltros}
-            className="px-4 py-2 text-sm rounded-lg border border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100 transition">
+            className="w-full sm:w-auto px-4 py-2 text-sm rounded-lg border border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100 transition">
             Limpar
           </button>
           <button type="button" onClick={imprimirLista}
-            className="px-4 py-2 text-sm rounded-lg bg-[#123b63] text-white font-semibold hover:bg-[#0f2a45] transition">
+            className="w-full sm:w-auto px-4 py-2 text-sm rounded-lg bg-[#123b63] text-white font-semibold hover:bg-[#0f2a45] transition">
             🖨️ Imprimir
           </button>
         </div>
@@ -1318,7 +1366,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
       ) : (
         <>
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[1100px] text-sm">
               <thead>
                 <tr className="border-b border-[#D4DCEA] bg-[#E3ECF7]">
                   {['Nome', 'CPF', 'WhatsApp', 'Supervisão', 'Campo', 'Valor', 'Pagamento', 'Check-in', 'Etiq.', 'Cert.', 'Inscrição', 'Ações'].map(h => (

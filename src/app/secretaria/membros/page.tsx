@@ -2898,7 +2898,7 @@ useEffect(() => {
             {/* Tabela */}
             <div className="px-4 pt-3 pb-2">
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
+                <table className="w-full min-w-[980px] border-collapse">
                 <thead>
                   <tr className="bg-gray-100">
                     <th className="border-2 border-gray-300 px-4 py-3 text-center font-semibold text-gray-700 w-12">
@@ -4564,7 +4564,7 @@ useEffect(() => {
                     <p className="text-center text-gray-400 py-10">Nenhum aniversariante neste mês.</p>
                   ) : (
                     <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
+                      <table className="w-full min-w-[760px] text-sm">
                         <thead>
                           <tr>
                             <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800 whitespace-nowrap">Dia</th>

@@ -336,10 +336,10 @@ export default function FinanceiroPage() {
 
         {/* ─── Abas ─────────────────────────────────────────────────── */}
         <div className="mb-6 border-b border-gray-300">
-          <div className="flex gap-4">
+          <div className="flex gap-4 overflow-x-auto pb-1">
             <button
               onClick={() => setAbaAtiva('contribuicao-estatutaria')}
-              className={`px-6 py-3 font-semibold border-b-2 transition ${
+              className={`px-6 py-3 font-semibold border-b-2 transition whitespace-nowrap ${
                 abaAtiva === 'contribuicao-estatutaria'
                   ? 'border-blue-600 text-blue-600'
                   : 'border-transparent text-gray-600 hover:text-gray-800'
@@ -358,7 +358,7 @@ export default function FinanceiroPage() {
             <div className="bg-[#fdf9ed] border border-yellow-200 rounded-lg p-4 shadow-sm">
 
               {/* Linha 1: SUP | CAMPO | PASTOR | MATRÍCULA | CPF */}
-              <div className="grid grid-cols-1 md:grid-cols-[200px_220px_1fr_120px_160px] gap-3 items-end">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[minmax(180px,1fr)_minmax(220px,1fr)_minmax(240px,2fr)_minmax(120px,1fr)_minmax(140px,1fr)] gap-3 items-end min-w-0">
                 <div>
                   <label className="block text-[10px] font-bold text-red-700 uppercase mb-1 tracking-wide">Supervisão</label>
                   <select
@@ -412,7 +412,7 @@ export default function FinanceiroPage() {
               </div>
 
               {/* Linha 2: CONTATO | MÊS | ANO | FORMA | VALOR | REGISTRAR */}
-              <div className="grid grid-cols-1 md:grid-cols-[180px_160px_90px_160px_130px_auto] gap-3 items-end mt-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 items-end mt-3 min-w-0">
                 <div>
                   <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1 tracking-wide">Contato</label>
                   <input
@@ -465,11 +465,11 @@ export default function FinanceiroPage() {
                     />
                   </div>
                 </div>
-                <div className="flex flex-col justify-end">
+                <div className="flex flex-col justify-end sm:col-span-2 lg:col-span-1">
                   <button
                     onClick={handleRegistrar}
                     disabled={saving}
-                    className="px-5 py-2 bg-gray-400 hover:bg-[#123b63] text-white font-bold text-sm rounded transition disabled:opacity-60"
+                    className="w-full sm:w-auto px-5 py-2 bg-gray-400 hover:bg-[#123b63] text-white font-bold text-sm rounded transition disabled:opacity-60"
                   >
                     {saving ? 'AGUARDE...' : 'REGISTRAR'}
                   </button>
@@ -486,12 +486,12 @@ export default function FinanceiroPage() {
 
               {/* Barra de filtros */}
               <div className="bg-[#123b63] text-white px-4 py-2 flex flex-wrap items-center gap-2 text-xs font-bold">
-                <span className="uppercase tracking-widest mr-1">Filtros</span>
+                <span className="uppercase tracking-widest mr-1 w-full sm:w-auto">Filtros</span>
 
                 <select
                   value={filtroSup}
                   onChange={e => { setFiltroSup(e.target.value); setFiltroCampo(''); setPage(1); }}
-                  className="border border-white/40 bg-[#1a4f85] text-white rounded px-2 py-1 text-xs focus:outline-none"
+                  className="w-full sm:w-auto border border-white/40 bg-[#1a4f85] text-white rounded px-2 py-1 text-xs focus:outline-none"
                 >
                   <option value="">Supervisão</option>
                   {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
@@ -500,7 +500,7 @@ export default function FinanceiroPage() {
                 <select
                   value={filtroCampo}
                   onChange={e => { setFiltroCampo(e.target.value); setPage(1); }}
-                  className="border border-white/40 bg-[#1a4f85] text-white rounded px-2 py-1 text-xs focus:outline-none"
+                  className="w-full sm:w-auto border border-white/40 bg-[#1a4f85] text-white rounded px-2 py-1 text-xs focus:outline-none"
                 >
                   <option value="">Campo</option>
                   {camposParaFiltro.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
@@ -509,7 +509,7 @@ export default function FinanceiroPage() {
                 <select
                   value={filtroAno}
                   onChange={e => { setFiltroAno(e.target.value); setPage(1); }}
-                  className="border border-white/40 bg-[#1a4f85] text-white rounded px-2 py-1 text-xs focus:outline-none"
+                  className="w-full sm:w-auto border border-white/40 bg-[#1a4f85] text-white rounded px-2 py-1 text-xs focus:outline-none"
                 >
                   {Array.from({ length: 6 }, (_, i) => anoAtual - i).map(a => (
                     <option key={a} value={a}>{a}</option>
@@ -521,30 +521,30 @@ export default function FinanceiroPage() {
                   value={busca}
                   onChange={e => { setBusca(e.target.value); setPage(1); }}
                   placeholder="Digite sua busca..."
-                  className="flex-1 min-w-[140px] border border-white/40 bg-[#1a4f85] text-white placeholder-white/60 rounded px-2 py-1 text-xs focus:outline-none"
+                  className="w-full sm:flex-1 sm:min-w-[160px] border border-white/40 bg-[#1a4f85] text-white placeholder-white/60 rounded px-2 py-1 text-xs focus:outline-none"
                 />
 
                 <button
                   onClick={() => { setFiltroSup(''); setFiltroCampo(''); setBusca(''); setPage(1); }}
-                  className="px-3 py-1 bg-white text-[#123b63] rounded font-bold hover:bg-gray-100 transition"
+                  className="w-full sm:w-auto px-3 py-1 bg-white text-[#123b63] rounded font-bold hover:bg-gray-100 transition"
                 >
                   LIMPAR
                 </button>
                 <button
                   onClick={handleImprimir}
-                  className="px-3 py-1 bg-[#c8a42a] text-white rounded font-bold hover:bg-[#a8872a] transition"
+                  className="w-full sm:w-auto px-3 py-1 bg-[#c8a42a] text-white rounded font-bold hover:bg-[#a8872a] transition"
                 >
                   IMPRIMIR
                 </button>
 
-                <span className="ml-auto px-2 py-0.5 bg-white text-[#123b63] rounded font-bold text-xs min-w-[28px] text-center">
+                <span className="w-full sm:w-auto sm:ml-auto px-2 py-0.5 bg-white text-[#123b63] rounded font-bold text-xs min-w-[28px] text-center">
                   {page}
                 </span>
               </div>
 
               {/* Tabela */}
               <div className="overflow-x-auto">
-                <table className="w-full text-xs">
+                <table className="w-full min-w-[980px] text-xs">
                   <thead>
                     <tr className="bg-[#123b63] text-white">
                       <th className="px-3 py-2 text-left whitespace-nowrap">REFERÊNCIA</th>
@@ -581,7 +581,7 @@ export default function FinanceiroPage() {
                           );
                         })}
                         <td className="px-3 py-2 text-center whitespace-nowrap">
-                          <div className="flex items-center justify-center gap-1">
+                          <div className="flex flex-wrap items-center justify-center gap-1 max-w-[140px] mx-auto">
                             <button
                               title="Imprimir linha"
                               onClick={() => {

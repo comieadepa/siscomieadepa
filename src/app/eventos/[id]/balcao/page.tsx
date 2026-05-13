@@ -1039,11 +1039,11 @@ export default function BalcaoPage() {
       {/* ── Abas internas ── */}
       <div className="bg-[#0a2040] border-b border-white/10">
         <div className="max-w-5xl mx-auto px-4 lg:px-6">
-          <div className="flex gap-2 py-3">
+          <div className="flex gap-2 py-3 overflow-x-auto pb-1">
             <button
               type="button"
               onClick={() => trocarAba('nova')}
-              className={`px-4 py-2 rounded-xl text-sm font-bold transition ${
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition whitespace-nowrap flex-shrink-0 ${
                 activeTab === 'nova'
                   ? 'bg-[#F39C12] text-[#0D2B4E]'
                   : 'bg-white/10 text-white/70 hover:bg-white/20'
@@ -1054,7 +1054,7 @@ export default function BalcaoPage() {
             <button
               type="button"
               onClick={() => trocarAba('inscritos')}
-              className={`px-4 py-2 rounded-xl text-sm font-bold transition ${
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition whitespace-nowrap flex-shrink-0 ${
                 activeTab === 'inscritos'
                   ? 'bg-[#F39C12] text-[#0D2B4E]'
                   : 'bg-white/10 text-white/70 hover:bg-white/20'
@@ -1094,7 +1094,7 @@ export default function BalcaoPage() {
               <span className="w-6 h-6 bg-[#F39C12] text-[#0D2B4E] rounded-full flex items-center justify-center text-xs font-black">1</span>
               Identificação
             </h2>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <input
                 ref={cpfRef}
                 type="text"
@@ -1102,13 +1102,13 @@ export default function BalcaoPage() {
                 value={cpfBusca}
                 onChange={e => setCpfBusca(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && buscarCPF()}
-                className={inputCls + ' flex-1'}
+                className={inputCls + ' w-full sm:flex-1'}
                 autoFocus
               />
               <button
                 onClick={buscarCPF}
                 disabled={buscando || !cpfBusca.trim()}
-                className="bg-[#F39C12] hover:bg-[#D68910] disabled:opacity-40 text-[#0D2B4E] font-bold px-5 py-2.5 rounded-lg text-sm transition flex-shrink-0 whitespace-nowrap"
+                className="w-full sm:w-auto bg-[#F39C12] hover:bg-[#D68910] disabled:opacity-40 text-[#0D2B4E] font-bold px-5 py-2.5 rounded-lg text-sm transition flex-shrink-0 whitespace-nowrap"
               >
                 {buscando ? '...' : '🔍 Buscar'}
               </button>
@@ -1336,25 +1336,25 @@ export default function BalcaoPage() {
               Cupom de Desconto
               <span className="text-white/30 text-xs font-normal">(opcional)</span>
             </h2>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <input
                 name="cupom"
                 value={form.cupom}
                 onChange={e => { handleText(e); if (cupomStatus !== 'idle') { setCupomStatus('idle'); setCupomDesconto(0); setCupomMsg(''); } }}
                 onKeyDown={e => e.key === 'Enter' && validarCupom()}
-                className={inputCls + ' uppercase flex-1'}
+                className={inputCls + ' uppercase w-full sm:flex-1'}
                 placeholder="Código do cupom"
                 disabled={cupomStatus === 'ok'}
               />
               {cupomStatus === 'ok' ? (
-                <button onClick={removerCupom} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition flex-shrink-0">
+                <button onClick={removerCupom} className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition flex-shrink-0">
                   ✕ Remover
                 </button>
               ) : (
                 <button
                   onClick={validarCupom}
                   disabled={!form.cupom.trim() || cupomStatus === 'validando'}
-                  className="bg-[#F39C12] hover:bg-[#D68910] disabled:opacity-40 text-[#0D2B4E] font-bold px-5 py-2.5 rounded-lg text-sm transition flex-shrink-0"
+                  className="w-full sm:w-auto bg-[#F39C12] hover:bg-[#D68910] disabled:opacity-40 text-[#0D2B4E] font-bold px-5 py-2.5 rounded-lg text-sm transition flex-shrink-0"
                 >
                   {cupomStatus === 'validando' ? '...' : 'Aplicar'}
                 </button>
@@ -1373,7 +1373,7 @@ export default function BalcaoPage() {
               <span className="w-6 h-6 bg-[#F39C12] text-[#0D2B4E] rounded-full flex items-center justify-center text-xs font-black">5</span>
               Pagamento
             </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 mb-4">
               {[
                 { id: 'dinheiro',   label: '💵 Dinheiro'  },
                 { id: 'pix_manual', label: '📱 PIX Manual' },
@@ -1484,12 +1484,12 @@ export default function BalcaoPage() {
                     placeholder="🔍 Buscar nome, CPF, WhatsApp"
                     value={buscaLista}
                     onChange={e => setBuscaLista(e.target.value)}
-                    className={inputCls + ' sm:flex-1 min-w-[220px]'}
+                    className={inputCls + ' w-full sm:flex-1 sm:min-w-[220px]'}
                   />
                   <select
                     value={filtroSup}
                     onChange={e => { setFiltroSup(e.target.value); setFiltroCampo(''); }}
-                    className={inputCls + ' sm:w-44'}
+                    className={inputCls + ' w-full sm:w-44'}
                   >
                     <option value="">Todas supervisões</option>
                     {supervisoesLista.map(s => (
@@ -1499,7 +1499,7 @@ export default function BalcaoPage() {
                   <select
                     value={filtroCampo}
                     onChange={e => setFiltroCampo(e.target.value)}
-                    className={inputCls + ' sm:w-44'}
+                    className={inputCls + ' w-full sm:w-44'}
                   >
                     <option value="">Todos campos</option>
                     {camposLista.map(c => (
@@ -1509,7 +1509,7 @@ export default function BalcaoPage() {
                   <select
                     value={filtroPag}
                     onChange={e => setFiltroPag(e.target.value)}
-                    className={inputCls + ' sm:w-40'}
+                    className={inputCls + ' w-full sm:w-40'}
                   >
                     <option value="">Pagamento</option>
                     <option value="pendente">Pendente</option>
@@ -1520,7 +1520,7 @@ export default function BalcaoPage() {
                   <button
                     type="button"
                     onClick={limparFiltrosLista}
-                    className="px-4 py-2.5 rounded-lg text-xs font-bold bg-white/10 text-white/70 hover:bg-white/20 transition"
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-lg text-xs font-bold bg-white/10 text-white/70 hover:bg-white/20 transition"
                   >
                     Limpar
                   </button>
@@ -1528,7 +1528,7 @@ export default function BalcaoPage() {
                     type="button"
                     onClick={() => fetchInscricoesLista()}
                     disabled={loadingLista}
-                    className="px-4 py-2.5 rounded-lg text-xs font-bold bg-[#F39C12] text-[#0D2B4E] hover:bg-[#D68910] disabled:opacity-50 transition"
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-lg text-xs font-bold bg-[#F39C12] text-[#0D2B4E] hover:bg-[#D68910] disabled:opacity-50 transition"
                   >
                     {loadingLista ? 'Atualizando...' : 'Atualizar'}
                   </button>

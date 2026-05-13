@@ -14,6 +14,7 @@
 import { normalizePayloadToUppercase } from '@/lib/uppercase-normalizer'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/require-auth'
+import { createServerClient } from '@/lib/supabase-server'
 
 const EMPLOYEE_ROLES = ['super', 'administrador'] as const
 
@@ -98,7 +99,7 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requireRole(request, EMPLOYEE_ROLES)
     if (!auth.ok) return auth.response
-    const supabase = auth.ctx.supabase
+    const supabase = createServerClient()
 
     // Extrair query params
     const searchParams = request.nextUrl.searchParams
@@ -174,7 +175,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireRole(request, EMPLOYEE_ROLES)
     if (!auth.ok) return auth.response
-    const supabase = auth.ctx.supabase
+    const supabase = createServerClient()
 
     const body = await request.json()
     const normalizedBody = normalizePayloadToUppercase(body, {

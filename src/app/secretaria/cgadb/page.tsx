@@ -533,7 +533,7 @@ function AbaMinistros({ notify }: { notify: (t: string, m: string, tp: 'success'
       {/* Tabela */}
       {!loading && (
         <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
-          <table className="w-full text-sm border-collapse">
+          <table className="w-full min-w-[980px] text-sm border-collapse">
             <thead>
               <tr className="bg-gradient-to-r from-gray-700 to-gray-800 text-white">
                 <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide">Nome</th>
@@ -610,7 +610,7 @@ function AbaMinistros({ notify }: { notify: (t: string, m: string, tp: 'success'
                     <tr key={`${m.id}-detail`} className="bg-red-50 border-b border-red-100">
                       <td colSpan={8} className="px-6 py-4">
                         <p className="text-xs font-semibold text-gray-600 mb-2">Detalhamento dos débitos CGADB:</p>
-                        <table className="w-full text-xs border-collapse">
+                        <table className="w-full min-w-[720px] text-xs border-collapse">
                           <thead>
                             <tr className="bg-white border border-gray-200">
                               <th className="text-left px-3 py-2 font-semibold text-gray-500">Convenção</th>
@@ -1150,7 +1150,7 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
       {/* Tabela */}
       {!loading && (
         <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
-          <table className="w-full text-sm border-collapse">
+          <table className="w-full min-w-[980px] text-sm border-collapse">
             <thead>
               <tr className="bg-gradient-to-r from-gray-700 to-gray-800 text-white">
                 <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide">CPF</th>
@@ -1230,7 +1230,7 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
                       <tr>
                         <td colSpan={8} className="px-8 py-4 bg-red-50 border-b border-red-100">
                           <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Débitos por ano</p>
-                          <table className="w-full text-xs border-collapse rounded-lg overflow-hidden">
+                          <table className="w-full min-w-[720px] text-xs border-collapse rounded-lg overflow-hidden">
                             <thead>
                               <tr className="bg-gray-700 text-white">
                                 <th className="text-left px-3 py-2 font-semibold">Convenção</th>

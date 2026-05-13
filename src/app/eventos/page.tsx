@@ -333,7 +333,7 @@ export default function EventosPage() {
       {loadingData ? (
         <LoadingCards />
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
           <SummaryCard label="Programados"      value={summary.programados} color="border-blue-500"    textColor="text-[#123b63]"   icon="📅" />
           <SummaryCard label="Realizados"       value={summary.realizados}  color="border-green-500"   textColor="text-green-700"   icon="✅" />
           <SummaryCard label="Cancelados"       value={summary.cancelados}  color="border-red-400"     textColor="text-red-600"     icon="❌" />
@@ -347,8 +347,8 @@ export default function EventosPage() {
 
       {/* ── Filtros + Novo Evento ──────────────────────────── */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6 p-4">
-        <div className="flex flex-col lg:flex-row gap-3">
-          <div className="flex-1">
+        <div className="flex flex-col lg:flex-row lg:flex-wrap gap-3">
+          <div className="flex-1 min-w-0">
             <input
               type="text"
               placeholder="🔍  Buscar evento..."
@@ -361,22 +361,22 @@ export default function EventosPage() {
           {perfil.isGlobal && (
             <>
               <select value={filtroDept} onChange={e => setFiltroDept(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white">
+                className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white">
                 <option value="">Todos os departamentos</option>
                 {DEPARTAMENTOS.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
               <select value={filtroAno} onChange={e => setFiltroAno(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white">
+                className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white">
                 <option value="">Todos os anos</option>
                 {anos.map(a => <option key={a} value={a}>{a}</option>)}
               </select>
               <select value={filtroSup} onChange={e => handleFiltroSup(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white">
+                className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white">
                 <option value="">Todas as supervisões</option>
                 {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
               </select>
               <select value={filtroCampo} onChange={e => setFiltroCampo(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white">
+                className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white">
                 <option value="">Todos os campos</option>
                 {camposFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
               </select>
@@ -391,7 +391,7 @@ export default function EventosPage() {
           {/* Filtro de ano disponível para não-admin-global */}
           {!perfil.isGlobal && !perfil.isDeptAdmin && (
             <select value={filtroAno} onChange={e => setFiltroAno(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white">
+              className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white">
               <option value="">Todos os anos</option>
               {anos.map(a => <option key={a} value={a}>{a}</option>)}
             </select>
@@ -399,14 +399,14 @@ export default function EventosPage() {
           {perfil.podeNovoEvento && (
             <button
               onClick={() => router.push('/eventos/novo')}
-              className="whitespace-nowrap bg-[#123b63] text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-[#0f2a45] transition flex items-center gap-2"
+              className="w-full sm:w-auto whitespace-nowrap bg-[#123b63] text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-[#0f2a45] transition flex items-center gap-2"
             >
               <span className="text-[#F39C12] font-bold">+</span> Novo Evento
             </button>
           )}
           <button
             onClick={() => window.open(buildUrl(getPublicBaseUrl(), '/eventos-publicos'), '_blank')}
-            className="whitespace-nowrap bg-white text-[#123b63] px-5 py-2 rounded-lg text-sm font-semibold border border-[#123b63]/30 hover:bg-[#123b63]/5 transition flex items-center gap-2"
+            className="w-full sm:w-auto whitespace-nowrap bg-white text-[#123b63] px-5 py-2 rounded-lg text-sm font-semibold border border-[#123b63]/30 hover:bg-[#123b63]/5 transition flex items-center gap-2"
           >
             🌐 Portal publico
           </button>
@@ -415,7 +415,7 @@ export default function EventosPage() {
 
       {/* ── Abas ───────────────────────────────────────────── */}
       <div className="mb-6 border-b border-gray-300">
-        <div className="flex">
+        <div className="flex gap-2 overflow-x-auto pb-1">
           {([
             { id: 'programado' as const, label: 'Programados', icon: '📅', count: summary.programados },
             { id: 'realizado'  as const, label: 'Realizados',  icon: '✅', count: summary.realizados  },
@@ -424,7 +424,7 @@ export default function EventosPage() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-6 py-3 text-sm font-semibold border-b-2 transition ${
+              className={`flex items-center gap-2 px-6 py-3 text-sm font-semibold border-b-2 transition whitespace-nowrap flex-shrink-0 ${
                 activeTab === tab.id
                   ? 'border-[#123b63] text-[#123b63]'
                   : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300'

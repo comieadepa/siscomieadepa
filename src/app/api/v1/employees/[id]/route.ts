@@ -8,6 +8,7 @@
 import { normalizePayloadToUppercase } from '@/lib/uppercase-normalizer'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/require-auth'
+import { createServerClient } from '@/lib/supabase-server'
 
 const EMPLOYEE_ROLES = ['super', 'administrador'] as const
 
@@ -45,7 +46,7 @@ export async function GET(
 
     const auth = await requireRole(request, EMPLOYEE_ROLES)
     if (!auth.ok) return auth.response
-    const supabase = auth.ctx.supabase
+    const supabase = createServerClient()
 
     const { data, error } = await supabase
       .from('employees_with_member_info')
@@ -113,7 +114,7 @@ export async function DELETE(
 
     const auth = await requireRole(request, EMPLOYEE_ROLES)
     if (!auth.ok) return auth.response
-    const supabase = auth.ctx.supabase
+    const supabase = createServerClient()
 
     const { error } = await supabase
       .from('employees')
@@ -156,7 +157,7 @@ export async function PATCH(
 
     const auth = await requireRole(request, EMPLOYEE_ROLES)
     if (!auth.ok) return auth.response
-    const supabase = auth.ctx.supabase
+    const supabase = createServerClient()
 
     const { data, error } = await supabase
       .from('employees')
