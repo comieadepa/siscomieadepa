@@ -143,10 +143,54 @@ export async function POST(
   }
 
   const baseUrl = getPublicBaseUrl({ request });
-  const link = buildLink(baseUrl, token);
+  const link = buildLink(baseUrl, encodeURIComponent(token));
 
   const assunto = `Convite de acesso - ${(evento as EventoRow).nome}`;
-  const mensagem = `Ola!\n\nVoce recebeu um convite de acesso ao evento ${(evento as EventoRow).nome}.\n\nAcesse pelo link:\n${link}\n\nEste link expira automaticamente apos o encerramento do evento ou em 48h apos a data final.`;
+  const tipoLabel = tipo === 'admin' ? 'Operador' : 'Check-in';
+  const mensagem = `Ola!\n\nVoce recebeu um convite de acesso (${tipoLabel}) ao evento: ${(evento as EventoRow).nome}.\n\nAcesse pelo link abaixo:\n${link}\n\nEste link e de uso unico e expira automaticamente apos o encerramento do evento ou em 48h apos a data final.\n\nSe nao reconhece este convite, ignore este e-mail.`;
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f5f7fa;font-family:Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f7fa;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
+        <tr>
+          <td style="background:#0D2B4E;padding:28px 32px;text-align:center;">
+            <p style="margin:0;font-size:22px;font-weight:bold;color:#fff;letter-spacing:1px;">SISCOMIEADEPA</p>
+            <p style="margin:4px 0 0;font-size:12px;color:#a0bcd4;letter-spacing:2px;text-transform:uppercase;">Assembleia de Deus no Pará</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:32px 32px 8px;">
+            <p style="margin:0 0 12px 0;font-size:15px;color:#374151;">Olá!</p>
+            <p style="margin:0 0 12px 0;font-size:15px;color:#374151;">Você recebeu um convite de acesso como <strong>${tipoLabel}</strong> ao evento:</p>
+            <p style="margin:0 0 24px 0;font-size:17px;font-weight:bold;color:#0D2B4E;">${(evento as EventoRow).nome}</p>
+            <table cellpadding="0" cellspacing="0" style="margin:0 auto 24px;">
+              <tr>
+                <td align="center" style="background:#0D2B4E;border-radius:8px;padding:14px 32px;">
+                  <a href="${link}" style="color:#ffffff;font-size:16px;font-weight:bold;text-decoration:none;display:block;">Acessar Evento</a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:0 0 8px 0;font-size:12px;color:#9ca3af;">Se o botão não funcionar, copie e cole este link no navegador:</p>
+            <p style="margin:0 0 24px 0;font-size:11px;color:#6b7280;word-break:break-all;">${link}</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#f8f9fa;padding:20px 32px;border-top:1px solid #e5e7eb;">
+            <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;">
+              Este link é de uso único e expira automaticamente após o encerramento do evento.<br>
+              Se não reconhece este convite, ignore este e-mail.<br><br>
+              Mensagem automática do sistema SISCOMIEADEPA — não responda.
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
 
   const targetEmail = email || equipe?.email || '';
   if (!targetEmail) {
@@ -157,6 +201,7 @@ export async function POST(
     para: targetEmail,
     assunto,
     mensagem,
+    html,
     fromEmail: 'naoresponda@siscomieadepa.org',
   });
 

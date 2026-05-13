@@ -8,7 +8,8 @@ import { buildUrl, getAppBaseUrl, getPublicBaseUrl } from '@/lib/urls';
 export default function AcessoEquipePage() {
   const router = useRouter();
   const search = useSearchParams();
-  const token = search?.get('token') || '';
+  // decodeURIComponent garante que tokens URL-encoded (ex: via safe-links de Outlook) sejam normalizados
+  const token = decodeURIComponent(search?.get('token') || '');
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {

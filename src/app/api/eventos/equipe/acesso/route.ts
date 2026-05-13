@@ -43,11 +43,20 @@ export async function POST(request: NextRequest) {
 
   const supabase = createServerClient();
 
-  const { data: equipe } = await supabase
+  const { data: equipe, error: equipeError } = await supabase
     .from('evento_equipe')
     .select('id,evento_id,tipo,ativo,convite_expira_em,convite_usado_em')
     .eq('convite_token', token)
-    .single();
+    .maybeSingle();
+
+  if (equipeError) {
+    console.error('[equipe/acesso] Erro ao buscar token:', equipeError.message, equipeError.code);
+    // PGRST116 = no rows, PGRST204 = column not found (migration not applied)
+    if (equipeError.code === 'PGRST204') {
+      return NextResponse.json({ error: 'Configuracao do banco desatualizada. Contate o suporte.' }, { status: 500 });
+    }
+    return NextResponse.json({ error: 'Erro interno ao validar convite.' }, { status: 500 });
+  }
 
   if (!equipe) {
     return NextResponse.json({ error: 'Token invalido.' }, { status: 404 });
@@ -82,11 +91,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Convite expirado.' }, { status: 403 });
   }
 
+  // Registra uso e invalida o token (single-use).
+  // Limpa convite_token para impedir reutilização após o primeiro acesso.
   await supabase
     .from('evento_equipe')
     .update({
-      convite_usado_em: equipeRow.convite_usado_em || now.toISOString(),
-      ultimo_acesso_em: now.toISOString(),
+      convite_token:     null,
+      convite_usado_em:  equipeRow.convite_usado_em || now.toISOString(),
+      ultimo_acesso_em:  now.toISOString(),
       convite_expira_em: expiraEm,
     })
     .eq('id', equipeRow.id);
