@@ -6,6 +6,9 @@
  * - Fire-and-forget: erros de log não propagam para o caller.
  */
 
+import { createServerClient } from '@/lib/supabase-server'
+import { NextRequest } from 'next/server'
+
 export interface AuditoriaParams {
   userId?: string;
   userEmail?: string;
@@ -115,4 +118,45 @@ export function mascaraCpf(cpf: string | null | undefined): string {
   const limpo = cpf.replace(/\D/g, '');
   if (limpo.length !== 11) return '***';
   return `${limpo.slice(0, 3)}.***.***-${limpo.slice(9)}`;
+}
+
+/**
+ * Insere um log de auditoria DIRETAMENTE no banco via service_role.
+ * Usar em route handlers server-side (sem HTTP round-trip).
+ * Fire-and-forget — nunca propaga erros.
+ */
+export async function logDB(
+  params: AuditoriaParams & { request?: NextRequest },
+): Promise<void> {
+  try {
+    const supabase = createServerClient()
+    const req = params.request
+
+    const ip = req
+      ? (req.headers.get('x-forwarded-for')?.split(',')[0] ??
+         req.headers.get('x-real-ip') ??
+         'desconhecido')
+      : undefined
+    const userAgent = req ? (req.headers.get('user-agent') ?? undefined) : undefined
+
+    await supabase.from('audit_logs').insert({
+      user_id: params.userId ?? null,
+      usuario_email: params.userEmail ?? null,
+      action: params.acao,
+      resource_type: params.modulo,
+      acao: params.acao,
+      modulo: params.modulo,
+      area: params.entidade ?? null,
+      tabela_afetada: params.entidade ?? null,
+      resource_id: params.entidadeId ?? null,
+      descricao: params.descricao ?? null,
+      dados_novos: params.detalhes ?? null,
+      status: params.status ?? 'sucesso',
+      mensagem_erro: params.mensagemErro ?? null,
+      ip_address: ip ?? null,
+      user_agent: userAgent ?? null,
+    })
+  } catch {
+    // Logs nunca devem interromper o fluxo principal
+  }
 }

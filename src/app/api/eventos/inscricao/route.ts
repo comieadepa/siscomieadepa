@@ -5,6 +5,7 @@ import {
   createEventoPayment,
 } from '@/lib/asaas';
 import { normalizePayloadUppercase } from '@/lib/text';
+import { logDB } from '@/lib/audit';
 
 const VENCIMENTO_DIAS = 3;
 
@@ -353,6 +354,15 @@ export async function POST(request: NextRequest) {
     }
 
     if (isGratuito) {
+      void logDB({
+        userEmail: email?.trim() ?? undefined,
+        acao: 'criar',
+        modulo: 'inscricoes',
+        entidade: 'evento_inscricoes',
+        entidadeId: inscricao.id,
+        descricao: `Nova inscrição: ${nome_inscrito} — ${evento.nome}`,
+        request,
+      })
       return NextResponse.json({ inscricaoId: inscricao.id, statusPagamento: 'isento', pagamento: null });
     }
 
@@ -386,6 +396,16 @@ export async function POST(request: NextRequest) {
           asaas_due_date:   dueDate,
         })
         .eq('id', inscricao.id);
+
+      void logDB({
+        userEmail: email?.trim() ?? undefined,
+        acao: 'criar',
+        modulo: 'inscricoes',
+        entidade: 'evento_inscricoes',
+        entidadeId: inscricao.id,
+        descricao: `Nova inscrição (pago): ${nome_inscrito} — ${evento.nome}`,
+        request,
+      })
 
       return NextResponse.json({
         inscricaoId:     inscricao.id,

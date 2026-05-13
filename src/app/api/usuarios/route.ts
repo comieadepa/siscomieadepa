@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { requireFlowAuth, hasRole } from '@/lib/flows/flow-auth';
 import { normalizeRole } from '@/lib/auth/roles';
+import { logDB } from '@/lib/audit';
 
 type UsuarioResponse = {
   id: string;
@@ -189,6 +190,17 @@ export async function POST(request: NextRequest) {
 
     void congregacaoId; // reservado para uso futuro
 
+    void logDB({
+      userId: authUser.user.id,
+      userEmail: email,
+      acao: 'criar',
+      modulo: 'usuarios',
+      entidade: 'users',
+      entidadeId: authUser.user.id,
+      descricao: `Usuário criado: ${nome} (${email}) - nível ${nivel}`,
+      request,
+    })
+
     return NextResponse.json({ success: true, id: authUser.user.id });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Erro interno do servidor';
@@ -278,6 +290,16 @@ export async function PUT(request: NextRequest) {
 
     void congregacaoId; // reservado para uso futuro
 
+    void logDB({
+      userId,
+      acao: 'editar',
+      modulo: 'usuarios',
+      entidade: 'users',
+      entidadeId: userId,
+      descricao: `Usuário atualizado: ${nome} (${email}) - nível ${nivel}`,
+      request,
+    })
+
     return NextResponse.json({ success: true });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Erro interno do servidor';
@@ -331,6 +353,16 @@ export async function DELETE(request: NextRequest) {
     if (deleteAuthError) {
       return NextResponse.json({ error: deleteAuthError.message }, { status: 400 });
     }
+
+    void logDB({
+      userId: currentUserId,
+      acao: 'deletar',
+      modulo: 'usuarios',
+      entidade: 'users',
+      entidadeId: userId,
+      descricao: `Usuário removido: ${userId}`,
+      request,
+    })
 
     return NextResponse.json({ success: true });
   } catch (e) {

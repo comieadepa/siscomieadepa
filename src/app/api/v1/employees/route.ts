@@ -15,6 +15,7 @@ import { normalizePayloadToUppercase } from '@/lib/uppercase-normalizer'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/require-auth'
 import { createServerClient } from '@/lib/supabase-server'
+import { logDB } from '@/lib/audit'
 
 const EMPLOYEE_ROLES = ['super', 'administrador'] as const
 
@@ -246,6 +247,17 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    void logDB({
+      userId: auth.ctx.userId,
+      userEmail: auth.ctx.user.email ?? undefined,
+      acao: 'criar',
+      modulo: 'secretaria',
+      entidade: 'employees',
+      entidadeId: data?.[0]?.id,
+      descricao: `Funcionário criado: ${funcao} - ${grupo}`,
+      request,
+    })
 
     return NextResponse.json(
       { data, message: 'Funcionário criado com sucesso' },

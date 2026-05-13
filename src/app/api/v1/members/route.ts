@@ -12,6 +12,7 @@ import { normalizePayloadToUppercase } from '@/lib/uppercase-normalizer'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/require-auth'
 import { createServerClient } from '@/lib/supabase-server'
+import { logDB } from '@/lib/audit'
 
 const MEMBERS_ROLES = ['super', 'administrador', 'comissao'] as const
 
@@ -267,6 +268,17 @@ export async function POST(request: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
+
+    void logDB({
+      userId: auth.ctx.userId,
+      userEmail: auth.ctx.user.email ?? undefined,
+      acao: 'criar',
+      modulo: 'membros',
+      entidade: 'members',
+      entidadeId: data[0]?.id,
+      descricao: `Membro criado: ${normalizedBody.name}`,
+      request,
+    })
 
     return NextResponse.json(data[0], { status: 201 })
   } catch (error) {
