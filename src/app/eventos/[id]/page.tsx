@@ -421,9 +421,9 @@ export default function GerenciarEventoPage() {
       {/* ── HEADER DO EVENTO ─────────────────────────────────── */}
       <div className="bg-white rounded-2xl shadow border border-gray-200 mb-6 overflow-hidden">
         {/* Faixa superior azul com banner */}
-        <div className="flex flex-col lg:flex-row">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(180px,220px)_minmax(0,1fr)_auto]">
           {/* Banner / imagem */}
-          <div className="relative lg:w-52 lg:flex-shrink-0 bg-gradient-to-br from-[#0D2B4E] to-[#1a4a7a] flex items-center justify-center min-h-[160px] lg:min-h-0">
+          <div className="relative w-full bg-gradient-to-br from-[#0D2B4E] to-[#1a4a7a] flex items-center justify-center min-h-[160px] lg:min-h-0">
             {evento.banner_url
               ? <img src={evento.banner_url} alt={evento.nome} className="w-full h-full object-cover absolute inset-0" />
               : <span className="text-7xl select-none opacity-80">📅</span>
@@ -433,61 +433,59 @@ export default function GerenciarEventoPage() {
           </div>
 
           {/* Info principal */}
-          <div className="flex-1 min-w-0 p-5 md:p-6">
-            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-              <div className="flex-1 min-w-0">
-                {/* Badges de status */}
-                <div className="flex flex-wrap gap-1.5 mb-2.5">
-                  <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${evCfg.cls}`}>{evCfg.label}</span>
-                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-[#0D2B4E]/10 text-[#0D2B4E]">{evento.departamento}</span>
-                  {evento.inscricoes_abertas
-                    ? <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">✅ Inscrições abertas</span>
-                    : <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-gray-100 text-gray-500">🔒 Inscrições fechadas</span>
-                  }
-                </div>
-                <h1 className="text-xl font-black text-[#0D2B4E] mb-1.5 leading-snug">{evento.nome}</h1>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
-                  <span className="flex items-center gap-1">📅 {fmtData(evento.data_inicio)}{evento.data_fim !== evento.data_inicio ? ` → ${fmtData(evento.data_fim)}` : ''}</span>
-                  {(evento.local || evento.cidade) && <span className="flex items-center gap-1">📍 {[evento.local, evento.cidade].filter(Boolean).join(' — ')}</span>}
-                  {evento.supervisao_id && <span className="flex items-center gap-1">🗂️ {nomeSup(evento.supervisao_id)}</span>}
-                  {evento.campo_id      && <span className="flex items-center gap-1">⛪ {nomeCampo(evento.campo_id)}</span>}
-                </div>
+          <div className="min-w-0 p-5 md:p-6">
+            <div className="min-w-0">
+              {/* Badges de status */}
+              <div className="flex flex-wrap gap-1.5 mb-2.5">
+                <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${evCfg.cls}`}>{evCfg.label}</span>
+                <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-[#0D2B4E]/10 text-[#0D2B4E]">{evento.departamento}</span>
+                {evento.inscricoes_abertas
+                  ? <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">✅ Inscrições abertas</span>
+                  : <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-gray-100 text-gray-500">🔒 Inscrições fechadas</span>
+                }
               </div>
-
-              {/* Botões de ação — agrupados à direita */}
-              <div className="flex flex-wrap md:flex-col lg:flex-row gap-2 flex-shrink-0">
-                <button
-                  onClick={() => router.push('/eventos')}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-gray-600 hover:bg-gray-50 border border-gray-200 transition"
-                >
-                  ← Voltar
-                </button>
-                {perfil.podeEditar && (
-                  <button onClick={() => router.push(`/eventos/${id}/editar`)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200 transition">
-                    ✏️ Editar
-                  </button>
-                )}
-                <a href={buildUrl(getPublicBaseUrl(), `/inscricao/${evento.slug}`)} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition">
-                  🌐 Pág. Pública
-                </a>
-                <a href={`/eventos/${id}/display`} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#0D2B4E] text-white hover:bg-[#0a1e38] transition">
-                  📺 Display
-                </a>
-                <a href={`/eventos/${id}/balcao`} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#D9A520] text-white hover:bg-[#b8861a] transition">
-                  🏪 Balcão
-                </a>
+              <h1 className="text-xl font-black text-[#0D2B4E] mb-1.5 leading-snug">{evento.nome}</h1>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+                <span className="flex items-center gap-1">📅 {fmtData(evento.data_inicio)}{evento.data_fim !== evento.data_inicio ? ` → ${fmtData(evento.data_fim)}` : ''}</span>
+                {(evento.local || evento.cidade) && <span className="flex items-center gap-1">📍 {[evento.local, evento.cidade].filter(Boolean).join(' — ')}</span>}
+                {evento.supervisao_id && <span className="flex items-center gap-1">🗂️ {nomeSup(evento.supervisao_id)}</span>}
+                {evento.campo_id      && <span className="flex items-center gap-1">⛪ {nomeCampo(evento.campo_id)}</span>}
               </div>
             </div>
+          </div>
+
+          {/* Botões de ação — agrupados à direita */}
+          <div className="flex flex-wrap gap-2 px-5 pt-2 pb-5 md:px-6 md:pb-6 border-t border-gray-100 lg:border-t-0 lg:mt-0 lg:pt-6 lg:pb-0 lg:pr-6 lg:pl-0 lg:flex-col lg:flex-nowrap lg:items-end lg:self-start">
+            <button
+              onClick={() => router.push('/eventos')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-gray-600 hover:bg-gray-50 border border-gray-200 transition"
+            >
+              ← Voltar
+            </button>
+            {perfil.podeEditar && (
+              <button onClick={() => router.push(`/eventos/${id}/editar`)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200 transition">
+                ✏️ Editar
+              </button>
+            )}
+            <a href={buildUrl(getPublicBaseUrl(), `/inscricao/${evento.slug}`)} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition">
+              🌐 Pág. Pública
+            </a>
+            <a href={`/eventos/${id}/display`} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#0D2B4E] text-white hover:bg-[#0a1e38] transition">
+              📺 Display
+            </a>
+            <a href={`/eventos/${id}/balcao`} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#D9A520] text-white hover:bg-[#b8861a] transition">
+              🏪 Balcão
+            </a>
           </div>
         </div>
 
         {/* Faixa de métricas — fundo gradiente sutil */}
         <div className="border-t border-gray-100 bg-gradient-to-r from-[#0D2B4E]/[0.03] to-transparent">
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 divide-x divide-gray-100">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 lg:divide-x divide-gray-100">
             {[
               { label: 'Inscritos',  value: stats.total,               icon: '👥', color: 'text-[#0D2B4E]',   bgIcon: 'bg-[#0D2B4E]/10', show: true },
               { label: 'Pagos',      value: stats.pagos,               icon: '💳', color: 'text-emerald-700', bgIcon: 'bg-emerald-100',   show: true },
@@ -497,7 +495,7 @@ export default function GerenciarEventoPage() {
               { label: 'Etiquetas',  value: stats.etiquetas,           icon: '🏷️', color: 'text-gray-600',    bgIcon: 'bg-gray-100',      show: true },
               { label: 'Arrecadado', value: fmtMoeda(stats.arrecadado),icon: '💰', color: 'text-[#D9A520]',   bgIcon: 'bg-amber-100',     show: perfil.podeVerFinanceiro },
             ].filter(s => s.show).map(s => (
-              <div key={s.label} className="flex items-center gap-3 px-4 py-3 first:col-span-1">
+              <div key={s.label} className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 lg:border-b-0">
                 <div className={`w-8 h-8 rounded-lg ${s.bgIcon} flex items-center justify-center text-sm flex-shrink-0`}>{s.icon}</div>
                 <div>
                   <p className={`font-black text-base leading-tight ${s.color}`}>{s.value}</p>
@@ -584,7 +582,7 @@ export default function GerenciarEventoPage() {
               </div>
               <div>
                 <h2 className="text-white font-black text-base leading-tight">{tab.label}</h2>
-                {desc && <p className="text-white/55 text-xs mt-0.5">{desc}</p>}
+                {desc && <p className="hidden sm:block text-white/55 text-xs mt-0.5">{desc}</p>}
               </div>
             </div>
             <div className="sm:ml-auto">{BADGE[tab.id] ?? null}</div>
