@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireEventAccess } from '@/lib/auth/require-auth';
+import { registrarAuditoria } from '@/lib/audit';
 
 export async function DELETE(
   request: NextRequest,
@@ -34,6 +35,10 @@ export async function DELETE(
     return NextResponse.json({ error: eventoError.message }, { status: 500 });
   }
 
+  void registrarAuditoria(
+    { userId: guard.ctx.user.id, userEmail: guard.ctx.user.email ?? undefined, acao: 'deletar', modulo: 'eventos', entidadeId: eventoId, descricao: 'Evento excluído' },
+    request,
+  );
   return NextResponse.json({ success: true });
 }
 
@@ -70,5 +75,9 @@ export async function PATCH(
     return NextResponse.json({ error: inscError.message }, { status: 500 });
   }
 
+  void registrarAuditoria(
+    { userId: guard.ctx.user.id, userEmail: guard.ctx.user.email ?? undefined, acao: 'editar', modulo: 'eventos', entidadeId: eventoId, descricao: 'Evento cancelado' },
+    request,
+  );
   return NextResponse.json({ success: true });
 }

@@ -3344,7 +3344,7 @@ function TabEquipe({ eventoId, evento, equipe, supabase, onRefresh }: {
           <select value={tipo} onChange={e => setTipo(e.target.value as 'admin' | 'checkin')}
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
             <option value="checkin">Check-in</option>
-            <option value="admin">Admin</option>
+            <option value="admin">Operador</option>
           </select>
           <button type="submit" disabled={salvando}
             className="bg-[#123b63] text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-[#0f2a45] transition disabled:opacity-50">
@@ -3389,7 +3389,7 @@ function TabEquipe({ eventoId, evento, equipe, supabase, onRefresh }: {
                   <td className="px-4 py-3 text-gray-800">{eq.email}</td>
                   <td className="px-4 py-3">
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${eq.tipo === 'admin' ? 'bg-[#123b63]/10 text-[#123b63]' : 'bg-gray-100 text-gray-600'}`}>
-                      {eq.tipo === 'admin' ? 'Admin' : 'Check-in'}
+                      {eq.tipo === 'admin' ? 'Operador' : 'Check-in'}
                     </span>
                   </td>
                   <td className="px-4 py-3">

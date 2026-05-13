@@ -53,7 +53,7 @@ export async function POST(
   }
 
   const email = (body.email || '').trim().toLowerCase();
-  const tipo = body.tipo === 'admin' ? 'admin' : 'checkin';
+  const tipo = (body.tipo === 'admin' || body.tipo === 'operador') ? 'admin' : 'checkin';
   const equipeId = (body.equipe_id || '').trim();
 
   if (!equipeId && !email) {

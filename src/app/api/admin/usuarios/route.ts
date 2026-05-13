@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcrypt'
 import { requireAdmin } from '@/lib/admin-guard'
+import { registrarAuditoria } from '@/lib/audit'
 
 function sanitizeAdminUser(row: any) {
   if (!row || typeof row !== 'object') return row
@@ -140,6 +141,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
+    void registrarAuditoria(
+      { userId: result.ctx.user.id, userEmail: result.ctx.user.email ?? undefined, acao: 'criar', modulo: 'usuarios', entidadeId: data!.id, descricao: `Usuário ${body.email} criado (${body.role || 'suporte'})` },
+      request,
+    );
     return NextResponse.json(sanitizeAdminUser(data), { status: 201 })
   } catch (error) {
     return NextResponse.json(
@@ -289,6 +294,14 @@ export async function DELETE(request: NextRequest) {
       }
     }
 
+    void registrarAuditoria(
+      { userId: result.ctx.user.id, userEmail: result.ctx.user.email ?? undefined, acao: 'deletar', modulo: 'usuarios', entidadeId: id, descricao: `Usuário ${targetUser.email} desativado` },
+      request,
+    );
+    void registrarAuditoria(
+      { userId: result.ctx.user.id, userEmail: result.ctx.user.email ?? undefined, acao: 'deletar', modulo: 'usuarios', entidadeId: id, descricao: `Usuário ${targetUser.email} desativado` },
+      request,
+    );
     return NextResponse.json({ success: true })
   } catch (error) {
     return NextResponse.json(

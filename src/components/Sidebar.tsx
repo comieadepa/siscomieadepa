@@ -111,8 +111,8 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
       icon: '📅',
       path: '/eventos',
       submenu: [
-        { id: 'eventos-lista',     label: 'Todos os Eventos',  icon: '📋', path: '/eventos' },
         { id: 'eventos-dashboard', label: 'Dashboard Geral',   icon: '📊', path: '/eventos/dashboard' },
+        { id: 'eventos-lista',     label: 'Todos os Eventos',  icon: '📋', path: '/eventos' },
       ],
     },
     { id: 'comissao', label: 'Comissão', icon: '👥', path: '/comissao' },

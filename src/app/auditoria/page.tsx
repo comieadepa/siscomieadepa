@@ -12,13 +12,13 @@ import { canAccessModule } from '@/lib/auth/roles'
 
 type AuditLog = {
   id: string
-  usuario_email: string
-  acao: string
-  modulo: string
+  usuario_email: string | null
+  acao: string | null
+  modulo: string | null
   area: string | null
   descricao: string | null
-  status: 'sucesso' | 'erro' | 'aviso'
-  data_criacao: string
+  status: string
+  created_at: string
   ip_address?: string
   tabela_afetada?: string
 }
@@ -41,8 +41,8 @@ export default function AuditoriaPage() {
   const [filtroUsuario, setFiltroUsuario] = useState('')
 
   // Opções de filtro
-  const acoes = ['criar', 'editar', 'deletar', 'visualizar', 'exportar', 'importar', 'responder', 'login', 'logout']
-  const modulos = ['suporte', 'usuarios', 'ministerios', 'financeiro', 'membros', 'configuracoes']
+  const acoes = ['criar', 'editar', 'deletar', 'visualizar', 'exportar', 'importar', 'login', 'logout', 'checkin', 'enviar_certificado', 'baixa_financeira', 'alterar_permissoes', 'upload', 'download', 'erro_critico']
+  const modulos = ['eventos', 'inscricoes', 'financeiro', 'membros', 'secretaria', 'usuarios', 'configuracoes', 'certificados', 'checkin', 'etiquetas', 'auth']
   const statuses = ['sucesso', 'erro', 'aviso']
 
   const podeAcessar = canAccessModule(role, 'auditoria')
@@ -82,8 +82,8 @@ export default function AuditoriaPage() {
       let query = supabase
         .from('audit_logs')
         .select('*')
-        .gte('data_criacao', dataInicial.toISOString())
-        .order('data_criacao', { ascending: false })
+        .gte('created_at', dataInicial.toISOString())
+        .order('created_at', { ascending: false })
         .limit(500)
 
       // Aplicar filtros
@@ -328,7 +328,7 @@ export default function AuditoriaPage() {
                     {/* Coluna 1: Ação e Status */}
                     <div>
                       <div className="flex items-center gap-2 mb-2">
-                        <span className="text-xl">{getAcaoIcon(log.acao)}</span>
+                        <span className="text-xl">{getAcaoIcon(log.acao ?? '')}</span>
                         <span className="font-semibold text-gray-800 capitalize">{log.acao}</span>
                       </div>
                       <div className="text-xs">
@@ -355,7 +355,7 @@ export default function AuditoriaPage() {
                       <p className="text-sm font-semibold text-gray-700">Usuário</p>
                       <p className="text-gray-600 truncate">{log.usuario_email}</p>
                       <p className="text-sm font-semibold text-gray-700 mt-2">Data/Hora</p>
-                      <p className="text-xs text-gray-600">{formatarData(log.data_criacao)}</p>
+                      <p className="text-xs text-gray-600">{formatarData(log.created_at)}</p>
                     </div>
 
                     {/* Coluna 4: Descrição */}

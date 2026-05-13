@@ -4,35 +4,37 @@ import { NextRequest } from 'next/server'
 import { requireAdmin } from '@/lib/admin-guard'
 
 const SQL_CREATE_AUDIT_TABLE = `
--- Criar tabela de auditoria (versão simplificada)
+-- Criar tabela de auditoria (schema completo)
 CREATE TABLE IF NOT EXISTS public.audit_logs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  usuario_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  usuario_email VARCHAR(255),
-  acao VARCHAR(50) NOT NULL,
-  modulo VARCHAR(100) NOT NULL,
-  area VARCHAR(100),
-  tabela_afetada VARCHAR(100),
-  registro_id UUID,
-  descricao TEXT,
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  usuario_email   TEXT,
+  action          TEXT NOT NULL DEFAULT 'outro',
+  resource_type   TEXT NOT NULL DEFAULT 'sistema',
+  resource_id     UUID,
+  acao            TEXT,
+  modulo          TEXT,
+  area            TEXT,
+  tabela_afetada  TEXT,
+  descricao       TEXT,
   dados_anteriores JSONB,
-  dados_novos JSONB,
-  ip_address INET,
-  user_agent TEXT,
-  status VARCHAR(20) DEFAULT 'sucesso',
-  mensagem_erro TEXT,
-  data_criacao TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  CONSTRAINT valid_acao CHECK (acao IN ('criar', 'editar', 'deletar', 'visualizar', 'exportar', 'importar', 'responder', 'atualizar_status', 'atualizar_permissoes', 'login', 'logout', 'download', 'upload', 'outro')),
-  CONSTRAINT valid_status CHECK (status IN ('sucesso', 'erro', 'aviso'))
+  dados_novos     JSONB,
+  old_data        JSONB,
+  new_data        JSONB,
+  ip_address      INET,
+  user_agent      TEXT,
+  status          TEXT DEFAULT 'sucesso',
+  mensagem_erro   TEXT,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Índices para performance
-CREATE INDEX IF NOT EXISTS idx_audit_usuario ON public.audit_logs(usuario_id);
-CREATE INDEX IF NOT EXISTS idx_audit_modulo ON public.audit_logs(modulo);
-CREATE INDEX IF NOT EXISTS idx_audit_acao ON public.audit_logs(acao);
-CREATE INDEX IF NOT EXISTS idx_audit_data ON public.audit_logs(data_criacao DESC);
-CREATE INDEX IF NOT EXISTS idx_audit_usuario_data ON public.audit_logs(usuario_id, data_criacao DESC);
-CREATE INDEX IF NOT EXISTS idx_audit_tabela ON public.audit_logs(tabela_afetada, registro_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id   ON public.audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_modulo     ON public.audit_logs(modulo);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_acao       ON public.audit_logs(acao);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_status     ON public.audit_logs(status);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_email      ON public.audit_logs(usuario_email);
 
 -- RLS
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
@@ -40,17 +42,16 @@ ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 -- Remover policies antigas se existirem
 DROP POLICY IF EXISTS "users_view_own_audit_logs" ON public.audit_logs;
 DROP POLICY IF EXISTS "users_create_audit_logs" ON public.audit_logs;
+DROP POLICY IF EXISTS "audit_logs_insert_all" ON public.audit_logs;
+DROP POLICY IF EXISTS "audit_logs_select_auth" ON public.audit_logs;
 
--- Políticas
-CREATE POLICY "users_view_own_audit_logs"
-  ON public.audit_logs
-  FOR SELECT
-  USING (auth.uid() = usuario_id);
+CREATE POLICY "audit_logs_insert_all"
+  ON public.audit_logs FOR INSERT
+  WITH CHECK (true);
 
-CREATE POLICY "users_create_audit_logs"
-  ON public.audit_logs
-  FOR INSERT
-  WITH CHECK (auth.uid() = usuario_id);
+CREATE POLICY "audit_logs_select_auth"
+  ON public.audit_logs FOR SELECT
+  USING (auth.uid() IS NOT NULL);
 
 -- Permissões
 GRANT SELECT, INSERT ON public.audit_logs TO authenticated;

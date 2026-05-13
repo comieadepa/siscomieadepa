@@ -5,6 +5,10 @@ import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import NotificationModal from '@/components/NotificationModal';
 import { authenticatedFetch } from '@/lib/api-client';
+import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
+import { useUserRole } from '@/hooks/useUserRole';
+import { canAccessModule } from '@/lib/auth/roles';
+import AccessRestricted from '@/components/AccessRestricted';
 
 export const dynamic = 'force-dynamic';
 
@@ -301,6 +305,9 @@ interface ImportResult {
 // ── Componente principal ──────────────────────────────────────────────────────
 export default function ImportarMembrosPage() {
   const router = useRouter();
+  const { loading: authLoading } = useRequireSupabaseAuth();
+  const { role, loading: roleLoading } = useUserRole();
+  const podeAcessar = canAccessModule(role, 'configuracoes');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeMenu, setActiveMenu] = useState('membros');
   const [isDragging, setIsDragging] = useState(false);
@@ -469,6 +476,19 @@ export default function ImportarMembrosPage() {
   const mappedCount = parsed ? parsed.mapping.filter(Boolean).length : 0;
   const unmappedHeaders = parsed ? parsed.headers.filter((_, i) => !parsed.mapping[i]) : [];
   const previewRows = parsed ? parsed.rows.slice(0, 5) : [];
+
+  if (authLoading || roleLoading) return <div className="p-8">Carregando...</div>;
+
+  if (!podeAcessar) {
+    return (
+      <div className="flex h-screen bg-gray-100">
+        <Sidebar activeMenu="membros" setActiveMenu={() => {}} />
+        <div className="flex-1 p-6">
+          <AccessRestricted message="Voce nao tem permissao para importar ministros." />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-gray-100">

@@ -175,6 +175,19 @@ export function useEventosPerfil(): EventosPerfil {
 
         setPermissoesPorEvento(map);
         setEventoIds(ids);
+
+        // Também verifica sessão de equipe (convite via link)
+        // Funciona mesmo quando o usuário está autenticado no Supabase
+        const equipeSess = getEquipeSession();
+        if (equipeSess && !cancelled) {
+          const sessPerm: PermissaoEvento = equipeSess.tipo === 'admin' ? 'admin_evento' : 'checkin';
+          if (!map[equipeSess.eventoId]) {
+            map[equipeSess.eventoId] = sessPerm;
+            ids.push(equipeSess.eventoId);
+            setPermissoesPorEvento({ ...map });
+            setEventoIds([...ids]);
+          }
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }

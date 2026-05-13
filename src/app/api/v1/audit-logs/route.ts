@@ -32,18 +32,22 @@ export async function POST(request: NextRequest) {
       return error || null
     }
 
-    // Inserir log (schema simplificado)
+    // Inserir log com mapeamento para schema real da tabela
     let error = await tryInsert({
-      usuario_id: user.id,
+      user_id: user.id,
       usuario_email: body.usuario_email || user.email,
+      action: body.acao || body.action || 'outro',
+      resource_type: body.modulo || body.resource_type || 'sistema',
+      resource_id: body.registro_id || null,
       acao: body.acao,
       modulo: body.modulo,
       area: body.area,
       tabela_afetada: body.tabela_afetada,
-      registro_id: body.registro_id,
       descricao: body.descricao,
-      dados_anteriores: body.dados_anteriores,
-      dados_novos: body.dados_novos,
+      dados_anteriores: body.dados_anteriores || null,
+      dados_novos: body.dados_novos || null,
+      old_data: body.dados_anteriores || null,
+      new_data: body.dados_novos || null,
       ip_address: ip,
       user_agent: userAgent,
       status: body.status || 'sucesso',
@@ -98,11 +102,10 @@ export async function GET(request: NextRequest) {
     const dataInicio = searchParams.get('dataInicio')
     const dataFim = searchParams.get('dataFim')
 
-    // Montar query
+    // Montar query — sem filtro por usuário; a auditoria é acessível só a super (RLS + role check na página)
     let query = supabase
       .from('audit_logs')
       .select('*')
-      .eq('usuario_id', user.id)
 
     // Aplicar filtros
     if (acao) query = query.eq('acao', acao)
@@ -111,12 +114,12 @@ export async function GET(request: NextRequest) {
     if (usuario_email) query = query.ilike('usuario_email', `%${usuario_email}%`)
 
     // Filtro de data
-    if (dataInicio) query = query.gte('data_criacao', dataInicio)
-    if (dataFim) query = query.lte('data_criacao', dataFim)
+    if (dataInicio) query = query.gte('created_at', dataInicio)
+    if (dataFim) query = query.lte('created_at', dataFim)
 
     // Ordenar e limitar
     const { data, error } = await query
-      .order('data_criacao', { ascending: false })
+      .order('created_at', { ascending: false })
       .limit(500)
 
     if (error) {
