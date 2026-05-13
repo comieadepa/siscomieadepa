@@ -96,8 +96,8 @@ export function hasRole(
 const MODULE_ACCESS: Record<ModuleKey, CanonicalRole[]> = {
   cgadb: ['super', 'administrador', 'cgadb'],
   secretaria: ['super', 'administrador', 'comissao'],
-  financeiro: ['super', 'administrador', 'financeiro'],
-  usuarios: ['super', 'administrador'],
+  financeiro: ['super', 'financeiro'],
+  usuarios: ['super'],
   auditoria: ['super', 'administrador'],
   comissao: ['super', 'administrador', 'comissao'],
   missoes: ['super', 'administrador', 'comissao'],
@@ -110,7 +110,7 @@ const MODULE_ACCESS: Record<ModuleKey, CanonicalRole[]> = {
 };
 
 const API_ACCESS: Record<ApiKey, CanonicalRole[]> = {
-  financeiro: ['super', 'administrador', 'financeiro'],
+  financeiro: ['super', 'financeiro'],
   members: ['super', 'administrador', 'comissao'],
   employees: ['super', 'administrador'],
   documentos: ['super', 'administrador'],

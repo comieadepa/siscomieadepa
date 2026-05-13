@@ -74,7 +74,7 @@ function mapRoleFromNivel(nivel: UsuarioResponse['nivel']): string {
 export async function GET(request: NextRequest) {
   try {
     const { roles } = await requireFlowAuth(request);
-    if (!hasRole(roles, ['ADMINISTRADOR'])) {
+    if (!hasRole(roles, ['SUPER'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -136,7 +136,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const { roles } = await requireFlowAuth(request);
-    if (!hasRole(roles, ['ADMINISTRADOR'])) {
+    if (!hasRole(roles, ['SUPER'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -209,7 +209,7 @@ function resolveBannedUntil(status: UsuarioResponse['status'] | undefined) {
 export async function PUT(request: NextRequest) {
   try {
     const { roles } = await requireFlowAuth(request);
-    if (!hasRole(roles, ['ADMINISTRADOR'])) {
+    if (!hasRole(roles, ['SUPER'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -290,7 +290,7 @@ export async function PUT(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const { roles, userId: currentUserId } = await requireFlowAuth(request);
-    if (!hasRole(roles, ['ADMINISTRADOR'])) {
+    if (!hasRole(roles, ['SUPER'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

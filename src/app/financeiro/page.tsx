@@ -113,7 +113,13 @@ export default function FinanceiroPage() {
     if (filtroSup) params.set('supervisao_id', filtroSup);
     if (filtroCampo) params.set('campo_id', filtroCampo);
     const res = await authedFetch(`/api/financeiro/contribuicoes?${params}`);
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setErro(json?.error || 'Falha ao carregar contribuicoes.');
+      setContribuicoes([]);
+      return;
+    }
+    setErro('');
     setContribuicoes(json.data || []);
   }, [filtroAno, filtroSup, filtroCampo]);
 
@@ -122,10 +128,13 @@ export default function FinanceiroPage() {
     // Carrega supervisoes e campos via API protegida
     (async () => {
       const res = await authedFetch('/api/v1/estrutura');
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
       if (res.ok) {
         setSupervisoes((json?.supervisoes as Supervisao[]) || []);
         setCampos((json?.campos as Campo[]) || []);
+        setErro('');
+      } else {
+        setErro(json?.error || 'Falha ao carregar estrutura.');
       }
     })();
 
@@ -185,7 +194,7 @@ export default function FinanceiroPage() {
         contato: contato || null,
       }),
     });
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
     setSaving(false);
     if (!res.ok) { setErro(json.error || 'Erro ao registrar.'); return; }
     setSucesso(json.updated
@@ -199,7 +208,13 @@ export default function FinanceiroPage() {
   const handleExcluir = async (id: string) => {
     if (!confirm('Excluir este registro?')) return;
     setDeleting(id);
-    await authedFetch(`/api/financeiro/contribuicoes?id=${id}`, { method: 'DELETE' });
+    const res = await authedFetch(`/api/financeiro/contribuicoes?id=${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      setErro(json?.error || 'Falha ao excluir contribuicao.');
+      setDeleting(null);
+      return;
+    }
     setDeleting(null);
     await loadContribuicoes();
   };

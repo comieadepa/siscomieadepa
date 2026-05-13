@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { requireRole } from '@/lib/auth/require-auth';
 
-const FINANCEIRO_ROLES = ['super', 'administrador', 'financeiro'] as const;
+const FINANCEIRO_ROLES = ['super', 'financeiro'] as const;
 
 // GET /api/financeiro/contribuicoes?ano=2026&supervisao_id=xxx&campo_id=xxx
 export async function GET(request: NextRequest) {
@@ -15,18 +15,27 @@ export async function GET(request: NextRequest) {
     const supervisao_id = searchParams.get('supervisao_id');
     const campo_id = searchParams.get('campo_id');
 
+    if (ano && Number.isNaN(Number(ano))) {
+      return NextResponse.json({ error: 'ano invalido' }, { status: 400 });
+    }
+
     let query = supabase
       .from('contribuicoes_estatutarias')
       .select('*')
       .order('ano', { ascending: false })
       .order('campo_nome');
 
-    if (ano) query = query.eq('ano', parseInt(ano));
+    if (ano) query = query.eq('ano', Number(ano));
     if (supervisao_id) query = query.eq('supervisao_id', supervisao_id);
     if (campo_id) query = query.eq('campo_id', campo_id);
 
     const { data, error } = await query;
-    if (error) throw new Error(error.message);
+    if (error) {
+      return NextResponse.json(
+        { error: `Falha ao buscar contribuicoes: ${error.message}` },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ data: data || [] });
   } catch (e) {
@@ -75,7 +84,12 @@ export async function POST(request: NextRequest) {
           .eq('id', existing.id)
           .select()
           .single();
-        if (error) throw new Error(error.message);
+        if (error) {
+          return NextResponse.json(
+            { error: `Falha ao atualizar contribuicao: ${error.message}` },
+            { status: 500 }
+          );
+        }
         return NextResponse.json({ data, updated: true });
       }
     }
@@ -89,7 +103,12 @@ export async function POST(request: NextRequest) {
       })
       .select()
       .single();
-    if (error) throw new Error(error.message);
+    if (error) {
+      return NextResponse.json(
+        { error: `Falha ao registrar contribuicao: ${error.message}` },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ data, updated: false }, { status: 201 });
   } catch (e) {
@@ -115,7 +134,12 @@ export async function DELETE(request: NextRequest) {
       .delete()
       .eq('id', id);
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      return NextResponse.json(
+        { error: `Falha ao excluir contribuicao: ${error.message}` },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e) {
