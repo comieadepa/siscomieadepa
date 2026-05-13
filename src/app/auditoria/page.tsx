@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic'
 
 import { useState, useEffect, useCallback } from 'react'
+import { createClient } from '@/lib/supabase-client'
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth'
 import Sidebar from '@/components/Sidebar'
 import AccessRestricted from '@/components/AccessRestricted'
@@ -74,6 +75,7 @@ function calcStats(logs: AuditLog[]): Stats {
 }
 
 export default function AuditoriaPage() {
+  const supabase = createClient()
   const { loading: authLoading } = useRequireSupabaseAuth()
   const { role, loading: roleLoading } = useUserRole()
 
@@ -115,7 +117,12 @@ export default function AuditoriaPage() {
         params.set('dataInicio', d.toISOString())
       }
 
-      const res = await fetch(`/api/v1/audit-logs?${params.toString()}`)
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/v1/audit-logs?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${session?.access_token ?? ''}`,
+        },
+      })
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}))
         throw new Error(errData?.error || `HTTP ${res.status}`)
