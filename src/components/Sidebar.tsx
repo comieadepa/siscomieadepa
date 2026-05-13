@@ -14,7 +14,7 @@ interface SidebarProps {
 const MENU_POR_NIVEL: Record<string, string[]> = {
   super: ['*'],
   administrador: ['dashboard', 'secretaria', 'cgadb', 'comissao', 'patrimonio', 'missoes', 'configuracoes', 'eventos'],
-  cgadb: ['cgadb'],
+  cgadb: ['dashboard', 'cgadb'],
   comissao: ['dashboard', 'secretaria', 'comissao'],
   inscricao: ['eventos'],
   financeiro: ['financeiro'],
@@ -27,15 +27,15 @@ const SUBMENU_RESTRICAO: Record<string, string[]> = {
 };
 
 function menuVisivel(nivel: string | null, menuId: string): boolean {
-  if (!nivel) return true; // enquanto carrega, mostra tudo
+  if (!nivel) return false; // enquanto carrega, não mostra nada (evita flash de menu completo)
   const permitidos = MENU_POR_NIVEL[nivel];
-  if (!permitidos) return true; // nivel desconhecido → mostra tudo
+  if (!permitidos) return false; // nivel desconhecido → acesso negado por padrão
   if (permitidos.includes('*')) return true;
   return permitidos.includes(menuId);
 }
 
 function submenuVisivel(nivel: string | null, submenuId: string): boolean {
-  if (!nivel) return true;
+  if (!nivel) return false;
   if (nivel === 'super') return true;
   const restricao = SUBMENU_RESTRICAO[submenuId];
   if (!restricao) return true; // sem restrição extra: herda visibilidade do pai

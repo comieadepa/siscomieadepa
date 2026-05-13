@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { setEquipeSession } from '@/lib/equipe-session';
-import { buildUrl, getPublicBaseUrl } from '@/lib/urls';
+import { buildUrl, getAppBaseUrl, getPublicBaseUrl } from '@/lib/urls';
 
 export default function AcessoEquipePage() {
   const router = useRouter();
@@ -23,6 +23,23 @@ export default function AcessoEquipePage() {
     async function validar() {
       setErro(null);
       try {
+        // Verifica tipo do convite sem consumi-lo primeiro
+        const infoRes = await fetch(`/api/eventos/equipe/convite-info?token=${encodeURIComponent(token)}`);
+        const infoJson = await infoRes.json();
+
+        if (!infoRes.ok) {
+          if (!cancelled) setErro(infoJson.error || 'Convite inválido.');
+          return;
+        }
+
+        // Operador deve usar a página correta no painel principal
+        if (infoJson.tipo === 'admin') {
+          const appUrl = getAppBaseUrl();
+          window.location.href = buildUrl(appUrl, `/eventos/equipe/convite?token=${encodeURIComponent(token)}`);
+          return;
+        }
+
+        // Fluxo de check-in: consome token e cria sessão local
         const res = await fetch('/api/eventos/equipe/acesso', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -42,11 +59,7 @@ export default function AcessoEquipePage() {
           expiraEm,
         });
 
-        // Usa URL relativa para garantir navegação client-side (evita problemas em
-        // WebViews do Gmail/Outlook onde redirect absoluto pode perder o localStorage)
-        const destino = json.tipo === 'checkin'
-          ? buildUrl(getPublicBaseUrl(), `/eventos/${json.evento_id}/checkin`)
-          : `/eventos/${json.evento_id}`;
+        const destino = buildUrl(getPublicBaseUrl(), `/eventos/${json.evento_id}/checkin`);
         router.replace(destino);
       } catch {
         if (!cancelled) setErro('Erro ao validar convite.');
@@ -71,3 +84,4 @@ export default function AcessoEquipePage() {
     </div>
   );
 }
+

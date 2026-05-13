@@ -327,8 +327,6 @@ function AbaMinistros({ notify }: { notify: (t: string, m: string, tp: 'success'
     return true;
   });
 
-  const totalComDebito = ministros.filter(m => m.debitos.length > 0).length;
-
   const totalPages = Math.ceil(filtered.length / pageSize);
   const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
@@ -421,23 +419,23 @@ function AbaMinistros({ notify }: { notify: (t: string, m: string, tp: 'success'
 
   return (
     <div>
-      {/* Resumo */}
+      {/* Resumo — recalcula com base nos filtros ativos */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-teal-50 border border-teal-200 rounded-lg p-4 text-center">
-          <p className="text-2xl font-bold text-teal-700">{ministros.length}</p>
+          <p className="text-2xl font-bold text-teal-700">{filtered.length}</p>
           <p className="text-xs text-teal-600 font-semibold mt-1">Total de Ministros</p>
         </div>
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
-          <p className="text-2xl font-bold text-red-600">{totalComDebito}</p>
+          <p className="text-2xl font-bold text-red-600">{filtered.filter(m => m.debitos.length > 0).length}</p>
           <p className="text-xs text-red-500 font-semibold mt-1">Com Débito CGADB</p>
         </div>
         <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
-          <p className="text-2xl font-bold text-green-600">{ministros.length - totalComDebito}</p>
+          <p className="text-2xl font-bold text-green-600">{filtered.filter(m => m.debitos.length === 0).length}</p>
           <p className="text-xs text-green-500 font-semibold mt-1">Sem Débito</p>
         </div>
         <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 text-center">
           <p className="text-2xl font-bold text-orange-600">
-            {formatValor(ministros.reduce((acc, m) => acc + m.totalDevido, 0))}
+            {formatValor(filtered.reduce((acc, m) => acc + m.totalDevido, 0))}
           </p>
           <p className="text-xs text-orange-500 font-semibold mt-1">Total em Débito</p>
         </div>

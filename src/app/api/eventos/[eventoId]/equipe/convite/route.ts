@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomBytes } from 'crypto';
 import { requireEventoAccess } from '@/lib/evento-guard';
 import { sendEmail } from '@/services/email';
-import { buildUrl, getPublicBaseUrl } from '@/lib/urls';
+import { buildUrl, getAppBaseUrl, getPublicBaseUrl } from '@/lib/urls';
 
 type EventoRow = {
   id: string;
@@ -29,8 +29,8 @@ function calcExpiraEm(dataFim: string | null): string {
   return exp.toISOString();
 }
 
-function buildLink(baseUrl: string, token: string): string {
-  return buildUrl(baseUrl, `/eventos/equipe/acesso?token=${token}`);
+function buildLink(baseUrl: string, path: string, token: string): string {
+  return buildUrl(baseUrl, `${path}?token=${token}`);
 }
 
 export async function POST(
@@ -142,12 +142,17 @@ export async function POST(
     equipeIdFinal = (data as { id: string } | null)?.id || '';
   }
 
-  const baseUrl = getPublicBaseUrl({ request });
-  const link = buildLink(baseUrl, encodeURIComponent(token));
+  // Operador usa o painel principal (APP_URL); checkin usa o domínio público de eventos
+  const link = tipo === 'admin'
+    ? buildLink(getAppBaseUrl({ request }), '/eventos/equipe/convite', encodeURIComponent(token))
+    : buildLink(getPublicBaseUrl({ request }), '/eventos/equipe/acesso', encodeURIComponent(token));
 
   const assunto = `Convite de acesso - ${(evento as EventoRow).nome}`;
   const tipoLabel = tipo === 'admin' ? 'Operador' : 'Check-in';
-  const mensagem = `Ola!\n\nVoce recebeu um convite de acesso (${tipoLabel}) ao evento: ${(evento as EventoRow).nome}.\n\nAcesse pelo link abaixo:\n${link}\n\nEste link e de uso unico e expira automaticamente apos o encerramento do evento ou em 48h apos a data final.\n\nSe nao reconhece este convite, ignore este e-mail.`;
+  const tipoDescricao = tipo === 'admin'
+    ? 'Como <strong>Operador</strong> você poderá gerenciar inscrições e controlar o acesso ao evento.'
+    : 'Como <strong>Check-in</strong> você poderá realizar a entrada dos participantes no evento.';
+  const mensagem = `Ola!\n\nVoce recebeu um convite de acesso (${tipoLabel}) ao evento: ${(evento as EventoRow).nome}.\n\nAcesse pelo link abaixo:\n${link}\n\nEste link e de uso unico e expira automaticamente apos o encerramento do evento.\n\nSe nao reconhece este convite, ignore este e-mail.`;
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -165,7 +170,8 @@ export async function POST(
           <td style="padding:32px 32px 8px;">
             <p style="margin:0 0 12px 0;font-size:15px;color:#374151;">Olá!</p>
             <p style="margin:0 0 12px 0;font-size:15px;color:#374151;">Você recebeu um convite de acesso como <strong>${tipoLabel}</strong> ao evento:</p>
-            <p style="margin:0 0 24px 0;font-size:17px;font-weight:bold;color:#0D2B4E;">${(evento as EventoRow).nome}</p>
+            <p style="margin:0 0 12px 0;font-size:17px;font-weight:bold;color:#0D2B4E;">${(evento as EventoRow).nome}</p>
+            <p style="margin:0 0 24px 0;font-size:14px;color:#6b7280;">${tipoDescricao}</p>
             <table cellpadding="0" cellspacing="0" style="margin:0 auto 24px;">
               <tr>
                 <td align="center" style="background:#0D2B4E;border-radius:8px;padding:14px 32px;">
