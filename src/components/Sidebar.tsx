@@ -13,7 +13,7 @@ interface SidebarProps {
 // Quais menus de topo (por id) cada nível pode ver. 'super' vê tudo.
 const MENU_POR_NIVEL: Record<string, string[]> = {
   super: ['*'],
-  administrador: ['dashboard', 'secretaria', 'cgadb', 'comissao', 'patrimonio', 'missoes', 'configuracoes', 'eventos', 'auditoria'],
+  administrador: ['dashboard', 'secretaria', 'cgadb', 'comissao', 'patrimonio', 'missoes', 'configuracoes'],
   cgadb: ['dashboard', 'cgadb'],
   comissao: ['dashboard', 'secretaria', 'comissao'],
   inscricao: ['eventos'],
@@ -23,7 +23,10 @@ const MENU_POR_NIVEL: Record<string, string[]> = {
 // Submenus que exigem nível ALÉM da visibilidade do menu pai.
 // Se o id do submenu não estiver aqui, ele herda a visibilidade do pai.
 const SUBMENU_RESTRICAO: Record<string, string[]> = {
-  funcionarios: ['super', 'administrador'],
+  funcionarios:       ['super', 'administrador'],
+  'importar-membros': ['super'],
+  'config-certificados': ['super'],
+  'config-cartoes':   ['super'],
 };
 
 function menuVisivel(nivel: string | null, menuId: string): boolean {

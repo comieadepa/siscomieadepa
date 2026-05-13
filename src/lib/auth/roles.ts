@@ -98,14 +98,14 @@ const MODULE_ACCESS: Record<ModuleKey, CanonicalRole[]> = {
   secretaria: ['super', 'administrador', 'comissao'],
   financeiro: ['super', 'financeiro'],
   usuarios: ['super'],
-  auditoria: ['super', 'administrador'],
+  auditoria: ['super'],
   comissao: ['super', 'administrador', 'comissao'],
   missoes: ['super', 'administrador', 'comissao'],
   membros: ['super', 'administrador', 'comissao'],
   funcionarios: ['super', 'administrador'],
   documentos: ['super', 'administrador'],
   permutas: ['super', 'administrador', 'financeiro'],
-  eventos: ['super', 'administrador', 'inscricao'],
+  eventos: ['super', 'inscricao'],
   configuracoes: ['super', 'administrador'],
 };
 
