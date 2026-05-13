@@ -357,10 +357,10 @@ export async function POST(request: NextRequest) {
       void logDB({
         userEmail: email?.trim() ?? undefined,
         acao: 'criar',
-        modulo: 'inscricoes',
+        modulo: 'publico',
         entidade: 'evento_inscricoes',
         entidadeId: inscricao.id,
-        descricao: `Nova inscrição: ${nome_inscrito} — ${evento.nome}`,
+        descricao: `[Público] Nova inscrição: ${nome_inscrito} — ${evento.nome}`,
         request,
       })
       return NextResponse.json({ inscricaoId: inscricao.id, statusPagamento: 'isento', pagamento: null });
@@ -400,10 +400,10 @@ export async function POST(request: NextRequest) {
       void logDB({
         userEmail: email?.trim() ?? undefined,
         acao: 'criar',
-        modulo: 'inscricoes',
+        modulo: 'publico',
         entidade: 'evento_inscricoes',
         entidadeId: inscricao.id,
-        descricao: `Nova inscrição (pago): ${nome_inscrito} — ${evento.nome}`,
+        descricao: `[Público] Nova inscrição (pago): ${nome_inscrito} — ${evento.nome}`,
         request,
       })
 

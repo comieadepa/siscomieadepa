@@ -39,7 +39,7 @@ type Stats = {
 }
 
 const ACOES = ['criar','editar','deletar','visualizar','exportar','importar','login','logout','checkin','enviar_certificado','baixa_financeira','alterar_permissoes','upload','download','erro_critico']
-const MODULOS = ['eventos','inscricoes','financeiro','membros','secretaria','usuarios','configuracoes','certificados','checkin','etiquetas','auth','auditoria']
+const MODULOS = ['eventos','inscricoes','financeiro','membros','secretaria','usuarios','configuracoes','certificados','checkin','etiquetas','auth','auditoria','publico']
 
 const ACAO_ICONS: Record<string, string> = {
   criar: '➕', editar: '✏️', deletar: '🗑️', visualizar: '👁️',
@@ -408,7 +408,12 @@ export default function AuditoriaPage() {
                               <span className="capitalize text-gray-700">{log.acao ?? '—'}</span>
                             </span>
                           </td>
-                          <td className="px-4 py-3 capitalize text-gray-600">{log.modulo ?? '—'}</td>
+                          <td className="px-4 py-3 text-gray-600">
+                            {log.modulo === 'publico'
+                              ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 border border-yellow-300">🌐 público</span>
+                              : <span className="capitalize">{log.modulo ?? '—'}</span>
+                            }
+                          </td>
                           <td className="px-4 py-3">
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${statusBadge(log.status)}`}>
                               {log.status}
