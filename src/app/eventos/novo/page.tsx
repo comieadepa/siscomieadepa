@@ -196,9 +196,9 @@ export default function NovoEventoPage() {
     }
   }, [authLoading, perfil.loading, perfil.podeNovoEvento, router]);
 
-  // Pré-preenche e trava departamento para isDeptAdmin
+  // Pré-preenche e trava departamento para isDeptAdmin com dept específico
   useEffect(() => {
-    if (!perfil.loading && perfil.isDeptAdmin && perfil.departamentoUsuario) {
+    if (!perfil.loading && perfil.isDeptAdmin && perfil.departamentoUsuario && perfil.departamentoUsuario !== 'TODOS') {
       setForm(f => ({ ...f, departamento: perfil.departamentoUsuario! }));
     }
   }, [perfil.loading, perfil.isDeptAdmin, perfil.departamentoUsuario]);
@@ -438,7 +438,7 @@ export default function NovoEventoPage() {
                 id="departamento" name="departamento"
                 value={form.departamento} onChange={handleText}
                 className={selectClass}
-                disabled={perfil.isDeptAdmin}
+                disabled={perfil.isDeptAdmin && perfil.departamentoUsuario !== 'TODOS'}
                 required
               >
                 <option value="">Selecione...</option>
