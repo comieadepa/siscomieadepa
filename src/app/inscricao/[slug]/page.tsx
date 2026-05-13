@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { normalizePayloadUppercase } from '@/lib/text';
@@ -1095,8 +1096,14 @@ function PaginaPublica({ evento, children }: { evento: Evento; children: React.R
             <p className="font-bold text-sm leading-tight">SISCOMIEADEPA</p>
             <p className="text-xs text-blue-300 leading-tight">Sistema de Gestão Convencional v.2.0</p>
           </div>
-          <div className="ml-auto hidden sm:block">
-            <span className="text-xs text-blue-300 font-medium">📅 {evento.nome}</span>
+          <div className="ml-auto flex items-center gap-3">
+            <Link
+              href="/eventos-publicos"
+              className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/85 hover:bg-white/15"
+            >
+              ← Voltar ao portal
+            </Link>
+            <span className="hidden sm:inline text-xs text-blue-300 font-medium">📅 {evento.nome}</span>
           </div>
         </div>
       </header>
