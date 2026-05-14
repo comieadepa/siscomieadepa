@@ -92,9 +92,6 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [nivelUsuario, setNivelUsuario] = useState<string | null>(null);
   const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
-  const [usuarioEmail, setUsuarioEmail] = useState<string | null>(null);
-  const [usuarioNome, setUsuarioNome] = useState<string | null>(null);
-  const [usuarioNivel, setUsuarioNivel] = useState<string | null>(null);
   const sidebarRef = useRef<HTMLDivElement | null>(null);
 
   const isCollapsedMode = isCollapsed && !isMobileMenuOpen;
@@ -119,10 +116,6 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
       }
 
       setNivelUsuario(normalized ?? null);
-      setUsuarioEmail(data.session?.user?.email ?? null);
-      const meta = data.session?.user?.user_metadata as Record<string, string> | undefined;
-      setUsuarioNome(meta?.nome || meta?.name || meta?.full_name || null);
-      setUsuarioNivel(meta?.nivel || meta?.role || null);
     };
     fetchSession();
   }, [supabase]);
