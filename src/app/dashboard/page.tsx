@@ -494,71 +494,6 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {/* CGADB */}
-                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-5">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h3 className="text-sm font-bold text-gray-800">CGADB</h3>
-                        <p className="text-xs text-gray-500">Regularidade e registros</p>
-                      </div>
-                      <button
-                        onClick={() => router.push('/secretaria/cgadb')}
-                        className="text-xs font-semibold text-blue-600 hover:underline"
-                      >
-                        Ver CGADB
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      {[
-                        { label: 'Registrados', value: mainData.cgadb.registrados },
-                        { label: 'Nao registrados', value: mainData.cgadb.naoRegistrados },
-                        { label: 'Com debito', value: mainData.cgadb.comDebito },
-                        { label: 'Sem debito', value: mainData.cgadb.semDebito },
-                        { label: 'Regularidade', value: `${mainData.cgadb.regularidadePct.toFixed(1)}%` },
-                      ].map((item) => (
-                        <div key={item.label} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-3">
-                          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">{item.label}</p>
-                          <p className="text-lg font-bold text-[#0D2B4E] mt-1">{item.value}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Eventos */}
-                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-5">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h3 className="text-sm font-bold text-gray-800">Eventos abertos</h3>
-                        <p className="text-xs text-gray-500">Inscricoes e proximas datas</p>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-3">
-                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Eventos abertos</p>
-                        <p className="text-lg font-bold text-[#0D2B4E] mt-1">{mainData.eventos.eventosAbertos}</p>
-                      </div>
-                      <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-3">
-                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Inscricoes efetivadas</p>
-                        <p className="text-lg font-bold text-[#0D2B4E] mt-1">{mainData.eventos.inscricoesAtivas}</p>
-                      </div>
-                      <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-3">
-                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Proximo evento</p>
-                        <p className="text-sm font-bold text-[#0D2B4E] mt-1">
-                          {mainData.eventos.proximoEvento
-                            ? mainData.eventos.proximoEvento.nome
-                            : 'Sem eventos'}
-                        </p>
-                        <p className="text-[10px] text-gray-500">
-                          {mainData.eventos.proximoEvento
-                            ? formatDateShort(mainData.eventos.proximoEvento.dataInicio)
-                            : '—'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
                 {/* Graficos */}
                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
                   <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-5">
@@ -634,6 +569,71 @@ export default function DashboardPage() {
                         Sem dados para exibir
                       </div>
                     )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* CGADB */}
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-sm font-bold text-gray-800">CGADB</h3>
+                        <p className="text-xs text-gray-500">Regularidade e registros</p>
+                      </div>
+                      <button
+                        onClick={() => router.push('/secretaria/cgadb')}
+                        className="text-xs font-semibold text-blue-600 hover:underline"
+                      >
+                        Ver CGADB
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {[
+                        { label: 'Registrados', value: mainData.cgadb.registrados },
+                        { label: 'Nao registrados', value: mainData.cgadb.naoRegistrados },
+                        { label: 'Com debito', value: mainData.cgadb.comDebito },
+                        { label: 'Sem debito', value: mainData.cgadb.semDebito },
+                        { label: 'Regularidade', value: `${mainData.cgadb.regularidadePct.toFixed(1)}%` },
+                      ].map((item) => (
+                        <div key={item.label} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-3">
+                          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">{item.label}</p>
+                          <p className="text-lg font-bold text-[#0D2B4E] mt-1">{item.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Eventos */}
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-sm font-bold text-gray-800">Eventos abertos</h3>
+                        <p className="text-xs text-gray-500">Inscricoes e proximas datas</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-3">
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Eventos abertos</p>
+                        <p className="text-lg font-bold text-[#0D2B4E] mt-1">{mainData.eventos.eventosAbertos}</p>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-3">
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Inscricoes efetivadas</p>
+                        <p className="text-lg font-bold text-[#0D2B4E] mt-1">{mainData.eventos.inscricoesAtivas}</p>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-3">
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Proximo evento</p>
+                        <p className="text-sm font-bold text-[#0D2B4E] mt-1">
+                          {mainData.eventos.proximoEvento
+                            ? mainData.eventos.proximoEvento.nome
+                            : 'Sem eventos'}
+                        </p>
+                        <p className="text-[10px] text-gray-500">
+                          {mainData.eventos.proximoEvento
+                            ? formatDateShort(mainData.eventos.proximoEvento.dataInicio)
+                            : '—'}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
