@@ -68,7 +68,7 @@ export default function PermutasPage() {
   const [ministroId, setMinistroId] = useState('');
   const [ministroNome, setMinistroNome] = useState('');
   const [ministroMatricula, setMinistroMatricula] = useState('');
-  const ministroCpf = useRef('');
+  const [ministroCpf, setMinistroCpf] = useState('');
   const [supervisaoOrigemId, setSupervisaoOrigemId] = useState('');
   const [supervisaoOrigemNome, setSupervisaoOrigemNome] = useState('');
   const [campoOrigemId, setCampoOrigemId] = useState('');
@@ -160,7 +160,7 @@ export default function PermutasPage() {
     setMinistroId('');
     setMinistroNome('');
     setMinistroMatricula('');
-    ministroCpf.current = '';
+    setMinistroCpf('');
     setSupervisaoOrigemId('');
     setSupervisaoOrigemNome('');
     setCampoOrigemId('');
@@ -182,7 +182,7 @@ export default function PermutasPage() {
     setMinistroId(m.id);
     setMinistroNome(m.name);
     setMinistroMatricula(m.matricula || '');
-    ministroCpf.current = m.cpf || '';
+    setMinistroCpf(m.cpf || '');
     setSupervisaoOrigemId(svObj?.id || '');
     setSupervisaoOrigemNome(svObj?.nome || sup);
     setCampoOrigemId(cpObj?.id || '');
@@ -218,7 +218,7 @@ export default function PermutasPage() {
         ministro_id: ministroId,
         ministro_nome: ministroNome,
         ministro_matricula: ministroMatricula,
-        ministro_cpf: ministroCpf.current,
+        ministro_cpf: ministroCpf,
         supervisao_origem_id: supervisaoOrigemId || null,
         supervisao_origem_nome: supervisaoOrigemNome,
         campo_origem_id: campoOrigemId || null,
@@ -260,7 +260,7 @@ export default function PermutasPage() {
     setMinistroId('');
     setMinistroNome('');
     setMinistroMatricula('');
-    ministroCpf.current = '';
+    setMinistroCpf('');
     setSupervisaoOrigemId('');
     setSupervisaoOrigemNome('');
     setCampoOrigemId('');
@@ -587,7 +587,7 @@ export default function PermutasPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">CPF</label>
-                    <input readOnly value={ministroCpf.current} className="w-full px-4 py-2 bg-gray-100 border border-gray-200 rounded-lg text-sm text-gray-600" />
+                    <input readOnly value={ministroCpf} className="w-full px-4 py-2 bg-gray-100 border border-gray-200 rounded-lg text-sm text-gray-600" />
                   </div>
                 </div>
 

@@ -69,9 +69,14 @@ export default function LoginPage() {
         } catch {
           // silencioso: não impede o login
         }
-        // Usuários de nível 'inscricao' vão direto para /eventos
+        // Redireciona conforme o nível do usuário
         const nivel = authData.user.user_metadata?.nivel as string | undefined;
-        router.push(nivel === 'inscricao' ? '/eventos' : '/dashboard');
+        const destino =
+          nivel === 'inscricao' ? '/eventos' :
+          nivel === 'cgadb'     ? '/secretaria/cgadb' :
+          nivel === 'financeiro'? '/financeiro' :
+          '/dashboard';
+        router.push(destino);
         return;
       }
 

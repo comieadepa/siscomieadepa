@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
 
   let camposQuery = supabase
     .from('campos')
-    .select('id,nome,supervisao_id,is_active,pastor_member_id,presidente_nome')
+    .select('id,nome,supervisao_id,is_active,pastor_member_id,presidente_nome,presidente_cpf,presidente_matricula,telefone')
     .order('nome');
 
   let congregacoesQuery = supabase

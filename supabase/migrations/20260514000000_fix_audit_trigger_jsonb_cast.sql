@@ -1,15 +1,9 @@
 -- ============================================================
--- Migration: Triggers automáticos de auditoria
--- Tabelas cobertas: members, eventos, evento_inscricoes,
---   evento_checkins, admin_users
--- Estratégia: função genérica audit_log_trigger() detecta a
---   tabela, a operação e insere em public.audit_logs.
---   user_id vem do auth.uid() — funciona quando RLS está ativo;
---   quando service_role é usado, user_id fica NULL mas a linha
---   ainda é registrada com os dados da operação.
+-- Hotfix: corrige erro "cannot cast type members to jsonb"
+-- Causa: uso de OLD::jsonb / NEW::jsonb em trigger plpgsql.
+--        PostgreSQL não aceita cast direto de composite row para jsonb.
+-- Solução: substituir por to_jsonb(OLD) / to_jsonb(NEW) em todos os pontos.
 -- ============================================================
-
--- 1. FUNÇÃO GENÉRICA DE TRIGGER ---------------------------------
 
 CREATE OR REPLACE FUNCTION public.fn_audit_log()
 RETURNS TRIGGER
@@ -132,41 +126,3 @@ BEGIN
   RETURN COALESCE(NEW, OLD);
 END;
 $$;
-
--- 2. APLICAR TRIGGERS NAS TABELAS --------------------------------
-
--- members (ministros / pastores)
-DROP TRIGGER IF EXISTS trg_audit_members ON public.members;
-CREATE TRIGGER trg_audit_members
-  AFTER INSERT OR UPDATE OR DELETE ON public.members
-  FOR EACH ROW EXECUTE FUNCTION public.fn_audit_log();
-
--- eventos
-DROP TRIGGER IF EXISTS trg_audit_eventos ON public.eventos;
-CREATE TRIGGER trg_audit_eventos
-  AFTER INSERT OR UPDATE OR DELETE ON public.eventos
-  FOR EACH ROW EXECUTE FUNCTION public.fn_audit_log();
-
--- evento_inscricoes
-DROP TRIGGER IF EXISTS trg_audit_evento_inscricoes ON public.evento_inscricoes;
-CREATE TRIGGER trg_audit_evento_inscricoes
-  AFTER INSERT OR UPDATE OR DELETE ON public.evento_inscricoes
-  FOR EACH ROW EXECUTE FUNCTION public.fn_audit_log();
-
--- evento_checkins
-DROP TRIGGER IF EXISTS trg_audit_evento_checkins ON public.evento_checkins;
-CREATE TRIGGER trg_audit_evento_checkins
-  AFTER INSERT OR UPDATE OR DELETE ON public.evento_checkins
-  FOR EACH ROW EXECUTE FUNCTION public.fn_audit_log();
-
--- admin_users (gestão de usuários do sistema)
-DROP TRIGGER IF EXISTS trg_audit_admin_users ON public.admin_users;
-CREATE TRIGGER trg_audit_admin_users
-  AFTER INSERT OR UPDATE OR DELETE ON public.admin_users
-  FOR EACH ROW EXECUTE FUNCTION public.fn_audit_log();
-
--- evento_equipe (convites e membros de equipe)
-DROP TRIGGER IF EXISTS trg_audit_evento_equipe ON public.evento_equipe;
-CREATE TRIGGER trg_audit_evento_equipe
-  AFTER INSERT OR UPDATE OR DELETE ON public.evento_equipe
-  FOR EACH ROW EXECUTE FUNCTION public.fn_audit_log();

@@ -241,15 +241,13 @@ export default function GerenciarEventoPage() {
     { id: 'relatorios',  label: 'Relatórios',          icon: '📊' },
   ];
 
-  const tabsPermitidasEvento = useMemo(() => (
-    id ? perfil.tabsPermitidasParaEvento(id) : perfil.tabsPermitidas
-  ), [id, perfil.tabsPermitidasParaEvento, perfil.tabsPermitidas]);
+  const tabsPermitidasEvento = id ? perfil.tabsPermitidasParaEvento(id) : perfil.tabsPermitidas;
 
-  const tabsVisiveis = useMemo(() => {
+  const tabsVisiveis = (() => {
     if (perfil.loading) return TODAS_TABS;
     if (perfil.isGlobal) return TODAS_TABS;
     return TODAS_TABS.filter(t => tabsPermitidasEvento.includes(t.id as import('@/hooks/useEventosPerfil').TabEventoId));
-  }, [perfil.loading, perfil.isGlobal, tabsPermitidasEvento]);
+  })();
 
   useEffect(() => {
     if (perfil.loading) return;

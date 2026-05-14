@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
 import { formatCpfOrCnpj, formatPhone, onlyDigits } from '@/lib/mascaras';
@@ -263,13 +264,13 @@ export default function PreCadastroPage() {
       <div className="max-w-6xl mx-auto px-6 py-16">
         <div className="grid gap-10 lg:grid-cols-[1fr_1.1fr] items-start">
           <div className="space-y-6">
-            <a
+            <Link
               href="/"
               className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em] text-yellow-300 hover:text-yellow-200 transition"
             >
               <span aria-hidden="true">←</span>
               Voltar ao inicio
-            </a><br></br>
+            </Link><br></br>
             <span className="inline-flex items-center px-4 py-1 rounded-full bg-white/10 text-xs uppercase tracking-[0.4em]">
               Pré-cadastro
             </span>

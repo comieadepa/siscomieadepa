@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase-client'
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth'
 import Sidebar from '@/components/Sidebar'
@@ -389,9 +389,8 @@ export default function AuditoriaPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {logsNaPagina.map(log => (
-                      <>
+                      <React.Fragment key={log.id}>
                         <tr
-                          key={log.id}
                           className="hover:bg-gray-50 transition-colors cursor-pointer"
                           style={{ borderLeft: `3px solid ${statusBorderColor(log.status)}` }}
                           onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}
@@ -473,7 +472,7 @@ export default function AuditoriaPage() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
