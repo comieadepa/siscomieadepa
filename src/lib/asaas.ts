@@ -9,6 +9,20 @@ const getAsaasApiKey = () => {
   return process.env.ASAAS_API_KEY?.replace(/^\\/, '');
 };
 
+export class AsaasApiError extends Error {
+  status: number;
+  detail: string;
+  path: string;
+
+  constructor(message: string, status: number, path: string) {
+    super(message);
+    this.name = 'AsaasApiError';
+    this.status = status;
+    this.detail = message;
+    this.path = path;
+  }
+}
+
 const asaasFetch = async (path: string, init: RequestInit) => {
   const ASAAS_API_KEY = getAsaasApiKey();
   if (!ASAAS_API_KEY) {
@@ -33,7 +47,7 @@ const asaasFetch = async (path: string, init: RequestInit) => {
       detail,
       fullResponse: data,
     });
-    throw new Error(detail);
+    throw new AsaasApiError(detail, response.status, path);
   }
 
   return data;
@@ -244,6 +258,9 @@ export const createOrFindAsaasCustomer = async (payload: {
   whatsapp: string | null;
 }): Promise<string> => {
   const cleanCpf = payload.cpf ? payload.cpf.replace(/\D/g, '') : null;
+  if (!cleanCpf) {
+    throw new Error('CPF do pagador e obrigatorio para gerar cobranca ASAAS');
+  }
 
   const customer = await asaasFetch('/customers', {
     method: 'POST',

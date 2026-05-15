@@ -6,6 +6,7 @@ import {
 } from '@/lib/asaas';
 import { normalizePayloadUppercase } from '@/lib/text';
 import { logDB } from '@/lib/audit';
+import { cleanCpf, isValidCpf } from '@/lib/cpf';
 
 const VENCIMENTO_DIAS = 3;
 
@@ -193,6 +194,12 @@ export async function POST(request: NextRequest) {
 
     const isGratuito = valorFinal <= 0;
 
+    if (!isGratuito && !isValidCpf(cpf)) {
+      return NextResponse.json({
+        error: 'CPF invalido. Confira o CPF do responsavel para gerar o pagamento online.',
+      }, { status: 400 });
+    }
+
     // ════════════════════════════════════════════════════════════
     // FLUXO LOTE
     // ════════════════════════════════════════════════════════════
@@ -261,7 +268,7 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        const customerId = await createOrFindAsaasCustomer({ nome: nome_inscrito.trim(), email: email?.trim() || null, cpf: cpf || null, whatsapp: whatsapp || null });
+        const customerId = await createOrFindAsaasCustomer({ nome: nome_inscrito.trim(), email: email?.trim() || null, cpf: cleanCpf(cpf), whatsapp: whatsapp || null });
         const dueDateLote = dueDateFromNow();
         const pagamento  = await createEventoPayment({ customerId, value: valorTotalLote, dueDate: dueDateLote, description: `Lote ${codigoLote} — ${evento.nome} (${todos.length} insc.)`, externalReference: `lote:${lote.id}` });
         await supabase.from('evento_lotes_inscricao').update({
@@ -272,7 +279,14 @@ export async function POST(request: NextRequest) {
           asaas_due_date:   dueDateLote,
         }).eq('id', lote.id);
         return NextResponse.json({ loteId: lote.id, inscricoes: todos.length, statusPagamento: 'pendente', pagamento: { asaasId: pagamento.id, invoiceUrl: pagamento.invoiceUrl, pixQrCode: pagamento.pixQrCode, pixCopiaECola: pagamento.pixCopiaECola, valor: valorTotalLote, vencimento: dueDateLote } });
-      } catch {
+      } catch (asaasErr) {
+        const message = asaasErr instanceof Error ? asaasErr.message : String(asaasErr);
+        console.error('[INSCRICAO LOTE] ASAAS falhou, lote salvo sem cobranca:', {
+          loteId: lote.id,
+          eventoId: evento.id,
+          valor: valorTotalLote,
+          erro: message,
+        });
         return NextResponse.json({ loteId: lote.id, inscricoes: todos.length, statusPagamento: 'pendente', pagamento: null, asaasError: 'Pagamento online indisponível.' });
       }
     }
@@ -371,7 +385,7 @@ export async function POST(request: NextRequest) {
       const customerId = await createOrFindAsaasCustomer({
         nome:     nome_inscrito.trim(),
         email:    email?.trim() || null,
-        cpf:      cpf || null,
+        cpf:      cleanCpf(cpf),
         whatsapp: whatsapp || null,
       });
 

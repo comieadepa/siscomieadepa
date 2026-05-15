@@ -38,6 +38,7 @@ interface InscricaoSalva {
 
 interface InscricaoResumo {
   id: string;
+  lote_id?: string | null;
   nome_inscrito: string;
   cpf: string | null;
   whatsapp: string | null;
@@ -608,7 +609,7 @@ export default function BalcaoPage() {
     try {
       const { data, error } = await supabase
         .from('evento_inscricoes')
-        .select('id,nome_inscrito,cpf,whatsapp,email,supervisao_id,campo_id,valor_final,valor_pago,status_pagamento,forma_pagamento,asaas_payment_id,invoice_url,checkin_realizado,checkin_at,etiqueta_impressa,certificado_enviado,created_at')
+        .select('id,lote_id,nome_inscrito,cpf,whatsapp,email,supervisao_id,campo_id,valor_final,valor_pago,status_pagamento,forma_pagamento,asaas_payment_id,invoice_url,checkin_realizado,checkin_at,etiqueta_impressa,certificado_enviado,created_at')
         .eq('evento_id', id)
         .order('created_at', { ascending: false });
       if (error) {
@@ -865,14 +866,22 @@ export default function BalcaoPage() {
     }
   }
 
-  async function abrirSegundaVia(ins: InscricaoResumo) {
+  async function abrirSegundaVia(ins: InscricaoResumo, gerarSeAusente = false) {
     setAbrindoPagamento(p => ({ ...p, [ins.id]: true }));
     try {
-      const res = await fetch(`/api/eventos/${id}/inscricoes/${ins.id}/invoice`);
+      const res = await fetch(`/api/eventos/${id}/inscricoes/${ins.id}/invoice`, {
+        method: gerarSeAusente ? 'POST' : 'GET',
+      });
       const json = await res.json();
       if (!res.ok || !json.invoice_url) {
         definirMsgLista('aviso', json.error || 'Sem cobranca ASAAS disponivel.');
         return;
+      }
+      if (gerarSeAusente) {
+        setInscricoesLista(list => list.map(i => i.id === ins.id
+          ? { ...i, invoice_url: json.invoice_url, asaas_payment_id: i.asaas_payment_id || 'gerado' }
+          : i));
+        definirMsgLista('ok', 'Cobranca ASAAS gerada.');
       }
       window.open(json.invoice_url, '_blank', 'noopener,noreferrer');
     } catch {
@@ -1587,9 +1596,9 @@ export default function BalcaoPage() {
                           ? 'Etiqueta impressa · Desmarcar impressão'
                           : 'Marcar etiqueta';
                         const hasAsaas = !!ins.asaas_payment_id && !!ins.invoice_url;
-                        const podeAbrirPagamento = ins.status_pagamento === 'pendente' && hasAsaas;
+                        const podeAbrirPagamento = ins.status_pagamento === 'pendente';
                         const pagamentoTooltip = ins.status_pagamento === 'pendente'
-                          ? (hasAsaas ? 'Abrir link de pagamento' : (ins.forma_pagamento ? 'Pagamento manual' : 'Sem cobrança ASAAS'))
+                          ? (hasAsaas ? 'Abrir link de pagamento' : 'Gerar link ASAAS')
                           : ins.status_pagamento === 'cancelado'
                           ? 'Pagamento cancelado'
                           : 'Pagamento já confirmado';
@@ -1663,7 +1672,7 @@ export default function BalcaoPage() {
                                 )}
                                 <button
                                   type="button"
-                                  onClick={() => podeAbrirPagamento && abrirSegundaVia(ins)}
+                                  onClick={() => podeAbrirPagamento && abrirSegundaVia(ins, !hasAsaas)}
                                   disabled={!podeAbrirPagamento || abrindoPagamento[ins.id]}
                                   className="px-2 py-1 text-xs font-bold rounded-md bg-white/10 text-white/60 hover:bg-white/20 disabled:opacity-50"
                                   title={pagamentoTooltip}
