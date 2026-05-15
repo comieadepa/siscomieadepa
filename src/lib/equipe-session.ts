@@ -1,7 +1,7 @@
 export type EquipeSession = {
   eventoId: string;
   equipeId: string;
-  tipo: 'admin' | 'checkin';
+  tipo: 'operador' | 'checkin';
   expiraEm: string;
 };
 
@@ -18,8 +18,14 @@ export function getEquipeSession(): EquipeSession | null {
   if (!raw) return null;
 
   try {
-    const parsed = JSON.parse(raw) as EquipeSession;
+    const parsed = JSON.parse(raw) as { eventoId?: string; equipeId?: string; tipo?: string; expiraEm?: string };
+    if (parsed.tipo === 'admin') parsed.tipo = 'operador';
     if (!parsed?.eventoId || !parsed?.equipeId || !parsed?.tipo || !parsed?.expiraEm) {
+      window.localStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+
+    if (parsed.tipo !== 'operador' && parsed.tipo !== 'checkin') {
       window.localStorage.removeItem(STORAGE_KEY);
       return null;
     }
@@ -30,7 +36,7 @@ export function getEquipeSession(): EquipeSession | null {
       return null;
     }
 
-    return parsed;
+    return parsed as EquipeSession;
   } catch {
     window.localStorage.removeItem(STORAGE_KEY);
     return null;

@@ -15,33 +15,49 @@ function normalizeBase(url: string): string {
   return url.replace(/\/+$/, '');
 }
 
+function normalizeValidBase(url?: string | null): string {
+  const raw = (url || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    return normalizeBase(raw);
+  } catch {
+    return '';
+  }
+}
+
 export const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? '';
 export const PUBLIC_URL = process.env.NEXT_PUBLIC_PUBLIC_URL ?? '';
-const IS_PROD = process.env.NODE_ENV === 'production';
+
+export function getBaseUrl(options?: {
+  request?: RequestLike;
+  prefer?: 'app' | 'public';
+  allowWindow?: boolean;
+}): string {
+  const preferApp = options?.prefer === 'app' ? normalizeValidBase(APP_URL) : '';
+  const preferPublic = options?.prefer === 'public' ? normalizeValidBase(PUBLIC_URL) : '';
+  const fromReq = normalizeValidBase(getOriginFromRequest(options?.request));
+  const fromApp = normalizeValidBase(APP_URL);
+  const fromPublic = normalizeValidBase(PUBLIC_URL);
+  const fromWindow = options?.allowWindow && typeof window !== 'undefined'
+    ? normalizeValidBase(window.location.origin)
+    : '';
+
+  return preferApp || preferPublic || fromReq || fromApp || fromPublic || fromWindow || '';
+}
 
 export function getAppBaseUrl(options?: { request?: RequestLike }): string {
-  if (APP_URL) return normalizeBase(APP_URL);
-  const fromReq = getOriginFromRequest(options?.request);
-  if (fromReq) return fromReq;
-  if (typeof window !== 'undefined') return window.location.origin;
-  return '';
+  return getBaseUrl({ request: options?.request, prefer: 'app', allowWindow: typeof window !== 'undefined' });
 }
 
 export function getPublicBaseUrl(options?: { request?: RequestLike }): string {
-  if (PUBLIC_URL) return normalizeBase(PUBLIC_URL);
-  if (IS_PROD) {
-    throw new Error('NEXT_PUBLIC_PUBLIC_URL não configurado');
-  }
-  if (APP_URL) return normalizeBase(APP_URL);
-  const fromReq = getOriginFromRequest(options?.request);
-  if (fromReq) return fromReq;
-  if (typeof window !== 'undefined') return window.location.origin;
-  return '';
+  return getBaseUrl({ request: options?.request, prefer: 'public', allowWindow: typeof window !== 'undefined' });
 }
 
 export function buildUrl(base: string, path: string): string {
-  if (!base) return path;
-  const cleanBase = normalizeBase(base);
+  const cleanBase = normalizeValidBase(base);
+  if (!cleanBase) return path;
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
   return `${cleanBase}${cleanPath}`;
 }

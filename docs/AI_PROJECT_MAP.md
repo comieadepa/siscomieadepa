@@ -1,43 +1,122 @@
-# 🗺️ IA - Mapa do Projeto (Essencial)
+# IA - Mapa atual do projeto
 
-## Visão em 1 linha
-SaaS multi-tenant para gestão de instituições/ministérios, com Supabase (Auth + Postgres + RLS) e Next.js.
+## Visao em uma linha
+
+**siscomieadepa** e um CRM administrativo da **COMIEADEPA**, construido com Next.js, React, TypeScript e Supabase.
+
+Nao e mais um SaaS multi-tenant.
 
 ---
 
-## Módulos principais (onde fica o código)
+## Modulos principais
 
-### 1) Admin (core)
-- Rotas: `/admin/*`
-- Proteção: `src/proxy.ts`
-- Autenticação: Supabase Auth + verificação em `admin_users`
+### 1) Dashboard
 
-### 2) Secretaria / Estrutura hierárquica (multi-tenant)
-- Página principal: `src/app/secretaria/congregacoes/page.tsx`
-- Tabelas esperadas (pelo uso no código/docs): `ministries`, `ministry_users`, `supervisoes`, `congregacoes`
-- Regra: sempre filtrar por `ministry_id`.
+Tela inicial do sistema, com atalhos e indicadores institucionais.
 
-### 3) Painel de Atendimento v2
-- UI: `src/app/admin/atendimento/page.tsx`
-- Widget de trials (aprovação/focus): `src/components/TrialSignupsWidget.tsx`
-- APIs (v2): `src/app/api/v1/admin/attendance/*` e `src/app/api/v1/admin/pre-registrations/route.ts`
-- Doc: `docs/INDICE_DOCUMENTACAO_V2.md`
+Indicadores vistos na UI:
 
-### 4) Geolocalização
-- Página: `src/app/geolocalizacao/page.tsx`
-- Mapa: `src/components/MapaGeolizacao.tsx`
-- Serviços: `src/lib/geolocation-utils.ts`
-- Doc: `docs/INDICE_GEOLOCALIZACAO.md`
+- Total de Supervisao
+- Total de Campos
+- Total de Candidatos
+- Ministros Ativos
+- Resumo institucional
 
-### 5) Suporte / Tickets
-- Página: `src/app/suporte/page.tsx`
-- API (criar/verificar tabela): `src/app/api/v1/create-tickets-table/route.ts`
-- Painel dev migração: `src/components/MigrationPanel.tsx`
-- Doc: `docs/STATUS_SISTEMA_SUPORTE.md`
+### 2) Secretaria
+
+Modulo operacional principal da convencao.
+
+Menus ativos:
+
+- Supervisoes e Campos
+- Ministros
+- Funcionarios
+- Consagracao (obreiros)
+- Cartas ministeriais
+- Certificados
+- Permutas
+
+Provaveis areas de codigo:
+
+- `src/app/secretaria/*`
+- componentes e helpers relacionados a ministros, campos, supervisoes, cartas e certificados
+
+### 3) Debitos CGADB
+
+Controle de debitos vinculados a CGADB.
+
+Menus ativos:
+
+- Dashboard
+- Debitos
+- Relatorios
+- Historico
+
+### 4) Financeiro
+
+Rotinas financeiras internas. Confirmar no codigo quais telas e APIs estao ativas antes de alterar.
+
+### 5) Eventos
+
+Gestao de eventos da COMIEADEPA.
+
+Menus ativos:
+
+- Dashboard Geral
+- Todos os Eventos
+
+Tambem existe documentacao recente sobre a assistente Maia em eventos:
+
+- `docs/IA_ASSISTENTE_MAIA_IMPLEMENTACAO.md`
+
+### 6) Comissao
+
+Modulo institucional de comissao. Confirmar estrutura no codigo antes de alterar.
+
+### 7) Patrimonio
+
+Modulo de controle patrimonial. Confirmar estrutura no codigo antes de alterar.
+
+### 8) Missoes
+
+Modulo ligado a missoes e atividades institucionais. Confirmar estrutura no codigo antes de alterar.
+
+### 9) Administracao
+
+Menus ativos:
+
+- Auditoria
+- Usuarios
+- Configuracoes
+  - Geral
+  - Importar Ministros
+  - Certificados
+  - Cartoes
+
+Areas sensiveis:
+
+- usuarios e permissoes;
+- importacao de dados;
+- certificados/cartoes;
+- logs de auditoria.
 
 ---
 
 ## Pastas importantes
-- Banco/migrações: `supabase/migrations/`
-- Tipos Supabase: `src/types/supabase*.ts`
-- Configs: `next.config.js`, `tailwind.config.js`, `tsconfig.json`
+
+```text
+src/app/                 Rotas e telas Next.js
+src/components/          Componentes compartilhados
+src/lib/                 Clientes, helpers e integracoes
+src/config/              Configuracoes do sistema
+src/types/               Tipos TypeScript
+supabase/migrations/     Migracoes de banco
+public/                  Logos, imagens e assets
+docs/                    Documentacao atual e historica
+```
+
+---
+
+## Nota sobre nomes antigos
+
+Se encontrar referencias a GestaoServus, GestaoEklesia, SaaS, multi-tenant ou `ministry_id`, trate como legado da fase anterior do projeto. A regra atual e usar a linguagem do dominio COMIEADEPA/siscomieadepa.

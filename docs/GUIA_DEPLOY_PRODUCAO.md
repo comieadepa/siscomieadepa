@@ -187,6 +187,7 @@ NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<NEXT_PUBLIC_SUPABASE_ANON_KEY>
 SUPABASE_SERVICE_ROLE_KEY=<SUPABASE_SERVICE_ROLE_KEY>
 NEXT_PUBLIC_APP_URL=https://seuapp.vercel.app
+NEXT_PUBLIC_PUBLIC_URL=https://seuapp.vercel.app
 ```
 
 ### Passo 2: Enviar para GitHub
@@ -222,6 +223,11 @@ Adicionar:
 - NEXT_PUBLIC_SUPABASE_KEY: sua_key_publica
 - SUPABASE_SERVICE_ROLE_KEY: sua_service_role_key
 - NEXT_PUBLIC_APP_URL: https://seu-dominio.vercel.app
+- NEXT_PUBLIC_PUBLIC_URL: https://seu-dominio.vercel.app
+
+Observacao:
+- NEXT_PUBLIC_APP_URL = dominio real do painel administrativo.
+- NEXT_PUBLIC_PUBLIC_URL = dominio publico do check-in (use o mesmo valor se for o mesmo dominio).
 ```
 
 ### Passo 5: Deploy

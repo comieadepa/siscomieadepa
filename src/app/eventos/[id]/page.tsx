@@ -9,7 +9,6 @@ import { createClient } from '@/lib/supabase-client';
 import { getEquipeSession } from '@/lib/equipe-session';
 import type { EquipeSession } from '@/lib/equipe-session';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
-import { buildUrl, getAppBaseUrl, getPublicBaseUrl } from '@/lib/urls';
 import { normalizePayloadUppercase } from '@/lib/text';
 import { authenticatedFetch } from '@/lib/api-client';
 import { EtiquetaPreviewDepartamento, EtiquetaPreviewAGO } from '@/components/EtiquetaLabels';
@@ -108,11 +107,13 @@ interface EditForm {
 }
 
 interface Equipe {
-  id: string; evento_id: string; email: string;
-  tipo: 'admin' | 'checkin'; ativo: boolean; created_at: string;
-  convite_token: string | null;
-  convite_expira_em: string | null;
-  convite_usado_em: string | null;
+  id: string;
+  evento_id: string;
+  nome: string | null;
+  email: string;
+  tipo: 'operador' | 'checkin';
+  ativo: boolean;
+  created_at: string;
   ultimo_acesso_em: string | null;
 }
 
@@ -298,9 +299,12 @@ export default function GerenciarEventoPage() {
     if (perfil.isDeptAdmin && perfil.departamentoUsuario !== 'TODOS' && (data as Evento).departamento !== perfil.departamentoUsuario) {
       setAcessoNegado(true); setLoadingEvento(false); return;
     }
+    if (permissaoNesseEvento === 'operador' && (data as Evento).status !== 'programado') {
+      setAcessoNegado(true); setLoadingEvento(false); return;
+    }
     setEvento(data as Evento);
     setLoadingEvento(false);
-  }, [id, supabase, perfil.isDeptAdmin, perfil.departamentoUsuario]);
+  }, [id, supabase, perfil.isDeptAdmin, perfil.departamentoUsuario, permissaoNesseEvento]);
 
   const fetchInscricoes = useCallback(async () => {
     if (!id) return;
@@ -500,7 +504,7 @@ export default function GerenciarEventoPage() {
                 ✏️ Editar
               </button>
             )}
-            <a href={buildUrl(getPublicBaseUrl(), `/inscricao/${evento.slug}`)} target="_blank" rel="noopener noreferrer"
+            <a href={`/inscricao/${evento.slug}`} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition">
               🌐 Pág. Pública
             </a>
@@ -1143,7 +1147,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
         </tr>`;
     }).join('');
 
-    const appBaseUrl = getAppBaseUrl();
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -1170,13 +1174,13 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
 </head>
 <body>
   <div class="header">
-    <img class="header-logo" src="${buildUrl(appBaseUrl, '/img/logo_comieadepa.png')}" alt="COMIEADEPA" />
+    <img class="header-logo" src="${origin ? `${origin}/img/logo_comieadepa.png` : '/img/logo_comieadepa.png'}" alt="COMIEADEPA" />
     <div class="header-center">
       <div class="org">COMIEADEPA</div>
       <div class="info">Rodovia Mario Covas, 2500 - do km 3.123 ao km 6.001 - lado impar lado par pertence a(o) Ananindeua - Coqueiro, Belem - PA, 66650-000</div>
       <div class="info">CNPJ: 04.760.047/0001-04 | Tel: (91) 99223-4022 | contato@comieadepa.org</div>
     </div>
-    <img class="header-logo" src="${buildUrl(appBaseUrl, logoDir)}" alt="${escHtml(evento.departamento)}" />
+    <img class="header-logo" src="${origin ? `${origin}${logoDir}` : logoDir}" alt="${escHtml(evento.departamento)}" />
   </div>
   <div class="divider"></div>
   <div class="report-title">${escHtml(titulo)}</div>
@@ -1399,7 +1403,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
             <table className="w-full min-w-[1100px] text-sm">
               <thead>
                 <tr className="border-b border-[#D4DCEA] bg-[#E3ECF7]">
-                  {['Nome', 'CPF', 'WhatsApp', 'Supervisão', 'Campo', 'Valor', 'Pagamento', 'Check-in', 'Etiq.', 'Cert.', 'Inscrição', 'Ações'].map(h => (
+                  {['Nome', 'CPF', 'Supervisão', 'Campo', 'Valor', 'Pagamento', 'Etiq.', 'Ações'].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-600 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -1416,25 +1420,15 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                     <tr key={ins.id} className="border-b border-gray-50 hover:bg-gray-50 transition">
                       <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{ins.nome_inscrito}</td>
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{ins.cpf || '-'}</td>
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{ins.whatsapp || '-'}</td>
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{nomeSup(ins.supervisao_id)}</td>
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{nomeCampo(ins.campo_id)}</td>
                       <td className="px-4 py-3 text-gray-800 font-medium whitespace-nowrap">{fmtMoeda(ins.valor_pago)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${pagCfg.cls}`}>{pagCfg.label}</span>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {ins.checkin_realizado
-                          ? <span className="text-xs font-semibold text-emerald-600">✅ {fmtDT(ins.checkin_at)}</span>
-                          : <span className="text-xs text-gray-400">—</span>}
-                      </td>
                       <td className="px-4 py-3 whitespace-nowrap text-center">
                         {ins.etiqueta_impressa ? '🏷️' : <span className="text-gray-300">—</span>}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-center">
-                        {ins.certificado_enviado ? '🎓' : <span className="text-gray-300">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">{fmtDT(ins.created_at)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex gap-1 flex-wrap">
                           <button
@@ -1527,6 +1521,14 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className={labelCls}>Data da inscricao</label>
+                <input
+                  value={fmtDT(editando.created_at)}
+                  readOnly
+                  className={inputCls + ' bg-gray-50 text-gray-600'}
+                />
+              </div>
               <div className="md:col-span-2">
                 <label className={labelCls}>Evento</label>
                 <select
@@ -2017,7 +2019,8 @@ function TabCheckin({ eventoId, evento, inscricoes, loading, nomeSup, nomeCampo,
   }
 
   function copiarLink() {
-    const link = buildUrl(getPublicBaseUrl(), `/eventos/${eventoId}/checkin`);
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const link = origin ? `${origin}/eventos/${eventoId}/checkin` : `/eventos/${eventoId}/checkin`;
     navigator.clipboard.writeText(link).then(() => {
       setLinkCopiado(true);
       setTimeout(() => setLinkCopiado(false), 2500);
@@ -3214,18 +3217,33 @@ function TabFinanceiro({ inscricoes, loading, stats, nomeSup, nomeCampo, supabas
 // ═══════════════════════════════════════════════════════════════
 // ABA EQUIPE
 // ═══════════════════════════════════════════════════════════════
-function TabEquipe({ eventoId, evento, equipe, supabase, onRefresh }: {
+function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }: {
   eventoId: string; evento: Evento; equipe: Equipe[];
   supabase: ReturnType<typeof createClient>;
   onRefresh: () => void;
 }) {
-  const [email,    setEmail]    = useState('');
-  const [tipo,     setTipo]     = useState<'admin' | 'checkin'>('checkin');
+  const [nome, setNome] = useState('');
+  const [email, setEmail] = useState('');
+  const [funcao, setFuncao] = useState<'operador' | 'checkin'>('checkin');
+  const [senha, setSenha] = useState('');
+  const [confirmarSenha, setConfirmarSenha] = useState('');
   const [salvando, setSalvando] = useState(false);
-  const [erro,     setErro]     = useState<string | null>(null);
-  const [conviteMsg, setConviteMsg] = useState<string | null>(null);
-  const [conviteLink, setConviteLink] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [sucesso, setSucesso] = useState<string | null>(null);
   const [acaoId, setAcaoId] = useState<string | null>(null);
+  const [removerConfirm, setRemoverConfirm] = useState<Equipe | null>(null);
+  const [removendo, setRemovendo] = useState(false);
+  const [editando, setEditando] = useState<Equipe | null>(null);
+  const [editNome, setEditNome] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editFuncao, setEditFuncao] = useState<'operador' | 'checkin'>('checkin');
+  const [editSenha, setEditSenha] = useState('');
+  const [editConfirmarSenha, setEditConfirmarSenha] = useState('');
+  const [resetando, setResetando] = useState<Equipe | null>(null);
+  const [novaSenha, setNovaSenha] = useState('');
+  const [confirmarNovaSenha, setConfirmarNovaSenha] = useState('');
+  const [linkCopiado, setLinkCopiado] = useState<string | null>(null);
+  const [reenviandoId, setReenviandoId] = useState<string | null>(null);
   const timeoutsRef = useRef<number[]>([]);
 
   useEffect(() => () => {
@@ -3238,13 +3256,76 @@ function TabEquipe({ eventoId, evento, equipe, supabase, onRefresh }: {
     timeoutsRef.current.push(id);
   }, []);
 
-  function mostrarConvite(msg: string, link?: string | null) {
-    setConviteMsg(msg);
-    setConviteLink(link || null);
-    scheduleClear(() => {
-      setConviteMsg(null);
-      setConviteLink(null);
-    });
+  const mostrarErro = useCallback((msg: string) => {
+    setErro(msg);
+    setSucesso(null);
+    scheduleClear(() => setErro(null));
+  }, [scheduleClear]);
+
+  const mostrarSucesso = useCallback((msg: string) => {
+    setSucesso(msg);
+    setErro(null);
+    scheduleClear(() => setSucesso(null));
+  }, [scheduleClear]);
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const operadorUrl = origin ? `${origin}/eventos/${eventoId}/operador` : `/eventos/${eventoId}/operador`;
+  const checkinUrl = origin ? `${origin}/eventos/${eventoId}/checkin` : `/eventos/${eventoId}/checkin`;
+
+  async function registrarCopiaLink(funcaoEquipe: 'operador' | 'checkin', url: string) {
+    try {
+      await fetch('/api/v1/audit-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          acao: 'copiar_link_equipe',
+          modulo: 'eventos',
+          area: 'evento_equipe',
+          tabela_afetada: 'evento_equipe',
+          descricao: `Link de acesso da equipe copiado (${funcaoEquipe}).`,
+          dados_novos: { eventoId, funcao: funcaoEquipe, url },
+          status: 'sucesso',
+        }),
+      });
+    } catch {
+      // Auditoria nao deve bloquear a copia.
+    }
+  }
+
+  async function copiarAcesso(funcaoEquipe: 'operador' | 'checkin', url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setLinkCopiado(funcaoEquipe);
+      scheduleClear(() => setLinkCopiado(null), 2500);
+      void registrarCopiaLink(funcaoEquipe, url);
+    } catch {
+      mostrarErro('Nao foi possivel copiar o link.');
+    }
+  }
+
+  async function reenviarAcesso(eq: Equipe) {
+    setReenviandoId(eq.id);
+    setErro(null);
+    setSucesso(null);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/equipe/acesso`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ equipe_id: eq.id }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        mostrarErro(json.error || 'Erro ao reenviar acesso.');
+        return;
+      }
+      mostrarSucesso(eq.tipo === 'operador'
+        ? 'Acesso reenviado. A senha antiga nao foi exibida; redefina se necessario.'
+        : 'Acesso de check-in reenviado.');
+    } catch {
+      mostrarErro('Erro ao reenviar acesso.');
+    } finally {
+      setReenviandoId(null);
+    }
   }
 
   if (evento.status === 'realizado' || evento.status === 'cancelado') {
@@ -3260,157 +3341,300 @@ function TabEquipe({ eventoId, evento, equipe, supabase, onRefresh }: {
   async function adicionar(e: React.FormEvent) {
     e.preventDefault();
     setErro(null);
-    if (!email.trim()) return setErro('E-mail obrigatório.');
+    setSucesso(null);
+
+    if (!nome.trim()) return mostrarErro('Nome obrigatorio.');
+    if (!email.trim()) return mostrarErro('E-mail obrigatorio.');
+    if (funcao === 'operador') {
+      if (senha.length < 8) return mostrarErro('Senha deve ter no minimo 8 caracteres.');
+      if (senha !== confirmarSenha) return mostrarErro('As senhas nao coincidem.');
+    }
+
     setSalvando(true);
     try {
-      const res = await fetch(`/api/eventos/${eventoId}/equipe/convite`, {
+      const res = await fetch(`/api/eventos/${eventoId}/equipe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), tipo }),
+        body: JSON.stringify({
+          nome: nome.trim(),
+          email: email.trim(),
+          funcao,
+          senha: funcao === 'operador' ? senha : undefined,
+        }),
       });
       const json = await res.json();
       if (!res.ok) {
-        setErro(json.error || 'Erro ao enviar convite.');
+        mostrarErro(json.error || 'Erro ao cadastrar membro.');
         return;
       }
+      setNome('');
       setEmail('');
+      setFuncao('checkin');
+      setSenha('');
+      setConfirmarSenha('');
       onRefresh();
-      if (json.simulado && json.link) {
-        mostrarConvite('Convite gerado (simulacao). Copie o link abaixo.', json.link);
-      } else {
-        mostrarConvite('Convite enviado por e-mail.');
-      }
+      mostrarSucesso(json.email_enviado === false
+        ? 'Membro cadastrado, mas o e-mail de acesso nao foi enviado.'
+        : 'Membro cadastrado e e-mail de acesso enviado.');
     } catch {
-      setErro('Erro ao enviar convite.');
+      mostrarErro('Erro ao cadastrar membro.');
     } finally {
       setSalvando(false);
     }
   }
 
-  function buildConviteLink(token: string) {
-    return buildUrl(getPublicBaseUrl(), `/eventos/equipe/acesso?token=${token}`);
+  function abrirEdicao(eq: Equipe) {
+    setEditando(eq);
+    setEditNome(eq.nome || '');
+    setEditEmail(eq.email);
+    setEditFuncao(eq.tipo);
+    setEditSenha('');
+    setEditConfirmarSenha('');
   }
 
-  async function reenviarConvite(eq: Equipe) {
-    setAcaoId(eq.id);
+  async function salvarEdicao(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editando) return;
     setErro(null);
+    setSucesso(null);
+
+    if (!editNome.trim()) return mostrarErro('Nome obrigatorio.');
+    if (!editEmail.trim()) return mostrarErro('E-mail obrigatorio.');
+
+    const mudandoParaOperador = editando.tipo !== 'operador' && editFuncao === 'operador';
+    if (mudandoParaOperador && editSenha.length < 8) {
+      return mostrarErro('Defina uma senha com no minimo 8 caracteres.');
+    }
+    if (editSenha && editSenha.length < 8) {
+      return mostrarErro('Senha deve ter no minimo 8 caracteres.');
+    }
+    if (editSenha && editSenha !== editConfirmarSenha) {
+      return mostrarErro('As senhas nao coincidem.');
+    }
+
+    setSalvando(true);
     try {
-      const res = await fetch(`/api/eventos/${eventoId}/equipe/convite`, {
-        method: 'POST',
+      const res = await fetch(`/api/eventos/${eventoId}/equipe`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ equipe_id: eq.id, tipo: eq.tipo }),
+        body: JSON.stringify({
+          equipe_id: editando.id,
+          nome: editNome.trim(),
+          email: editEmail.trim(),
+          funcao: editFuncao,
+          senha: editSenha || undefined,
+        }),
       });
       const json = await res.json();
       if (!res.ok) {
-        setErro(json.error || 'Erro ao reenviar convite.');
+        mostrarErro(json.error || 'Erro ao editar membro.');
         return;
       }
       onRefresh();
-      if (json.simulado && json.link) {
-        mostrarConvite('Convite gerado (simulacao). Copie o link abaixo.', json.link);
-      } else {
-        mostrarConvite('Convite reenviado por e-mail.');
-      }
+      setEditando(null);
+      mostrarSucesso('Dados atualizados.');
     } catch {
-      setErro('Erro ao reenviar convite.');
+      mostrarErro('Erro ao editar membro.');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function alterarStatus(eq: Equipe, ativo: boolean) {
+    setAcaoId(eq.id);
+    setErro(null);
+    setSucesso(null);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/equipe`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ equipe_id: eq.id, ativo }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        mostrarErro(json.error || 'Erro ao atualizar status.');
+        return;
+      }
+      onRefresh();
+      mostrarSucesso(ativo ? 'Membro reativado.' : 'Membro desativado.');
+    } catch {
+      mostrarErro('Erro ao atualizar status.');
     } finally {
       setAcaoId(null);
     }
   }
 
-  async function copiarLink(eq: Equipe) {
-    setErro(null);
-    if (!eq.convite_token) {
-      setErro('Convite ainda nao gerado. Reenvie o convite.');
-      return;
-    }
-    const link = buildConviteLink(eq.convite_token);
+  async function removerConfirmado() {
+    if (!removerConfirm) return;
+    setRemovendo(true);
     try {
-      await navigator.clipboard.writeText(link);
-      mostrarConvite('Link copiado.', link);
-    } catch {
-      setErro('Nao foi possivel copiar o link.');
-    }
-  }
-
-  async function revogarAcesso(eq: Equipe) {
-    if (!confirm('Revogar o acesso deste membro?')) return;
-    setAcaoId(eq.id);
-    setErro(null);
-    try {
-      const res = await fetch(`/api/eventos/${eventoId}/equipe/revogar`, {
-        method: 'POST',
+      const res = await fetch(`/api/eventos/${eventoId}/equipe`, {
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ equipe_id: eq.id }),
+        body: JSON.stringify({ equipe_id: removerConfirm.id }),
       });
       const json = await res.json();
       if (!res.ok) {
-        setErro(json.error || 'Erro ao revogar acesso.');
+        mostrarErro(json.error || 'Erro ao remover membro.');
         return;
       }
       onRefresh();
-      mostrarConvite('Acesso revogado.');
+      setRemoverConfirm(null);
+      mostrarSucesso('Membro removido.');
     } catch {
-      setErro('Erro ao revogar acesso.');
+      mostrarErro('Erro ao remover membro.');
     } finally {
-      setAcaoId(null);
+      setRemovendo(false);
     }
   }
 
-  async function remover(id: string) {
-    if (!confirm('Remover este operador?')) return;
-    await supabase.from('evento_equipe').delete().eq('id', id);
-    onRefresh();
+  async function redefinirSenha(e: React.FormEvent) {
+    e.preventDefault();
+    if (!resetando) return;
+    setErro(null);
+    setSucesso(null);
+    if (novaSenha.length < 8) return mostrarErro('Senha deve ter no minimo 8 caracteres.');
+    if (novaSenha !== confirmarNovaSenha) return mostrarErro('As senhas nao coincidem.');
+
+    setSalvando(true);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/equipe/senha`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ equipe_id: resetando.id, senha: novaSenha }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        mostrarErro(json.error || 'Erro ao redefinir senha.');
+        return;
+      }
+      setResetando(null);
+      setNovaSenha('');
+      setConfirmarNovaSenha('');
+      mostrarSucesso(json.email_enviado === false
+        ? 'Senha atualizada, mas o e-mail de acesso nao foi enviado.'
+        : 'Senha atualizada e e-mail de acesso enviado.');
+    } catch {
+      mostrarErro('Erro ao redefinir senha.');
+    } finally {
+      setSalvando(false);
+    }
   }
 
   return (
-    <div className="max-w-2xl">
-      {/* Adicionar */}
+    <div className="max-w-5xl">
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-        <h3 className="font-bold text-[#123b63] mb-4">➕ Adicionar Operador</h3>
-        {erro && <div className="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{erro}</div>}
-        <form onSubmit={adicionar} className="flex flex-col sm:flex-row gap-3">
-          <input type="email" placeholder="email@exemplo.com" value={email}
-            onChange={e => setEmail(e.target.value)}
-            className={inputCls + ' flex-1'} required />
-          <select value={tipo} onChange={e => setTipo(e.target.value as 'admin' | 'checkin')}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
-            <option value="checkin">Check-in</option>
-            <option value="admin">Operador</option>
-          </select>
-          <button type="submit" disabled={salvando}
-            className="bg-[#123b63] text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-[#0f2a45] transition disabled:opacity-50">
-            {salvando ? 'Salvando...' : 'Adicionar'}
-          </button>
-        </form>
-        {conviteMsg && (
-          <div className="mt-3 text-sm bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg px-3 py-2">
-            <p className="font-semibold">{conviteMsg}</p>
-            {conviteLink && (
-              <div className="flex gap-2 mt-2 items-center">
-                <input readOnly value={conviteLink}
-                  className="flex-1 min-w-0 border border-emerald-200 rounded-lg px-3 py-2 text-xs bg-white font-mono" />
+        <h3 className="font-bold text-[#123b63] mb-1">Acessos da equipe</h3>
+        <p className="text-xs text-gray-500 mb-4">
+          Use estes links para repassar o acesso correto aos operadores e equipe de check-in.
+        </p>
+        <div className="grid gap-3">
+          {([
+            { key: 'operador' as const, titulo: 'Operador', url: operadorUrl, desc: 'Entra com e-mail e senha definidos pelo administrador.' },
+            { key: 'checkin' as const, titulo: 'Check-in', url: checkinUrl, desc: 'Informa apenas o e-mail cadastrado para liberar o leitor de QR Code.' },
+          ]).map(item => (
+            <div key={item.key} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <div>
+                  <p className="text-sm font-bold text-gray-800">{item.titulo}</p>
+                  <p className="text-xs text-gray-500">{item.desc}</p>
+                </div>
+                {linkCopiado === item.key && (
+                  <span className="shrink-0 text-xs font-semibold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full">
+                    Link copiado!
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  readOnly
+                  value={item.url}
+                  className="flex-1 min-w-0 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-700 bg-white font-mono"
+                />
                 <button
                   type="button"
-                  onClick={() => navigator.clipboard.writeText(conviteLink)}
-                  className="text-xs px-3 py-2 rounded-lg bg-emerald-600 text-white font-semibold hover:bg-emerald-700 transition">
+                  onClick={() => copiarAcesso(item.key, item.url)}
+                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-white border border-gray-200 text-gray-700 hover:bg-gray-100 transition"
+                >
                   Copiar link
                 </button>
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-[#123b63] text-white hover:bg-[#0f2a45] transition text-center"
+                >
+                  Abrir
+                </a>
               </div>
-            )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Adicionar */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+        <h3 className="font-bold text-[#123b63] mb-4">➕ Adicionar membro</h3>
+        {erro && <div className="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{erro}</div>}
+        {sucesso && <div className="mb-3 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{sucesso}</div>}
+        <form onSubmit={adicionar} className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className={labelCls}>Nome</label>
+            <input type="text" placeholder="Nome completo" value={nome}
+              onChange={e => setNome(e.target.value)}
+              className={inputCls} required />
           </div>
-        )}
+          <div>
+            <label className={labelCls}>E-mail</label>
+            <input type="email" placeholder="email@exemplo.com" value={email}
+              onChange={e => setEmail(e.target.value)}
+              className={inputCls} required />
+          </div>
+          <div>
+            <label className={labelCls}>Funcao</label>
+            <select value={funcao} onChange={e => setFuncao(e.target.value as 'operador' | 'checkin')}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white w-full">
+              <option value="checkin">Check-in</option>
+              <option value="operador">Operador</option>
+            </select>
+          </div>
+          {funcao === 'operador' && (
+            <div>
+              <label className={labelCls}>Senha</label>
+              <input type="password" value={senha}
+                onChange={e => setSenha(e.target.value)}
+                className={inputCls} placeholder="Minimo 8 caracteres" required />
+            </div>
+          )}
+          {funcao === 'operador' && (
+            <div className="sm:col-span-2">
+              <label className={labelCls}>Confirmar senha</label>
+              <input type="password" value={confirmarSenha}
+                onChange={e => setConfirmarSenha(e.target.value)}
+                className={inputCls} placeholder="Repita a senha" required />
+            </div>
+          )}
+          <div className="sm:col-span-2">
+            <button type="submit" disabled={salvando}
+              className="bg-[#123b63] text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-[#0f2a45] transition disabled:opacity-50">
+              {salvando ? 'Salvando...' : 'Adicionar membro'}
+            </button>
+          </div>
+        </form>
+        <p className="mt-3 text-xs text-gray-500">
+          O e-mail de acesso e enviado automaticamente apos o cadastro. Senhas de operador so aparecem no momento da criacao ou redefinicao.
+        </p>
       </div>
 
       {/* Lista */}
       {equipe.length === 0 ? (
-        <EmptyState icon="👤" title="Nenhum operador cadastrado" desc="Adicione operadores para o evento acima." />
+        <EmptyState icon="👤" title="Nenhum membro cadastrado" desc="Adicione membros para o evento acima." />
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['E-mail', 'Tipo', 'Status', 'Ultimo acesso', 'Ações'].map(h => (
+                {['Nome', 'E-mail', 'Funcao', 'Status', 'Ultimo acesso', 'Acoes'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-600">{h}</th>
                 ))}
               </tr>
@@ -3418,10 +3642,11 @@ function TabEquipe({ eventoId, evento, equipe, supabase, onRefresh }: {
             <tbody>
               {equipe.map(eq => (
                 <tr key={eq.id} className="border-b border-gray-50 hover:bg-gray-50 transition">
+                  <td className="px-4 py-3 text-gray-800">{eq.nome || '-'}</td>
                   <td className="px-4 py-3 text-gray-800">{eq.email}</td>
                   <td className="px-4 py-3">
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${eq.tipo === 'admin' ? 'bg-[#123b63]/10 text-[#123b63]' : 'bg-gray-100 text-gray-600'}`}>
-                      {eq.tipo === 'admin' ? 'Operador' : 'Check-in'}
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${eq.tipo === 'operador' ? 'bg-[#123b63]/10 text-[#123b63]' : 'bg-gray-100 text-gray-600'}`}>
+                      {eq.tipo === 'operador' ? 'Operador' : 'Check-in'}
                     </span>
                   </td>
                   <td className="px-4 py-3">
@@ -3435,25 +3660,30 @@ function TabEquipe({ eventoId, evento, equipe, supabase, onRefresh }: {
                   <td className="px-4 py-3">
                     <div className="flex gap-2 flex-wrap">
                       <button
-                        onClick={() => reenviarConvite(eq)}
+                        onClick={() => abrirEdicao(eq)}
+                        className="text-xs px-2 py-1 bg-sky-100 text-sky-700 rounded font-semibold hover:bg-sky-200 transition">
+                        Editar
+                      </button>
+                      {eq.tipo === 'operador' && (
+                        <button
+                          onClick={() => { setResetando(eq); setNovaSenha(''); setConfirmarNovaSenha(''); }}
+                          className="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded font-semibold hover:bg-amber-200 transition">
+                          Redefinir senha
+                        </button>
+                      )}
+                      <button
+                        onClick={() => reenviarAcesso(eq)}
+                        disabled={reenviandoId === eq.id || !eq.ativo}
+                        className="text-xs px-2 py-1 bg-emerald-100 text-emerald-700 rounded font-semibold hover:bg-emerald-200 transition disabled:opacity-50">
+                        {reenviandoId === eq.id ? 'Enviando...' : 'Reenviar acesso'}
+                      </button>
+                      <button
+                        onClick={() => alterarStatus(eq, !eq.ativo)}
                         disabled={acaoId === eq.id}
-                        className="text-xs px-2 py-1 bg-sky-100 text-sky-700 rounded font-semibold hover:bg-sky-200 transition disabled:opacity-50">
-                        Reenviar convite
+                        className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded font-semibold hover:bg-gray-200 transition disabled:opacity-50">
+                        {eq.ativo ? 'Desativar' : 'Reativar'}
                       </button>
-                      <button
-                        onClick={() => copiarLink(eq)}
-                        disabled={!eq.convite_token}
-                        className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded font-semibold hover:bg-gray-200 transition disabled:opacity-50"
-                        title={!eq.convite_token ? 'Convite nao gerado' : 'Copiar link'}>
-                        Copiar link
-                      </button>
-                      <button
-                        onClick={() => revogarAcesso(eq)}
-                        disabled={!eq.ativo || acaoId === eq.id}
-                        className="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded font-semibold hover:bg-amber-200 transition disabled:opacity-50">
-                        Revogar acesso
-                      </button>
-                      <button onClick={() => remover(eq.id)}
+                      <button onClick={() => setRemoverConfirm(eq)}
                         className="text-xs px-2 py-1 bg-red-100 text-red-600 rounded font-semibold hover:bg-red-200 transition">
                         Remover
                       </button>
@@ -3463,6 +3693,197 @@ function TabEquipe({ eventoId, evento, equipe, supabase, onRefresh }: {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {removerConfirm && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setRemoverConfirm(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <h3 className="text-base font-bold text-[#123b63]">Remover membro</h3>
+                <p className="text-xs text-gray-500 mt-1">Esta acao remove o acesso do membro.</p>
+              </div>
+              <button
+                onClick={() => setRemoverConfirm(null)}
+                className="text-gray-400 hover:text-gray-700 text-xl font-bold leading-none"
+                aria-label="Fechar"
+              >
+                ×
+              </button>
+            </div>
+            <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700">
+              {removerConfirm.nome || removerConfirm.email}
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => setRemoverConfirm(null)}
+                className="flex-1 px-4 py-2 text-sm rounded-lg border border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={removerConfirmado}
+                disabled={removendo}
+                className="flex-1 px-4 py-2 text-sm rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition disabled:opacity-50"
+              >
+                {removendo ? 'Removendo...' : 'Remover'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editando && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setEditando(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <h3 className="text-base font-bold text-[#123b63]">Editar membro</h3>
+                <p className="text-xs text-gray-500 mt-1">Atualize os dados do membro.</p>
+              </div>
+              <button
+                onClick={() => setEditando(null)}
+                className="text-gray-400 hover:text-gray-700 text-xl font-bold leading-none"
+                aria-label="Fechar"
+              >
+                ×
+              </button>
+            </div>
+            <form onSubmit={salvarEdicao} className="space-y-3">
+              <div>
+                <label className={labelCls}>Nome</label>
+                <input
+                  type="text"
+                  value={editNome}
+                  onChange={e => setEditNome(e.target.value)}
+                  className={inputCls}
+                  required
+                />
+              </div>
+              <div>
+                <label className={labelCls}>E-mail</label>
+                <input
+                  type="email"
+                  value={editEmail}
+                  onChange={e => setEditEmail(e.target.value)}
+                  className={inputCls}
+                  required
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Funcao</label>
+                <select
+                  value={editFuncao}
+                  onChange={e => setEditFuncao(e.target.value as 'operador' | 'checkin')}
+                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white w-full"
+                >
+                  <option value="checkin">Check-in</option>
+                  <option value="operador">Operador</option>
+                </select>
+              </div>
+              {editFuncao === 'operador' && (
+                <div>
+                  <label className={labelCls}>Nova senha (opcional)</label>
+                  <input
+                    type="password"
+                    value={editSenha}
+                    onChange={e => setEditSenha(e.target.value)}
+                    className={inputCls}
+                    placeholder="Minimo 8 caracteres"
+                  />
+                </div>
+              )}
+              {editFuncao === 'operador' && (
+                <div>
+                  <label className={labelCls}>Confirmar senha</label>
+                  <input
+                    type="password"
+                    value={editConfirmarSenha}
+                    onChange={e => setEditConfirmarSenha(e.target.value)}
+                    className={inputCls}
+                    placeholder="Repita a senha"
+                  />
+                </div>
+              )}
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditando(null)}
+                  className="flex-1 px-4 py-2 text-sm rounded-lg border border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={salvando}
+                  className="flex-1 px-4 py-2 text-sm rounded-lg bg-[#123b63] text-white font-semibold hover:bg-[#0f2a45] transition disabled:opacity-50"
+                >
+                  {salvando ? 'Salvando...' : 'Salvar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {resetando && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setResetando(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <h3 className="text-base font-bold text-[#123b63]">Redefinir senha</h3>
+                <p className="text-xs text-gray-500 mt-1">Atualize a senha do operador.</p>
+              </div>
+              <button
+                onClick={() => setResetando(null)}
+                className="text-gray-400 hover:text-gray-700 text-xl font-bold leading-none"
+                aria-label="Fechar"
+              >
+                ×
+              </button>
+            </div>
+            <form onSubmit={redefinirSenha} className="space-y-3">
+              <div>
+                <label className={labelCls}>Nova senha</label>
+                <input
+                  type="password"
+                  value={novaSenha}
+                  onChange={e => setNovaSenha(e.target.value)}
+                  className={inputCls}
+                  placeholder="Minimo 8 caracteres"
+                  required
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Confirmar senha</label>
+                <input
+                  type="password"
+                  value={confirmarNovaSenha}
+                  onChange={e => setConfirmarNovaSenha(e.target.value)}
+                  className={inputCls}
+                  placeholder="Repita a senha"
+                  required
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setResetando(null)}
+                  className="flex-1 px-4 py-2 text-sm rounded-lg border border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={salvando}
+                  className="flex-1 px-4 py-2 text-sm rounded-lg bg-[#123b63] text-white font-semibold hover:bg-[#0f2a45] transition disabled:opacity-50"
+                >
+                  {salvando ? 'Salvando...' : 'Atualizar'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>
@@ -3849,7 +4270,8 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
 
   // ── Página pública ─────────────────────────────────────────────
   const [copiado, setCopiado] = useState(false);
-  const urlPublica = buildUrl(getPublicBaseUrl(), `/inscricao/${evento.slug}`);
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const urlPublica = origin ? `${origin}/inscricao/${evento.slug}` : `/inscricao/${evento.slug}`;
   const editarHref = `/eventos/${evento.id}/editar`;
   const handleEditar = () => router.push(editarHref);
 

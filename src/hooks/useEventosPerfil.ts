@@ -101,7 +101,7 @@ export function useEventosPerfil(): EventosPerfil {
         if (!user || cancelled) {
           const sess = getEquipeSession();
           if (sess && !cancelled) {
-            const perm: PermissaoEvento = sess.tipo === 'admin' ? 'admin_evento' : 'checkin';
+            const perm: PermissaoEvento = sess.tipo === 'operador' ? 'operador' : 'checkin';
             setPermissoesPorEvento({ [sess.eventoId]: perm });
             setEventoIds([sess.eventoId]);
           }
@@ -176,11 +176,11 @@ export function useEventosPerfil(): EventosPerfil {
         setPermissoesPorEvento(map);
         setEventoIds(ids);
 
-        // Também verifica sessão de equipe (convite via link)
+        // Também verifica sessão de equipe (acesso sem conta Supabase)
         // Funciona mesmo quando o usuário está autenticado no Supabase
         const equipeSess = getEquipeSession();
         if (equipeSess && !cancelled) {
-          const sessPerm: PermissaoEvento = equipeSess.tipo === 'admin' ? 'admin_evento' : 'checkin';
+          const sessPerm: PermissaoEvento = equipeSess.tipo === 'operador' ? 'operador' : 'checkin';
           if (!map[equipeSess.eventoId]) {
             map[equipeSess.eventoId] = sessPerm;
             ids.push(equipeSess.eventoId);

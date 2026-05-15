@@ -1,87 +1,91 @@
-# 🤖 IA - Leitura Diária (Essencial)
+# IA - Leitura diaria essencial
 
-**Objetivo:** em 3–5 minutos, alinhar contexto, segurança e multi-tenant antes de codar.
-
----
-
-## 1) Regras do projeto (não quebre)
-
-- **Tenant canônico:** use `ministry_id` para isolamento multi-tenant.
-- **Admin panel (/admin):** acesso é validado no servidor (middleware). Não crie rotas admin sem checar auth.
-- **Segredos:** não colocar chaves/senhas em `.md`. Use `.env.local` e templates.
-- **Service role:** só em server-side (API/middleware). Nunca no frontend.
+**Objetivo:** alinhar rapidamente o contexto atual antes de mexer no projeto.
 
 ---
 
-## 2) Checklist rápido (2 min)
+## 1) Identidade atual do projeto
 
-1. `git status` e `git pull` (se aplicável)
-2. Verificar `.env.local`:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-   - (se usar mapas) `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`
-3. Subir dev server: `npm run dev`
+- **Sistema:** siscomieadepa.
+- **Instituicao:** COMIEADEPA.
+- **Natureza:** CRM administrativo/institucional.
+- **Nao e SaaS multi-tenant.**
+- **Nao tratar COMIEADEPA como tenant/cliente.**
 
----
+O historico antigo usa nomes como GestaoServus/GestaoEklesia e fala em multi-tenant. Isso e legado. Antes de reaproveitar qualquer regra antiga, confirme se ela ainda existe no codigo atual.
 
-## 3) Onde mexer com segurança
-
-- Proteção de rotas admin: `src/proxy.ts`.
-- Client Supabase (browser, com RLS): `src/lib/supabase-client.ts`.
-- Client Supabase (server, service role): `src/lib/supabase-server.ts`.
-- Client Supabase (server, JWT do usuário/RLS): `src/lib/supabase-rls.ts`.
-
-Geolocalização (quando mexer):
-- Leitura/queries do mapa (client-side, autenticado): `src/lib/geolocation-utils.ts`
-- Tela do mapa: `src/app/geolocalizacao/page.tsx`
-- Observação: status UI (`ativo/inativo`) precisa bater com DB (`active/inactive`).
+Referencia institucional: https://comieadepa.org/
 
 ---
 
-## 4) Mapa rápido dos módulos
+## 2) Regras que nao devem ser quebradas
 
-Leia (quando for mexer no módulo):
-- Mapa do projeto: **AI_PROJECT_MAP.md**
-- Multi-tenant & segurança: **AI_MULTI_TENANT_SECURITY.md**
-
-Referências por módulo (quando necessário):
-- Painel Atendimento v2: `docs/INDICE_DOCUMENTACAO_V2.md`
-- Geolocalização: `docs/INDICE_GEOLOCALIZACAO.md`
-- Suporte/Tickets: `docs/STATUS_SISTEMA_SUPORTE.md`
-
-Notas rápidas (geolocalização):
-- Coordenadas preferenciais: colunas `members.latitude` / `members.longitude` (com fallback em `custom_fields`).
+- Rotas administrativas precisam validar autenticacao/permissao no servidor.
+- Segredos nunca devem entrar em `.md`, codigo client-side ou logs.
+- Service role key somente em API/server-side.
+- Listagens grandes devem usar filtros, paginacao ou carregamento controlado.
+- Alteracoes sensiveis devem considerar auditoria: usuarios, financeiro, debitos, certificados, cartas e importacoes.
+- Evite criar dependencia nova em `ministry_id`, `ministries`, planos, trial ou tenants sem confirmar que ainda e necessario.
 
 ---
 
-## 5) Se algo deu errado
+## 3) Modulos ativos na UI
 
-- Loop/login/admin: `docs/SESSION_03_JANEIRO_2026.md`
-- RLS recursion em `admin_users`: `docs/ACAO_IMEDIATA_FIX_RLS.md`
-- Deploy: `docs/GUIA_DEPLOY_PRODUCAO.md`
-
----
-
-## 6) Planejamento Asaas (31/03/2026)
-
-- Gerar 12 cobrancas para contrato anual no Asaas.
-- Persistir parcelas na tabela `payments` (asaas_payment_id, status, due_date).
-- Admin/Pagamentos: listar parcelas e permitir baixa manual (recebimento em maos).
-- Webhook Asaas: atualizar automaticamente status de pagamento.
-
-Checklist detalhado para iniciar:
-- Definir modelo: 12 cobrancas avulsas x assinatura nativa Asaas.
-- Criar cliente server-side do Asaas (lib/asaas.ts).
-- Endpoint: criar cobrancas (admin/contrato anual).
-- Webhook: validar assinatura e mapear eventos (PAYMENT_CONFIRMED, PAYMENT_RECEIVED, PAYMENT_OVERDUE).
-- UI admin/pagamentos: filtros + acao "Baixa manual".
+- Dashboard
+- Secretaria: Supervisoes e Campos, Ministros, Funcionarios, Consagracao, Cartas ministeriais, Certificados, Permutas
+- Debitos CGADB: Dashboard, Debitos, Relatorios, Historico
+- Financeiro
+- Eventos: Dashboard Geral, Todos os Eventos
+- Comissao
+- Patrimonio
+- Missoes
+- Administracao: Auditoria, Usuarios, Configuracoes
 
 ---
 
-## 7) Atualizacoes recentes (02/04/2026)
+## 4) Arquivos para consultar primeiro
 
-- Status de pre-cadastro: apenas `trial` e `encerrado`.
-- Bloqueio de acesso quando trial expira (erro "Expirado").
-- Job/função SQL para expirar trials automaticamente.
-- UI de pre-cadastros: aba "Expirado" e vencimento destacado.
+- `DAILY_BRIEFING.md`
+- `docs/AI_PROJECT_MAP.md`
+- `docs/AI_SECURITY_AND_DATA.md`
+- `docs/README.md`
+
+Quando mexer em um modulo especifico, procure tambem docs historicos do modulo. Use-os como contexto, nao como autoridade absoluta se falarem em SaaS/multi-tenant.
+
+---
+
+## 5) Ambiente
+
+Variaveis comuns:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+```
+
+Comandos usuais:
+
+```bash
+npm run dev
+npm run build
+npm run lint
+```
+
+Observacao: no Windows, o dev server pode falhar por porta ocupada ou lock em `.next`. Quando isso acontecer, estabilize o ambiente antes de validar UI.
+
+---
+
+## 6) Atencao a legado
+
+Se encontrar documentos ou codigo falando em:
+
+- GestaoServus/GestaoEklesia
+- SaaS
+- tenants
+- `ministry_id`
+- `ministries`
+- planos de assinatura
+- trial/pre-cadastro
+
+trate como possivel legado. A regra atual e **CRM unico da COMIEADEPA**.

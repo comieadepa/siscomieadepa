@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireEventoAccess } from '@/lib/evento-guard';
+import { logDB } from '@/lib/audit';
 
 export async function POST(
   request: NextRequest,
@@ -26,12 +27,12 @@ export async function POST(
   }
 
   const supabase = guard.ctx.supabaseAdmin;
+  const now = new Date().toISOString();
   const { error } = await supabase
     .from('evento_equipe')
     .update({
       ativo: false,
-      convite_token: null,
-      convite_expira_em: null,
+      atualizado_em: now,
     })
     .eq('id', equipeId)
     .eq('evento_id', eventoId);
@@ -39,6 +40,16 @@ export async function POST(
   if (error) {
     return NextResponse.json({ error: 'Erro ao revogar acesso.' }, { status: 500 });
   }
+
+  void logDB({
+    acao: 'desativar_membro_equipe',
+    modulo: 'eventos',
+    entidade: 'evento_equipe',
+    descricao: 'Membro de equipe desativado pelo painel (rota revogar).',
+    status: 'sucesso',
+    detalhes: { eventoId, equipeId },
+    request,
+  });
 
   return NextResponse.json({ ok: true });
 }

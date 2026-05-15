@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useEventosPerfil } from '@/hooks/useEventosPerfil';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { createClient } from '@/lib/supabase-client';
-import { clearEquipeSession, getEquipeSession } from '@/lib/equipe-session';
+import { clearEquipeSession, getEquipeSession, setEquipeSession } from '@/lib/equipe-session';
 import type { EquipeSession } from '@/lib/equipe-session';
 import { authenticatedFetch } from '@/lib/api-client';
 
@@ -125,7 +125,6 @@ export default function CheckinMobilePage() {
   const [solicitando, setSolicitando] = useState(false);
   const [gateMsg, setGateMsg] = useState<string | null>(null);
   const [gateMsgTipo, setGateMsgTipo] = useState<'success' | 'error'>('success');
-  const [linkSimulado, setLinkSimulado] = useState<string | null>(null);
 
   const [evento,      setEvento]      = useState<Evento | null>(null);
   const [supervisoes, setSupervisoes] = useState<Supervisao[]>([]);
@@ -158,7 +157,7 @@ export default function CheckinMobilePage() {
 
   useEffect(() => {
     const sess = getEquipeSession();
-    if (sess && sess.eventoId === id) {
+    if (sess && sess.eventoId === id && sess.tipo === 'checkin') {
       setEquipeSessao(sess);
     } else {
       setEquipeSessao(null);
@@ -189,17 +188,17 @@ export default function CheckinMobilePage() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.ok) {
         const erro = (json?.error as string | undefined) || '';
-        if (erro.includes('Convite expirado')) {
-          setGateMsg('Link expirado. Solicite novo acesso à organização.');
-          setGateMsgTipo('error');
-        } else if (erro.includes('Evento encerrado')) {
+        if (erro.includes('Evento encerrado')) {
           setAcessoMotivo('evento_encerrado');
           setAcessoNegado(true);
         } else if (erro.includes('Check-in desativado')) {
           setAcessoMotivo('checkin_desativado');
           setAcessoNegado(true);
+        } else if (erro.toLowerCase().includes('nao autorizado')) {
+          setGateMsg('E-mail nao autorizado para este evento.');
+          setGateMsgTipo('error');
         } else {
-          setGateMsg('Seu acesso ao check-in foi encerrado. Solicite novo acesso à organização.');
+          setGateMsg('Seu acesso ao check-in foi encerrado.');
           setGateMsgTipo('error');
         }
         throw new Error('Sessao invalida');
@@ -274,7 +273,6 @@ export default function CheckinMobilePage() {
     e.preventDefault();
     setGateMsg(null);
     setGateMsgTipo('success');
-    setLinkSimulado(null);
     if (!id) {
       setGateMsg('Evento invalido.');
       setGateMsgTipo('error');
@@ -300,16 +298,20 @@ export default function CheckinMobilePage() {
         setGateMsgTipo('error');
         return;
       }
-      if (json.simulado && json.link) {
-        setGateMsg('Convite gerado (simulacao). Copie o link abaixo.');
-        setGateMsgTipo('success');
-        setLinkSimulado(json.link);
-      } else {
-        setGateMsg('Link de acesso enviado para seu e-mail.');
-        setGateMsgTipo('success');
-      }
+      const expiraEm = json.expira_em || new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
+      const sessao: EquipeSession = {
+        eventoId: id,
+        equipeId: json.equipe_id,
+        tipo: 'checkin',
+        expiraEm,
+      };
+      setEquipeSession(sessao);
+      setEquipeSessao(sessao);
+      setEmailAcesso('');
+      setGateMsg('Acesso liberado. Abrindo check-in...');
+      setGateMsgTipo('success');
     } catch {
-      setGateMsg('Erro ao enviar acesso.');
+      setGateMsg('Erro ao validar acesso.');
       setGateMsgTipo('error');
     } finally {
       setSolicitando(false);
@@ -588,7 +590,7 @@ export default function CheckinMobilePage() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 w-full max-w-md text-center text-gray-800">
           <div className="text-3xl mb-3">🔐</div>
           <h1 className="text-lg font-bold text-[#123b63]">Acesso ao Check-in</h1>
-          <p className="text-sm text-gray-500 mt-2">Informe o e-mail autorizado para receber o link de acesso.</p>
+          <p className="text-sm text-gray-500 mt-2">Informe o e-mail cadastrado para liberar o check-in.</p>
 
           <form onSubmit={solicitarAcesso} className="mt-4 space-y-3">
             <input
@@ -603,7 +605,7 @@ export default function CheckinMobilePage() {
               type="submit"
               disabled={solicitando}
               className="w-full bg-[#123b63] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#0f2a45] transition disabled:opacity-50">
-              {solicitando ? 'Enviando...' : 'Enviar link de acesso'}
+              {solicitando ? 'Validando...' : 'Liberar acesso'}
             </button>
           </form>
 
@@ -612,21 +614,6 @@ export default function CheckinMobilePage() {
               ? 'text-red-700 bg-red-50 border-red-200'
               : 'text-emerald-700 bg-emerald-50 border-emerald-200'}`}>
               {gateMsg}
-            </div>
-          )}
-          {linkSimulado && (
-            <div className="mt-3 flex gap-2 items-center">
-              <input
-                readOnly
-                value={linkSimulado}
-                className="flex-1 min-w-0 border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono"
-              />
-              <button
-                type="button"
-                onClick={() => navigator.clipboard.writeText(linkSimulado)}
-                className="text-xs px-3 py-2 rounded-lg bg-emerald-600 text-white font-semibold hover:bg-emerald-700 transition">
-                Copiar
-              </button>
             </div>
           )}
         </div>

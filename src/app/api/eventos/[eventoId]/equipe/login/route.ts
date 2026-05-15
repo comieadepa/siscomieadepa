@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import bcrypt from 'bcrypt';
 import { createServerClient } from '@/lib/supabase-server';
 import { logDB } from '@/lib/audit';
 
 type EventoRow = {
   id: string;
-  nome: string;
   status: 'programado' | 'realizado' | 'cancelado';
   data_fim: string | null;
-  checkin_ativo?: boolean | null;
 };
 
 type EquipeRow = {
@@ -16,6 +15,7 @@ type EquipeRow = {
   email: string;
   tipo: 'operador' | 'checkin';
   ativo: boolean;
+  senha_hash: string | null;
 };
 
 function endOfDayUtc(dateStr: string): Date {
@@ -34,7 +34,8 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  let body: { email?: string };
+
+  let body: { email?: string; senha?: string };
   try {
     body = await request.json();
   } catch {
@@ -42,15 +43,16 @@ export async function POST(
   }
 
   const email = (body.email || '').trim().toLowerCase();
-  if (!email) {
-    return NextResponse.json({ error: 'E-mail obrigatorio.' }, { status: 400 });
-  }
+  const senha = (body.senha || '').trim();
+
+  if (!email) return NextResponse.json({ error: 'E-mail obrigatorio.' }, { status: 400 });
+  if (!senha) return NextResponse.json({ error: 'Senha obrigatoria.' }, { status: 400 });
 
   const supabase = createServerClient();
 
   const { data: evento } = await supabase
     .from('eventos')
-    .select('id,nome,status,data_fim,checkin_ativo')
+    .select('id,status,data_fim')
     .eq('id', eventoId)
     .single();
 
@@ -62,58 +64,74 @@ export async function POST(
     return NextResponse.json({ error: 'Evento encerrado ou cancelado.' }, { status: 403 });
   }
 
-  if ((evento as EventoRow).checkin_ativo !== true) {
-    return NextResponse.json({ error: 'Check-in desativado.' }, { status: 403 });
-  }
-
   const { data: equipe } = await supabase
     .from('evento_equipe')
-    .select('id,evento_id,email,tipo,ativo')
+    .select('id,evento_id,email,tipo,ativo,senha_hash')
     .eq('evento_id', eventoId)
     .eq('email', email)
-    .eq('tipo', 'checkin')
+    .eq('tipo', 'operador')
     .maybeSingle();
 
-  if (!equipe || equipe.ativo !== true) {
+  if (!equipe || (equipe as EquipeRow).ativo !== true) {
     void logDB({
-      acao: 'acesso_checkin_negado',
+      acao: 'login_operador_evento',
       modulo: 'eventos',
       entidade: 'evento_equipe',
-      descricao: 'Acesso ao check-in negado por e-mail nao cadastrado.',
+      descricao: 'Tentativa de login com operador nao encontrado ou inativo.',
       status: 'erro',
       detalhes: { eventoId, email },
       request,
     });
-    return NextResponse.json({ error: 'E-mail nao autorizado para check-in.' }, { status: 403 });
+    return NextResponse.json({ error: 'Operador nao encontrado ou inativo.' }, { status: 403 });
   }
+
+  const row = equipe as EquipeRow;
+  if (!row.senha_hash) {
+    void logDB({
+      acao: 'login_operador_evento',
+      modulo: 'eventos',
+      entidade: 'evento_equipe',
+      descricao: 'Operador sem senha cadastrada.',
+      status: 'erro',
+      detalhes: { eventoId, email, equipeId: row.id },
+      request,
+    });
+    return NextResponse.json({ error: 'Senha nao cadastrada para este operador.' }, { status: 403 });
+  }
+
+  const ok = await bcrypt.compare(senha, row.senha_hash);
+  if (!ok) {
+    void logDB({
+      acao: 'login_operador_evento',
+      modulo: 'eventos',
+      entidade: 'evento_equipe',
+      descricao: 'Senha invalida para operador.',
+      status: 'erro',
+      detalhes: { eventoId, email, equipeId: row.id },
+      request,
+    });
+    return NextResponse.json({ error: 'Senha invalida.' }, { status: 403 });
+  }
+
   const now = new Date().toISOString();
-  const expiraEm = calcExpiraEm((evento as EventoRow).data_fim);
-
-  const { error: updError } = await supabase
+  await supabase
     .from('evento_equipe')
-    .update({
-      ultimo_acesso_em: now,
-      atualizado_em: now,
-    })
-    .eq('id', equipe.id);
-
-  if (updError) {
-    return NextResponse.json({ error: 'Erro ao registrar acesso.' }, { status: 500 });
-  }
+    .update({ ultimo_acesso_em: now, atualizado_em: now })
+    .eq('id', row.id);
 
   void logDB({
-    acao: 'acesso_checkin_liberado',
+    acao: 'login_operador_evento',
     modulo: 'eventos',
     entidade: 'evento_equipe',
-    descricao: 'Acesso ao check-in liberado por e-mail.',
+    descricao: 'Login de operador autorizado.',
     status: 'sucesso',
-    detalhes: { eventoId, email, equipeId: (equipe as EquipeRow).id },
+    detalhes: { eventoId, email, equipeId: row.id },
     request,
   });
 
   return NextResponse.json({
     ok: true,
-    equipe_id: (equipe as EquipeRow).id,
-    expira_em: expiraEm,
+    equipe_id: row.id,
+    expira_em: calcExpiraEm((evento as EventoRow).data_fim),
   });
 }

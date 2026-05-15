@@ -11,9 +11,8 @@ type EventoRow = {
 type EquipeRow = {
   id: string;
   evento_id: string;
-  tipo: 'admin' | 'checkin';
+  tipo: 'operador' | 'checkin';
   ativo: boolean;
-  convite_expira_em: string | null;
 };
 
 function endOfDayUtc(dateStr: string): Date {
@@ -49,7 +48,7 @@ export async function POST(
 
   const { data: equipe } = await supabase
     .from('evento_equipe')
-    .select('id,evento_id,tipo,ativo,convite_expira_em')
+    .select('id,evento_id,tipo,ativo')
     .eq('id', equipeId)
     .eq('evento_id', eventoId)
     .single();
@@ -64,7 +63,7 @@ export async function POST(
     return NextResponse.json({ error: 'Acesso encerrado.' }, { status: 403 });
   }
 
-  if (equipeRow.tipo !== 'checkin' && equipeRow.tipo !== 'admin') {
+  if (equipeRow.tipo !== 'checkin') {
     return NextResponse.json({ error: 'Tipo nao autorizado.' }, { status: 403 });
   }
 
@@ -87,10 +86,6 @@ export async function POST(
     return NextResponse.json({ error: 'Check-in desativado.' }, { status: 403 });
   }
 
-  const expiraEm = equipeRow.convite_expira_em || calcExpiraEm(evRow.data_fim);
-  if (expiraEm && new Date(expiraEm).getTime() < Date.now()) {
-    return NextResponse.json({ error: 'Convite expirado.' }, { status: 403 });
-  }
-
+  const expiraEm = calcExpiraEm(evRow.data_fim);
   return NextResponse.json({ ok: true, expira_em: expiraEm });
 }
