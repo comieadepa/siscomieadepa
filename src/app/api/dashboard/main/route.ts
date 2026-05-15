@@ -99,6 +99,7 @@ export async function GET(request: NextRequest) {
       candRes,
       actRes,
       credRes,
+      cartasRes,
       inatRes,
       transfRes,
       vencRes,
@@ -109,6 +110,7 @@ export async function GET(request: NextRequest) {
       supabase.from('members').select('id', { count: 'exact', head: true }).eq('status', 'candidate'),
       supabase.from('members').select('id', { count: 'exact', head: true }).eq('status', 'active'),
       supabase.from('cartoes_gerados').select('id', { count: 'exact', head: true }),
+      supabase.from('cartas_ministeriais').select('id', { count: 'exact', head: true }).eq('status', 'emitida'),
       supabase.from('members').select('id', { count: 'exact', head: true }).eq('status', 'inactive'),
       supabase.from('members').select('id', { count: 'exact', head: true }).eq('status', 'transferred'),
       supabase.from('members').select('id', { count: 'exact', head: true }).eq('cred_vencida', true),
@@ -120,6 +122,7 @@ export async function GET(request: NextRequest) {
     if (candRes.error) throw new Error(candRes.error.message);
     if (actRes.error) throw new Error(actRes.error.message);
     if (credRes.error) throw new Error(credRes.error.message);
+    if (cartasRes.error) throw new Error(cartasRes.error.message);
     if (inatRes.error) throw new Error(inatRes.error.message);
     if (transfRes.error) throw new Error(transfRes.error.message);
     if (vencRes.error) throw new Error(vencRes.error.message);
@@ -234,8 +237,8 @@ export async function GET(request: NextRequest) {
         supervisoes: supRes.count ?? 0,
         candidatos: candRes.count ?? 0,
         credenciaisEmitidas: credRes.count ?? 0,
-        cartasEmitidas: null,
-        cartasDisponiveis: false,
+        cartasEmitidas: cartasRes.count ?? 0,
+        cartasDisponiveis: true,
         ministrosInativos: inatRes.count ?? 0,
         transferidos: transfRes.count ?? 0,
         credenciaisVencidas: vencRes.count ?? 0,

@@ -23,6 +23,10 @@ export type AcaoTipo =
   | 'exportar_csv'
   | 'visualizar_historico'
   | 'visualizar_auditoria'
+  | 'emitir_carta'
+  | 'reimprimir_carta'
+  | 'cancelar_carta'
+  | 'visualizar_carta'
   | 'outro'
 
 export type StatusAuditoria = 'sucesso' | 'erro' | 'aviso'
