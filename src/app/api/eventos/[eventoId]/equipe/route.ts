@@ -114,7 +114,9 @@ export async function POST(
     .single();
 
   if (insertError || !novoRegistro) {
-    return NextResponse.json({ error: 'Erro ao cadastrar membro.' }, { status: 500 });
+    const msg = insertError?.message ?? 'Insert retornou vazio';
+    console.error('[equipe/POST] insertError:', msg, insertError?.details, insertError?.hint);
+    return NextResponse.json({ error: 'Erro ao cadastrar membro.', detail: msg }, { status: 500 });
   }
 
   if (funcao === 'operador') {

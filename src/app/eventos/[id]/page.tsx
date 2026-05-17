@@ -3463,7 +3463,7 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
       });
       const json = await res.json();
       if (!res.ok) {
-        mostrarErro(json.error || 'Erro ao cadastrar membro.');
+        mostrarErro((json.detail ? `${json.error}: ${json.detail}` : json.error) || 'Erro ao cadastrar membro.');
         return;
       }
       setNome('');
