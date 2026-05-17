@@ -153,6 +153,8 @@ export default function CheckinMobilePage() {
   const [manualMsg,        setManualMsg]        = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [cameraMsg, setCameraMsg] = useState<string | null>(null);
+
   const semAcessoDireto = !authLoading && !perfil.loading && !perfil.isGlobal && !!id && !perfil.podeAcessarEvento(id);
   const precisaGate = !authLoading && !perfil.loading && !equipeSessao && (!user || semAcessoDireto);
 
@@ -317,6 +319,23 @@ export default function CheckinMobilePage() {
       setGateMsgTipo('error');
     } finally {
       setSolicitando(false);
+    }
+  }
+
+  async function iniciarScanner() {
+    setCameraMsg(null);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraMsg('Seu navegador não suporta acesso à câmera.');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+      });
+      stream.getTracks().forEach(track => track.stop());
+      setScannerAtivo(true);
+    } catch {
+      setCameraMsg('Não foi possível acessar a câmera. Verifique as permissões do site.');
     }
   }
 
@@ -724,12 +743,12 @@ export default function CheckinMobilePage() {
       {/* ── MODO MANUAL / CÂMERA toggle ─────────────────────── */}
       <div className="flex border-b border-white/10 flex-shrink-0">
         <button
-          onClick={() => { setModoManual(false); setScannerAtivo(true); setBuscaManual(''); setResultadosManual([]); }}
+          onClick={() => { setModoManual(false); setBuscaManual(''); setResultadosManual([]); void iniciarScanner(); }}
           className={`flex-1 py-3 text-sm font-semibold transition ${!modoManual ? 'text-emerald-400 border-b-2 border-emerald-400' : 'text-white/50'}`}>
           📷 Câmera
         </button>
         <button
-          onClick={() => { setModoManual(true); setScannerAtivo(false); setResultado(null); }}
+          onClick={() => { setModoManual(true); setScannerAtivo(false); setResultado(null); setCameraMsg(null); }}
           className={`flex-1 py-3 text-sm font-semibold transition ${modoManual ? 'text-emerald-400 border-b-2 border-emerald-400' : 'text-white/50'}`}>
           🔍 Manual
         </button>
@@ -748,10 +767,13 @@ export default function CheckinMobilePage() {
                   Aponte a câmera para o QR Code do participante
                 </p>
                 <button
-                  onClick={() => setScannerAtivo(true)}
+                  onClick={() => { void iniciarScanner(); }}
                   className="bg-emerald-500 hover:bg-emerald-400 text-white font-bold py-5 px-12 rounded-2xl text-lg shadow-xl transition active:scale-95">
                   Iniciar Scanner
                 </button>
+                {cameraMsg && (
+                  <p className="text-amber-400 text-center mt-6 text-sm font-semibold">{cameraMsg}</p>
+                )}
               </div>
             ) : (
               <div className="w-full">
@@ -759,7 +781,7 @@ export default function CheckinMobilePage() {
                 <div id={scannerElementId} className="w-full" />
                 <div className="px-4 py-3 flex justify-center">
                   <button
-                    onClick={() => { setScannerAtivo(false); }}
+                    onClick={() => { setScannerAtivo(false); setCameraMsg(null); }}
                     className="text-sm text-white/50 hover:text-white underline">
                     Parar câmera
                   </button>
