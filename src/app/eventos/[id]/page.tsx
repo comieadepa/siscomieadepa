@@ -13,6 +13,7 @@ import { normalizePayloadUppercase } from '@/lib/text';
 import { authenticatedFetch } from '@/lib/api-client';
 import { EtiquetaPreviewDepartamento, EtiquetaPreviewAGO } from '@/components/EtiquetaLabels';
 import type { EtiquetaInscricaoAGO } from '@/components/EtiquetaLabels';
+import { Pencil, KeyRound, Mail, PowerOff, Power, Trash2 } from 'lucide-react';
 import TabHospedagem    from './TabHospedagem';
 import TabBackup        from './TabBackup';
 import TabProgramacao   from './TabProgramacao';
@@ -3757,34 +3758,40 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
                     {eq.ultimo_acesso_em ? fmtDT(eq.ultimo_acesso_em) : '—'}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex gap-2 flex-wrap">
+                    <div className="flex gap-1 items-center">
                       <button
                         onClick={() => abrirEdicao(eq)}
-                        className="text-xs px-2 py-1 bg-sky-100 text-sky-700 rounded font-semibold hover:bg-sky-200 transition">
-                        Editar
+                        title="Editar membro"
+                        className="p-1.5 rounded-lg bg-sky-100 text-sky-700 hover:bg-sky-200 transition">
+                        <Pencil size={14} />
                       </button>
                       {eq.tipo === 'operador' && (
                         <button
                           onClick={() => { setResetando(eq); setNovaSenha(''); setConfirmarNovaSenha(''); }}
-                          className="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded font-semibold hover:bg-amber-200 transition">
-                          Redefinir senha
+                          title="Redefinir senha"
+                          className="p-1.5 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition">
+                          <KeyRound size={14} />
                         </button>
                       )}
                       <button
                         onClick={() => reenviarAcesso(eq)}
                         disabled={reenviandoId === eq.id || !eq.ativo}
-                        className="text-xs px-2 py-1 bg-emerald-100 text-emerald-700 rounded font-semibold hover:bg-emerald-200 transition disabled:opacity-50">
-                        {reenviandoId === eq.id ? 'Enviando...' : 'Reenviar acesso'}
+                        title={reenviandoId === eq.id ? 'Enviando...' : 'Reenviar acesso'}
+                        className="p-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition disabled:opacity-50">
+                        <Mail size={14} />
                       </button>
                       <button
                         onClick={() => alterarStatus(eq, !eq.ativo)}
                         disabled={acaoId === eq.id}
-                        className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded font-semibold hover:bg-gray-200 transition disabled:opacity-50">
-                        {eq.ativo ? 'Desativar' : 'Reativar'}
+                        title={eq.ativo ? 'Desativar' : 'Reativar'}
+                        className="p-1.5 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition disabled:opacity-50">
+                        {eq.ativo ? <PowerOff size={14} /> : <Power size={14} className="text-emerald-600" />}
                       </button>
-                      <button onClick={() => setRemoverConfirm(eq)}
-                        className="text-xs px-2 py-1 bg-red-100 text-red-600 rounded font-semibold hover:bg-red-200 transition">
-                        Remover
+                      <button
+                        onClick={() => setRemoverConfirm(eq)}
+                        title="Remover membro"
+                        className="p-1.5 rounded-lg bg-red-100 text-red-600 hover:bg-red-200 transition">
+                        <Trash2 size={14} />
                       </button>
                     </div>
                   </td>
