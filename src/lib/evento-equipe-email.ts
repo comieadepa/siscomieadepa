@@ -11,6 +11,7 @@ export type EmailAcessoEquipeParams = {
   funcao: FuncaoEquipeEvento;
   origin: string;
   senha?: string;
+  codigo?: string;
   redefinicao?: boolean;
 };
 
@@ -62,7 +63,12 @@ export async function enviarEmailAcessoEquipe(params: EmailAcessoEquipeParams) {
     linhas.push('Instruções: acesse o link acima, informe seu e-mail e senha para abrir o painel operacional do evento.');
   } else {
     linhas.push('');
-    linhas.push('Instruções: acesse o link acima e informe apenas o seu e-mail para liberar o leitor de QR Code.');
+    if (params.codigo) {
+      linhas.push(`Codigo de acesso: ${params.codigo}`);
+      linhas.push('Instruções: acesse o link acima e informe o código para liberar o leitor de QR Code.');
+    } else {
+      linhas.push('Instruções: acesse o link acima e informe o seu código de acesso para liberar o leitor de QR Code.');
+    }
   }
 
   linhas.push('');

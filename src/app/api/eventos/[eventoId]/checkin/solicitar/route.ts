@@ -16,6 +16,8 @@ type EquipeRow = {
   email: string;
   tipo: 'operador' | 'checkin';
   ativo: boolean;
+  convite_token?: string | null;
+  convite_expira_em?: string | null;
 };
 
 function endOfDayUtc(dateStr: string): Date {
@@ -34,16 +36,21 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  let body: { email?: string };
+  let body: { email?: string; codigo?: string };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: 'Body invalido.' }, { status: 400 });
   }
 
+  const codigoRaw = (body.codigo || '').trim();
   const email = (body.email || '').trim().toLowerCase();
-  if (!email) {
-    return NextResponse.json({ error: 'E-mail obrigatorio.' }, { status: 400 });
+  const codigo = codigoRaw.replace(/\s+/g, '');
+  if (!codigo && !email) {
+    return NextResponse.json({ error: 'Codigo obrigatorio.' }, { status: 400 });
+  }
+  if (codigo && !/^\d{4}$/.test(codigo)) {
+    return NextResponse.json({ error: 'Codigo invalido.' }, { status: 400 });
   }
 
   const supabase = createServerClient();
@@ -66,25 +73,32 @@ export async function POST(
     return NextResponse.json({ error: 'Check-in desativado.' }, { status: 403 });
   }
 
-  const { data: equipe } = await supabase
+  const equipeQuery = supabase
     .from('evento_equipe')
-    .select('id,evento_id,email,tipo,ativo')
+    .select('id,evento_id,email,tipo,ativo,convite_token,convite_expira_em')
     .eq('evento_id', eventoId)
-    .eq('email', email)
-    .eq('tipo', 'checkin')
-    .maybeSingle();
+    .eq('tipo', 'checkin');
+
+  const { data: equipe } = codigo
+    ? await equipeQuery.eq('convite_token', codigo).maybeSingle()
+    : await equipeQuery.eq('email', email).maybeSingle();
 
   if (!equipe || equipe.ativo !== true) {
     void logDB({
       acao: 'acesso_checkin_negado',
       modulo: 'eventos',
       entidade: 'evento_equipe',
-      descricao: 'Acesso ao check-in negado por e-mail nao cadastrado.',
+      descricao: codigo ? 'Acesso ao check-in negado por codigo invalido.' : 'Acesso ao check-in negado por e-mail nao cadastrado.',
       status: 'erro',
       detalhes: { eventoId, email },
       request,
     });
-    return NextResponse.json({ error: 'E-mail nao autorizado para check-in.' }, { status: 403 });
+    return NextResponse.json({ error: codigo ? 'Codigo nao autorizado para check-in.' : 'E-mail nao autorizado para check-in.' }, { status: 403 });
+  }
+
+  const equipeRow = equipe as EquipeRow;
+  if (equipeRow.convite_expira_em && new Date(equipeRow.convite_expira_em) < new Date()) {
+    return NextResponse.json({ error: 'Codigo expirado.' }, { status: 403 });
   }
   const now = new Date().toISOString();
   const expiraEm = calcExpiraEm((evento as EventoRow).data_fim);
@@ -94,6 +108,11 @@ export async function POST(
     .update({
       ultimo_acesso_em: now,
       atualizado_em: now,
+    })
+    .update({
+      ultimo_acesso_em: now,
+      atualizado_em: now,
+      convite_usado_em: now,
     })
     .eq('id', equipe.id);
 

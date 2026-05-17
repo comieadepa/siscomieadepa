@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { User } from '@supabase/supabase-js';
 import bcrypt from 'bcrypt';
+import { randomInt } from 'crypto';
 import { requireEventoAccess } from '@/lib/evento-guard';
 import { logDB } from '@/lib/audit';
 import { enviarEmailAcessoEquipe, getRequestOrigin } from '@/lib/evento-equipe-email';
@@ -19,6 +20,33 @@ type EquipeRow = {
 
 function normalizarFuncao(raw?: string | null): FuncaoEquipe {
   return raw === 'operador' ? 'operador' : 'checkin';
+}
+
+function endOfDayUtc(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, (m || 1) - 1, d || 1, 23, 59, 59, 999));
+}
+
+function calcExpiraEm(dataFim: string | null): string | null {
+  if (!dataFim) return null;
+  const base = endOfDayUtc(dataFim);
+  const exp = new Date(base.getTime() + 48 * 60 * 60 * 1000);
+  return exp.toISOString();
+}
+
+async function gerarCodigoEquipe(supabase: any, eventoId: string): Promise<string> {
+  for (let i = 0; i < 8; i += 1) {
+    const codigo = randomInt(0, 10000).toString().padStart(4, '0');
+    const { data } = await supabase
+      .from('evento_equipe')
+      .select('id')
+      .eq('evento_id', eventoId)
+      .eq('tipo', 'checkin')
+      .eq('convite_token', codigo)
+      .maybeSingle();
+    if (!data) return codigo;
+  }
+  throw new Error('Falha ao gerar codigo de acesso.');
 }
 
 async function encontrarUsuarioPorEmail(supabase: any, email: string): Promise<User | null> {
@@ -69,6 +97,12 @@ export async function POST(
 
   const supabase = guard.ctx.supabaseAdmin;
 
+  const { data: eventoInfo } = await supabase
+    .from('eventos')
+    .select('nome,data_fim')
+    .eq('id', eventoId)
+    .single();
+
   const { data: existente } = await supabase
     .from('evento_equipe')
     .select('id')
@@ -95,6 +129,10 @@ export async function POST(
 
   const now = new Date().toISOString();
   const senhaHash = funcao === 'operador' ? await bcrypt.hash(senha, 10) : null;
+  const codigoAcesso = funcao === 'checkin' ? await gerarCodigoEquipe(supabase, eventoId) : null;
+  const conviteExpiraEm = funcao === 'checkin'
+    ? calcExpiraEm((eventoInfo as { data_fim?: string | null } | null)?.data_fim ?? null)
+    : null;
 
   const { data: novoRegistro, error: insertError } = await supabase
     .from('evento_equipe')
@@ -106,6 +144,8 @@ export async function POST(
         tipo: funcao,
         ativo: true,
         senha_hash: senhaHash,
+        convite_token: codigoAcesso,
+        convite_expira_em: conviteExpiraEm,
         criado_por: guard.ctx.user.id,
         atualizado_em: now,
       },
@@ -155,20 +195,15 @@ export async function POST(
     request,
   });
 
-  const { data: eventoEmail } = await supabase
-    .from('eventos')
-    .select('nome')
-    .eq('id', eventoId)
-    .single();
-
   const emailResult = await enviarEmailAcessoEquipe({
     para: email,
     nome,
-    eventoNome: (eventoEmail as { nome?: string } | null)?.nome || 'evento',
+    eventoNome: (eventoInfo as { nome?: string } | null)?.nome || 'evento',
     eventoId,
     funcao,
     origin: getRequestOrigin(request),
     senha: funcao === 'operador' ? senha : undefined,
+    codigo: funcao === 'checkin' ? (codigoAcesso ?? undefined) : undefined,
   });
 
   void logDB({
