@@ -108,10 +108,6 @@ export async function POST(
     .update({
       ultimo_acesso_em: now,
       atualizado_em: now,
-    })
-    .update({
-      ultimo_acesso_em: now,
-      atualizado_em: now,
       convite_usado_em: now,
     })
     .eq('id', equipe.id);
