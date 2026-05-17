@@ -96,12 +96,14 @@ function emitirSom(tipo: 'sucesso' | 'erro' | 'leitura') {
       osc.frequency.setValueAtTime(220, ctx.currentTime);
       osc.frequency.setValueAtTime(180, ctx.currentTime + 0.1);
     } else {
-      osc.frequency.setValueAtTime(650, ctx.currentTime);
+      osc.frequency.setValueAtTime(700, ctx.currentTime);
     }
-    gain.gain.setValueAtTime(0.3, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    const volume = tipo === 'leitura' ? 0.6 : 0.3;
+    const duracao = tipo === 'leitura' ? 0.6 : 0.4;
+    gain.gain.setValueAtTime(volume, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duracao);
     osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.4);
+    osc.stop(ctx.currentTime + duracao);
   } catch {
     // Silencioso se AudioContext não disponível
   }
