@@ -688,7 +688,6 @@ export default function GerenciarEventoPage() {
           campos={campos}
           nomeSup={nomeSup}
           nomeCampo={nomeCampo}
-          supabase={supabase}
           onRefresh={fetchInscricoes}
         />
       )}
@@ -3109,13 +3108,12 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
 // ═══════════════════════════════════════════════════════════════
 // ABA FINANCEIRO
 // ═══════════════════════════════════════════════════════════════
-function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSup, nomeCampo, supabase, onRefresh }: {
+function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSup, nomeCampo, onRefresh }: {
   inscricoes: Inscricao[]; loading: boolean;
   stats: { total: number; pagos: number; pendentes: number; isentos: number; arrecadado: number };
   supervisoes: Supervisao[]; campos: Campo[];
   nomeSup: (id: string | null) => string;
   nomeCampo: (id: string | null) => string;
-  supabase: ReturnType<typeof createClient>;
   onRefresh: () => void;
 }) {
   const [busca,       setBusca]       = useState('');
