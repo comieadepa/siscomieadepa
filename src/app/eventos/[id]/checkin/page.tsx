@@ -302,6 +302,7 @@ export default function CheckinMobilePage() {
       };
       setEquipeSession(sessao);
       setEquipeSessao(sessao);
+      setLoadingEvento(true); // força spinner enquanto o evento carrega após gate
       setEmailAcesso('');
       setGateMsg('Acesso liberado. Abrindo check-in...');
       setGateMsgTipo('success');
