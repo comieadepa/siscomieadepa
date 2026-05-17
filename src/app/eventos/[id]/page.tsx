@@ -1413,6 +1413,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                 {paginados.map(ins => {
                   const pagCfg = STATUS_PAG_CFG[ins.status_pagamento] ?? STATUS_PAG_CFG.pendente;
                   const isSalvando = salvando === ins.id;
+                  const isPendente = ins.status_pagamento === 'pendente';
                   const linhaMsg = emailMsg[ins.id] || certMsg[ins.id];
                   const certLabel = certMsg[ins.id]?.startsWith('✅')
                     ? certMsg[ins.id]
@@ -1435,35 +1436,38 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                           <button
                             title={podeEditar ? 'Editar dados da inscrição' : 'Sem permissão para editar'}
                             onClick={() => podeEditar && abrirEdicao(ins)}
-                            disabled={isSalvando || !podeEditar}
+                            disabled={isSalvando || !podeEditar || isPendente}
                             className="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded font-semibold hover:bg-amber-200 transition disabled:opacity-50">
                             ✏️
                           </button>
                           {podeComunicacao && (
                             <button
-                              title="Reenviar e-mail de confirmação"
+                              title={isPendente ? 'Pagamento pendente' : 'Reenviar e-mail de confirmação'}
                               onClick={() => enviarEmailConfirmacao(ins)}
-                              disabled={isSalvando || enviandoEmail[ins.id]}
+                              disabled={isSalvando || enviandoEmail[ins.id] || isPendente}
                               className="text-xs px-2 py-1 bg-sky-100 text-sky-700 rounded font-semibold hover:bg-sky-200 transition disabled:opacity-50">
                               {enviandoEmail[ins.id] ? '⏳' : '✉️'}
                             </button>
                           )}
                           <button
-                            title="Imprimir etiqueta térmica individual (100×30mm)"
+                            title={isPendente ? 'Pagamento pendente' : 'Imprimir etiqueta térmica individual (100×30mm)'}
                             onClick={() => window.open(`/eventos/${ins.evento_id}/etiquetas/print?mode=thermal&ids=${ins.id}`, '_blank', 'width=520,height=420')}
-                            disabled={isSalvando}
+                            disabled={isSalvando || isPendente}
                             className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded font-semibold hover:bg-purple-200 transition disabled:opacity-50">
                             🏷️
                           </button>
-                          <button title="Marcar/desmarcar etiqueta como impressa" onClick={() => marcarEtiqueta(ins)} disabled={isSalvando}
+                          <button
+                            title={isPendente ? 'Pagamento pendente' : 'Marcar/desmarcar etiqueta como impressa'}
+                            onClick={() => marcarEtiqueta(ins)}
+                            disabled={isSalvando || isPendente}
                             className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded font-semibold hover:bg-gray-200 transition disabled:opacity-50">
                             ✅
                           </button>
                           {podeCertificados && evento.gerar_certificado && (
                             <button
-                              title={certMsg[ins.id] || 'Enviar certificado por e-mail'}
+                              title={isPendente ? 'Pagamento pendente' : (certMsg[ins.id] || 'Enviar certificado por e-mail')}
                               onClick={() => handleEnviarCertificado(ins)}
-                              disabled={isSalvando || enviandoCert[ins.id]}
+                              disabled={isSalvando || enviandoCert[ins.id] || isPendente}
                               className={`text-xs px-2 py-1 rounded font-semibold transition disabled:opacity-50 ${ins.certificado_enviado ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}>
                               {enviandoCert[ins.id] ? '⏳' : certLabel}
                             </button>
