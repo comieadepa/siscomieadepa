@@ -154,6 +154,7 @@ export default function CheckinMobilePage() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [cameraMsg, setCameraMsg] = useState<string | null>(null);
+  const cameraErroRef = useRef<string | null>(null);
 
   const semAcessoDireto = !authLoading && !perfil.loading && !perfil.isGlobal && !!id && !perfil.podeAcessarEvento(id);
   const precisaGate = !authLoading && !perfil.loading && !equipeSessao && (!user || semAcessoDireto);
@@ -360,7 +361,13 @@ export default function CheckinMobilePage() {
 
       (scanner as { render: (s: (d: string) => void, e: (e: string) => void) => void }).render(
         onQRCodeSuccess,
-        () => { /* erros de scan silenciosos */ }
+        (err) => {
+          const msg = String(err || '').trim();
+          if (!msg) return;
+          if (cameraErroRef.current === msg) return;
+          cameraErroRef.current = msg;
+          setCameraMsg(`Erro ao abrir a câmera: ${msg}`);
+        }
       );
 
       scannerRef.current = scanner;
@@ -371,6 +378,7 @@ export default function CheckinMobilePage() {
         (scannerRef.current as { clear: () => Promise<void> }).clear().catch(() => {});
         scannerRef.current = null;
       }
+      cameraErroRef.current = null;
     };
   }, [scannerAtivo, evento]);
 
@@ -786,6 +794,9 @@ export default function CheckinMobilePage() {
                     Parar câmera
                   </button>
                 </div>
+                {cameraMsg && (
+                  <p className="text-amber-400 text-center mt-2 text-sm font-semibold px-4">{cameraMsg}</p>
+                )}
               </div>
             )}
           </div>
