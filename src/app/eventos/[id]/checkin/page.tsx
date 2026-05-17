@@ -367,6 +367,16 @@ export default function CheckinMobilePage() {
       const onScanError = (err: unknown) => {
         const msg = String(err || '').trim();
         if (!msg) return;
+        const lower = msg.toLowerCase();
+        if (
+          lower.includes('notfound') ||
+          lower.includes('no multiformat') ||
+          lower.includes('parse error') ||
+          lower.includes('checksum') ||
+          lower.includes('format exception')
+        ) {
+          return; // erros comuns de leitura, nao sao falha de camera
+        }
         if (cameraErroRef.current === msg) return;
         cameraErroRef.current = msg;
         setCameraMsg(`Erro ao abrir a câmera: ${msg}`);
