@@ -684,6 +684,8 @@ export default function GerenciarEventoPage() {
           inscricoes={inscricoes}
           loading={loadingInsc}
           stats={stats}
+          supervisoes={supervisoes}
+          campos={campos}
           nomeSup={nomeSup}
           nomeCampo={nomeCampo}
           supabase={supabase}
@@ -3107,32 +3109,53 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
 // ═══════════════════════════════════════════════════════════════
 // ABA FINANCEIRO
 // ═══════════════════════════════════════════════════════════════
-function TabFinanceiro({ inscricoes, loading, stats, nomeSup, nomeCampo, supabase, onRefresh }: {
+function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSup, nomeCampo, supabase, onRefresh }: {
   inscricoes: Inscricao[]; loading: boolean;
   stats: { total: number; pagos: number; pendentes: number; isentos: number; arrecadado: number };
+  supervisoes: Supervisao[]; campos: Campo[];
   nomeSup: (id: string | null) => string;
   nomeCampo: (id: string | null) => string;
   supabase: ReturnType<typeof createClient>;
   onRefresh: () => void;
 }) {
-  const [filtro, setFiltro] = useState('');
-  const [salvando, setSalvando] = useState<string | null>(null);
+  const [busca,       setBusca]       = useState('');
+  const [filtroSup,   setFiltroSup]   = useState('');
+  const [filtroCampo, setFiltroCampo] = useState('');
+  const [filtroPag,   setFiltroPag]   = useState('');
+  const [salvando,    setSalvando]    = useState<string | null>(null);
 
-  const filtradas = useMemo(() =>
-    filtro ? inscricoes.filter(i => i.status_pagamento === filtro) : inscricoes,
-    [inscricoes, filtro]
+  const camposFiltrados = useMemo(() =>
+    filtroSup ? campos.filter(c => c.supervisao_id === filtroSup) : campos,
+    [campos, filtroSup]
   );
+
+  const filtradas = useMemo(() => {
+    return inscricoes.filter(i => {
+      if (busca && !i.nome_inscrito.toLowerCase().includes(busca.toLowerCase()) &&
+          !(i.cpf || '').includes(busca) && !(i.whatsapp || '').includes(busca)) return false;
+      if (filtroSup   && i.supervisao_id !== filtroSup)    return false;
+      if (filtroCampo && i.campo_id      !== filtroCampo)  return false;
+      if (filtroPag   && i.status_pagamento !== filtroPag) return false;
+      return true;
+    });
+  }, [inscricoes, busca, filtroSup, filtroCampo, filtroPag]);
 
   async function baixaManual(ins: Inscricao) {
     if (!confirm(`Confirmar baixa manual para ${ins.nome_inscrito}?`)) return;
     setSalvando(ins.id);
-    if (ins.lote_id) {
-      // Inscrição de lote: atualiza o lote (trigger fn_sync_lote_pagamento cuida das inscrições)
-      await supabase.from('evento_lotes_inscricao').update({ status_pagamento: 'pago' }).eq('id', ins.lote_id);
-    } else {
-      await supabase.from('evento_inscricoes').update({ status_pagamento: 'pago' }).eq('id', ins.id);
+    try {
+      const res = await fetch(`/api/eventos/inscricao/${ins.id}/baixa-manual`, { method: 'POST' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(`Erro ao aplicar baixa manual: ${body.error ?? res.statusText}`);
+        return;
+      }
+    } catch {
+      alert('Erro de conexão ao aplicar baixa manual. Tente novamente.');
+      return;
+    } finally {
+      setSalvando(null);
     }
-    setSalvando(null);
     onRefresh();
   }
 
@@ -3161,16 +3184,37 @@ function TabFinanceiro({ inscricoes, loading, stats, nomeSup, nomeCampo, supabas
 
       {/* Tabela */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
-        <div className="p-4 border-b border-gray-100 flex items-center gap-3">
-          <h3 className="font-bold text-[#123b63] flex-1">Movimentações</h3>
-          <select value={filtro} onChange={e => setFiltro(e.target.value)}
+        <div className="p-4 border-b border-gray-100 flex flex-wrap items-center gap-2">
+          <input
+            type="text" value={busca} onChange={e => setBusca(e.target.value)}
+            placeholder="Buscar nome, CPF, WhatsApp..."
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white min-w-[200px] flex-1"
+          />
+          <select value={filtroSup} onChange={e => { setFiltroSup(e.target.value); setFiltroCampo(''); }}
             className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white">
-            <option value="">Todos</option>
+            <option value="">Todas supervisões</option>
+            {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+          </select>
+          <select value={filtroCampo} onChange={e => setFiltroCampo(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white">
+            <option value="">Todos campos</option>
+            {camposFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+          </select>
+          <select value={filtroPag} onChange={e => setFiltroPag(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white">
+            <option value="">Pagamento</option>
             <option value="pago">Pago</option>
             <option value="pendente">Pendente</option>
             <option value="isento">Isento</option>
             <option value="cancelado">Cancelado</option>
           </select>
+          {(busca || filtroSup || filtroCampo || filtroPag) && (
+            <button onClick={() => { setBusca(''); setFiltroSup(''); setFiltroCampo(''); setFiltroPag(''); }}
+              className="text-sm text-gray-500 hover:text-gray-700 px-2 py-1.5 rounded border border-gray-300 bg-white">
+              Limpar
+            </button>
+          )}
+          <span className="text-xs text-gray-400 ml-1">{filtradas.length} resultado(s)</span>
         </div>
         <table className="w-full text-sm">
           <thead>
