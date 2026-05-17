@@ -438,15 +438,6 @@ export default function CheckinMobilePage() {
         return;
       }
 
-      if (equipeSessao) {
-        const ok = await validarSessaoEquipe();
-        if (!ok) {
-          ignorandoRef.current = false;
-          setResultado(null);
-          return;
-        }
-      }
-
       const res = await fetch(`/api/eventos/${id}/checkin/registrar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -461,7 +452,7 @@ export default function CheckinMobilePage() {
         setResultado({ estado: 'invalid' });
         emitirSom('erro');
         vibrar('erro');
-        setTimeout(() => voltarParaScan(), 4000);
+        setTimeout(() => voltarParaScan(), 1500);
         return;
       }
 
@@ -472,7 +463,7 @@ export default function CheckinMobilePage() {
         setResultado({ estado: 'invalid' });
         emitirSom('erro');
         vibrar('erro');
-        setTimeout(() => voltarParaScan(), 4000);
+        setTimeout(() => voltarParaScan(), 1500);
         return;
       }
 
@@ -483,7 +474,7 @@ export default function CheckinMobilePage() {
         setResultado({ estado: 'wrong_event', inscricao, nomeSup, nomeCampo });
         emitirSom('erro');
         vibrar('erro');
-        setTimeout(() => voltarParaScan(), 4000);
+        setTimeout(() => voltarParaScan(), 2000);
         return;
       }
 
@@ -491,15 +482,15 @@ export default function CheckinMobilePage() {
         setResultado({ estado: 'already', inscricao, nomeSup, nomeCampo });
         emitirSom('erro');
         vibrar('erro');
-        setTimeout(() => voltarParaScan(), 5000);
+        setTimeout(() => voltarParaScan(), 2000);
         return;
       }
 
       setResultado({ estado: 'success', inscricao, nomeSup, nomeCampo });
       emitirSom('sucesso');
       vibrar('sucesso');
-      await carregarContadores();
-      setTimeout(() => voltarParaScan(), 4000);
+      void carregarContadores();
+      setTimeout(() => voltarParaScan(), 1500);
 
     } catch {
       setResultado({ estado: 'invalid' });
