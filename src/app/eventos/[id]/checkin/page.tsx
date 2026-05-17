@@ -178,8 +178,8 @@ export default function CheckinMobilePage() {
     setUltimosCheckins((data ?? []) as Inscricao[]);
   }, [id, supabase]);
 
-  const validarSessaoEquipe = useCallback(async () => {
-    if (!equipeSessao || !id) return true;
+  const validarSessaoEquipe = useCallback(async (): Promise<Evento | null> => {
+    if (!equipeSessao || !id) return null;
     try {
       const res = await fetch(`/api/eventos/${id}/checkin/validar`, {
         method: 'POST',
@@ -204,14 +204,14 @@ export default function CheckinMobilePage() {
         }
         throw new Error('Sessao invalida');
       }
-      return true;
+      return (json?.evento as Evento) || null;
     } catch {
       clearEquipeSession();
       setEquipeSessao(null);
       setScannerAtivo(false);
       setAcessoNegado(false);
       setLoadingEvento(false);
-      return false;
+      return null;
     }
   }, [equipeSessao, id]);
 
@@ -227,32 +227,36 @@ export default function CheckinMobilePage() {
     // Gate de acesso (departamento admin com evento de outro dept)
 
     async function load() {
+      let eventoEquipe: Evento | null = null;
       if (equipeSessao) {
-        const ok = await validarSessaoEquipe();
-        if (!ok) return;
+        eventoEquipe = await validarSessaoEquipe();
+        if (!eventoEquipe) return;
       }
       const [evRes, estruturaRes] = await Promise.all([
-        supabase.from('eventos').select('id,nome,slug,departamento,data_inicio,data_fim,status,checkin_ativo').eq('id', id).single(),
+        eventoEquipe
+          ? Promise.resolve({ data: eventoEquipe })
+          : supabase.from('eventos').select('id,nome,slug,departamento,data_inicio,data_fim,status,checkin_ativo').eq('id', id).single(),
         authenticatedFetch('/api/v1/estrutura'),
       ]);
-      if (evRes.data && (evRes.data as Evento).status !== 'programado') {
+      const eventoData = (evRes as { data?: Evento | null }).data ?? null;
+      if (eventoData && eventoData.status !== 'programado') {
         setAcessoMotivo('evento_encerrado');
         setAcessoNegado(true);
         setLoadingEvento(false);
         return;
       }
-      if (evRes.data && (evRes.data as Evento).checkin_ativo !== true) {
+      if (eventoData && eventoData.checkin_ativo !== true) {
         setAcessoMotivo('checkin_desativado');
         setAcessoNegado(true);
         setLoadingEvento(false);
         return;
       }
       // Gate de departamento: isDeptAdmin só acessa eventos do seu dept (exceto subcategoria TODOS)
-      if (evRes.data && perfil.isDeptAdmin && perfil.departamentoUsuario !== 'TODOS' && (evRes.data as Evento).departamento !== perfil.departamentoUsuario) {
+      if (eventoData && perfil.isDeptAdmin && perfil.departamentoUsuario !== 'TODOS' && eventoData.departamento !== perfil.departamentoUsuario) {
         setAcessoMotivo('nao_autorizado');
         setAcessoNegado(true); setLoadingEvento(false); return;
       }
-      if (evRes.data) setEvento(evRes.data as Evento);
+      if (eventoData) setEvento(eventoData);
       if (estruturaRes.ok) {
         const estrutura = await estruturaRes.json().catch(() => null as any);
         setSupervisoes((estrutura?.supervisoes as Supervisao[]) || []);
@@ -302,6 +306,8 @@ export default function CheckinMobilePage() {
       };
       setEquipeSession(sessao);
       setEquipeSessao(sessao);
+      setAcessoNegado(false);
+      setAcessoMotivo(null);
       setLoadingEvento(true); // força spinner enquanto o evento carrega após gate
       setEmailAcesso('');
       setGateMsg('Acesso liberado. Abrindo check-in...');

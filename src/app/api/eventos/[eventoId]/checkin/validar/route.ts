@@ -3,6 +3,10 @@ import { createServerClient } from '@/lib/supabase-server';
 
 type EventoRow = {
   id: string;
+  nome: string;
+  slug: string | null;
+  departamento: string | null;
+  data_inicio: string | null;
   status: 'programado' | 'realizado' | 'cancelado';
   data_fim: string | null;
   checkin_ativo: boolean | null;
@@ -69,7 +73,7 @@ export async function POST(
 
   const { data: evento } = await supabase
     .from('eventos')
-    .select('id,status,data_fim,checkin_ativo')
+    .select('id,nome,slug,departamento,data_inicio,data_fim,status,checkin_ativo')
     .eq('id', eventoId)
     .single();
 
@@ -87,5 +91,18 @@ export async function POST(
   }
 
   const expiraEm = calcExpiraEm(evRow.data_fim);
-  return NextResponse.json({ ok: true, expira_em: expiraEm });
+  return NextResponse.json({
+    ok: true,
+    expira_em: expiraEm,
+    evento: {
+      id: evRow.id,
+      nome: evRow.nome,
+      slug: evRow.slug,
+      departamento: evRow.departamento,
+      data_inicio: evRow.data_inicio,
+      data_fim: evRow.data_fim,
+      status: evRow.status,
+      checkin_ativo: evRow.checkin_ativo,
+    },
+  });
 }
