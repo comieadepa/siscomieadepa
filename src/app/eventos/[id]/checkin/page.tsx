@@ -141,6 +141,7 @@ export default function CheckinMobilePage() {
   const [scannerAtivo,  setScannerAtivo]  = useState(false);
   const [resultado,     setResultado]     = useState<ResultadoScan | null>(null);
   const [processando,   setProcessando]   = useState(false);
+  const [ultimoQr, setUltimoQr] = useState<{ raw: string; token: string } | null>(null);
   const scannerRef = useRef<unknown>(null);
   const scannerElementId = 'qr-scanner-region';
   const ignorandoRef = useRef(false); // evita double-scan
@@ -421,7 +422,9 @@ export default function CheckinMobilePage() {
     }
 
     try {
-      const qrToken = extractQrToken(qrText);
+      const rawText = String(qrText || '').trim();
+      const qrToken = extractQrToken(rawText);
+      setUltimoQr({ raw: rawText, token: qrToken });
       if (!qrToken) {
         setResultado({ estado: 'invalid' });
         emitirSom('erro');
@@ -730,6 +733,13 @@ export default function CheckinMobilePage() {
         onClick={voltarParaScan}>
         <span className="text-8xl mb-6 block animate-bounce">{cfg.icon}</span>
         <p className={cfg.tituloCls + ' text-center mb-6'}>{cfg.titulo}</p>
+
+        {(estado === 'invalid' || estado === 'wrong_event') && ultimoQr && (
+          <div className="text-white/80 text-xs text-center max-w-sm break-all">
+            <p>Texto lido: {ultimoQr.raw || '-'}</p>
+            <p>Token extraido: {ultimoQr.token || '-'}</p>
+          </div>
+        )}
 
         {inscricao && (estado === 'success' || estado === 'already' || estado === 'wrong_event') && (
           <div className="bg-white/20 rounded-2xl p-6 text-white text-center max-w-sm w-full">
