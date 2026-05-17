@@ -345,21 +345,20 @@ export default function CheckinMobilePage() {
     if (!scannerAtivo || !evento) return;
 
     let scanner: unknown = null;
+    let ativo = true;
 
-    import('html5-qrcode').then(({ Html5QrcodeScanner }) => {
-      scanner = new Html5QrcodeScanner(
-        scannerElementId,
+    import('html5-qrcode').then(({ Html5Qrcode }) => {
+      if (!ativo) return;
+      const html5 = new Html5Qrcode(scannerElementId);
+      scanner = html5;
+
+      html5.start(
+        { facingMode: { ideal: 'environment' } },
         {
           fps: 10,
           qrbox: { width: 260, height: 260 },
           aspectRatio: 1.0,
-          rememberLastUsedCamera: true,
-          showTorchButtonIfSupported: true,
         },
-        false
-      );
-
-      (scanner as { render: (s: (d: string) => void, e: (e: string) => void) => void }).render(
         onQRCodeSuccess,
         (err) => {
           const msg = String(err || '').trim();
@@ -368,14 +367,24 @@ export default function CheckinMobilePage() {
           cameraErroRef.current = msg;
           setCameraMsg(`Erro ao abrir a câmera: ${msg}`);
         }
-      );
+      ).catch((err) => {
+        const msg = String(err || '').trim();
+        const finalMsg = msg ? `Erro ao abrir a câmera: ${msg}` : 'Erro ao abrir a câmera.';
+        setCameraMsg(finalMsg);
+      });
 
       scannerRef.current = scanner;
     });
 
     return () => {
+      ativo = false;
       if (scannerRef.current) {
-        (scannerRef.current as { clear: () => Promise<void> }).clear().catch(() => {});
+        const inst = scannerRef.current as { stop?: () => Promise<void>; clear?: () => Promise<void> };
+        (inst.stop ? inst.stop() : Promise.resolve())
+          .catch(() => {})
+          .finally(() => {
+            (inst.clear ? inst.clear() : Promise.resolve()).catch(() => {});
+          });
         scannerRef.current = null;
       }
       cameraErroRef.current = null;
