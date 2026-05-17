@@ -373,7 +373,7 @@ export default function CheckinMobilePage() {
       };
 
       await html5.start(
-        { facingMode: { ideal: 'environment' } },
+        { facingMode: 'environment' },
         {
           fps: 10,
           qrbox: { width: 260, height: 260 },
