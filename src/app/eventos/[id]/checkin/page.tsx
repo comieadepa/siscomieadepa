@@ -155,6 +155,7 @@ export default function CheckinMobilePage() {
 
   const [cameraMsg, setCameraMsg] = useState<string | null>(null);
   const cameraErroRef = useRef<string | null>(null);
+  const iniciandoRef = useRef(false);
 
   const semAcessoDireto = !authLoading && !perfil.loading && !perfil.isGlobal && !!id && !perfil.podeAcessarEvento(id);
   const precisaGate = !authLoading && !perfil.loading && !equipeSessao && (!user || semAcessoDireto);
@@ -323,83 +324,73 @@ export default function CheckinMobilePage() {
     }
   }
 
+  const stopScanner = useCallback(async (atualizarEstado = true) => {
+    if (scannerRef.current) {
+      const inst = scannerRef.current as { stop?: () => Promise<void>; clear?: () => Promise<void> };
+      scannerRef.current = null;
+      try { if (inst.stop) await inst.stop(); } catch { /* ignora */ }
+      try { if (inst.clear) await inst.clear(); } catch { /* ignora */ }
+    }
+    cameraErroRef.current = null;
+    if (atualizarEstado) setScannerAtivo(false);
+  }, []);
+
   async function iniciarScanner() {
+    if (iniciandoRef.current) return;
+    iniciandoRef.current = true;
     setCameraMsg(null);
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraMsg('Seu navegador não suporta acesso à câmera.');
+      iniciandoRef.current = false;
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
-      });
-      stream.getTracks().forEach(track => track.stop());
       setScannerAtivo(true);
-    } catch {
-      setCameraMsg('Não foi possível acessar a câmera. Verifique as permissões do site.');
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+
+      const { Html5Qrcode } = await import('html5-qrcode');
+      if (!document.getElementById(scannerElementId)) {
+        setCameraMsg('Area da camera nao encontrada.');
+        await stopScanner();
+        iniciandoRef.current = false;
+        return;
+      }
+
+      const html5 = new Html5Qrcode(scannerElementId);
+      scannerRef.current = html5;
+
+      const onScanError = (err: unknown) => {
+        const msg = String(err || '').trim();
+        if (!msg) return;
+        if (cameraErroRef.current === msg) return;
+        cameraErroRef.current = msg;
+        setCameraMsg(`Erro ao abrir a câmera: ${msg}`);
+      };
+
+      await html5.start(
+        { facingMode: { ideal: 'environment' } },
+        {
+          fps: 10,
+          qrbox: { width: 260, height: 260 },
+          aspectRatio: 1.0,
+        },
+        onQRCodeSuccess,
+        onScanError
+      );
+    } catch (err) {
+      const msg = String(err || '').trim();
+      const finalMsg = msg ? `Erro ao abrir a câmera: ${msg}` : 'Erro ao abrir a câmera.';
+      setCameraMsg(finalMsg);
+      await stopScanner();
+    } finally {
+      iniciandoRef.current = false;
     }
   }
 
-  // ── Inicia / para câmera ──────────────────────────────────
+  // ── Cleanup do scanner ───────────────────────────────────
   useEffect(() => {
-    if (!scannerAtivo || !evento) return;
-
-    let scanner: unknown = null;
-    let ativo = true;
-
-    const iniciar = async () => {
-      try {
-        const { Html5Qrcode } = await import('html5-qrcode');
-        if (!ativo) return;
-        if (!document.getElementById(scannerElementId)) {
-          setCameraMsg('Area da camera nao encontrada.');
-          return;
-        }
-        const html5 = new Html5Qrcode(scannerElementId);
-        scanner = html5;
-        scannerRef.current = scanner;
-
-        const onScanError = (err: unknown) => {
-          const msg = String(err || '').trim();
-          if (!msg) return;
-          if (cameraErroRef.current === msg) return;
-          cameraErroRef.current = msg;
-          setCameraMsg(`Erro ao abrir a câmera: ${msg}`);
-        };
-
-        await html5.start(
-          { facingMode: { ideal: 'environment' } },
-          {
-            fps: 10,
-            qrbox: { width: 260, height: 260 },
-            aspectRatio: 1.0,
-          },
-          onQRCodeSuccess,
-          onScanError
-        );
-      } catch (err) {
-        const msg = String(err || '').trim();
-        const finalMsg = msg ? `Erro ao abrir a câmera: ${msg}` : 'Erro ao abrir a câmera.';
-        setCameraMsg(finalMsg);
-      }
-    };
-
-    void iniciar();
-
-    return () => {
-      ativo = false;
-      if (scannerRef.current) {
-        const inst = scannerRef.current as { stop?: () => Promise<void>; clear?: () => Promise<void> };
-        (inst.stop ? inst.stop() : Promise.resolve())
-          .catch(() => {})
-          .finally(() => {
-            (inst.clear ? inst.clear() : Promise.resolve()).catch(() => {});
-          });
-        scannerRef.current = null;
-      }
-      cameraErroRef.current = null;
-    };
-  }, [scannerAtivo, evento]);
+    return () => { void stopScanner(false); };
+  }, [stopScanner]);
 
   // ── Processa QR Code lido ─────────────────────────────────
   async function onQRCodeSuccess(qrText: string) {
@@ -775,7 +766,7 @@ export default function CheckinMobilePage() {
           📷 Câmera
         </button>
         <button
-          onClick={() => { setModoManual(true); setScannerAtivo(false); setResultado(null); setCameraMsg(null); }}
+          onClick={() => { setModoManual(true); void stopScanner(); setResultado(null); setCameraMsg(null); }}
           className={`flex-1 py-3 text-sm font-semibold transition ${modoManual ? 'text-emerald-400 border-b-2 border-emerald-400' : 'text-white/50'}`}>
           🔍 Manual
         </button>
@@ -808,7 +799,7 @@ export default function CheckinMobilePage() {
                 <div id={scannerElementId} className="w-full" />
                 <div className="px-4 py-3 flex justify-center">
                   <button
-                    onClick={() => { setScannerAtivo(false); setCameraMsg(null); }}
+                    onClick={() => { void stopScanner(); setCameraMsg(null); }}
                     className="text-sm text-white/50 hover:text-white underline">
                     Parar câmera
                   </button>
