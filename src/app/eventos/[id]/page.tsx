@@ -3120,7 +3120,9 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
   const [filtroSup,   setFiltroSup]   = useState('');
   const [filtroCampo, setFiltroCampo] = useState('');
   const [filtroPag,   setFiltroPag]   = useState('');
-  const [salvando,    setSalvando]    = useState<string | null>(null);
+  const [salvando,       setSalvando]       = useState<string | null>(null);
+  const [confirmarIns,   setConfirmarIns]   = useState<Inscricao | null>(null);
+  const [erroModal,      setErroModal]      = useState<string | null>(null);
 
   const camposFiltrados = useMemo(() =>
     filtroSup ? campos.filter(c => c.supervisao_id === filtroSup) : campos,
@@ -3138,23 +3140,25 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
     });
   }, [inscricoes, busca, filtroSup, filtroCampo, filtroPag]);
 
-  async function baixaManual(ins: Inscricao) {
-    if (!confirm(`Confirmar baixa manual para ${ins.nome_inscrito}?`)) return;
+  async function confirmarBaixaManual() {
+    if (!confirmarIns) return;
+    const ins = confirmarIns;
     setSalvando(ins.id);
+    setErroModal(null);
     try {
       const res = await fetch(`/api/eventos/inscricao/${ins.id}/baixa-manual`, { method: 'POST' });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        alert(`Erro ao aplicar baixa manual: ${body.error ?? res.statusText}`);
+        setErroModal(body.error ?? res.statusText);
         return;
       }
+      setConfirmarIns(null);
+      onRefresh();
     } catch {
-      alert('Erro de conexão ao aplicar baixa manual. Tente novamente.');
-      return;
+      setErroModal('Erro de conexão. Tente novamente.');
     } finally {
       setSalvando(null);
     }
-    onRefresh();
   }
 
   if (loading) return <LoadingSkeleton />;
@@ -3236,8 +3240,8 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
                   </td>
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{ins.forma_pagamento || '-'}</td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    {ins.status_pagamento !== 'pago' && (
-                      <button onClick={() => baixaManual(ins)} disabled={salvando === ins.id}
+                    {ins.status_pagamento !== 'pago' && ins.status_pagamento !== 'isento' && (
+                      <button onClick={() => { setErroModal(null); setConfirmarIns(ins); }} disabled={salvando === ins.id}
                         className="text-xs px-2 py-1 bg-emerald-100 text-emerald-700 rounded font-semibold hover:bg-emerald-200 transition disabled:opacity-50">
                         💳 Baixa manual
                       </button>
@@ -3252,6 +3256,55 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
           <p className="text-sm text-gray-400 text-center py-8">Nenhum registro encontrado.</p>
         )}
       </div>
+
+      {/* Modal de confirmação de baixa manual */}
+      {confirmarIns && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+            {/* Cabeçalho */}
+            <div className="bg-[#123b63] px-6 py-4 flex items-center gap-3">
+              <span className="text-2xl">💳</span>
+              <h2 className="text-white font-bold text-base">Confirmar Baixa Manual</h2>
+            </div>
+            {/* Corpo */}
+            <div className="px-6 py-5">
+              <p className="text-gray-600 text-sm mb-1">Você está confirmando pagamento para:</p>
+              <p className="font-bold text-[#123b63] text-lg mb-1">{confirmarIns.nome_inscrito}</p>
+              <div className="flex flex-wrap gap-2 mt-3 mb-1">
+                <span className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded-full">
+                  {fmtMoeda(confirmarIns.valor_pago)}
+                </span>
+                {confirmarIns.forma_pagamento && (
+                  <span className="text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded-full capitalize">
+                    {confirmarIns.forma_pagamento}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-400 mt-3">O status será alterado para <strong>Pago</strong>.</p>
+              {erroModal && (
+                <p className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{erroModal}</p>
+              )}
+            </div>
+            {/* Rodapé */}
+            <div className="px-6 pb-5 flex gap-3 justify-end">
+              <button
+                onClick={() => { setConfirmarIns(null); setErroModal(null); }}
+                disabled={salvando === confirmarIns.id}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 transition disabled:opacity-50">
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarBaixaManual}
+                disabled={salvando === confirmarIns.id}
+                className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition disabled:opacity-50 flex items-center gap-2">
+                {salvando === confirmarIns.id ? (
+                  <><span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Salvando...</>
+                ) : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
