@@ -82,7 +82,7 @@ function extractQrToken(raw: string): string {
   }
 }
 
-function emitirSom(tipo: 'sucesso' | 'erro') {
+function emitirSom(tipo: 'sucesso' | 'erro' | 'leitura') {
   try {
     const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
     const osc = ctx.createOscillator();
@@ -92,9 +92,11 @@ function emitirSom(tipo: 'sucesso' | 'erro') {
     if (tipo === 'sucesso') {
       osc.frequency.setValueAtTime(880, ctx.currentTime);
       osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.1);
-    } else {
+    } else if (tipo === 'erro') {
       osc.frequency.setValueAtTime(220, ctx.currentTime);
       osc.frequency.setValueAtTime(180, ctx.currentTime + 0.1);
+    } else {
+      osc.frequency.setValueAtTime(650, ctx.currentTime);
     }
     gain.gain.setValueAtTime(0.3, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
@@ -413,6 +415,7 @@ export default function CheckinMobilePage() {
     if (ignorandoRef.current || processando) return;
     ignorandoRef.current = true;
     setProcessando(true);
+    emitirSom('leitura');
 
     // Pausa o scanner enquanto processa
     if (scannerRef.current) {
