@@ -438,42 +438,6 @@ export default function CheckinMobilePage() {
         return;
       }
 
-      // Busca inscrição pelo token do QR Code
-      const { data: insc } = await supabase
-        .from('evento_inscricoes')
-        .select('id,evento_id,nome_inscrito,cpf,supervisao_id,campo_id,status_pagamento,checkin_realizado,checkin_at,qr_code')
-        .eq('qr_code', qrToken)
-        .single();
-
-      if (!insc) {
-        setResultado({ estado: 'invalid' });
-        emitirSom('erro');
-        vibrar('erro');
-        setTimeout(() => voltarParaScan(), 4000);
-        return;
-      }
-
-      const inscricao = insc as Inscricao;
-
-      if (inscricao.evento_id !== id) {
-        setResultado({ estado: 'wrong_event', inscricao });
-        emitirSom('erro');
-        vibrar('erro');
-        setTimeout(() => voltarParaScan(), 4000);
-        return;
-      }
-
-      const nomeSup   = supervisoes.find(s => s.id === inscricao.supervisao_id)?.nome ?? '-';
-      const nomeCampo = campos.find(c => c.id === inscricao.campo_id)?.nome ?? '-';
-
-      if (inscricao.checkin_realizado) {
-        setResultado({ estado: 'already', inscricao, nomeSup, nomeCampo });
-        emitirSom('erro');
-        vibrar('erro');
-        setTimeout(() => voltarParaScan(), 5000);
-        return;
-      }
-
       if (equipeSessao) {
         const ok = await validarSessaoEquipe();
         if (!ok) {
@@ -483,17 +447,55 @@ export default function CheckinMobilePage() {
         }
       }
 
-      // Registra check-in
-      const now = new Date().toISOString();
-      await Promise.all([
-        supabase.from('evento_inscricoes')
-          .update({ checkin_realizado: true, checkin_at: now })
-          .eq('id', inscricao.id),
-        supabase.from('evento_checkins')
-          .insert([{ evento_id: id, inscricao_id: inscricao.id, metodo: 'qrcode' }]),
-      ]);
+      const res = await fetch(`/api/eventos/${id}/checkin/registrar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          qr: qrToken,
+          equipe_id: equipeSessao?.equipeId,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
 
-      setResultado({ estado: 'success', inscricao: { ...inscricao, checkin_realizado: true, checkin_at: now }, nomeSup, nomeCampo });
+      if (!res.ok) {
+        setResultado({ estado: 'invalid' });
+        emitirSom('erro');
+        vibrar('erro');
+        setTimeout(() => voltarParaScan(), 4000);
+        return;
+      }
+
+      const status = (json?.status as EstadoScan | undefined) ?? 'invalid';
+      const inscricao = (json?.inscricao as Inscricao | undefined) ?? undefined;
+
+      if (status === 'invalid' || !inscricao) {
+        setResultado({ estado: 'invalid' });
+        emitirSom('erro');
+        vibrar('erro');
+        setTimeout(() => voltarParaScan(), 4000);
+        return;
+      }
+
+      const nomeSup   = supervisoes.find(s => s.id === inscricao.supervisao_id)?.nome ?? '-';
+      const nomeCampo = campos.find(c => c.id === inscricao.campo_id)?.nome ?? '-';
+
+      if (status === 'wrong_event') {
+        setResultado({ estado: 'wrong_event', inscricao, nomeSup, nomeCampo });
+        emitirSom('erro');
+        vibrar('erro');
+        setTimeout(() => voltarParaScan(), 4000);
+        return;
+      }
+
+      if (status === 'already') {
+        setResultado({ estado: 'already', inscricao, nomeSup, nomeCampo });
+        emitirSom('erro');
+        vibrar('erro');
+        setTimeout(() => voltarParaScan(), 5000);
+        return;
+      }
+
+      setResultado({ estado: 'success', inscricao, nomeSup, nomeCampo });
       emitirSom('sucesso');
       vibrar('sucesso');
       await carregarContadores();
