@@ -153,7 +153,8 @@ export default function CheckinMobilePage() {
   const [manualMsg,        setManualMsg]        = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const precisaGate = !authLoading && !perfil.loading && !user && !equipeSessao;
+  const semAcessoDireto = !authLoading && !perfil.loading && !perfil.isGlobal && !!id && !perfil.podeAcessarEvento(id);
+  const precisaGate = !authLoading && !perfil.loading && !equipeSessao && (!user || semAcessoDireto);
 
   useEffect(() => {
     const sess = getEquipeSession();
@@ -223,13 +224,7 @@ export default function CheckinMobilePage() {
       return;
     }
 
-    // Gate de acesso
-    if (!perfil.isGlobal && id && !perfil.podeAcessarEvento(id)) {
-      setAcessoMotivo('nao_autorizado');
-      setAcessoNegado(true);
-      setLoadingEvento(false);
-      return;
-    }
+    // Gate de acesso (departamento admin com evento de outro dept)
 
     async function load() {
       if (equipeSessao) {
