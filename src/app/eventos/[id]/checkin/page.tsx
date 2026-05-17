@@ -545,40 +545,7 @@ export default function CheckinMobilePage() {
   const nomeSup   = (sid: string | null) => supervisoes.find(s => s.id === sid)?.nome ?? '-';
   const nomeCampo = (cid: string | null) => campos.find(c => c.id === cid)?.nome ?? '-';
 
-  // ── Loading / Acesso negado ───────────────────────────────
-  if (acessoNegado || !evento) {
-    const mensagens: Record<AcessoMotivo, { titulo: string; corpo: string }> = {
-      nao_autorizado: {
-        titulo: 'Acesso não autorizado',
-        corpo: 'Você não tem permissão para este evento.',
-      },
-      evento_encerrado: {
-        titulo: 'Evento encerrado',
-        corpo: 'Este evento foi finalizado ou cancelado.',
-      },
-      checkin_desativado: {
-        titulo: 'Check-in desativado',
-        corpo: 'O check-in deste evento ainda não foi iniciado. Aguarde a liberação pela organização.',
-      },
-    };
-
-    const msg = mensagens[acessoMotivo || 'nao_autorizado'];
-
-    return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6">
-        <div className="text-center max-w-sm">
-          <span className="text-6xl mb-4 block">🔒</span>
-          <p className="text-white font-bold text-xl mb-2">{msg.titulo}</p>
-          <p className="text-gray-400 text-sm mb-6">{msg.corpo}</p>
-          <button onClick={() => router.push('/eventos')}
-            className="bg-white text-gray-900 px-6 py-3 rounded-xl font-semibold text-sm">
-            ← Voltar
-          </button>
-        </div>
-      </div>
-    );
-  }
-
+  // ── Gate de e-mail (verificado ANTES de acessoNegado, pois evento ainda é null neste ponto) ──
   if (precisaGate) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6">
@@ -622,6 +589,37 @@ export default function CheckinMobilePage() {
         <div className="text-white text-center">
           <div className="w-10 h-10 border-4 border-white border-t-transparent rounded-full animate-spin mx-auto mb-3" />
           <p className="text-sm text-gray-400">Carregando...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (acessoNegado || !evento) {
+    const mensagens: Record<AcessoMotivo, { titulo: string; corpo: string }> = {
+      nao_autorizado: {
+        titulo: 'Acesso não autorizado',
+        corpo: 'Você não tem permissão para este evento.',
+      },
+      evento_encerrado: {
+        titulo: 'Evento encerrado',
+        corpo: 'Este evento foi finalizado ou cancelado.',
+      },
+      checkin_desativado: {
+        titulo: 'Check-in desativado',
+        corpo: 'O check-in deste evento ainda não foi iniciado. Aguarde a liberação pela organização.',
+      },
+    };
+    const msg = mensagens[acessoMotivo || 'nao_autorizado'];
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6">
+        <div className="text-center max-w-sm">
+          <span className="text-6xl mb-4 block">🔒</span>
+          <p className="text-white font-bold text-xl mb-2">{msg.titulo}</p>
+          <p className="text-gray-400 text-sm mb-6">{msg.corpo}</p>
+          <button onClick={() => router.push('/eventos')}
+            className="bg-white text-gray-900 px-6 py-3 rounded-xl font-semibold text-sm">
+            ← Voltar
+          </button>
         </div>
       </div>
     );
