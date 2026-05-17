@@ -347,34 +347,44 @@ export default function CheckinMobilePage() {
     let scanner: unknown = null;
     let ativo = true;
 
-    import('html5-qrcode').then(({ Html5Qrcode }) => {
-      if (!ativo) return;
-      const html5 = new Html5Qrcode(scannerElementId);
-      scanner = html5;
+    const iniciar = async () => {
+      try {
+        const { Html5Qrcode } = await import('html5-qrcode');
+        if (!ativo) return;
+        if (!document.getElementById(scannerElementId)) {
+          setCameraMsg('Area da camera nao encontrada.');
+          return;
+        }
+        const html5 = new Html5Qrcode(scannerElementId);
+        scanner = html5;
+        scannerRef.current = scanner;
 
-      html5.start(
-        { facingMode: { ideal: 'environment' } },
-        {
-          fps: 10,
-          qrbox: { width: 260, height: 260 },
-          aspectRatio: 1.0,
-        },
-        onQRCodeSuccess,
-        (err) => {
+        const onScanError = (err: unknown) => {
           const msg = String(err || '').trim();
           if (!msg) return;
           if (cameraErroRef.current === msg) return;
           cameraErroRef.current = msg;
           setCameraMsg(`Erro ao abrir a câmera: ${msg}`);
-        }
-      ).catch((err) => {
+        };
+
+        await html5.start(
+          { facingMode: { ideal: 'environment' } },
+          {
+            fps: 10,
+            qrbox: { width: 260, height: 260 },
+            aspectRatio: 1.0,
+          },
+          onQRCodeSuccess,
+          onScanError
+        );
+      } catch (err) {
         const msg = String(err || '').trim();
         const finalMsg = msg ? `Erro ao abrir a câmera: ${msg}` : 'Erro ao abrir a câmera.';
         setCameraMsg(finalMsg);
-      });
+      }
+    };
 
-      scannerRef.current = scanner;
-    });
+    void iniciar();
 
     return () => {
       ativo = false;
