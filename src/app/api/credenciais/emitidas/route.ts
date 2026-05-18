@@ -124,7 +124,6 @@ export async function POST(request: NextRequest) {
     if (!auth.ok) return auth.response;
 
     const body = await request.json().catch(() => null as any);
-    const action = body?.action === ACTION_REIMPRIMIR ? ACTION_REIMPRIMIR : ACTION_EMITIR;
     const rawItems = Array.isArray(body?.items)
       ? body.items
       : (body?.item ? [body.item] : []);

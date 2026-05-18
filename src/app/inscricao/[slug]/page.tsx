@@ -56,7 +56,7 @@ interface FormData {
 // Participante adicional (lote)
 interface ParticipanteExtra {
   nome_inscrito: string; cpf: string; email: string; whatsapp: string;
-  sexo: string; supervisao_id: string; campo_id: string;
+  sexo: string; data_nascimento: string; supervisao_id: string; campo_id: string;
 }
 
 const FORM_VAZIO: FormData = {
@@ -309,7 +309,7 @@ export default function InscricaoPublicaPage() {
 
   // ── Adiciona participante no lote ───────────────────────
   function adicionarParticipante() {
-    setParticipantesExtra(p => [...p, { nome_inscrito: '', cpf: '', email: '', whatsapp: '', sexo: '', supervisao_id: form.supervisao_id, campo_id: form.campo_id }]);
+    setParticipantesExtra(p => [...p, { nome_inscrito: '', cpf: '', email: '', whatsapp: '', sexo: '', data_nascimento: '', supervisao_id: form.supervisao_id, campo_id: form.campo_id }]);
   }
 
   function atualizarParticipante(idx: number, field: keyof ParticipanteExtra, value: string) {
@@ -989,6 +989,18 @@ export default function InscricaoPublicaPage() {
                       <div>
                         <label className={LBL}>WhatsApp</label>
                         <input value={p.whatsapp} onChange={e => atualizarParticipante(idx, 'whatsapp', e.target.value)} className={INP} placeholder="(00) 00000-0000" />
+                      </div>
+                      <div>
+                        <label className={LBL}>Sexo</label>
+                        <select value={p.sexo} onChange={e => atualizarParticipante(idx, 'sexo', e.target.value)} className={INP}>
+                          <option value="">Selecione...</option>
+                          <option value="M">Masculino</option>
+                          <option value="F">Feminino</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className={LBL}>Data de Nascimento</label>
+                        <input type="date" value={p.data_nascimento} onChange={e => atualizarParticipante(idx, 'data_nascimento', e.target.value)} className={INP} />
                       </div>
                       <div>
                         <label className={LBL}>Supervisão *</label>
