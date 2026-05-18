@@ -139,42 +139,60 @@ export async function POST(request: NextRequest) {
     const supabase = createServerClient();
     const results: Array<{ id: string; printed_count: number; action: string }> = [];
 
+    const nomeUsuario =
+      auth.ctx.user.user_metadata?.nome ||
+      auth.ctx.user.user_metadata?.name ||
+      auth.ctx.user.email ||
+      null;
+
     for (const item of items) {
-      if (action === ACTION_REIMPRIMIR) {
-        const existingQuery = supabase
-          .from('cartoes_gerados')
-          .select('id, printed_count')
-          .eq('member_id', item.memberId)
-          .order('created_at', { ascending: false })
-          .limit(1);
+      // Sempre verifica se já existe registro para o membro (evita duplicatas)
+      const { data: existing, error: existingError } = await supabase
+        .from('cartoes_gerados')
+        .select('id, printed_count')
+        .eq('member_id', item.memberId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-        const { data: existing, error: existingError } = await existingQuery.maybeSingle();
-        if (existingError) {
-          return NextResponse.json({ error: existingError.message }, { status: 400 });
-        }
-
-        if (existing?.id) {
-          const nextCount = (existing.printed_count ?? 0) + 1;
-          const updatePayload: { printed_count: number; qr_code_data?: string | null } = {
-            printed_count: nextCount,
-          };
-
-          if (item.qrCodeData) updatePayload.qr_code_data = item.qrCodeData;
-
-          const { error: updateError } = await supabase
-            .from('cartoes_gerados')
-            .update(updatePayload)
-            .eq('id', existing.id);
-
-          if (updateError) {
-            return NextResponse.json({ error: updateError.message }, { status: 400 });
-          }
-
-          results.push({ id: existing.id, printed_count: nextCount, action });
-          continue;
-        }
+      if (existingError) {
+        return NextResponse.json({ error: existingError.message }, { status: 400 });
       }
 
+      if (existing?.id) {
+        // Registro já existe: apenas incrementa o contador de impressões
+        const nextCount = (existing.printed_count ?? 0) + 1;
+        const updatePayload: { printed_count: number; qr_code_data?: string | null } = {
+          printed_count: nextCount,
+        };
+        if (item.qrCodeData) updatePayload.qr_code_data = item.qrCodeData;
+
+        const { error: updateError } = await supabase
+          .from('cartoes_gerados')
+          .update(updatePayload)
+          .eq('id', existing.id);
+
+        if (updateError) {
+          return NextResponse.json({ error: updateError.message }, { status: 400 });
+        }
+
+        // Registrar no historico ministerial (dedup evita duplicatas)
+        await registrarHistoricoMinisterial({
+          ministroId: item.memberId,
+          tipo: 'credencial_emitida',
+          titulo: 'Credencial emitida',
+          descricao: `Credencial ministerial emitida${item.templateId ? ` (modelo: ${item.templateId})` : ''}.`,
+          origem: 'credencial',
+          referenciaId: existing.id,
+          criadoPor: auth.ctx.userId,
+          nomeUsuario,
+        });
+
+        results.push({ id: existing.id, printed_count: nextCount, action: ACTION_REIMPRIMIR });
+        continue;
+      }
+
+      // Primeira emissão: insere novo registro
       const insertPayload = {
         member_id: item.memberId,
         template_id: item.templateId ?? null,
@@ -199,12 +217,7 @@ export async function POST(request: NextRequest) {
         action: ACTION_EMITIR,
       });
 
-      // Registrar no histórico ministerial (sem bloquear o fluxo)
-      const nomeUsuario =
-        auth.ctx.user.user_metadata?.nome ||
-        auth.ctx.user.user_metadata?.name ||
-        auth.ctx.user.email ||
-        null;
+      // Registrar no histórico ministerial apenas na primeira emissão
       await registrarHistoricoMinisterial({
         ministroId: item.memberId,
         tipo: 'credencial_emitida',
