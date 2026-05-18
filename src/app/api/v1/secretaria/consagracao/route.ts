@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { requireModuleAccess } from '@/lib/auth/require-auth';
+import { registrarHistoricoMinisterial } from '@/lib/historico-ministerial';
 
 export async function GET(request: NextRequest) {
   const auth = await requireModuleAccess(request, 'secretaria');
@@ -56,6 +57,48 @@ export async function POST(request: NextRequest) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  // Registrar automaticamente no histórico ministerial se houver member_id
+  if (data?.member_id) {
+    const tipoRegistro = String(body?.tipo_registro || '').toLowerCase();
+    const categoria = String(body?.categoria_registro || '').toUpperCase();
+
+    const CATEGORIAS_CONSAGRACAO = new Set([
+      'CONSAGRAÇÃO', 'ORDENAÇÃO', 'INTEGRAÇÃO', 'REINTEGRAÇÃO', 'ENTRADA NO PROBATÓRIO', 'SAÍDA DO PROBATÓRIO',
+    ]);
+
+    const nomeUsuario =
+      auth.ctx.user.user_metadata?.nome ||
+      auth.ctx.user.user_metadata?.name ||
+      auth.ctx.user.email || null;
+
+    if (tipoRegistro === 'progressao') {
+      const cargoAnterior = body?.cargo_anterior ? ` (cargo anterior: ${body.cargo_anterior})` : '';
+      const cargoNovo = body?.cargo_ocupa || body?.cargo || '';
+      await registrarHistoricoMinisterial({
+        ministroId: data.member_id,
+        tipo: 'progressao_ministerial',
+        titulo: 'Progressão ministerial',
+        descricao: `Progressão ministerial registrada${cargoNovo ? ` — novo cargo: ${cargoNovo}` : ''}${cargoAnterior}${data.numero_processo ? ` — processo: ${data.numero_processo}` : ''}.`,
+        origem: 'consagracao',
+        referenciaId: data.id,
+        criadoPor: auth.ctx.userId,
+        nomeUsuario,
+      });
+    } else if (CATEGORIAS_CONSAGRACAO.has(categoria)) {
+      const cargo = body?.cargo || body?.cargo_ocupa || '';
+      await registrarHistoricoMinisterial({
+        ministroId: data.member_id,
+        tipo: 'consagracao',
+        titulo: categoria.charAt(0) + categoria.slice(1).toLowerCase(),
+        descricao: `${categoria} registrada${cargo ? ` — cargo: ${cargo}` : ''}${data.numero_processo ? ` — processo: ${data.numero_processo}` : ''}.`,
+        origem: 'consagracao',
+        referenciaId: data.id,
+        criadoPor: auth.ctx.userId,
+        nomeUsuario,
+      });
+    }
   }
 
   return NextResponse.json({ data });

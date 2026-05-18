@@ -250,15 +250,17 @@ export default function DashboardPage() {
 
   if (authLoading) return <div className="p-8">Carregando...</div>;
 
-  const toolbarItems: { label: string; icon: string; path: string; isImg?: boolean }[] = [
-    { label: 'AGO',        icon: '🏛️',  path: '/eventos',              },
-    { label: 'DESCONTO',   icon: '🏷️',  path: '/secretaria/cgadb',     },
-    { label: 'COMISSÃO',   icon: '📋',  path: '/comissao',              },
-    { label: 'USUÁRIOS',   icon: '🕵️', path: '/usuarios',              },
-    { label: 'REGISTRO',   icon: '📒',  path: '/secretaria/membros',    },
-    { label: 'CREDENCIAL', icon: '🪪',  path: '/configuracoes/cartoes', },
+  const isSuper = usuarioLogado?.nivel === 'super';
+
+  const toolbarItems: { label: string; icon: string; path: string; isImg?: boolean; requiresSuper?: boolean }[] = [
+    { label: 'AGO',        icon: '/img/125ago.jpg', path: '/eventos', isImg: true, requiresSuper: true },
+    { label: 'DESCONTO',   icon: '🏷️',  path: '/secretaria/cgadb',     requiresSuper: true },
+    { label: 'COMISSÃO',   icon: '📋',  path: '/comissao',              requiresSuper: true },
+    { label: 'USUÁRIOS',   icon: '🕵️', path: '/usuarios',              requiresSuper: true },
+    { label: 'REGISTRO',   icon: '📒',  path: '/secretaria/membros',    requiresSuper: true },
+    { label: 'CREDENCIAL', icon: '🪪',  path: '/credenciais', },
     { label: 'CARTAS',     icon: '📜',  path: '/secretaria/cartas',     },
-    { label: 'CONEC',      icon: '/img/logo_conec.png', path: '/conec', isImg: true },
+    { label: 'CONEC',      icon: '/img/logo_conec.png', path: '/conec', isImg: true, requiresSuper: true },
   ];
 
   return (
@@ -317,19 +319,35 @@ export default function DashboardPage() {
           {/* ── TOOLBAR DE ATALHOS ── */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 px-3 py-3 mb-4 overflow-x-auto">
             <div className="flex gap-2 min-w-max md:min-w-0 md:flex-wrap md:justify-center">
-              {toolbarItems.map((item) => (
-                <button
-                  key={item.label}
-                  onClick={() => router.push(item.path)}
-                  className="flex flex-col items-center justify-center gap-1 w-14 h-14 md:w-16 md:h-16 rounded-lg border border-gray-200 bg-white text-[#0D2B4E] hover:shadow-md hover:scale-105 transition shrink-0"
-                >
-                  {item.isImg
-                    ? <img src={item.icon} alt={item.label} className="w-7 h-7 md:w-8 md:h-8 object-contain" />
-                    : <span className="text-xl md:text-2xl leading-none">{item.icon}</span>
-                  }
-                  <span className="text-[8px] md:text-[9px] font-bold tracking-wide text-center leading-tight">{item.label}</span>
-                </button>
-              ))}
+              {toolbarItems.map((item) => {
+                const disabled = item.requiresSuper && !isSuper;
+                return (
+                  <button
+                    key={item.label}
+                    onClick={() => { if (!disabled) router.push(item.path); }}
+                    disabled={disabled}
+                    title={disabled ? 'Acesso nao autorizado!' : item.label}
+                    className={`flex flex-col items-center justify-center gap-1 w-14 h-14 md:w-16 md:h-16 rounded-lg border border-gray-200 bg-white text-[#0D2B4E] transition shrink-0 ${disabled ? 'opacity-40 cursor-not-allowed' : 'hover:shadow-md hover:scale-105'}`}
+                  >
+                    {item.isImg
+                      ? (
+                        <img
+                          src={item.icon}
+                          alt={item.label}
+                          className={item.label === 'AGO'
+                            ? 'w-10 h-10 md:w-12 md:h-12 object-contain'
+                            : 'w-7 h-7 md:w-8 md:h-8 object-contain'}
+                        />
+                      )
+                      : <span className="text-xl md:text-2xl leading-none">{item.icon}</span>
+                    }
+                    {item.label === 'AGO'
+                      ? <span className="sr-only">{item.label}</span>
+                      : <span className="text-[8px] md:text-[9px] font-bold tracking-wide text-center leading-tight">{item.label}</span>
+                    }
+                  </button>
+                );
+              })}
             </div>
           </div>
 

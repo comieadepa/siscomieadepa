@@ -10,6 +10,7 @@ import { loadOrgNomenclaturasFromSupabaseOrMigrate } from '@/lib/org-nomenclatur
 import { loadTemplatesWithLocalCache } from '@/lib/cartoes-templates-sync';
 import { fetchConfiguracaoIgrejaFromSupabase } from '@/lib/igreja-config-utils';
 import { buildUrl, getAppBaseUrl } from '@/lib/urls';
+import { authenticatedFetch } from '@/lib/api-client';
 
 interface Membro {
   id: string;
@@ -50,6 +51,7 @@ interface Membro {
 interface CartãoMembroProps {
   membro: Membro;
   onClose?: () => void;
+  registroAction?: 'emitir' | 'reimprimir';
 }
 
 interface ElementoCartao {
@@ -88,7 +90,7 @@ interface TemplateCartao {
   [key: string]: any;
 }
 
-export default function CartãoMembro({ membro, onClose }: CartãoMembroProps) {
+export default function CartãoMembro({ membro, onClose, registroAction = 'emitir' }: CartãoMembroProps) {
   const supabase = createClient();
 
   const [template, setTemplate] = useState<TemplateCartao | null>(null);
@@ -523,6 +525,32 @@ export default function CartãoMembro({ membro, onClose }: CartãoMembroProps) {
       // Filename
       const nomeLimpo = membro.nome.replace(/[^a-z0-9]/gi, '_').toLowerCase();
       pdf.save(`cartao_${nomeLimpo}.pdf`);
+
+      try {
+        const qrCodeData = buildUrl(
+          getAppBaseUrl(),
+          `/autentica_qrcode-05985642/${membro.uniqueId || membro.id}`
+        );
+
+        const regRes = await authenticatedFetch('/api/credenciais/emitidas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: registroAction,
+            items: [{
+              memberId: membro.id,
+              templateId: template?.id ?? null,
+              qrCodeData,
+            }],
+          }),
+        });
+        if (!regRes.ok) {
+          const errBody = await regRes.json().catch(() => null);
+          console.warn('Falha ao registrar credencial emitida:', regRes.status, errBody);
+        }
+      } catch (err) {
+        console.warn('Falha ao registrar credencial emitida:', err);
+      }
 
     } catch (error) {
       console.error('Erro ao gerar PDF:', error);

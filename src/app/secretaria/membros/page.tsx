@@ -2175,6 +2175,10 @@ useEffect(() => {
           memberId={membroHistorico.id}
           memberName={membroHistorico.nome}
           matricula={membroHistorico.matricula}
+          cargo={membroHistorico.cargoMinisterial}
+          cpf={membroHistorico.cpf}
+          campo={membroHistorico.campo}
+          supervisao={membroHistorico.supervisao}
           onClose={() => setMembroHistorico(null)}
         />
       )}

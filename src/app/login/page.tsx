@@ -15,12 +15,41 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [loginErrorModal, setLoginErrorModal] = useState(false);
 
+  const limparSessaoInvalida = async () => {
+    const supabase = supabaseRef.current ?? createClient();
+    supabaseRef.current = supabase;
+    const { error: sessError } = await supabase.auth.getSession();
+    const msg = sessError?.message || '';
+    if (msg.toLowerCase().includes('refresh token')) {
+      await supabase.auth.signOut({ scope: 'local' });
+      try {
+        for (const key of Object.keys(localStorage)) {
+          if (key.includes('supabase.auth') || key.includes('-auth-token') || key.startsWith('sb-')) {
+            localStorage.removeItem(key);
+          }
+        }
+        for (const key of Object.keys(sessionStorage)) {
+          if (key.includes('supabase.auth') || key.includes('-auth-token') || key.startsWith('sb-')) {
+            sessionStorage.removeItem(key);
+          }
+        }
+      } catch {
+        // ignora falha ao limpar storage
+      }
+      setError('Sessao expirada. Faça login novamente.');
+    }
+  };
+
   useEffect(() => {
     if (error) {
       const timer = setTimeout(() => setError(''), 4000);
       return () => clearTimeout(timer);
     }
   }, [error]);
+
+  useEffect(() => {
+    void limparSessaoInvalida();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

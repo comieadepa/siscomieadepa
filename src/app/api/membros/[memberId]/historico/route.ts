@@ -43,22 +43,41 @@ export async function POST(
 
     const { memberId } = await params;
     const body = await request.json();
-    const { tipo, descricao, usuario_nome, ocorrencia } = body;
+    const { tipo, titulo, descricao, usuario_nome, ocorrencia, origem, referencia_id } = body;
 
     if (!tipo || !descricao) {
       return NextResponse.json({ error: 'tipo e descricao são obrigatórios' }, { status: 400 });
     }
 
     const db = createServerClient();
+
+    // Evitar duplicata de registro automático
+    if (origem && referencia_id) {
+      const { data: existing } = await db
+        .from('member_history')
+        .select('id')
+        .eq('member_id', memberId)
+        .eq('origem', origem)
+        .eq('referencia_id', referencia_id)
+        .maybeSingle();
+
+      if (existing?.id) {
+        return NextResponse.json({ entry: existing, duplicate: true }, { status: 200 });
+      }
+    }
+
     const { data, error } = await db
       .from('member_history')
       .insert({
         member_id: memberId,
         tipo,
+        titulo: titulo || null,
         descricao,
         usuario_nome: usuario_nome || null,
         usuario_id: user.id,
         ocorrencia: ocorrencia || new Date().toISOString().split('T')[0],
+        origem: origem || null,
+        referencia_id: referencia_id || null,
       })
       .select()
       .single();

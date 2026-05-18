@@ -10,6 +10,7 @@ import { loadOrgNomenclaturasFromSupabaseOrMigrate } from '@/lib/org-nomenclatur
 import { loadTemplatesWithLocalCache } from '@/lib/cartoes-templates-sync';
 import { fetchConfiguracaoIgrejaFromSupabase } from '@/lib/igreja-config-utils';
 import { buildUrl, getAppBaseUrl } from '@/lib/urls';
+import { authenticatedFetch } from '@/lib/api-client';
 
 interface Membro {
   id: string;
@@ -107,6 +108,23 @@ export default function CartaoBatchPrinter({ membros, onComplete }: CartaoBatchP
     const tempTemplate = carregarTemplateAtivo(templates, membros[0].tipoCadastro) || carregarTemplateAtivo(templates, 'membro');
     const tipoImpressao = tempTemplate?.tipoImpressao || 'pvc';
     const orientacao = tempTemplate?.orientacao || 'landscape';
+
+    const registrosEmitidos: Array<{ memberId: string; templateId?: string | null; qrCodeData?: string | null }> = [];
+    const registroKeys = new Set<string>();
+    const addRegistroEmitido = (membro: Membro, template: any) => {
+      const templateId = template?.id ?? null;
+      const key = `${membro.id}:${templateId || 'null'}`;
+      if (registroKeys.has(key)) return;
+      registroKeys.add(key);
+      registrosEmitidos.push({
+        memberId: membro.id,
+        templateId,
+        qrCodeData: buildUrl(
+          getAppBaseUrl(),
+          `/autentica_qrcode-05985642/${membro.uniqueId || membro.id}`
+        ),
+      });
+    };
 
     // Dimensões do cartão CR80 - suportar portrait e landscape
     const largCartaoMM = orientacao === 'portrait' ? 53.98 : 85.6;   // Portrait: 210mm ÷ escala / Landscape: 297mm ÷ escala
@@ -275,6 +293,7 @@ export default function CartaoBatchPrinter({ membros, onComplete }: CartaoBatchP
         for (const membro of fatiaMembros) {
           const template = carregarTemplateAtivo(templates, membro.tipoCadastro) || carregarTemplateAtivo(templates, 'membro');
           if (template) {
+            addRegistroEmitido(membro, template);
             const imgF = await renderizarLado(membro, template, template.elementos, template.backgroundUrl, false);
             imagensFrente.push(imgF);
             if (template.temVerso) {
@@ -325,6 +344,7 @@ export default function CartaoBatchPrinter({ membros, onComplete }: CartaoBatchP
       for (const membro of membros) {
         const template = carregarTemplateAtivo(templates, membro.tipoCadastro) || carregarTemplateAtivo(templates, 'membro');
         if (template) {
+          addRegistroEmitido(membro, template);
           if (membroIdx > 0) pdf.addPage([largCartaoMM, altCartaoMM], 'landscape');
           const imgF = await renderizarLado(membro, template, template.elementos, template.backgroundUrl, false);
           pdf.addImage(imgF, 'PNG', 0, 0, largCartaoMM, altCartaoMM);
@@ -342,6 +362,21 @@ export default function CartaoBatchPrinter({ membros, onComplete }: CartaoBatchP
     const dataAtual = new Date();
     const nomeArquivo = `cartoes_${tipoImpressao}_${dataAtual.getTime()}.pdf`;
     pdf.save(nomeArquivo);
+
+    if (registrosEmitidos.length > 0) {
+      try {
+        await authenticatedFetch('/api/credenciais/emitidas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'emitir',
+            items: registrosEmitidos,
+          }),
+        });
+      } catch (err) {
+        console.warn('Falha ao registrar credenciais emitidas:', err);
+      }
+    }
 
     if (onComplete) onComplete();
   };

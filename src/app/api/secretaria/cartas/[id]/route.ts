@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { requireModuleAccess } from '@/lib/auth/require-auth';
 import { buildCartaTexto, type CartaDados, type CartaTipo } from '@/lib/cartas/templates';
+import { registrarHistoricoMinisterial } from '@/lib/historico-ministerial';
 
 const TIPOS_VALIDOS = new Set<CartaTipo>([
   'requerimento_cgadb',
@@ -87,10 +88,35 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         dados_json: dados,
       })
       .eq('id', id)
-      .select('id,numero,tipo,ministro_nome,matricula,emitido_em,emitido_por_email,status,texto_final,dados_json')
+      .select('id,numero,tipo,ministro_id,ministro_nome,matricula,emitido_em,emitido_por_email,status,texto_final,dados_json')
       .maybeSingle();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    // Registrar no histórico ministerial
+    if (data?.ministro_id) {
+      const tipoLabel: Record<string, string> = {
+        carta_recomendacao: 'Carta de Recomendação/Apresentação',
+        carta_mudanca: 'Carta de Transferência',
+        requerimento_cgadb: 'Requerimento CGADB',
+      };
+      const nomeUsuario =
+        auth.ctx.user.user_metadata?.nome ||
+        auth.ctx.user.user_metadata?.name ||
+        auth.ctx.user.email ||
+        null;
+      await registrarHistoricoMinisterial({
+        ministroId: data.ministro_id,
+        tipo: 'carta_emitida',
+        titulo: 'Carta ministerial emitida',
+        descricao: `${tipoLabel[data.tipo] || 'Carta ministerial'} emitida${data.numero ? ` — n.º ${data.numero}` : ''}.`,
+        origem: 'carta',
+        referenciaId: data.id,
+        criadoPor: auth.ctx.user.id,
+        nomeUsuario,
+      });
+    }
+
     return NextResponse.json({ data, titulo: textoInfo.titulo, validade: textoInfo.validade || null });
   }
 
