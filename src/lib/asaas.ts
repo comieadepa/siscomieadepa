@@ -262,6 +262,17 @@ export const createOrFindAsaasCustomer = async (payload: {
     throw new Error('CPF do pagador e obrigatorio para gerar cobranca ASAAS');
   }
 
+  // Evita erro de CPF duplicado no ASAAS reaproveitando cliente existente
+  try {
+    const existing = await asaasFetch(`/customers?cpfCnpj=${cleanCpf}&limit=1`, {
+      method: 'GET',
+    });
+    const first = Array.isArray(existing?.data) ? existing.data[0] : null;
+    if (first?.id) return String(first.id);
+  } catch {
+    // Ignora falhas de lookup e tenta criar normalmente
+  }
+
   const customer = await asaasFetch('/customers', {
     method: 'POST',
     body: JSON.stringify({
