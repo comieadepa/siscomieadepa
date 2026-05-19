@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { requireRole } from '@/lib/auth/require-auth';
+import { registrarHistoricoMinisterial } from '@/lib/historico-ministerial';
 
 const PERMUTAS_ROLES = ['super', 'administrador', 'financeiro'] as const;
 
@@ -167,6 +168,30 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (insertError) throw new Error(insertError.message);
+
+    const origemLabel = campo_origem_nome
+      ? `${campo_origem_nome}${supervisao_origem_nome ? ` / ${supervisao_origem_nome}` : ''}`
+      : 'Sem campo anterior';
+    const destinoLabel = `${campo_destino_nome}${supervisao_destino_nome ? ` / ${supervisao_destino_nome}` : ''}`;
+    const posseLabel = data_posse ? ` Posse: ${data_posse}.` : '';
+    const processoLabel = `${codigo_processo}/${ano}`;
+    const nomeUsuario =
+      auth.ctx.user.user_metadata?.nome ||
+      auth.ctx.user.user_metadata?.name ||
+      auth.ctx.user.email ||
+      null;
+
+    await registrarHistoricoMinisterial({
+      ministroId: ministro_id,
+      tipo: 'permuta_ministerial',
+      titulo: 'Permuta ministerial',
+      descricao: `Permuta ministerial (${processoLabel}): ${origemLabel} -> ${destinoLabel}.${posseLabel}`,
+      origem: 'permuta',
+      referenciaId: permuta.id,
+      ocorrencia: data_processo || undefined,
+      criadoPor: auth.ctx.userId,
+      nomeUsuario,
+    });
 
     return NextResponse.json({ data: permuta, codigo_processo, ano });
   } catch (e) {

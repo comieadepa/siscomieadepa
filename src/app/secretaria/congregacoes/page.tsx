@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import PageLayout from '@/components/PageLayout';
 import Tabs from '@/components/Tabs';
@@ -3761,7 +3761,7 @@ export default function CongregacoesPage() {
                             const qtdSetor = camposDaSup.length;
                             const isExpanded = expandedSupId === d.id;
                             return (
-                              <>
+                              <Fragment key={d.id}>
                                 <tr key={d.id} className={`border-b border-gray-200 cursor-pointer transition ${isExpanded ? 'bg-teal-50' : 'hover:bg-gray-50'}`}
                                   onClick={() => setExpandedSupId(isExpanded ? null : d.id)}>
                                   <td className="px-3 py-3 text-gray-400 text-xs font-bold select-none">
@@ -3842,7 +3842,7 @@ export default function CongregacoesPage() {
                                     </td>
                                   </tr>
                                 )}
-                              </>
+                              </Fragment>
                             );
                           })
                         )}

@@ -26,12 +26,22 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ data });
   }
 
-  const { data, error } = await query;
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  const pageSize = 1000;
+  let from = 0;
+  let all: any[] = [];
+
+  while (true) {
+    const { data, error } = await query.range(from, from + pageSize - 1);
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    const chunk = (data || []) as any[];
+    all = all.concat(chunk);
+    if (chunk.length < pageSize) break;
+    from += pageSize;
   }
 
-  return NextResponse.json({ data });
+  return NextResponse.json({ data: all });
 }
 
 export async function POST(request: NextRequest) {

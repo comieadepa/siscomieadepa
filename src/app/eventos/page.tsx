@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import PageLayout from '@/components/PageLayout';
 import AccessRestricted from '@/components/AccessRestricted';
@@ -42,6 +42,22 @@ interface InscricaoResumo {
   valor_pago: number;
 }
 
+type ImportCsvRow = {
+  nome: string;
+  cpf: string;
+  email: string | null;
+  whatsapp: string | null;
+  sexo: string | null;
+  data_nascimento: string | null;
+  supervisao_nome: string | null;
+  campo_nome: string | null;
+  status_raw: string | null;
+  metodo_raw: string | null;
+  qtd_refeicoes: number | null;
+  created_at: string | null;
+  valor_raw: string | null;
+};
+
 interface EventoComStats extends Evento {
   total_inscritos: number;
   total_pagos: number;
@@ -68,6 +84,125 @@ function fmtMoeda(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+const CSV_MONTHS: Record<string, string> = {
+  jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+  jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+  fev: '02', abr: '04', mai: '05', ago: '08', set: '09', out: '10', dez: '12',
+};
+
+function normalizeCsvHeader(value: string): string {
+  return String(value || '')
+    .replace(/^\uFEFF/, '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function cleanCpfLocal(value: string): string {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function parseCsvLine(line: string, sep: string): string[] {
+  const result: string[] = [];
+  let cur = '';
+  let inQuote = false;
+  for (const ch of line) {
+    if (ch === '"') { inQuote = !inQuote; continue; }
+    if (!inQuote && ch === sep) { result.push(cur.trim()); cur = ''; continue; }
+    cur += ch;
+  }
+  result.push(cur.trim());
+  return result;
+}
+
+function splitCsvLines(text: string): string[] {
+  const lines: string[] = [];
+  let cur = '';
+  let inQuote = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"') {
+      inQuote = !inQuote;
+      cur += ch;
+    } else if (!inQuote && (ch === '\n' || (ch === '\r' && text[i + 1] === '\n'))) {
+      if (ch === '\r') i++;
+      if (cur.trim()) lines.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur.trim()) lines.push(cur);
+  return lines;
+}
+
+function detectSep(firstLine: string): string {
+  const sc = (firstLine.match(/;/g) || []).length;
+  const cc = (firstLine.match(/,/g) || []).length;
+  return sc >= cc ? ';' : ',';
+}
+
+function parseCsvNumber(raw: string): number | null {
+  if (!raw) return null;
+  const cleaned = raw.replace(/[^0-9,.-]/g, '').replace(',', '.');
+  if (!cleaned) return null;
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : null;
+}
+
+function parseCsvDateOnly(raw: string): string | null {
+  if (!raw) return null;
+  const s = raw.trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const dmy = s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+  const m = s.match(/^([A-Za-z]{3})\s+(\d{1,2}),?\s+(\d{4})/);
+  if (m) {
+    const mm = CSV_MONTHS[m[1].toLowerCase()];
+    if (mm) return `${m[3]}-${mm}-${m[2].padStart(2, '0')}`;
+  }
+  return null;
+}
+
+function parseCsvDateTime(raw: string): string | null {
+  if (!raw) return null;
+  const s = raw.trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return `${s}T00:00:00.000Z`;
+  const md = s.match(/^([A-Za-z]{3})\s+(\d{1,2}),?\s+(\d{4})(.*)$/);
+  if (md) {
+    const mm = CSV_MONTHS[md[1].toLowerCase()];
+    if (mm) {
+      const time = (md[4] || '').trim();
+      const tm = time.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i);
+      let hh = '00';
+      let mi = '00';
+      if (tm) {
+        let h = Number(tm[1]);
+        const m = tm[2];
+        const ap = (tm[3] || '').toLowerCase();
+        if (ap === 'pm' && h < 12) h += 12;
+        if (ap === 'am' && h === 12) h = 0;
+        hh = String(h).padStart(2, '0');
+        mi = m.padStart(2, '0');
+      }
+      return `${md[3]}-${mm}-${md[2].padStart(2, '0')}T${hh}:${mi}:00.000Z`;
+    }
+  }
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return d.toISOString();
+  return null;
+}
+
+function isReceivedStatus(raw: string | null): boolean {
+  const s = normalizeCsvHeader(raw || '');
+  return s.includes('received');
+}
+
 // ─── Componente principal ─────────────────────────────────────
 export default function EventosPage() {
   const { loading: authLoading } = useRequireSupabaseAuth();
@@ -85,6 +220,14 @@ export default function EventosPage() {
   const [modalEvento, setModalEvento] = useState<EventoComStats | null>(null);
   const [acaoLoading, setAcaoLoading] = useState(false);
   const [acaoErro,    setAcaoErro]    = useState('');
+  const [importEvento, setImportEvento] = useState<EventoComStats | null>(null);
+  const [importFile,   setImportFile]   = useState<File | null>(null);
+  const [importRows,   setImportRows]   = useState<ImportCsvRow[]>([]);
+  const [importParsing, setImportParsing] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importErro, setImportErro] = useState('');
+  const [importSucesso, setImportSucesso] = useState('');
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const [busca,       setBusca]       = useState('');
   const [filtroDept,  setFiltroDept]  = useState('');
@@ -264,6 +407,144 @@ export default function EventosPage() {
       setAcaoErro(e instanceof Error ? e.message : 'Erro ao deletar evento.');
     } finally {
       setAcaoLoading(false);
+    }
+  };
+
+  const handleImportarCsv = (ev: EventoComStats) => {
+    setImportEvento(ev);
+    setImportFile(null);
+    setImportRows([]);
+    setImportErro('');
+    setImportSucesso('');
+    importInputRef.current?.click();
+  };
+
+  const handleImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    if (!file) {
+      setImportEvento(null);
+      setImportFile(null);
+      setImportRows([]);
+      setImportErro('');
+      setImportSucesso('');
+      return;
+    }
+    setImportFile(file);
+    setImportRows([]);
+    setImportErro('');
+    setImportSucesso('');
+    e.target.value = '';
+
+    (async () => {
+      setImportParsing(true);
+      try {
+        const text = await file.text();
+        const lines = splitCsvLines(text);
+        if (lines.length < 2) throw new Error('Arquivo vazio ou sem dados.');
+
+        const sep = detectSep(lines[0]);
+        const headers = parseCsvLine(lines[0], sep).map(h => normalizeCsvHeader(h));
+
+        const idx = (patterns: string[]) => {
+          for (const p of patterns) {
+            const i = headers.findIndex(h => h.includes(p));
+            if (i >= 0) return i;
+          }
+          return -1;
+        };
+
+        const colNome = idx(['nome', 'name', 'participant name', 'nome completo', 'inscrito']);
+        const colCpf = idx(['cpf']);
+        if (colNome < 0 || colCpf < 0) {
+          throw new Error('Colunas obrigatorias nao encontradas: Nome, CPF.');
+        }
+
+        const colEmail = idx(['email', 'e mail']);
+        const colWhatsapp = idx(['whatsapp', 'telefone', 'celular', 'phone']);
+        const colSexo = idx(['sexo', 'gender']);
+        const colNasc = idx(['data nascimento', 'nascimento', 'birth']);
+        const colSup = idx(['supervisao', 'supervisao nome', 'supervisao do campo']);
+        const colCampo = idx(['campo', 'campo nome']);
+        const colStatus = idx(['status', 'status pagamento', 'payment status']);
+        const colMetodo = idx(['payment method', 'metodo pagamento', 'forma pagamento', 'pagamento']);
+        const colQtdRef = idx(['qtd refeicoes', 'quantidade refeicoes', 'refeicoes', 'refeicao']);
+        const colCreated = idx(['creation date', 'data criacao', 'data cadastro', 'created at', 'data inscricao']);
+        const colValor = idx(['valor', 'amount', 'valor pago', 'paid amount', 'preco', 'price', 'total']);
+
+        const rows: ImportCsvRow[] = [];
+        for (let i = 1; i < lines.length; i++) {
+          const cols = parseCsvLine(lines[i], sep);
+          if (cols.every(c => !c)) continue;
+          const get = (ci: number) => (ci >= 0 ? (cols[ci] || '').trim() : '');
+          rows.push({
+            nome: get(colNome),
+            cpf: get(colCpf),
+            email: get(colEmail) || null,
+            whatsapp: get(colWhatsapp) || null,
+            sexo: get(colSexo) || null,
+            data_nascimento: parseCsvDateOnly(get(colNasc)),
+            supervisao_nome: get(colSup) || null,
+            campo_nome: get(colCampo) || null,
+            status_raw: get(colStatus) || null,
+            metodo_raw: get(colMetodo) || null,
+            qtd_refeicoes: parseCsvNumber(get(colQtdRef)),
+            created_at: parseCsvDateTime(get(colCreated)),
+            valor_raw: get(colValor) || null,
+          });
+        }
+
+        if (rows.length === 0) throw new Error('Arquivo sem registros validos.');
+        setImportRows(rows);
+      } catch (err) {
+        setImportRows([]);
+        setImportErro(err instanceof Error ? err.message : 'Erro ao ler o arquivo.');
+      } finally {
+        setImportParsing(false);
+      }
+    })();
+  };
+
+  const fecharModalImport = () => {
+    setImportEvento(null);
+    setImportFile(null);
+    setImportRows([]);
+    setImportErro('');
+    setImportSucesso('');
+  };
+
+  const importStats = useMemo(() => {
+    const total = importRows.length;
+    const pagos = importRows.filter(r => isReceivedStatus(r.status_raw)).length;
+    const pendentes = total - pagos;
+    const comAlimentacao = importRows.filter(r => (r.qtd_refeicoes ?? 0) > 0).length;
+    const semCpf = importRows.filter(r => cleanCpfLocal(r.cpf).length !== 11).length;
+    return { total, pagos, pendentes, comAlimentacao, semCpf };
+  }, [importRows]);
+
+  const handleConfirmarImportacao = async () => {
+    if (!importEvento || importRows.length === 0 || importLoading) return;
+    setImportLoading(true);
+    setImportErro('');
+    setImportSucesso('');
+    try {
+      const res = await authedFetch(`/api/eventos/${importEvento.id}/importar-csv`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: importRows }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Erro ao importar CSV.');
+
+      const ign = json?.ignorados;
+      const ignMsg = ign
+        ? ` Ignorados: ${ign.total} (sem CPF: ${ign.semCpf}, sem nome: ${ign.semNome}, duplicados: ${ign.duplicados}, existentes: ${ign.existentes}).`
+        : '';
+      setImportSucesso(`Importados: ${json?.importados ?? 0}.${ignMsg}`);
+      await recarregarDados();
+    } catch (err) {
+      setImportErro(err instanceof Error ? err.message : 'Erro ao importar CSV.');
+    } finally {
+      setImportLoading(false);
     }
   };
 
@@ -473,6 +754,8 @@ export default function EventosPage() {
               evento={ev}
               podeVerFinanceiro={perfil.podeVerFinanceiro}
               onGerenciar={() => router.push(`/eventos/${ev.id}`)}
+              podeImportar={perfil.podeEditarEvento}
+              onImportarCsv={() => handleImportarCsv(ev)}
               podeRemover={perfil.podeEditarEvento}
               onRemover={() => abrirModalRemocao(ev)}
             />
@@ -525,6 +808,105 @@ export default function EventosPage() {
         </div>
       )}
 
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".csv,text/csv"
+        className="hidden"
+        onChange={handleImportFileChange}
+      />
+
+      {importEvento && importFile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-bold text-gray-800">Importar CSV</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              Evento: <strong>{importEvento.nome}</strong>
+            </p>
+            <p className="mt-1 text-xs text-gray-500">Arquivo: {importFile.name}</p>
+
+            {importErro && (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                {importErro}
+              </div>
+            )}
+
+            {importSucesso && (
+              <div className="mt-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">
+                {importSucesso}
+              </div>
+            )}
+
+            {!importErro && (
+              <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-gray-600">
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">Total: <strong>{importStats.total}</strong></div>
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">Pagos: <strong>{importStats.pagos}</strong></div>
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">Pendentes: <strong>{importStats.pendentes}</strong></div>
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">Alimentacao: <strong>{importStats.comAlimentacao}</strong></div>
+              </div>
+            )}
+
+            {importParsing && (
+              <p className="mt-3 text-xs text-gray-500">Lendo arquivo...</p>
+            )}
+
+            {!importParsing && importRows.length > 0 && (
+              <div className="mt-4">
+                <p className="text-xs font-semibold text-gray-600">Preview (primeiros 5)</p>
+                <div className="mt-2 max-h-56 overflow-auto rounded-lg border border-gray-200">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 text-gray-600">
+                      <tr>
+                        <th className="px-2 py-1 text-left">Nome</th>
+                        <th className="px-2 py-1 text-left">CPF</th>
+                        <th className="px-2 py-1 text-left">Campo</th>
+                        <th className="px-2 py-1 text-left">Supervisao</th>
+                        <th className="px-2 py-1 text-left">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importRows.slice(0, 5).map((r, idx) => (
+                        <tr key={`${r.cpf}-${idx}`} className="border-t border-gray-100">
+                          <td className="px-2 py-1 text-gray-700">{r.nome || '-'}</td>
+                          <td className="px-2 py-1 text-gray-700">{r.cpf || '-'}</td>
+                          <td className="px-2 py-1 text-gray-700">{r.campo_nome || '-'}</td>
+                          <td className="px-2 py-1 text-gray-700">{r.supervisao_nome || '-'}</td>
+                          <td className="px-2 py-1 text-gray-700">{r.status_raw || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                onClick={fecharModalImport}
+                disabled={importLoading}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={() => importInputRef.current?.click()}
+                disabled={importLoading}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                Trocar arquivo
+              </button>
+              <button
+                onClick={handleConfirmarImportacao}
+                disabled={importLoading || importParsing || importRows.length === 0 || !!importErro}
+                className="rounded-lg bg-[#123b63] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0f2a45] disabled:cursor-not-allowed disabled:bg-gray-300"
+              >
+                {importLoading ? 'Importando...' : `Importar ${importRows.length} registros`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </PageLayout>
   );
 }
@@ -546,10 +928,12 @@ function SummaryCard({ label, value, color, textColor, icon, small = false }: {
 }
 
 // ─── EventoCard ───────────────────────────────────────────────
-function EventoCard({ evento, podeVerFinanceiro, onGerenciar, podeRemover, onRemover }: {
+function EventoCard({ evento, podeVerFinanceiro, onGerenciar, podeImportar, onImportarCsv, podeRemover, onRemover }: {
   evento: EventoComStats;
   podeVerFinanceiro: boolean;
   onGerenciar: () => void;
+  podeImportar: boolean;
+  onImportarCsv: () => void;
   podeRemover: boolean;
   onRemover: () => void;
 }) {
@@ -616,6 +1000,9 @@ function EventoCard({ evento, podeVerFinanceiro, onGerenciar, podeRemover, onRem
           <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t border-gray-100">
             <ActionBtn label="Gerenciar" icon="⚙️" onClick={onGerenciar} primary tooltip="Abrir painel completo do evento" />
             <ActionBtn label="Pág. Pública" icon="🌐" onClick={() => window.open(buildUrl(getPublicBaseUrl(), `/inscricao/${evento.slug}`), '_blank')} />
+            {podeImportar && (
+              <ActionBtn label="Importar CSV" icon="📥" onClick={onImportarCsv} />
+            )}
             {podeRemover && (
               <button
                 onClick={onRemover}

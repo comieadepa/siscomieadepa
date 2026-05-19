@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
+import { registrarHistoricoMinisterial } from '@/lib/historico-ministerial';
 
 // GET /api/certificado/[codigo]
 // Página pública — valida o código e retorna dados do certificado (se elegível)
@@ -125,4 +126,57 @@ export async function GET(
       cpf:         insc.cpf ?? null,
     },
   });
+}
+
+// POST /api/certificado/[codigo]
+// Registra historico do ministro no ato da impressao
+export async function POST(
+  _req: NextRequest,
+  { params }: { params: Promise<{ codigo: string }> }
+) {
+  try {
+    const supabase = createServerClient();
+    const { codigo: codigoRaw } = await params;
+    const codigo = String(codigoRaw).trim().toUpperCase();
+    if (!codigo) {
+      return NextResponse.json({ error: 'Código inválido.' }, { status: 400 });
+    }
+
+    const { data: inscricao, error: insError } = await supabase
+      .from('evento_inscricoes')
+      .select('id, evento_id, nome_inscrito, ministro_id, tipo_inscricao, qr_code')
+      .eq('qr_code', codigo)
+      .maybeSingle();
+
+    if (insError) return NextResponse.json({ error: insError.message }, { status: 500 });
+    if (!inscricao?.ministro_id) {
+      return NextResponse.json({ ok: true, skipped: 'sem_ministro' });
+    }
+
+    const { data: evento } = await supabase
+      .from('eventos')
+      .select('nome, data_inicio, data_fim')
+      .eq('id', inscricao.evento_id)
+      .single();
+
+    const dataEvento = evento?.data_inicio
+      ? (evento.data_fim && evento.data_fim !== evento.data_inicio
+        ? `${evento.data_inicio} a ${evento.data_fim}`
+        : evento.data_inicio)
+      : null;
+
+    await registrarHistoricoMinisterial({
+      ministroId: inscricao.ministro_id,
+      tipo: 'certificado_emitido',
+      titulo: 'Certificado emitido',
+      descricao: `Certificado emitido no evento "${evento?.nome ?? 'Evento'}"${dataEvento ? ` (${dataEvento})` : ''}.`,
+      origem: 'certificado',
+      referenciaId: inscricao.id,
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }

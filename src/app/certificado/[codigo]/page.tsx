@@ -141,6 +141,23 @@ export default function CertificadoPublicoPage() {
     ? new Date(certData.prazo_expiracao).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
     : null;
 
+  const registrarImpressao = () => {
+    try {
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(`/api/certificado/${codigo}`);
+        return;
+      }
+    } catch {
+      // Ignora falha de beacon
+    }
+    fetch(`/api/certificado/${codigo}`, { method: 'POST' }).catch(() => null);
+  };
+
+  const handlePrint = () => {
+    registrarImpressao();
+    window.print();
+  };
+
   return (
     <>
       {/* Print CSS — only the certificate, A4 landscape */}
@@ -234,7 +251,7 @@ export default function CertificadoPublicoPage() {
           {/* ── Botão imprimir ───────────────────────────── */}
           <div className={`${hasEditor ? '' : 'max-w-xl mx-auto'} print:hidden`}>
             <button
-              onClick={() => window.print()}
+              onClick={handlePrint}
               className="w-full bg-[#123b63] hover:bg-[#0f2a45] active:scale-[0.98] text-white font-black py-4 rounded-2xl text-base transition shadow-lg flex items-center justify-center gap-2"
             >
               🖨️ Imprimir / Salvar em PDF

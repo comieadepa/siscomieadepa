@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase-server';
 import { sendEmail } from '@/services/email';
+import { registrarHistoricoMinisterial } from '@/lib/historico-ministerial';
+import { cleanCpf } from '@/lib/cpf';
 
 const ASAAS_WEBHOOK_TOKEN = process.env.ASAAS_WEBHOOK_TOKEN;
 
@@ -16,6 +18,18 @@ function resolveToken(request: NextRequest): string | null {
 // ── Substitui {VAR} no template ──────────────────────────────
 function subst(msg: string, vars: Record<string, string>): string {
   return msg.replace(/\{([A-Z_]+)\}/g, (_, k) => vars[k] ?? `{${k}}`);
+}
+
+const EVENTOS_PAGAMENTO_CONFIRMADO = new Set([
+  'PAYMENT_RECEIVED',
+  'PAYMENT_CONFIRMED',
+  'PAYMENT_RECEIVED_IN_CASH',
+]);
+
+function formatarPeriodoEvento(dataInicio?: string | null, dataFim?: string | null): string | null {
+  if (!dataInicio) return null;
+  if (dataFim && dataFim !== dataInicio) return `${dataInicio} a ${dataFim}`;
+  return dataInicio;
 }
 
 /**
@@ -180,14 +194,13 @@ export async function POST(request: NextRequest) {
         try {
           const { data: loteIns } = await supabase
             .from('evento_inscricoes')
-            .select('id, nome_inscrito, email, qr_code, evento_id')
-            .eq('lote_id', loteId)
-            .not('email', 'is', null);
+            .select('id, nome_inscrito, email, qr_code, evento_id, ministro_id, cpf, tipo_inscricao')
+            .eq('lote_id', loteId);
           if (loteIns && loteIns.length > 0) {
             const firstRow = loteIns[0] as unknown as Record<string, unknown>;
             const { data: evData } = await supabase
               .from('eventos')
-              .select('nome, mensagem_confirmacao, link_whatsapp')
+              .select('nome, mensagem_confirmacao, link_whatsapp, data_inicio, data_fim')
               .eq('id', firstRow.evento_id as string)
               .single();
             const evRow = evData as unknown as Record<string, unknown> | null;
@@ -207,6 +220,37 @@ export async function POST(request: NextRequest) {
                   });
                 }
               }
+
+              if (EVENTOS_PAGAMENTO_CONFIRMADO.has(event)) {
+                const cpfs = loteIns
+                  .map(li => cleanCpf((li as { cpf?: string | null }).cpf))
+                  .filter(c => c.length === 11);
+                const { data: membros } = await supabase
+                  .from('members')
+                  .select('id, cpf')
+                  .in('cpf', cpfs);
+                const memberMap = new Map(
+                  (membros ?? []).map(m => [cleanCpf((m as { cpf?: string | null }).cpf), (m as { id: string }).id])
+                );
+                const periodo = formatarPeriodoEvento(
+                  evRow.data_inicio as string | null,
+                  evRow.data_fim as string | null,
+                );
+
+                for (const li of loteIns) {
+                  const row = li as unknown as { id: string; ministro_id?: string | null; cpf?: string | null; tipo_inscricao?: string | null };
+                  const ministroId = row.ministro_id || memberMap.get(cleanCpf(row.cpf));
+                  if (!ministroId) continue;
+                  await registrarHistoricoMinisterial({
+                    ministroId,
+                    tipo: 'inscricao_evento',
+                    titulo: 'Inscrição em evento',
+                    descricao: `Inscrição confirmada no evento "${evRow.nome as string}"${periodo ? ` (${periodo})` : ''}${row.tipo_inscricao ? ` — ${row.tipo_inscricao}` : ''}.`,
+                    origem: 'evento_inscricao',
+                    referenciaId: row.id,
+                  });
+                }
+              }
             }
           }
         } catch (emailErr) {
@@ -220,7 +264,7 @@ export async function POST(request: NextRequest) {
     // 4b. Localiza inscrição individual pelo asaas_payment_id
     const { data: ins, error: findErr } = await supabase
       .from('evento_inscricoes')
-      .select('id, status_pagamento')
+      .select('id, status_pagamento, evento_id, ministro_id, cpf, tipo_inscricao')
       .eq('asaas_payment_id', asaasId)
       .maybeSingle();
 
@@ -266,27 +310,57 @@ export async function POST(request: NextRequest) {
       try {
         const { data: fullIns } = await supabase
           .from('evento_inscricoes')
-          .select('id, nome_inscrito, email, qr_code, evento_id')
+          .select('id, nome_inscrito, email, qr_code, evento_id, ministro_id, cpf, tipo_inscricao')
           .eq('id', ins.id)
           .single();
         const fullRow = fullIns as unknown as Record<string, unknown> | null;
-        if (fullRow?.email) {
+        let evRow: Record<string, unknown> | null = null;
+        if (fullRow) {
           const { data: evData } = await supabase
             .from('eventos')
-            .select('nome, mensagem_confirmacao, link_whatsapp')
+            .select('nome, mensagem_confirmacao, link_whatsapp, data_inicio, data_fim')
             .eq('id', fullRow.evento_id as string)
             .single();
-          const evRow = evData as unknown as Record<string, unknown> | null;
-          if (evRow) {
-            await enviarEmailComDeduplicacao(supabase, {
-              inscricaoId:         fullRow.id as string,
-              eventoId:            fullRow.evento_id as string,
-              nome:                fullRow.nome_inscrito as string,
-              email:               fullRow.email as string,
-              qrCode:              fullRow.qr_code as string,
-              nomeEvento:          evRow.nome as string,
-              mensagemConfirmacao: evRow.mensagem_confirmacao as string | null,
-              linkWhatsapp:        evRow.link_whatsapp as string | null,
+          evRow = evData as unknown as Record<string, unknown> | null;
+        }
+
+        if (fullRow?.email && evRow) {
+          await enviarEmailComDeduplicacao(supabase, {
+            inscricaoId:         fullRow.id as string,
+            eventoId:            fullRow.evento_id as string,
+            nome:                fullRow.nome_inscrito as string,
+            email:               fullRow.email as string,
+            qrCode:              fullRow.qr_code as string,
+            nomeEvento:          evRow.nome as string,
+            mensagemConfirmacao: evRow.mensagem_confirmacao as string | null,
+            linkWhatsapp:        evRow.link_whatsapp as string | null,
+          });
+        }
+
+        if (EVENTOS_PAGAMENTO_CONFIRMADO.has(event) && fullRow && evRow) {
+          const ministroId = (fullRow.ministro_id as string | null) || null;
+          let resolvedId = ministroId;
+          if (!resolvedId && fullRow.cpf) {
+            const { data: membro } = await supabase
+              .from('members')
+              .select('id, cpf')
+              .eq('cpf', cleanCpf(fullRow.cpf as string))
+              .maybeSingle();
+            if (membro?.id) resolvedId = membro.id as string;
+          }
+
+          if (resolvedId) {
+            const periodo = formatarPeriodoEvento(
+              evRow.data_inicio as string | null,
+              evRow.data_fim as string | null,
+            );
+            await registrarHistoricoMinisterial({
+              ministroId: resolvedId,
+              tipo: 'inscricao_evento',
+              titulo: 'Inscrição em evento',
+              descricao: `Inscrição confirmada no evento "${evRow.nome as string}"${periodo ? ` (${periodo})` : ''}${fullRow.tipo_inscricao ? ` — ${String(fullRow.tipo_inscricao)}` : ''}.`,
+              origem: 'evento_inscricao',
+              referenciaId: fullRow.id as string,
             });
           }
         }
