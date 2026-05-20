@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/require-auth'
 import { createServerClient } from '@/lib/supabase-server'
 import { canDelete } from '@/lib/auth/roles'
+import { logDB } from '@/lib/audit'
 
 const MEMBERS_ROLES = ['super', 'administrador', 'comissao'] as const
 
@@ -280,6 +281,18 @@ export async function PATCH(
     if (!data) {
       return NextResponse.json({ error: 'Membro não encontrado' }, { status: 404 })
     }
+
+    void logDB({
+      userId: auth.ctx.userId,
+      userEmail: auth.ctx.user.email ?? undefined,
+      acao: 'editar',
+      modulo: 'membros',
+      entidade: 'members',
+      entidadeId: id,
+      descricao: `Membro atualizado: ${data.nome ?? id}`,
+      detalhes: updates,
+      request,
+    })
 
     return NextResponse.json(data)
   } catch (error) {

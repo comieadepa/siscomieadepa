@@ -18,7 +18,7 @@ export async function GET(
   const supabase = guard.ctx.supabaseAdmin;
   const { data, error } = await supabase
     .from('evento_tipos_inscricao')
-    .select('id, nome, valor, inclui_alimentacao, inclui_hospedagem, ordem')
+    .select('id, nome, valor, inclui_alimentacao, inclui_hospedagem, cortesia, limite_vagas, ordem')
     .eq('evento_id', eventoId)
     .eq('ativo', true)
     .order('ordem');
@@ -41,6 +41,8 @@ export async function POST(
     valor: number;
     inclui_alimentacao: boolean;
     inclui_hospedagem: boolean;
+    cortesia: boolean;
+    limite_vagas: number | null;
     ativo: boolean;
     ordem: number;
   }>;
@@ -53,13 +55,15 @@ export async function POST(
 
   // Remove os tipos antigos e insere os novos (evita duplicados)
   const rows = tipos.map(t => ({
-    evento_id:         eventoId,
-    nome:              normalizeUppercase(String(t.nome || '')),
-    valor:             t.valor,
-    inclui_alimentacao:t.inclui_alimentacao,
-    inclui_hospedagem: t.inclui_hospedagem,
-    ativo:             t.ativo,
-    ordem:             t.ordem,
+    evento_id:          eventoId,
+    nome:               normalizeUppercase(String(t.nome || '')),
+    valor:              t.cortesia ? 0 : t.valor,
+    inclui_alimentacao: t.inclui_alimentacao,
+    inclui_hospedagem:  t.inclui_hospedagem,
+    cortesia:           t.cortesia ?? false,
+    limite_vagas:       t.limite_vagas ?? null,
+    ativo:              t.ativo,
+    ordem:              t.ordem,
   }));
 
   const { error: deleteError } = await supabase

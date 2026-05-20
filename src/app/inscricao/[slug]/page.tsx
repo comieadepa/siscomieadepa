@@ -13,7 +13,8 @@ interface Campo      { id: string; nome: string; supervisao_id: string; }
 
 interface TipoInscricao {
   id: string; nome: string; valor: number;
-  inclui_alimentacao: boolean; inclui_hospedagem: boolean; ordem: number;
+  inclui_alimentacao: boolean; inclui_hospedagem: boolean;
+  cortesia?: boolean; limite_vagas?: number | null; ordem: number;
 }
 
 interface Evento {
@@ -32,6 +33,7 @@ interface Evento {
   status: 'programado' | 'realizado' | 'cancelado';
   suporte_nome: string | null;
   suporte_whatsapp: string | null;
+  configuracoes_ago?: { enabled?: boolean; grupos?: string[]; leitos_inferiores_preferenciais?: boolean; preferencia_60_mais?: boolean; preferencia_necessidade_especial?: boolean; observacoes?: string; } | null;
 }
 
 interface FormData {
@@ -805,7 +807,9 @@ export default function InscricaoPublicaPage() {
             {/* Tipos de inscrição */}
             {evento.usar_tipos_inscricao && tipos.length > 0 && (
               <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                <p className="text-sm font-semibold text-[#123b63] mb-3">📋 Modalidade de Inscrição</p>
+                <p className="text-sm font-semibold text-[#123b63] mb-3">
+                  {evento.departamento === 'AGO' ? '🏛️ Categoria de Inscrição' : '📋 Modalidade de Inscrição'}
+                </p>
                 <div className="space-y-2">
                   {tipos.map(t => (
                     <label key={t.id} className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${tipoSelecionado?.id === t.id ? 'border-[#123b63] bg-white' : 'border-gray-200 bg-white hover:border-[#123b63]/50'}`}>
@@ -815,14 +819,21 @@ export default function InscricaoPublicaPage() {
                           onChange={() => { setTipoSelecionado(t); setCupomStatus('idle'); setCupomDesconto(0); }}
                           className="accent-[#123b63]" />
                         <div>
-                          <p className="text-sm font-semibold text-gray-800">{t.nome}</p>
+                          <p className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                            {t.nome}
+                            {t.cortesia && (
+                              <span className="text-xs font-bold bg-green-100 text-green-700 border border-green-300 px-1.5 py-0.5 rounded-full">
+                                🎁 Cortesia
+                              </span>
+                            )}
+                          </p>
                           <p className="text-xs text-gray-500">
                             {[t.inclui_alimentacao && '🍽️ Alimentação', t.inclui_hospedagem && '🛏️ Hospedagem'].filter(Boolean).join(' + ') || 'Apenas plenárias'}
                           </p>
                         </div>
                       </div>
                       <span className="text-sm font-bold text-[#123b63] sm:whitespace-nowrap">
-                        {t.valor === 0 ? 'Gratuito' : fmtMoeda(t.valor)}
+                        {t.valor === 0 ? (t.cortesia ? 'Gratuito (Cortesia)' : 'Gratuito') : fmtMoeda(t.valor)}
                       </span>
                     </label>
                   ))}
@@ -858,6 +869,13 @@ export default function InscricaoPublicaPage() {
               (form.hospedagem || tipoSelecionado?.inclui_hospedagem) && (
               <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
                 <p className="text-sm font-bold text-amber-800 mb-3">🏨 Informações de Hospedagem (AGO)</p>
+
+                {/* Observações configuradas pelo organizador */}
+                {evento.configuracoes_ago?.observacoes && (
+                  <div className="mb-3 p-3 bg-amber-100 border border-amber-300 rounded-lg text-xs text-amber-900 whitespace-pre-wrap">
+                    {evento.configuracoes_ago.observacoes}
+                  </div>
+                )}
 
                 <div className="flex items-start gap-3 mb-3">
                   <input type="checkbox" id="hosp_necessidade_especial"
