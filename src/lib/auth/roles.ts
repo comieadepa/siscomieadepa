@@ -126,3 +126,16 @@ export function canAccessApi(role: CanonicalRole | null, apiKey: ApiKey): boolea
   if (!role) return false;
   return hasRole(role, API_ACCESS[apiKey]);
 }
+
+/** Roles que não podem executar deleções no sistema */
+const ROLES_NO_DELETE = new Set<CanonicalRole>(['comissao']);
+
+/**
+ * Retorna true se o role tem permissão para deletar registros.
+ * O role 'comissao' não pode deletar.
+ */
+export function canDelete(role: CanonicalRole | null): boolean {
+  if (!role) return false;
+  if (role === 'super') return true;
+  return !ROLES_NO_DELETE.has(role);
+}

@@ -101,6 +101,7 @@ export default function CongregacoesPage() {
   const router = useRouter();
   const dialog = useAppDialog();
   const [loading, setLoading] = useState(true);
+  const [nivelUsuario, setNivelUsuario] = useState('');
   const [activeTab, setActiveTab] = useState('divisao1');
   const [nomenclaturas, setNomenclaturasState] = useState<Nomenclaturas>({
     // Divisão 1 agora usa o conteúdo que era da Divisão 3
@@ -845,6 +846,7 @@ export default function CongregacoesPage() {
 
         const me = await meRes.json().catch(() => null as any);
         const resolvedMinistryId = String(me?.userId || '');
+        setNivelUsuario(me?.nivel || '');
         if (!resolvedMinistryId) {
           router.push('/login');
           return;
@@ -2860,8 +2862,10 @@ export default function CongregacoesPage() {
                               Editar
                             </button>
                             <button
-                              onClick={() => handleDeleteD3(cg.id)}
-                              className="ml-2 px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition text-xs font-semibold"
+                              onClick={() => nivelUsuario === 'comissao' ? undefined : handleDeleteD3(cg.id)}
+                              disabled={nivelUsuario === 'comissao'}
+                              title={nivelUsuario === 'comissao' ? 'Acesso Negado!' : undefined}
+                              className={`ml-2 px-3 py-1 rounded transition text-xs font-semibold ${nivelUsuario === 'comissao' ? 'bg-red-200 text-red-400 cursor-not-allowed opacity-60' : 'bg-red-500 text-white hover:bg-red-600'}`}
                             >
                               Deletar
                             </button>
@@ -3360,8 +3364,10 @@ export default function CongregacoesPage() {
                                     ✏️ Editar
                                   </button>
                                   <button
-                                    onClick={() => handleDeleteD2(c.id)}
-                                    className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition text-xs font-semibold"
+                                    onClick={() => nivelUsuario === 'comissao' ? undefined : handleDeleteD2(c.id)}
+                                    disabled={nivelUsuario === 'comissao'}
+                                    title={nivelUsuario === 'comissao' ? 'Acesso Negado!' : undefined}
+                                    className={`px-3 py-1 rounded transition text-xs font-semibold ${nivelUsuario === 'comissao' ? 'bg-red-200 text-red-400 cursor-not-allowed opacity-60' : 'bg-red-500 text-white hover:bg-red-600'}`}
                                   >
                                     🗑️ Excluir
                                   </button>
@@ -3803,7 +3809,12 @@ export default function CongregacoesPage() {
                                     >
                                       Editar
                                     </button>
-                                    <button onClick={() => handleDeleteD1(d.id)} className="ml-2 px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition text-xs font-semibold">
+                                    <button
+                                      onClick={() => nivelUsuario === 'comissao' ? undefined : handleDeleteD1(d.id)}
+                                      disabled={nivelUsuario === 'comissao'}
+                                      title={nivelUsuario === 'comissao' ? 'Acesso Negado!' : undefined}
+                                      className={`ml-2 px-3 py-1 rounded transition text-xs font-semibold ${nivelUsuario === 'comissao' ? 'bg-red-200 text-red-400 cursor-not-allowed opacity-60' : 'bg-red-500 text-white hover:bg-red-600'}`}
+                                    >
                                       Deletar
                                     </button>
                                   </td>

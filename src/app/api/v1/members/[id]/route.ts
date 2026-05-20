@@ -9,6 +9,7 @@ import { normalizePayloadToUppercase } from '@/lib/uppercase-normalizer'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/require-auth'
 import { createServerClient } from '@/lib/supabase-server'
+import { canDelete } from '@/lib/auth/roles'
 
 const MEMBERS_ROLES = ['super', 'administrador', 'comissao'] as const
 
@@ -301,6 +302,11 @@ export async function DELETE(
   try {
     const auth = await requireRole(request, MEMBERS_ROLES)
     if (!auth.ok) return auth.response
+
+    if (!canDelete(auth.ctx.role)) {
+      return NextResponse.json({ error: 'Acesso Negado!' }, { status: 403 })
+    }
+
     const supabase = createServerClient()
 
     // Verificar se existe
