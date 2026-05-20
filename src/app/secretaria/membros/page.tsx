@@ -112,12 +112,16 @@ export default function MembrosPage() {
   const [anivMes, setAnivMes] = useState<number>(new Date().getMonth() + 1);
   const [anivPage, setAnivPage] = useState<number>(1);
   const ANIV_POR_PAGINA = 25;
-  const [anivTexto, setAnivTexto] = useState<string>(
-    'Feliz Aniversário, {nome}! 🎉\n\nA COMIEADEPA deseja que Deus te abençoe grandemente neste dia tão especial!\n\nCom carinho,\nSecretaria COMIEADEPA'
+  const ANIV_TEXTO_DEFAULT = 'Feliz Aniversário, {nome}! 🎉\n\nA COMIEADEPA deseja que Deus te abençoe grandemente neste dia tão especial!\n\nCom carinho,\nSecretaria COMIEADEPA';
+  const [anivTexto, setAnivTexto] = useState<string>(() =>
+    typeof window !== 'undefined' ? (localStorage.getItem('aniv_mensagem_texto') ?? ANIV_TEXTO_DEFAULT) : ANIV_TEXTO_DEFAULT
   );
-  const [anivImagemUrl, setAnivImagemUrl] = useState<string>('');
+  const [anivImagemUrl, setAnivImagemUrl] = useState<string>(() =>
+    typeof window !== 'undefined' ? (localStorage.getItem('aniv_mensagem_imagem') ?? '') : ''
+  );
   const [_anivImagemFile, setAnivImagemFile] = useState<File | null>(null); void _anivImagemFile;
   const [anivEnviando, setAnivEnviando] = useState<string | null>(null);
+  const [anivSoHoje, setAnivSoHoje] = useState<boolean>(false);
   const anivFileRef = useRef<HTMLInputElement>(null);
   const [templatesSnapshot, setTemplatesSnapshot] = useState<any[]>([]);
   const [configIgreja, setConfigIgreja] = useState({
@@ -357,6 +361,18 @@ export default function MembrosPage() {
       .catch(() => null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem('aniv_mensagem_texto', anivTexto);
+  }, [anivTexto]);
+
+  useEffect(() => {
+    if (anivImagemUrl) {
+      try { localStorage.setItem('aniv_mensagem_imagem', anivImagemUrl); } catch { localStorage.removeItem('aniv_mensagem_imagem'); }
+    } else {
+      localStorage.removeItem('aniv_mensagem_imagem');
+    }
+  }, [anivImagemUrl]);
 
   const ensureTemplatesSnapshot = async () => {
     if (templatesSnapshot.length > 0) return templatesSnapshot;
@@ -2735,11 +2751,23 @@ useEffect(() => {
           <div className="bg-white rounded-lg px-4 py-3 shadow-md mb-4">
             <div className="flex flex-wrap gap-2 items-center">
 
+              {/* BUSCA */}
+              <div className="flex-1 min-w-[180px] relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
+                <input
+                  type="text"
+                  placeholder="DIGITE SUA BUSCA..."
+                  value={searchTerm}
+                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                  className="w-full h-9 pl-9 pr-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#0D2B4E]"
+                />
+              </div>
+
               {/* SUPERVISÃO */}
               <select
                 value={supervisaoFilter}
                 onChange={(e) => { setSupervisaoFilter(e.target.value); setCurrentPage(1); }}
-                className="h-9 px-3 border border-gray-300 rounded-lg text-sm font-semibold text-[#0D2B4E] bg-white focus:outline-none focus:border-[#0D2B4E] min-w-[140px]"
+                className="h-9 px-3 border border-gray-300 rounded-lg text-sm font-semibold text-[#0D2B4E] bg-white focus:outline-none focus:border-[#0D2B4E] w-[180px]"
               >
                 <option value="TODOS">SUPERVISÃO: TODAS</option>
                 {supervisoesOptions.map(s => (
@@ -2751,7 +2779,7 @@ useEffect(() => {
               <select
                 value={campoFilter}
                 onChange={(e) => { setCampoFilter(e.target.value); setCurrentPage(1); }}
-                className="h-9 px-3 border border-gray-300 rounded-lg text-sm font-semibold text-[#0D2B4E] bg-white focus:outline-none focus:border-[#0D2B4E] min-w-[140px]"
+                className="h-9 px-3 border border-gray-300 rounded-lg text-sm font-semibold text-[#0D2B4E] bg-white focus:outline-none focus:border-[#0D2B4E] w-[180px]"
               >
                 <option value="TODOS">CAMPO: TODOS</option>
                 {camposOptions
@@ -2787,18 +2815,6 @@ useEffect(() => {
                 <option value="inativo">INATIVO</option>
                 <option value="JUBILADO">JUBILADO</option>
               </select>
-
-              {/* BUSCA */}
-              <div className="flex-1 min-w-[180px] relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
-                <input
-                  type="text"
-                  placeholder="DIGITE SUA BUSCA..."
-                  value={searchTerm}
-                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                  className="w-full h-9 pl-9 pr-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#0D2B4E]"
-                />
-              </div>
 
               {/* PASTOR PRESIDENTE */}
               <label className="flex flex-col items-center gap-0.5 cursor-pointer shrink-0">
@@ -3261,41 +3277,43 @@ useEffect(() => {
                         <h4 className="text-xs font-semibold text-sky-800 mb-3">🏢 Organização Eclesiástica</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1">Campo</label>
-                            <select
-                              value={dadosPessoais.campo}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                const campoSelecionado = camposOptions.find((opt) => opt.nome === value) || null;
-                                const supervisaoRelacionada = campoSelecionado?.supervisao_id
-                                  ? supervisoesOptions.find((opt) => opt.id === campoSelecionado.supervisao_id) || null
-                                  : null;
-                                setDadosPessoais({
-                                  ...dadosPessoais,
-                                  supervisao: '',
-                                  campo: value,
-                                  congregacao: supervisaoRelacionada?.nome || '',
-                                });
-                              }}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                            >
-                              <option value="">Selecione</option>
-                              {camposOptions.map((opt) => (
-                                <option key={opt.id} value={opt.nome}>{opt.nome}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1">Supervisão</label>
                             <select
                               value={dadosPessoais.supervisao}
-                              onChange={(e) => setDadosPessoais({ ...dadosPessoais, supervisao: e.target.value })}
+                              onChange={(e) => {
+                                setDadosPessoais({
+                                  ...dadosPessoais,
+                                  supervisao: e.target.value,
+                                  campo: '',
+                                });
+                              }}
                               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                             >
                               <option value="">Selecione</option>
                               {supervisoesOptions.map((opt) => (
                                 <option key={opt.id} value={opt.nome}>{opt.nome}</option>
                               ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Campo</label>
+                            <select
+                              value={dadosPessoais.campo}
+                              onChange={(e) => {
+                                setDadosPessoais({ ...dadosPessoais, campo: e.target.value });
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                            >
+                              <option value="">Selecione</option>
+                              {camposOptions
+                                .filter((opt) => {
+                                  if (!dadosPessoais.supervisao) return true;
+                                  const sup = supervisoesOptions.find((s) => s.nome === dadosPessoais.supervisao);
+                                  return sup ? opt.supervisao_id === sup.id : true;
+                                })
+                                .map((opt) => (
+                                  <option key={opt.id} value={opt.nome}>{opt.nome}</option>
+                                ))}
                             </select>
                           </div>
                         </div>
@@ -4481,16 +4499,22 @@ useEffect(() => {
           {/* Vista - Aniversariantes */}
           {dashboardView === 'aniversariantes' && (() => {
             const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-            const aniversariantes = membros.filter(m => {
+            const hoje = new Date();
+            const hojeMes = hoje.getMonth() + 1;
+            const hojeDia = hoje.getDate();
+            const aniversariantesDoMes = membros.filter(m => {
               if (!m.dataNascimento) return false;
+              if (m.status !== 'ativo') return false;
               const parts = m.dataNascimento.split('-');
               if (parts.length < 2) return false;
               return parseInt(parts[1], 10) === anivMes;
-            }).sort((a, b) => {
-              const dayA = parseInt((a.dataNascimento || '').split('-')[2] || '0', 10);
-              const dayB = parseInt((b.dataNascimento || '').split('-')[2] || '0', 10);
-              return dayA - dayB;
-            });
+            }).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }));
+            const aniversariantes = anivSoHoje
+              ? aniversariantesDoMes.filter(m => {
+                  const dia = parseInt((m.dataNascimento || '').split('-')[2] || '0', 10);
+                  return anivMes === hojeMes && dia === hojeDia;
+                })
+              : aniversariantesDoMes;
 
             const totalPaginas = Math.max(1, Math.ceil(aniversariantes.length / ANIV_POR_PAGINA));
             const paginaAtual = Math.min(anivPage, totalPaginas);
@@ -4558,10 +4582,43 @@ useEffect(() => {
 
                 {/* Lista de aniversariantes */}
                 <div className="bg-white rounded-lg shadow-md p-6">
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2 justify-between mb-4">
                     <h3 className="font-bold text-gray-800 text-base">
                       🎂 Aniversariantes de {MESES[anivMes - 1]} ({aniversariantes.length})
                     </h3>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => { setAnivSoHoje(v => !v); setAnivPage(1); }}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border transition ${
+                          anivSoHoje
+                            ? 'bg-teal-500 border-teal-500 text-white'
+                            : 'bg-white border-gray-300 text-gray-600 hover:border-teal-400 hover:text-teal-600'
+                        }`}
+                        title={anivSoHoje ? 'Mostrar todos do mês' : 'Mostrar só os de hoje'}
+                      >
+                        <span className={`w-3 h-3 rounded-full ${anivSoHoje ? 'bg-white' : 'bg-gray-300'}`} />
+                        Só hoje
+                      </button>
+                      <button
+                        onClick={() => {
+                          const dataEmissao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+                          const titulo = anivSoHoje ? `Aniversariantes do Dia — ${hojeDia} de ${MESES[anivMes - 1]}` : `Aniversariantes de ${MESES[anivMes - 1]}`;
+                          const linhas = aniversariantes.map(m => {
+                            const dia = (m.dataNascimento || '').split('-')[2] || '—';
+                            return `<tr><td style="text-align:center;font-weight:bold">${dia}</td><td>${m.nome}</td><td>${m.supervisao || '—'}</td><td>${m.campo || '—'}</td><td>${m.celular || m.whatsapp || '—'}</td><td>${m.email || '—'}</td></tr>`;
+                          }).join('');
+                          const logoUrl = configIgreja.logo || (window.location.origin + '/img/logo_comieadepa.png');
+                          const logoHtml = `<img src="${logoUrl}" alt="Logo" style="width:70px;height:70px;object-fit:contain;border-radius:8px" />`;
+                          const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#333;padding:30px}header{border-bottom:3px solid #123b63;padding-bottom:16px;margin-bottom:20px;display:flex;align-items:center;gap:20px}.logo-box{width:70px;height:70px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.org{flex:1}.org h1{font-size:18px;font-weight:bold;color:#123b63}.org p{font-size:10px;color:#666;margin-top:2px}.badge{background:#F39C12;color:#fff;padding:4px 12px;border-radius:20px;font-size:10px;font-weight:bold;align-self:flex-start}h2{font-size:13px;font-weight:bold;color:#123b63;margin:16px 0 10px;border-bottom:1px solid #e2e8f0;padding-bottom:4px}table{width:100%;border-collapse:collapse;margin-bottom:16px}th{background:#123b63;color:#fff;font-size:10px;padding:6px 8px;text-align:left}td{padding:5px 8px;border-bottom:1px solid #f1f5f9;font-size:10px}tr:nth-child(even) td{background:#f8fafc}footer{margin-top:24px;border-top:1px solid #e2e8f0;padding-top:10px;font-size:9px;color:#94a3b8;text-align:center}@media print{button{display:none}}</style></head><body><header><div class="logo-box">${logoHtml}</div><div class="org"><h1>COMIEADEPA</h1><p>Convenção das Assembleias de Deus no Estado do Pará</p><p>Secretária Geral — Lista de Aniversariantes</p></div><div class="badge">${MESES[anivMes - 1].toUpperCase()}</div></header><h2>${titulo} (${aniversariantes.length} ministros ativos)</h2><table><thead><tr><th>Dia</th><th>Nome</th><th>Supervisão</th><th>Campo</th><th>Telefone</th><th>E-mail</th></tr></thead><tbody>${linhas}</tbody></table><footer>Emitido em ${dataEmissao} | COMIEADEPA — Sistema de Gestão</footer><script>window.onload=function(){window.print();}<\/script></body></html>`;
+                          const w = window.open('', '', 'height=900,width=1100');
+                          if (w) { w.document.write(html); w.document.close(); }
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-gray-300 bg-white text-gray-600 hover:border-blue-400 hover:text-blue-600 transition"
+                        title="Imprimir lista de aniversariantes"
+                      >
+                        🖨️ Imprimir
+                      </button>
+                    </div>
                   </div>
 
                   {aniversariantes.length === 0 ? (
@@ -4580,44 +4637,51 @@ useEffect(() => {
                         </thead>
                         <tbody>
                           {anivPagina.map(m => {
-                            const dia = (m.dataNascimento || '').split('-')[2] || '—';
-                            return (
-                              <tr key={m.id} className="border-b border-gray-200 hover:bg-gray-50">
-                                <td className="px-3 py-2 text-center">
-                                  <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-teal-100 text-teal-700 font-bold text-sm">{dia}</span>
-                                </td>
-                                <td className="px-3 py-2">
-                                  <p className="text-xs font-semibold text-gray-800 uppercase">{m.nome}</p>
-                                  <p className="text-[10px] text-gray-500">{m.tipoCadastro}</p>
-                                </td>
-                                <td className="px-3 py-2 text-xs text-gray-600">{m.campo || '—'}</td>
-                                <td className="px-3 py-2">
-                                  <p className="text-xs text-gray-600">{m.celular || m.whatsapp || '—'}</p>
-                                  <p className="text-[10px] text-gray-400 truncate max-w-[140px]">{m.email || ''}</p>
-                                </td>
-                                <td className="px-3 py-2">
-                                  <div className="flex items-center justify-center gap-2">
-                                    <button
-                                      onClick={() => handleWhatsApp(m)}
-                                      disabled={anivEnviando === m.id}
-                                      className="px-2 py-1 bg-green-500 hover:bg-green-600 text-white text-xs font-semibold rounded transition"
-                                      title="Enviar via WhatsApp"
-                                    >
-                                      WhatsApp
-                                    </button>
-                                    <button
-                                      onClick={() => handleEmail(m)}
-                                      disabled={anivEnviando === m.id}
-                                      className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs font-semibold rounded transition"
-                                      title="Enviar via E-mail"
-                                    >
-                                      E-mail
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
+                              const partes = (m.dataNascimento || '').split('-');
+                              const dia = partes[2] || '—';
+                              const diaNasc = parseInt(partes[2] || '0', 10);
+                              const isHoje = anivMes === hojeMes && diaNasc === hojeDia;
+                              const temWhatsapp = !!(m.whatsapp || m.celular);
+                              const temEmail = !!m.email;
+                              const whatsappAtivo = isHoje && temWhatsapp && anivEnviando !== m.id;
+                              const emailAtivo = isHoje && temEmail && anivEnviando !== m.id;
+                              return (
+                                <tr key={m.id} className="border-b border-gray-200 hover:bg-gray-50">
+                                  <td className="px-3 py-2 text-center">
+                                    <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${isHoje ? 'bg-teal-500 text-white ring-2 ring-teal-300' : 'bg-teal-100 text-teal-700'}`}>{dia}</span>
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <p className="text-xs font-semibold text-gray-800 uppercase">{m.nome}</p>
+                                    <p className="text-[10px] text-gray-500">{m.tipoCadastro}</p>
+                                  </td>
+                                  <td className="px-3 py-2 text-xs text-gray-600">{m.campo || '—'}</td>
+                                  <td className="px-3 py-2">
+                                    <p className="text-xs text-gray-600">{m.celular || m.whatsapp || '—'}</p>
+                                    <p className="text-[10px] text-gray-400 truncate max-w-[140px]">{m.email || ''}</p>
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex items-center justify-center gap-2">
+                                      <button
+                                        onClick={() => handleWhatsApp(m)}
+                                        disabled={!whatsappAtivo}
+                                        className={`px-2 py-1 text-white text-xs font-semibold rounded transition ${whatsappAtivo ? 'bg-green-500 hover:bg-green-600 cursor-pointer' : 'bg-gray-300 cursor-not-allowed opacity-50'}`}
+                                        title={!isHoje ? 'Disponível apenas no dia do aniversário' : !temWhatsapp ? 'WhatsApp não cadastrado' : 'Enviar via WhatsApp'}
+                                      >
+                                        WhatsApp
+                                      </button>
+                                      <button
+                                        onClick={() => handleEmail(m)}
+                                        disabled={!emailAtivo}
+                                        className={`px-2 py-1 text-white text-xs font-semibold rounded transition ${emailAtivo ? 'bg-blue-500 hover:bg-blue-600 cursor-pointer' : 'bg-gray-300 cursor-not-allowed opacity-50'}`}
+                                        title={!isHoje ? 'Disponível apenas no dia do aniversário' : !temEmail ? 'E-mail não cadastrado' : 'Enviar via E-mail'}
+                                      >
+                                        E-mail
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
                         </tbody>
                       </table>
 

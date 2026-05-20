@@ -1512,15 +1512,18 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
       )}
 
       {editando && editForm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => { setEditando(null); setEditForm(null); }}>
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6" onClick={e => e.stopPropagation()}>
-            <div className="flex items-start justify-between mb-4">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto" onClick={() => { setEditando(null); setEditForm(null); }}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col max-h-[95dvh] sm:max-h-[90vh] my-auto" onClick={e => e.stopPropagation()}>
+            {/* Cabeçalho fixo */}
+            <div className="flex items-start justify-between px-4 sm:px-6 pt-4 sm:pt-6 pb-3 border-b border-gray-100 shrink-0">
               <div>
                 <h3 className="font-bold text-[#123b63] text-base">✏️ Editar Inscrição</h3>
                 <p className="text-xs text-gray-500 mt-0.5">{editando.nome_inscrito}</p>
               </div>
-              <button onClick={() => { setEditando(null); setEditForm(null); }} className="text-gray-400 hover:text-gray-700 text-xl font-bold leading-none">×</button>
+              <button onClick={() => { setEditando(null); setEditForm(null); }} className="text-gray-400 hover:text-gray-700 text-xl font-bold leading-none ml-4">×</button>
             </div>
+            {/* Conteúdo com scroll */}
+            <div className="overflow-y-auto flex-1 px-4 sm:px-6 py-4">
 
             {erroEdit && (
               <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{erroEdit}</div>
@@ -1699,8 +1702,9 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                 )}
               </div>
             )}
-
-            <div className="flex items-center justify-end gap-2 mt-6">
+            </div>{/* fim scroll */}
+            {/* Rodapé fixo */}
+            <div className="flex items-center justify-end gap-2 px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-100 shrink-0">
               <button
                 onClick={() => { setEditando(null); setEditForm(null); }}
                 className="px-4 py-2 text-sm rounded-lg border border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100 transition"

@@ -22,6 +22,8 @@ interface DebitoCgadb {
   ano: number | null;
   valor: number | null;
   status: string | null;
+  celular: string | null;
+  email: string | null;
   imported_at: string;
 }
 
@@ -512,7 +514,7 @@ function AbaMinistros({
       <div className="flex flex-wrap items-center gap-2 mb-4 p-3 bg-gray-50 border border-gray-200 rounded-2xl shadow-sm">
         <select
           value={filtroSupervisao}
-          onChange={e => { setFiltroSupervisao(e.target.value); resetPage(); }}
+          onChange={e => { setFiltroSupervisao(e.target.value); setFiltroCampo(''); resetPage(); }}
           className="flex-1 min-w-[160px] px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition"
         >
           <option value="">Todas as Supervisões</option>
@@ -525,7 +527,10 @@ function AbaMinistros({
           className="flex-1 min-w-[140px] px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition"
         >
           <option value="">Todos os Campos</option>
-          {campos.map(c => <option key={c} value={c}>{c}</option>)}
+          {(filtroSupervisao
+            ? ministros.filter(m => m.supervisao === filtroSupervisao && m.campo).map(m => m.campo)
+            : campos
+          ).filter((c, i, arr) => arr.indexOf(c) === i).sort().map(c => <option key={c} value={c}>{c}</option>)}
         </select>
 
         <div className="relative flex-[2] min-w-[180px]">
@@ -553,6 +558,13 @@ function AbaMinistros({
           <option value="com_debito">Com Débito</option>
           <option value="sem_debito">Sem Débito</option>
         </select>
+
+        <button
+          onClick={() => { setFiltroSupervisao(''); setFiltroCampo(''); setFiltroBusca(''); setFiltroStatus('todos'); resetPage(); }}
+          className="shrink-0 px-4 py-2.5 bg-[#0D2B4E] hover:bg-[#1A3A5C] text-white text-sm font-semibold rounded-xl transition"
+        >
+          LIMPAR
+        </button>
 
         <div className="hidden sm:block w-px h-8 bg-gray-200 shrink-0" />
 
@@ -947,16 +959,38 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
       }
 
       const sep = detectSep(lines[0]);
-      const headers = parseCsvLine(lines[0], sep).map(h => h.toLowerCase().trim());
+      const headers = parseCsvLine(lines[0], sep).map(h => h.toLowerCase().trim()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
 
-      // Mapear índices das colunas (aceita variações de cabeçalho)
-      const idxCpf = headers.findIndex(h => h.includes('cpf'));
-      const idxReg = headers.findIndex(h => h.includes('registro'));
-      const idxNome = headers.findIndex(h => h.includes('nome'));
-      const idxConv = headers.findIndex(h => h.includes('conven'));
-      const idxAno = headers.findIndex(h => h === 'ano' || h.includes('ano'));
-      const idxValor = headers.findIndex(h => h.includes('valor'));
-      const idxStatus = headers.findIndex(h => h.includes('status'));
+      // Mapear índices — suporta formato antigo (ano/valor/convencao) e novo (registro comieadepa/cgadb/total devido)
+      const idxCpf   = headers.findIndex(h => h.includes('cpf'));
+      const idxNome  = headers.findIndex(h => h.includes('nome'));
+
+      // Registro CGADB: preferir coluna com "cgadb", senão "registro" genérico (formato antigo)
+      const idxReg = (() => {
+        const i = headers.findIndex(h => h.includes('cgadb'));
+        if (i !== -1) return i;
+        return headers.findIndex(h => h.includes('registro') && !h.includes('comieadepa'));
+      })();
+
+      // Registro COMIEADEPA: preferir coluna com "comieadepa", senão "conven" (formato antigo)
+      const idxConv = (() => {
+        const i = headers.findIndex(h => h.includes('comieadepa'));
+        if (i !== -1) return i;
+        return headers.findIndex(h => h.includes('conven'));
+      })();
+
+      // Valor: preferir "total" (novo: "total devido"), senão "valor" (formato antigo)
+      const idxValor = (() => {
+        const i = headers.findIndex(h => h.includes('total'));
+        if (i !== -1) return i;
+        return headers.findIndex(h => h.includes('valor'));
+      })();
+
+      const idxAno     = headers.findIndex(h => h === 'ano' || (h.includes('ano') && !h.includes('convenc')));
+      const idxStatus  = headers.findIndex(h => h.includes('status'));
+      const idxCelular = headers.findIndex(h => h.includes('celular') || h.includes('fone') || h.includes('telefone'));
+      const idxEmail   = headers.findIndex(h => h.includes('e-mail') || h === 'email');
 
       if (idxCpf === -1 || idxNome === -1) {
         notify('CSV inválido', 'O arquivo deve conter as colunas CPF e NOME.', 'error');
@@ -966,9 +1000,11 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
       const rows: object[] = [];
       for (let i = 1; i < lines.length; i++) {
         const cols = parseCsvLine(lines[i], sep);
-        const cpfRaw = idxCpf >= 0 ? cols[idxCpf] : '';
+        const nomeRaw = idxNome >= 0 ? (cols[idxNome] || '').trim() : '';
+        const cpfRaw  = idxCpf  >= 0 ? (cols[idxCpf]  || '').trim() : '';
         const cpfNorm = normalizeCpf(cpfRaw);
-        if (!cpfNorm || cpfNorm.length < 3) continue; // pula linhas sem CPF
+        // Pula linhas completamente vazias (sem nome e sem CPF)
+        if (!nomeRaw && !cpfNorm) continue;
 
         const valorRaw = idxValor >= 0 ? cols[idxValor] : '';
         const valor = valorRaw ? parseValor(valorRaw) : null;
@@ -976,13 +1012,15 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
         const ano = anoRaw ? parseInt(anoRaw, 10) || null : null;
 
         rows.push({
-          cpf: cpfNorm,
-          registro: idxReg >= 0 ? cols[idxReg] || null : null,
-          nome: idxNome >= 0 ? cols[idxNome] || '' : '',
-          convencao: idxConv >= 0 ? cols[idxConv] || null : null,
+          cpf:       cpfNorm || null,
+          registro:  idxReg     >= 0 ? cols[idxReg]     || null : null,
+          nome:      nomeRaw    || null,
+          convencao: idxConv    >= 0 ? cols[idxConv]    || null : null,
           ano,
           valor,
-          status: idxStatus >= 0 ? cols[idxStatus] || null : null,
+          status:    idxStatus  >= 0 ? cols[idxStatus]  || null : null,
+          celular:   idxCelular >= 0 ? cols[idxCelular] || null : null,
+          email:     idxEmail   >= 0 ? cols[idxEmail]   || null : null,
           imported_at: new Date().toISOString(),
         });
       }
@@ -992,13 +1030,16 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
         return;
       }
 
-      // Desduplicar pelo par (cpf, ano) — mantém última ocorrência
+      // Desduplicar pelo par (cpf, ano) para rows com CPF; rows sem CPF são sempre únicos
       const seen = new Map<string, object>();
+      const semCpf: object[] = [];
       for (const r of rows) {
-        const key = `${(r as any).cpf}__${(r as any).ano ?? ''}`;
+        const cpf = (r as any).cpf;
+        if (!cpf) { semCpf.push(r); continue; }
+        const key = `${cpf}__${(r as any).ano ?? ''}`;
         seen.set(key, r);
       }
-      const deduped = Array.from(seen.values());
+      const deduped = [...Array.from(seen.values()), ...semCpf];
 
       // Upsert em lotes de 500
       const BATCH = 500;
