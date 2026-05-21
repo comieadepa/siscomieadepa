@@ -234,6 +234,10 @@ export default function EventosDashboardPage() {
               className="text-xs border border-gray-200 text-gray-600 px-3 py-1.5 rounded-lg font-semibold hover:border-gray-300 hover:bg-gray-50 transition disabled:opacity-40">
               💰 Financeiro CSV
             </button>
+            <button onClick={() => router.push('/eventos/novo')}
+              className="text-xs bg-emerald-600 text-white px-4 py-1.5 rounded-lg font-bold hover:bg-emerald-700 transition flex items-center gap-1">
+              + Criar Evento
+            </button>
           </div>
         </div>
 
