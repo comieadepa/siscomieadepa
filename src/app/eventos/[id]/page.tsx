@@ -36,9 +36,11 @@ interface Evento {
   inscricoes_abertas: boolean; limite_vagas: number | null;
   limite_hospedagem: number | null; limite_brindes: number | null;
   publico_alvo: string | null;
-  status: 'programado' | 'realizado' | 'cancelado';
+  status: 'programado' | 'realizado' | 'cancelado' | 'encerrado';
   checkin_ativo: boolean;
   created_at: string;
+  encerrado_em: string | null;
+  configuracoes_ago: Record<string, unknown> | null;
 }
 
 interface Inscricao {
@@ -67,7 +69,7 @@ interface EventoResumo {
   id: string;
   nome: string;
   departamento: string;
-  status: 'programado' | 'realizado' | 'cancelado';
+  status: 'programado' | 'realizado' | 'cancelado' | 'encerrado';
   data_inicio: string | null;
   data_fim: string | null;
   valor_inscricao: number;
@@ -125,7 +127,7 @@ interface Ministro {
   supervisao_id?: string | null; campo_id?: string | null;
 }
 
-type TabId = 'inscritos' | 'inscricao-manual' | 'checkin' | 'etiquetas' | 'financeiro' | 'relatorios' | 'comunicacao' | 'equipe' | 'configuracoes' | 'hospedagem' | 'backup' | 'programacao' | 'certificados';
+type TabId = 'inscritos' | 'inscricao-manual' | 'checkin' | 'etiquetas' | 'financeiro' | 'relatorios' | 'comunicacao' | 'equipe' | 'configuracoes' | 'hospedagem' | 'backup' | 'programacao' | 'certificados' | 'relatorios-ago' | 'ausentes';
 // Nota: 'inscricao-manual' e 'configuracoes' mantidos no tipo para compatibilidade com ?tab= mas removidos da nav
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -165,9 +167,10 @@ const STATUS_PAG_CFG: Record<string, { label: string; cls: string }> = {
 };
 
 const STATUS_EV_CFG = {
-  programado: { label: 'Programado', cls: 'bg-blue-100 text-blue-700'  },
-  realizado:  { label: 'Realizado',  cls: 'bg-green-100 text-green-700'},
-  cancelado:  { label: 'Cancelado',  cls: 'bg-red-100 text-red-700'    },
+  programado: { label: 'Programado',    cls: 'bg-blue-100 text-blue-700'     },
+  realizado:  { label: 'Realizado',     cls: 'bg-green-100 text-green-700'   },
+  cancelado:  { label: 'Cancelado',     cls: 'bg-red-100 text-red-700'       },
+  encerrado:  { label: 'AGO Encerrada', cls: 'bg-red-700 text-white font-black' },
 };
 
 const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white';
@@ -192,6 +195,8 @@ export default function GerenciarEventoPage() {
   const [loadingEvento, setLoadingEvento] = useState(true);
   const [loadingInsc,   setLoadingInsc]   = useState(true);
   const [activeTab, setActiveTab] = useState<TabId>('inscritos');
+  const [encerrandoAGO, setEncerrandoAGO] = useState(false);
+  const [showEncerrarModal, setShowEncerrarModal] = useState(false);
   const tabsTrackRef = useRef<HTMLDivElement | null>(null);
   const tabButtonRefs = useRef(new Map<TabId, HTMLButtonElement | null>());
   const [showLeftFade, setShowLeftFade] = useState(false);
@@ -222,6 +227,8 @@ export default function GerenciarEventoPage() {
     [id, perfil]
   );
 
+  const isAGO = evento?.departamento === 'AGO';
+
   const podeEditarInscritos = perfil.podeEditarInscricoes;
   const podeRemoverInscricao = perfil.podeRemoverInscricao;
   const podeMoverInscricao = perfil.podeMoverInscricao;
@@ -239,8 +246,12 @@ export default function GerenciarEventoPage() {
     { id: 'financeiro',  label: 'Financeiro',          icon: '💳' },
     { id: 'backup',      label: 'Backup / Exportação', icon: '💾' },
     { id: 'certificados',label: 'Certificados',        icon: '🎓' },
-    { id: 'programacao', label: 'Programação',         icon: '📋' },
-    { id: 'relatorios',  label: 'Relatórios',          icon: '📊' },
+    { id: 'programacao',    label: 'Programação',   icon: '📋' },
+    { id: 'relatorios',     label: 'Relatórios',    icon: '📊' },
+    ...(isAGO ? [
+      { id: 'relatorios-ago' as TabId, label: 'Relatórios AGO', icon: '📈' },
+      { id: 'ausentes'       as TabId, label: 'Ausentes',       icon: '🚨' },
+    ] : []),
   ];
 
   const tabsPermitidasEvento = id ? perfil.tabsPermitidasParaEvento(id) : perfil.tabsPermitidas;
@@ -248,7 +259,10 @@ export default function GerenciarEventoPage() {
   const tabsVisiveis = (() => {
     if (perfil.loading) return TODAS_TABS;
     if (perfil.isGlobal) return TODAS_TABS;
-    return TODAS_TABS.filter(t => tabsPermitidasEvento.includes(t.id as import('@/hooks/useEventosPerfil').TabEventoId));
+    return TODAS_TABS.filter(t => {
+      if (t.id === 'relatorios-ago' || t.id === 'ausentes') return isAGO && perfil.podeEditar;
+      return tabsPermitidasEvento.includes(t.id as import('@/hooks/useEventosPerfil').TabEventoId);
+    });
   })();
 
   useEffect(() => {
@@ -480,6 +494,11 @@ export default function GerenciarEventoPage() {
                   ? <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">✅ Inscrições abertas</span>
                   : <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-gray-100 text-gray-500">🔒 Inscrições fechadas</span>
                 }
+                {evento.status === 'encerrado' && evento.encerrado_em && (
+                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-red-100 text-red-700">
+                    🔒 Encerrada em {fmtDT(evento.encerrado_em)}
+                  </span>
+                )}
               </div>
               <h1 className="text-xl font-black text-[#0D2B4E] mb-1.5 leading-snug">{evento.nome}</h1>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
@@ -517,6 +536,14 @@ export default function GerenciarEventoPage() {
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#D9A520] text-white hover:bg-[#b8861a] transition">
               🏪 Balcão
             </a>
+            {isAGO && evento.status === 'programado' && perfil.podeEditar && (
+              <button
+                onClick={() => setShowEncerrarModal(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-red-700 text-white hover:bg-red-800 transition"
+              >
+                🔒 Encerrar AGO
+              </button>
+            )}
           </div>
         </div>
 
@@ -597,12 +624,14 @@ export default function GerenciarEventoPage() {
           etiquetas:    'Impressão em massa e controle de crachás',
           financeiro:   'Visão financeira, baixas manuais e movimentações',
           comunicacao:  'Histórico de notificações e reenvio de confirmações',
-          equipe:       'Operadores e permissões de acesso a este evento',
-          hospedagem:   'Gestão de alojamentos e alocação de participantes',
-          backup:       'Exportação de dados e backup do evento',
-          certificados: 'Emissão, envio e configuração visual dos certificados',
-          programacao:  'Agenda, sessões e grade do evento',
-          relatorios:   'Relatórios gerenciais por supervisão, campo e financeiro',
+          equipe:           'Operadores e permissões de acesso a este evento',
+          hospedagem:       'Gestão de alojamentos e alocação de participantes',
+          backup:           'Exportação de dados e backup do evento',
+          certificados:     'Emissão, envio e configuração visual dos certificados',
+          programacao:      'Agenda, sessões e grade do evento',
+          relatorios:       'Relatórios gerenciais por supervisão, campo e financeiro',
+          'relatorios-ago': 'Painel de indicadores e atalhos para relatórios da AGO',
+          ausentes:         'Lista de ministros ausentes nas plenárias',
         };
         const desc = TAB_DESCS[tab.id];
         const BADGE: Partial<Record<TabId, React.ReactNode>> = {
@@ -745,6 +774,57 @@ export default function GerenciarEventoPage() {
           supervisoes={supervisoes}
           campos={campos}
         />
+      )}
+      {activeTab === 'relatorios-ago' && (
+        <TabRelatoriosAGO eventoId={id} evento={evento} />
+      )}
+      {activeTab === 'ausentes' && (
+        <TabAusentes eventoId={id} evento={evento} podeEditar={perfil.podeEditar} />
+      )}
+
+      {/* ── MODAL ENCERRAR AGO ─────────────────────────────── */}
+      {showEncerrarModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-7">
+            <div className="text-center mb-5">
+              <span className="text-5xl block mb-3">🔒</span>
+              <h2 className="text-xl font-black text-gray-900 mb-2">Encerrar a AGO?</h2>
+              <p className="text-sm text-gray-500">
+                Esta ação irá <strong>encerrar definitivamente</strong> o evento, congelar todos os dados,
+                consolidar a frequência e gerar a lista de ausentes para advertência.
+              </p>
+              <p className="text-xs text-red-600 font-semibold mt-3">
+                ⚠️ Esta operação não pode ser desfeita.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowEncerrarModal(false)}
+                disabled={encerrandoAGO}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-bold bg-gray-100 text-gray-700 hover:bg-gray-200 transition disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  setEncerrandoAGO(true);
+                  try {
+                    const res = await fetch(`/api/eventos/${id}/encerrar`, { method: 'POST' });
+                    const json = await res.json() as { ok?: boolean; error?: string; encerrado_em?: string; total_processados?: number; total_ausentes?: number };
+                    if (!res.ok) { alert('Erro: ' + (json.error ?? 'Falha ao encerrar.')); return; }
+                    setShowEncerrarModal(false);
+                    await fetchEvento();
+                  } catch { alert('Erro de rede ao encerrar AGO.'); }
+                  finally { setEncerrandoAGO(false); }
+                }}
+                disabled={encerrandoAGO}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-bold bg-red-700 text-white hover:bg-red-800 transition disabled:opacity-50"
+              >
+                {encerrandoAGO ? 'Encerrando...' : '🔒 Confirmar Encerramento'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </PageLayout>
@@ -4965,5 +5045,283 @@ function CheckItem({ name, label, checked, onChange }: {
         className="w-4 h-4 accent-[#123b63] cursor-pointer" />
       <span className="text-sm text-gray-700">{label}</span>
     </label>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ABA RELATÓRIOS AGO
+// ═══════════════════════════════════════════════════════════════
+interface RelatoriosAGOData {
+  status_evento: string;
+  encerrado_em: string | null;
+  total_inscritos: number;
+  total_credenciados: number;
+  total_presentes: number;
+  total_ausentes_plenaria: number;
+  frequencia_media: number | null;
+  total_ausentes_consolidado: number | null;
+  refeicoes_consumidas: number;
+  refeicoes_restantes: number;
+}
+
+function TabRelatoriosAGO({ eventoId }: { eventoId: string; evento: Evento }) {
+  const [data, setData] = useState<RelatoriosAGOData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`/api/eventos/${eventoId}/relatorios-ago`)
+      .then(r => r.json())
+      .then((d: RelatoriosAGOData) => { setData(d); setLoading(false); })
+      .catch(() => { setErro('Erro ao carregar indicadores.'); setLoading(false); });
+  }, [eventoId]);
+
+  if (loading) return <div className="text-center py-16 text-gray-400 text-sm">Carregando indicadores...</div>;
+  if (erro || !data) return <div className="text-center py-16 text-red-500 text-sm">{erro ?? 'Sem dados.'}</div>;
+
+  const encerrado = data.status_evento === 'encerrado';
+
+  const cards = [
+    { label: 'Inscritos',          value: data.total_inscritos,            icon: '👥', color: 'text-[#0D2B4E]',   bg: 'bg-[#0D2B4E]/10' },
+    { label: 'Credenciados',       value: data.total_credenciados,         icon: '✅', color: 'text-emerald-700', bg: 'bg-emerald-100' },
+    { label: 'Presentes plenária', value: data.total_presentes,            icon: '🏛️', color: 'text-blue-700',    bg: 'bg-blue-100' },
+    { label: 'Ausentes plenária',  value: data.total_ausentes_plenaria,    icon: '🚨', color: 'text-red-700',     bg: 'bg-red-100' },
+    { label: 'Freq. média',        value: data.frequencia_media != null ? `${data.frequencia_media}%` : '—', icon: '📈', color: 'text-purple-700', bg: 'bg-purple-100' },
+    { label: 'Refeições servidas', value: data.refeicoes_consumidas,       icon: '🍽️', color: 'text-amber-700',   bg: 'bg-amber-100' },
+    { label: 'Refeições restantes',value: data.refeicoes_restantes,        icon: '🥗', color: 'text-gray-600',    bg: 'bg-gray-100' },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {encerrado && (
+        <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-5 py-3">
+          <span className="text-2xl">🔒</span>
+          <div>
+            <p className="text-red-700 font-black text-sm">AGO Encerrada</p>
+            {data.encerrado_em && <p className="text-red-500 text-xs">Encerrada em {new Date(data.encerrado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</p>}
+          </div>
+          {data.total_ausentes_consolidado != null && (
+            <span className="ml-auto bg-red-100 text-red-700 text-xs font-black px-3 py-1 rounded-full">
+              {data.total_ausentes_consolidado} ausente{data.total_ausentes_consolidado !== 1 ? 's' : ''} consolidado{data.total_ausentes_consolidado !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+        {cards.map(c => (
+          <div key={c.label} className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm flex items-start gap-3">
+            <div className={`w-10 h-10 rounded-xl ${c.bg} flex items-center justify-center text-lg flex-shrink-0`}>{c.icon}</div>
+            <div>
+              <p className={`font-black text-xl leading-tight ${c.color}`}>{c.value}</p>
+              <p className="text-[10px] text-gray-400 uppercase tracking-wide mt-0.5">{c.label}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Atalhos rápidos */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+        <h3 className="text-sm font-black text-gray-700 mb-3">Atalhos</h3>
+        <div className="flex flex-wrap gap-2">
+          <a
+            href={`/eventos/${eventoId}/relatorios/frequencia-ago`}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-[#0D2B4E] text-white hover:bg-[#0a1e38] transition"
+          >
+            📊 Frequência Detalhada
+          </a>
+          <a
+            href={`/eventos/${eventoId}/ausentes`}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-red-100 text-red-700 hover:bg-red-200 transition"
+          >
+            🚨 Página de Ausentes
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ABA AUSENTES
+// ═══════════════════════════════════════════════════════════════
+interface AusenteItem {
+  id: string | null;
+  inscricao_id: string;
+  nome: string;
+  cpf: string | null;
+  campo: string | null;
+  supervisao: string | null;
+  categoria: string | null;
+  percentual_frequencia: number;
+  faltas: number;
+  selecionado_para_advertencia: boolean;
+}
+
+function TabAusentes({ eventoId, podeEditar }: { eventoId: string; evento: Evento; podeEditar: boolean }) {
+  const [ausentes, setAusentes] = useState<AusenteItem[]>([]);
+  const [encerrado, setEncerrado] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState<string | null>(null);
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
+  const [salvando, setSalvando] = useState(false);
+  const [filtroNome, setFiltroNome] = useState('');
+  const [filtroCampo, setFiltroCampo] = useState('');
+
+  const fetchAusentes = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`/api/eventos/${eventoId}/ausentes`);
+      const d = await r.json() as { encerrado: boolean; ausentes: AusenteItem[] };
+      setAusentes(d.ausentes ?? []);
+      setEncerrado(d.encerrado ?? false);
+      // Inicializa selecionados com os já marcados no banco
+      const jaMarc = new Set<string>(
+        d.ausentes.filter(a => a.selecionado_para_advertencia && a.id).map(a => a.id as string)
+      );
+      setSelecionados(jaMarc);
+    } catch { setErro('Erro ao carregar ausentes.'); }
+    finally { setLoading(false); }
+  }, [eventoId]);
+
+  useEffect(() => { void fetchAusentes(); }, [fetchAusentes]);
+
+  const filtrados = ausentes.filter(a =>
+    (!filtroNome  || a.nome.toLowerCase().includes(filtroNome.toLowerCase())) &&
+    (!filtroCampo || (a.campo ?? '').toLowerCase().includes(filtroCampo.toLowerCase()))
+  );
+
+  const toggleSel = (id: string | null) => {
+    if (!id) return;
+    setSelecionados(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSalvar = async () => {
+    if (!encerrado) return;
+    setSalvando(true);
+    try {
+      const ids = [...selecionados];
+      // Marca os selecionados
+      if (ids.length > 0) {
+        await fetch(`/api/eventos/${eventoId}/ausentes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids, selecionado: true }),
+        });
+      }
+      // Desmarca os não-selecionados
+      const naoSel = ausentes.filter(a => a.id && !selecionados.has(a.id)).map(a => a.id as string);
+      if (naoSel.length > 0) {
+        await fetch(`/api/eventos/${eventoId}/ausentes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: naoSel, selecionado: false }),
+        });
+      }
+      await fetchAusentes();
+    } finally { setSalvando(false); }
+  };
+
+  if (loading) return <div className="text-center py-16 text-gray-400 text-sm">Carregando ausentes...</div>;
+  if (erro) return <div className="text-center py-16 text-red-500 text-sm">{erro}</div>;
+
+  return (
+    <div className="space-y-4">
+      {!encerrado && (
+        <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700 font-semibold">
+          ⚠️ A AGO ainda não foi encerrada — dados calculados em tempo real.
+        </div>
+      )}
+
+      {/* Filtros */}
+      <div className="flex flex-wrap gap-2">
+        <input
+          type="text"
+          placeholder="Filtrar por nome..."
+          value={filtroNome}
+          onChange={e => setFiltroNome(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] w-48"
+        />
+        <input
+          type="text"
+          placeholder="Filtrar por campo..."
+          value={filtroCampo}
+          onChange={e => setFiltroCampo(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] w-48"
+        />
+        <span className="ml-auto text-xs text-gray-500 self-center">{filtrados.length} ausente{filtrados.length !== 1 ? 's' : ''}</span>
+      </div>
+
+      {/* Tabela */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                {encerrado && podeEditar && <th className="px-3 py-3 text-left text-xs font-bold text-gray-500">Advertência</th>}
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-500">Nome</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-500">Campo</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-500">Supervisão</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-500">Categoria</th>
+                <th className="px-4 py-3 text-right text-xs font-bold text-gray-500">Faltas</th>
+                <th className="px-4 py-3 text-right text-xs font-bold text-gray-500">Freq.%</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filtrados.length === 0 ? (
+                <tr>
+                  <td colSpan={encerrado && podeEditar ? 7 : 6} className="px-4 py-10 text-center text-gray-400 text-sm">
+                    Nenhum ausente encontrado.
+                  </td>
+                </tr>
+              ) : filtrados.map((a, idx) => (
+                <tr key={a.inscricao_id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                  {encerrado && podeEditar && (
+                    <td className="px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={a.id ? selecionados.has(a.id) : false}
+                        onChange={() => toggleSel(a.id)}
+                        className="w-4 h-4 accent-red-600 cursor-pointer"
+                      />
+                    </td>
+                  )}
+                  <td className="px-4 py-3 font-semibold text-gray-900">{a.nome}</td>
+                  <td className="px-4 py-3 text-gray-600">{a.campo ?? '—'}</td>
+                  <td className="px-4 py-3 text-gray-600">{a.supervisao ?? '—'}</td>
+                  <td className="px-4 py-3 text-gray-600">{a.categoria ?? '—'}</td>
+                  <td className="px-4 py-3 text-right">
+                    <span className="bg-red-100 text-red-700 text-xs font-bold px-2 py-0.5 rounded-full">{a.faltas}</span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${a.percentual_frequencia === 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {a.percentual_frequencia}%
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {encerrado && podeEditar && (
+        <div className="flex justify-end gap-3">
+          <span className="text-xs text-gray-500 self-center">{selecionados.size} selecionado{selecionados.size !== 1 ? 's' : ''} para advertência</span>
+          <button
+            onClick={handleSalvar}
+            disabled={salvando}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold bg-red-700 text-white hover:bg-red-800 transition disabled:opacity-50"
+          >
+            {salvando ? 'Salvando...' : '📋 Salvar Seleção'}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

@@ -204,6 +204,32 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // ── Snapshot ministerial (AGO) — não bloqueia se não encontrar ──────
+    const cpfLimpo = cpf?.replace(/\D/g, '') || null;
+    let ministroSnapshot: Record<string, unknown> | null = null;
+    if (cpfLimpo && evento.departamento === 'AGO') {
+      const { data: membro } = await supabase
+        .from('members')
+        .select('id, nome, cpf, matricula, data_nascimento, campo, campo_id, supervisao, supervisao_id, status_ministerial, cargo, is_pastor_presidente, is_pastor_auxiliar, is_pastor_jubilado, is_campo_missionario')
+        .eq('cpf', cpfLimpo)
+        .maybeSingle();
+      if (membro) {
+        ministroSnapshot = {
+          ministro_id: membro.id, nome: membro.nome, cpf: membro.cpf,
+          matricula: membro.matricula ?? null,
+          data_nascimento: membro.data_nascimento ?? null,
+          campo: membro.campo ?? null, campo_id: membro.campo_id ?? null,
+          supervisao: membro.supervisao ?? null, supervisao_id: membro.supervisao_id ?? null,
+          status_ministerial: membro.status_ministerial ?? null,
+          cargo: membro.cargo ?? null,
+          is_pastor_presidente: !!membro.is_pastor_presidente,
+          is_pastor_auxiliar: !!membro.is_pastor_auxiliar,
+          is_pastor_jubilado: !!membro.is_pastor_jubilado,
+          is_campo_missionario: !!membro.is_campo_missionario,
+        };
+      }
+    }
+
     // ════════════════════════════════════════════════════════════
     // FLUXO LOTE
     // ════════════════════════════════════════════════════════════
@@ -322,6 +348,7 @@ export async function POST(request: NextRequest) {
       forma_pagamento:  isGratuito ? null : 'pix',
       qr_code:          qr_code || null,
       refeicoes_total:  tipoInclui.alimentacao ? tipoRefeicoes : 0,
+      ministro_snapshot: ministroSnapshot,
       // Campos hospedagem AGO
       hosp_necessidade_especial:  !!hosp_necessidade_especial,
       hosp_descricao_necessidade: hosp_descricao_necessidade?.trim() || null,
