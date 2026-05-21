@@ -534,7 +534,6 @@ export default function TabHospedagem({
           hospedagens={hospedagens}
           alojamentos={alojamentos}
           configuracoes={evento.configuracoes_ago ?? null}
-          eventoId={eventoId}
           exportarCSV={exportarCSV}
         />
       )}
@@ -1040,13 +1039,11 @@ function SecaoPainelAgo({
   hospedagens,
   alojamentos,
   configuracoes,
-  eventoId,
   exportarCSV,
 }: {
   hospedagens: Hospedagem[];
   alojamentos: Alojamento[];
   configuracoes: Record<string, unknown> | null;
-  eventoId: string;
   exportarCSV: (lista: Hospedagem[], nome: string) => void;
 }) {
   // Mapear alojamento_id → publico
