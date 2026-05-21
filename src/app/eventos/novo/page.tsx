@@ -371,7 +371,7 @@ export default function NovoEventoPage() {
         campo_id:               form.campo_id         || null,
         valor_inscricao:        (form.usar_tipos_inscricao || isAGO) ? 0 : (parseFloat(form.valor_inscricao) || 0),
         usar_tipos_inscricao:   form.usar_tipos_inscricao || isAGO,
-        permite_hospedagem:     form.permite_hospedagem || (isAGO && agoHospConfig.enabled),
+        permite_hospedagem:     isAGO ? true : form.permite_hospedagem,
         permite_alimentacao:    form.permite_alimentacao,
         permite_brinde:         form.permite_brinde,
         gerar_certificado:      form.gerar_certificado,
@@ -385,7 +385,7 @@ export default function NovoEventoPage() {
         limite_brindes:         form.limite_brindes ? parseInt(form.limite_brindes) : null,
         publico_alvo:           form.publico_alvo.trim() || null,
         status:                 form.status,
-        configuracoes_ago:      isAGO ? agoHospConfig : null,
+        configuracoes_ago:      isAGO ? { ...agoHospConfig, enabled: true } : null,
       });
 
       const { data: novoEvento, error } = await supabase
@@ -403,7 +403,7 @@ export default function NovoEventoPage() {
             nome: c.nome.trim() || `Categoria ${i + 1}`,
             valor: c.cortesia ? 0 : (parseFloat(c.valor_str) || 0),
             inclui_alimentacao: false,
-            inclui_hospedagem: agoHospConfig.enabled,
+            inclui_hospedagem: true,
             cortesia: c.cortesia,
             limite_vagas: c.limite_vagas_str ? parseInt(c.limite_vagas_str) : null,
             ativo: true,
@@ -920,7 +920,7 @@ export default function NovoEventoPage() {
               />
             </div>
 
-            {form.permite_hospedagem && (
+            {(form.permite_hospedagem || isAGO) && (
               <div>
                 <label className={labelClass} htmlFor="limite_hospedagem">Limite de Vagas — Hospedagem</label>
                 <input
@@ -950,16 +950,13 @@ export default function NovoEventoPage() {
             <div className="md:col-span-2">
               <p className={labelClass}>Serviços incluídos</p>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-2">
-                <CheckboxField name="permite_hospedagem"  label="Hospedagem"  checked={form.permite_hospedagem}  />
+                {!isAGO && !form.usar_tipos_inscricao && (
+                  <CheckboxField name="permite_hospedagem"  label="Hospedagem"  checked={form.permite_hospedagem}  />
+                )}
                 <CheckboxField name="permite_alimentacao" label="Alimentação"  checked={form.permite_alimentacao} />
                 <CheckboxField name="permite_brinde"      label="Brinde"       checked={form.permite_brinde}      />
                 <CheckboxField name="gerar_certificado"   label="Certificado"  checked={form.gerar_certificado}   />
               </div>
-            </div>
-
-            {/* Inscrições abertas */}
-            <div className="md:col-span-2">
-              <CheckboxField name="inscricoes_abertas" label="Inscrições abertas ao público" checked={form.inscricoes_abertas} />
             </div>
 
           </div>
@@ -974,104 +971,89 @@ export default function NovoEventoPage() {
             </div>
             <div className="p-6 space-y-5">
 
-              {/* Habilitar hospedagem */}
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={agoHospConfig.enabled}
-                  onChange={e => setAgoHospConfig(c => ({ ...c, enabled: e.target.checked }))}
-                  className="w-4 h-4 accent-amber-600"
-                />
-                <span className="text-sm font-semibold text-amber-800">Este evento oferece hospedagem</span>
-              </label>
-
-              {agoHospConfig.enabled && (
-                <>
-                  {/* Grupos de hospedagem */}
-                  <div>
-                    <p className="text-sm font-semibold text-amber-800 mb-2">Grupos de Alocação</p>
-                    <div className="space-y-2">
-                      {agoHospConfig.grupos.map((grupo, i) => (
-                        <div key={i} className="flex items-center gap-2">
-                          <input
-                            value={grupo}
-                            onChange={e => setAgoHospConfig(c => {
-                              const grupos = [...c.grupos];
-                              grupos[i] = e.target.value;
-                              return { ...c, grupos };
-                            })}
-                            className="flex-1 border border-amber-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                            placeholder={`Grupo ${i + 1}`}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setAgoHospConfig(c => ({ ...c, grupos: c.grupos.filter((_, j) => j !== i) }))}
-                            className="text-red-400 hover:text-red-600 text-lg leading-none px-1"
-                            title="Remover grupo"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
+              {/* Grupos de hospedagem */}
+              <div>
+                <p className="text-sm font-semibold text-amber-800 mb-2">Grupos de Alocação</p>
+                <div className="space-y-2">
+                  {agoHospConfig.grupos.map((grupo, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input
+                        value={grupo}
+                        onChange={e => setAgoHospConfig(c => {
+                          const grupos = [...c.grupos];
+                          grupos[i] = e.target.value;
+                          return { ...c, grupos };
+                        })}
+                        className="flex-1 border border-amber-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                        placeholder={`Grupo ${i + 1}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setAgoHospConfig(c => ({ ...c, grupos: c.grupos.filter((_, j) => j !== i) }))}
+                        className="text-red-400 hover:text-red-600 text-lg leading-none px-1"
+                        title="Remover grupo"
+                      >
+                        ×
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setAgoHospConfig(c => ({ ...c, grupos: [...c.grupos, ''] }))}
-                      className="mt-2 text-xs text-amber-700 underline hover:no-underline"
-                    >
-                      + Adicionar grupo
-                    </button>
-                  </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAgoHospConfig(c => ({ ...c, grupos: [...c.grupos, ''] }))}
+                  className="mt-2 text-xs text-amber-700 underline hover:no-underline"
+                >
+                  + Adicionar grupo
+                </button>
+              </div>
 
-                  {/* Preferências de leito */}
-                  <div>
-                    <p className="text-sm font-semibold text-amber-800 mb-2">Preferências de Alocação</p>
-                    <div className="space-y-2">
-                      <label className="flex items-center gap-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={agoHospConfig.leitos_inferiores_preferenciais}
-                          onChange={e => setAgoHospConfig(c => ({ ...c, leitos_inferiores_preferenciais: e.target.checked }))}
-                          className="w-4 h-4 accent-amber-600"
-                        />
-                        <span className="text-sm text-amber-800">Permitir solicitação de <strong>cama inferior</strong> (beliche de baixo)</span>
-                      </label>
-                      <label className="flex items-center gap-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={agoHospConfig.preferencia_60_mais}
-                          onChange={e => setAgoHospConfig(c => ({ ...c, preferencia_60_mais: e.target.checked }))}
-                          className="w-4 h-4 accent-amber-600"
-                        />
-                        <span className="text-sm text-amber-800">Dar preferência de leito para <strong>60+ anos</strong></span>
-                      </label>
-                      <label className="flex items-center gap-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={agoHospConfig.preferencia_necessidade_especial}
-                          onChange={e => setAgoHospConfig(c => ({ ...c, preferencia_necessidade_especial: e.target.checked }))}
-                          className="w-4 h-4 accent-amber-600"
-                        />
-                        <span className="text-sm text-amber-800">Dar preferência para <strong>necessidades especiais de acessibilidade</strong></span>
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* Observações */}
-                  <div>
-                    <label className="block text-sm font-semibold text-amber-800 mb-1">
-                      Observações / Regras de Hospedagem (exibido ao inscrito)
-                    </label>
-                    <textarea
-                      value={agoHospConfig.observacoes}
-                      onChange={e => setAgoHospConfig(c => ({ ...c, observacoes: e.target.value }))}
-                      rows={3}
-                      placeholder="Ex: A alocação definitiva será informada após o preenchimento de todos os inscritos. Solicitações não garantem atendimento."
-                      className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white resize-y"
+              {/* Preferências de leito */}
+              <div>
+                <p className="text-sm font-semibold text-amber-800 mb-2">Preferências de Alocação</p>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={agoHospConfig.leitos_inferiores_preferenciais}
+                      onChange={e => setAgoHospConfig(c => ({ ...c, leitos_inferiores_preferenciais: e.target.checked }))}
+                      className="w-4 h-4 accent-amber-600"
                     />
-                  </div>
-                </>
-              )}
+                    <span className="text-sm text-amber-800">Permitir solicitação de <strong>cama inferior</strong> (beliche de baixo)</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={agoHospConfig.preferencia_60_mais}
+                      onChange={e => setAgoHospConfig(c => ({ ...c, preferencia_60_mais: e.target.checked }))}
+                      className="w-4 h-4 accent-amber-600"
+                    />
+                    <span className="text-sm text-amber-800">Dar preferência de leito para <strong>60+ anos</strong></span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={agoHospConfig.preferencia_necessidade_especial}
+                      onChange={e => setAgoHospConfig(c => ({ ...c, preferencia_necessidade_especial: e.target.checked }))}
+                      className="w-4 h-4 accent-amber-600"
+                    />
+                    <span className="text-sm text-amber-800">Dar preferência para <strong>necessidades especiais de acessibilidade</strong></span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Observações */}
+              <div>
+                <label className="block text-sm font-semibold text-amber-800 mb-1">
+                  Observações / Regras de Hospedagem (exibido ao inscrito)
+                </label>
+                <textarea
+                  value={agoHospConfig.observacoes}
+                  onChange={e => setAgoHospConfig(c => ({ ...c, observacoes: e.target.value }))}
+                  rows={3}
+                  placeholder="Ex: A alocação definitiva será informada após o preenchimento de todos os inscritos. Solicitações não garantem atendimento."
+                  className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white resize-y"
+                />
+              </div>
             </div>
           </div>
         )}
