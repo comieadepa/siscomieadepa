@@ -364,7 +364,8 @@ export default function InscricaoPublicaPage() {
     if (!form.nome_inscrito.trim()) return setErroForm('Nome completo é obrigatório.');
     if (!form.cpf.replace(/\D/g, ''))  return setErroForm('CPF é obrigatório.');
     if (!form.supervisao_id)           return setErroForm('Selecione a supervisão.');
-    if (evento.usar_tipos_inscricao && !tipoSelecionado) return setErroForm('Selecione a modalidade de inscrição.');
+    if (evento.usar_tipos_inscricao && !tipoSelecionado)
+      return setErroForm(evento.departamento === 'AGO' ? 'Selecione a categoria de inscrição.' : 'Selecione a modalidade de inscrição.');
 
     // Valida participantes extras se modo lote
     if (modoLote) {
