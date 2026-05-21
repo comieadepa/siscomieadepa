@@ -18,7 +18,7 @@ export async function GET(
   const supabase = guard.ctx.supabaseAdmin;
   const { data, error } = await supabase
     .from('evento_tipos_inscricao')
-    .select('id, nome, valor, inclui_alimentacao, inclui_hospedagem, cortesia, limite_vagas, ordem')
+    .select('id, nome, valor, inclui_alimentacao, inclui_hospedagem, cortesia, limite_vagas, quantidade_refeicoes, ordem')
     .eq('evento_id', eventoId)
     .eq('ativo', true)
     .order('ordem');
@@ -43,6 +43,7 @@ export async function POST(
     inclui_hospedagem: boolean;
     cortesia: boolean;
     limite_vagas: number | null;
+    quantidade_refeicoes: number;
     ativo: boolean;
     ordem: number;
   }>;
@@ -54,16 +55,27 @@ export async function POST(
   const supabase = createServerClient();
 
   // Remove os tipos antigos e insere os novos (evita duplicados)
+  // Valida quantidade_refeicoes quando inclui_alimentacao = true
+  for (const t of tipos) {
+    if (t.inclui_alimentacao && !(t.quantidade_refeicoes > 0)) {
+      return NextResponse.json(
+        { error: `Tipo "${t.nome}": informe a quantidade de refeicoes (> 0) quando alimentacao esta marcada.` },
+        { status: 400 }
+      );
+    }
+  }
+
   const rows = tipos.map(t => ({
-    evento_id:          eventoId,
-    nome:               normalizeUppercase(String(t.nome || '')),
-    valor:              t.cortesia ? 0 : t.valor,
-    inclui_alimentacao: t.inclui_alimentacao,
-    inclui_hospedagem:  t.inclui_hospedagem,
-    cortesia:           t.cortesia ?? false,
-    limite_vagas:       t.limite_vagas ?? null,
-    ativo:              t.ativo,
-    ordem:              t.ordem,
+    evento_id:            eventoId,
+    nome:                 normalizeUppercase(String(t.nome || '')),
+    valor:                t.cortesia ? 0 : t.valor,
+    inclui_alimentacao:   t.inclui_alimentacao,
+    inclui_hospedagem:    t.inclui_hospedagem,
+    cortesia:             t.cortesia ?? false,
+    limite_vagas:         t.limite_vagas ?? null,
+    quantidade_refeicoes: t.inclui_alimentacao ? (t.quantidade_refeicoes ?? 0) : 0,
+    ativo:                t.ativo,
+    ordem:                t.ordem,
   }));
 
   const { error: deleteError } = await supabase

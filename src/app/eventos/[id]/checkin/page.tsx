@@ -35,13 +35,17 @@ type EstadoScan =
   | 'success'
   | 'already'
   | 'invalid'
-  | 'wrong_event';
+  | 'wrong_event'
+  | 'sem_saldo'
+  | 'already_plenaria';
 
 interface ResultadoScan {
   estado: EstadoScan;
   inscricao?: Inscricao;
   nomeSup?: string;
   nomeCampo?: string;
+  saldoRestante?: number | null;
+  dataPlenaria?: string;
 }
 
 type AcessoMotivo = 'nao_autorizado' | 'evento_encerrado' | 'checkin_desativado';
@@ -140,6 +144,9 @@ export default function CheckinMobilePage() {
   // Contadores em tempo real
   const [totalCheckins, setTotalCheckins] = useState(0);
   const [ultimosCheckins, setUltimosCheckins] = useState<Inscricao[]>([]);
+
+  // Modo de check-in
+  const [modoCheckin, setModoCheckin] = useState<'credenciamento' | 'plenaria' | 'refeitorio'>('credenciamento');
 
   // Estado do scanner
   const [scannerAtivo,  setScannerAtivo]  = useState(false);
@@ -444,6 +451,8 @@ export default function CheckinMobilePage() {
         body: JSON.stringify({
           qr: qrToken,
           equipe_id: equipeSessao?.equipeId,
+          tipo_checkin: modoCheckin,
+          data_plenaria: modoCheckin === 'plenaria' ? new Date().toISOString().slice(0, 10) : undefined,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -486,7 +495,23 @@ export default function CheckinMobilePage() {
         return;
       }
 
-      setResultado({ estado: 'success', inscricao, nomeSup, nomeCampo });
+      if (status === 'sem_saldo') {
+        setResultado({ estado: 'sem_saldo', inscricao, nomeSup, nomeCampo, saldoRestante: 0 });
+        emitirSom('erro');
+        vibrar('erro');
+        setTimeout(() => voltarParaScan(), 3000);
+        return;
+      }
+
+      if (status === 'already_plenaria') {
+        setResultado({ estado: 'already_plenaria', inscricao, nomeSup, nomeCampo, dataPlenaria: (json?.data_plenaria as string | undefined) });
+        emitirSom('erro');
+        vibrar('erro');
+        setTimeout(() => voltarParaScan(), 2500);
+        return;
+      }
+
+      setResultado({ estado: 'success', inscricao, nomeSup, nomeCampo, saldoRestante: (json?.saldo_depois as number | null | undefined) ?? null });
       emitirSom('sucesso');
       vibrar('sucesso');
       void carregarContadores();
@@ -720,6 +745,18 @@ export default function CheckinMobilePage() {
         titulo: 'INSCRIÇÃO NÃO PERTENCE A ESTE EVENTO',
         tituloCls: 'text-white text-xl font-black tracking-wide',
       },
+      sem_saldo: {
+        bg: 'bg-red-900',
+        icon: '🚫',
+        titulo: 'SEM REFEIÇÕES DISPONÍVEIS',
+        tituloCls: 'text-white text-2xl font-black tracking-wide',
+      },
+      already_plenaria: {
+        bg: 'bg-orange-700',
+        icon: '📋',
+        titulo: 'PRESENÇA JÁ REGISTRADA HOJE',
+        tituloCls: 'text-white text-2xl font-black tracking-wide',
+      },
       idle: { bg: '', icon: '', titulo: '', tituloCls: '' },
       processing: { bg: '', icon: '', titulo: '', tituloCls: '' },
     };
@@ -739,7 +776,7 @@ export default function CheckinMobilePage() {
           </div>
         )}
 
-        {inscricao && (estado === 'success' || estado === 'already' || estado === 'wrong_event') && (
+        {inscricao && (estado === 'success' || estado === 'already' || estado === 'wrong_event' || estado === 'sem_saldo' || estado === 'already_plenaria') && (
           <div className="bg-white/20 rounded-2xl p-6 text-white text-center max-w-sm w-full">
             <p className="text-2xl font-bold mb-1">{inscricao.nome_inscrito}</p>
             {ns && <p className="text-sm opacity-80">{ns}</p>}
@@ -747,6 +784,21 @@ export default function CheckinMobilePage() {
             {estado === 'already' && inscricao.checkin_at && (
               <p className="mt-3 text-sm bg-white/20 rounded-lg px-3 py-2">
                 Check-in em: {fmtDT(inscricao.checkin_at)}
+              </p>
+            )}
+            {estado === 'success' && resultado?.saldoRestante != null && (
+              <p className="mt-3 text-sm bg-white/20 rounded-lg px-3 py-2">
+                🍽️ Refeições restantes: <strong>{resultado.saldoRestante}</strong>
+              </p>
+            )}
+            {estado === 'sem_saldo' && (
+              <p className="mt-3 text-sm bg-white/20 rounded-lg px-3 py-2">
+                Todas as refeições já foram utilizadas.
+              </p>
+            )}
+            {estado === 'already_plenaria' && resultado?.dataPlenaria && (
+              <p className="mt-3 text-sm bg-white/20 rounded-lg px-3 py-2">
+                Presença já registrada em: {resultado.dataPlenaria}
               </p>
             )}
           </div>
@@ -782,6 +834,19 @@ export default function CheckinMobilePage() {
             <p className="text-2xl font-black text-emerald-400 leading-tight">{totalCheckins}</p>
           </div>
         </div>
+      </div>
+
+      {/* ── MODO CHECKIN (Credenciamento / Plenária / Refeitório) ─ */}
+      <div className="flex border-b border-white/10 flex-shrink-0 bg-[#0D2B4E]">
+        {(['credenciamento', 'plenaria', 'refeitorio'] as const).map(m => (
+          <button
+            key={m}
+            onClick={() => setModoCheckin(m)}
+            className={`flex-1 py-2 text-xs font-bold uppercase transition ${modoCheckin === m ? 'text-emerald-400 border-b-2 border-emerald-400' : 'text-white/50'}`}
+          >
+            {m === 'credenciamento' ? '🎫 Entrada' : m === 'plenaria' ? '🏛️ Plenária' : '🍽️ Refeitório'}
+          </button>
+        ))}
       </div>
 
       {/* ── MODO MANUAL / CÂMERA toggle ─────────────────────── */}

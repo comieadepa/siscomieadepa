@@ -47,6 +47,7 @@ interface TipoDraft {
   valor: string;
   inclui_alimentacao: boolean;
   inclui_hospedagem: boolean;
+  quantidade_refeicoes_str: string;
   ativo: boolean;
 }
 
@@ -58,6 +59,8 @@ interface AgoCategoriaDraft {
   cortesia: boolean;
   ativo: boolean;
   limite_vagas_str: string;
+  inclui_alimentacao: boolean;
+  quantidade_refeicoes_str: string;
 }
 
 interface AgoHospedagemConfig {
@@ -67,18 +70,20 @@ interface AgoHospedagemConfig {
   preferencia_60_mais: boolean;
   preferencia_necessidade_especial: boolean;
   observacoes: string;
+  habilitar_controle_plenarias: boolean;
+  plenarias_datas: string[];
 }
 
 const AGO_CATEGORIAS_DEFAULT: AgoCategoriaDraft[] = [
-  { key: 'pastor_presidente',        nome: 'Pastor Presidente',           valor_str: '470.00', cortesia: false, ativo: true, limite_vagas_str: '' },
-  { key: 'esposa_pastor_presidente', nome: 'Esposa de Pastor Presidente', valor_str: '210.00', cortesia: false, ativo: true, limite_vagas_str: '' },
-  { key: 'pastor_auxiliar',          nome: 'Pastor Auxiliar',             valor_str: '210.00', cortesia: false, ativo: true, limite_vagas_str: '' },
-  { key: 'esposa_pastor_auxiliar',   nome: 'Esposa de Pastor Auxiliar',   valor_str: '130.00', cortesia: false, ativo: true, limite_vagas_str: '' },
-  { key: 'visitante',                nome: 'Visitante',                   valor_str: '210.00', cortesia: false, ativo: true, limite_vagas_str: '' },
-  { key: 'juventude_comieadepa',     nome: 'Juventude COMIEADEPA',        valor_str: '130.00', cortesia: false, ativo: true, limite_vagas_str: '' },
-  { key: 'pastor_jubilado',          nome: 'Pastor Jubilado',             valor_str: '0.00',   cortesia: true,  ativo: true, limite_vagas_str: '' },
-  { key: 'viuva',                    nome: 'Viúva',                       valor_str: '0.00',   cortesia: true,  ativo: true, limite_vagas_str: '' },
-  { key: 'esposa_pastor_jubilado',   nome: 'Esposa de Pastor Jubilado',   valor_str: '0.00',   cortesia: true,  ativo: true, limite_vagas_str: '' },
+  { key: 'pastor_presidente',        nome: 'Pastor Presidente',           valor_str: '470.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
+  { key: 'esposa_pastor_presidente', nome: 'Esposa de Pastor Presidente', valor_str: '210.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
+  { key: 'pastor_auxiliar',          nome: 'Pastor Auxiliar',             valor_str: '210.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
+  { key: 'esposa_pastor_auxiliar',   nome: 'Esposa de Pastor Auxiliar',   valor_str: '130.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
+  { key: 'visitante',                nome: 'Visitante',                   valor_str: '210.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
+  { key: 'juventude_comieadepa',     nome: 'Juventude COMIEADEPA',        valor_str: '130.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
+  { key: 'pastor_jubilado',          nome: 'Pastor Jubilado',             valor_str: '0.00',   cortesia: true,  ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
+  { key: 'viuva',                    nome: 'Viúva',                       valor_str: '0.00',   cortesia: true,  ativo: true, limite_vagas_str: '', inclui_alimentacao: false, quantidade_refeicoes_str: '0'  },
+  { key: 'esposa_pastor_jubilado',   nome: 'Esposa de Pastor Jubilado',   valor_str: '0.00',   cortesia: true,  ativo: true, limite_vagas_str: '', inclui_alimentacao: false, quantidade_refeicoes_str: '0'  },
 ];
 
 const AGO_HOSP_DEFAULT: AgoHospedagemConfig = {
@@ -88,12 +93,14 @@ const AGO_HOSP_DEFAULT: AgoHospedagemConfig = {
   preferencia_60_mais: true,
   preferencia_necessidade_especial: true,
   observacoes: '',
+  habilitar_controle_plenarias: true,
+  plenarias_datas: [],
 };
 
 const TIPOS_PADRAO: TipoDraft[] = [
-  { nome: 'Só Plenárias',                         valor: '', inclui_alimentacao: false, inclui_hospedagem: false, ativo: true },
-  { nome: 'Plenárias + Alimentação',              valor: '', inclui_alimentacao: true,  inclui_hospedagem: false, ativo: true },
-  { nome: 'Plenárias + Alimentação + Hospedagem', valor: '', inclui_alimentacao: true,  inclui_hospedagem: true,  ativo: true },
+  { nome: 'Só Plenárias',                         valor: '', inclui_alimentacao: false, inclui_hospedagem: false, quantidade_refeicoes_str: '0',  ativo: true },
+  { nome: 'Plenárias + Alimentação',              valor: '', inclui_alimentacao: true,  inclui_hospedagem: false, quantidade_refeicoes_str: '15', ativo: true },
+  { nome: 'Plenárias + Alimentação + Hospedagem', valor: '', inclui_alimentacao: true,  inclui_hospedagem: true,  quantidade_refeicoes_str: '15', ativo: true },
 ];
 
 const DEPARTAMENTOS = ['AGO', 'COADESPA', 'UMADESPA', 'SEIADEPA', 'AVULSO'];
@@ -402,10 +409,11 @@ export default function NovoEventoPage() {
           .map((c, i) => ({
             nome: c.nome.trim() || `Categoria ${i + 1}`,
             valor: c.cortesia ? 0 : (parseFloat(c.valor_str) || 0),
-            inclui_alimentacao: false,
+            inclui_alimentacao: c.inclui_alimentacao,
             inclui_hospedagem: true,
             cortesia: c.cortesia,
             limite_vagas: c.limite_vagas_str ? parseInt(c.limite_vagas_str) : null,
+            quantidade_refeicoes: c.inclui_alimentacao ? (parseInt(c.quantidade_refeicoes_str) || 0) : 0,
             ativo: true,
             ordem: i + 1,
           }));
@@ -428,6 +436,7 @@ export default function NovoEventoPage() {
             valor: parseFloat(t.valor) || 0,
             inclui_alimentacao: t.inclui_alimentacao,
             inclui_hospedagem:  t.inclui_hospedagem,
+            quantidade_refeicoes: t.inclui_alimentacao ? (parseInt(t.quantidade_refeicoes_str) || 0) : 0,
             ativo: t.ativo,
             ordem: i + 1,
           }));
@@ -782,6 +791,29 @@ export default function NovoEventoPage() {
                               disabled={!cat.ativo}
                             />
                           </td>
+                          <td className="px-3 py-2 text-center">
+                            <input
+                              type="checkbox"
+                              checked={cat.inclui_alimentacao}
+                              onChange={e => setAgoCategorias(prev => prev.map((c, j) => j === i ? { ...c, inclui_alimentacao: e.target.checked, quantidade_refeicoes_str: e.target.checked ? (c.quantidade_refeicoes_str || '15') : '0' } : c))}
+                              className="w-4 h-4 accent-orange-500"
+                              disabled={!cat.ativo}
+                            />
+                          </td>
+                          <td className="px-3 py-2 w-20">
+                            {cat.inclui_alimentacao ? (
+                              <input
+                                type="number" min="1" step="1"
+                                value={cat.quantidade_refeicoes_str}
+                                onChange={e => setAgoCategorias(prev => prev.map((c, j) => j === i ? { ...c, quantidade_refeicoes_str: e.target.value } : c))}
+                                className="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+                                disabled={!cat.ativo}
+                                placeholder="15"
+                              />
+                            ) : (
+                              <span className="text-gray-300 text-xs">—</span>
+                            )}
+                          </td>
                           <td className="px-3 py-2 w-28">
                             <input
                               type="number" min="1" step="1"
@@ -885,6 +917,21 @@ export default function NovoEventoPage() {
                               />
                               <span className="text-xs text-gray-600">🍽️ Alimentação</span>
                             </label>
+
+                            {/* Quantidade refeições */}
+                            {tipo.inclui_alimentacao && (
+                              <div className="flex items-center gap-1 w-28 shrink-0">
+                                <span className="text-xs text-gray-400 shrink-0">Ref.:</span>
+                                <input
+                                  type="number" min="1" step="1"
+                                  value={tipo.quantidade_refeicoes_str}
+                                  onChange={e => setTiposDraft(prev => prev.map((t, j) => j === i ? { ...t, quantidade_refeicoes_str: e.target.value } : t))}
+                                  className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                                  placeholder="15"
+                                  disabled={!tipo.ativo}
+                                />
+                              </div>
+                            )}
 
                             {/* Inclui Hospedagem */}
                             <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
@@ -1053,6 +1100,49 @@ export default function NovoEventoPage() {
                   placeholder="Ex: A alocação definitiva será informada após o preenchimento de todos os inscritos. Solicitações não garantem atendimento."
                   className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white resize-y"
                 />
+              </div>
+
+              {/* Controle de Plenárias */}
+              <div>
+                <p className="block text-sm font-semibold text-amber-800 mb-2">Controle de Plenárias AGO</p>
+                <label className="flex items-center gap-3 cursor-pointer mb-3">
+                  <input
+                    type="checkbox"
+                    checked={agoHospConfig.habilitar_controle_plenarias}
+                    onChange={e => setAgoHospConfig(c => ({ ...c, habilitar_controle_plenarias: e.target.checked }))}
+                    className="w-4 h-4 accent-[#123b63]"
+                  />
+                  <span className="text-sm text-gray-700">Habilitar controle de frequência nas plenárias</span>
+                </label>
+                {agoHospConfig.habilitar_controle_plenarias && (
+                  <div className="pl-2 space-y-2">
+                    <p className="text-xs text-gray-500 mb-1">Datas das sessões plenárias (para registro de presença):</p>
+                    {agoHospConfig.plenarias_datas.map((d, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <input
+                          type="date"
+                          value={d}
+                          onChange={e => setAgoHospConfig(c => {
+                            const arr = [...c.plenarias_datas];
+                            arr[i] = e.target.value;
+                            return { ...c, plenarias_datas: arr };
+                          })}
+                          className="border border-amber-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setAgoHospConfig(c => ({ ...c, plenarias_datas: c.plenarias_datas.filter((_, j) => j !== i) }))}
+                          className="text-red-400 hover:text-red-600 text-lg leading-none"
+                        >×</button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setAgoHospConfig(c => ({ ...c, plenarias_datas: [...c.plenarias_datas, ''] }))}
+                      className="text-xs text-[#123b63] underline hover:no-underline"
+                    >+ Adicionar data de plenária</button>
+                  </div>
+                )}
               </div>
             </div>
           </div>

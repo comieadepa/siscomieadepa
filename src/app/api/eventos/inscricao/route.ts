@@ -130,11 +130,12 @@ export async function POST(request: NextRequest) {
     let valorBase  = evento.valor_inscricao ?? 0;
     let tipoNome   = usaTipos ? ((tipo_inscricao as string | null) ?? null) : null;
     let tipoInclui = { alimentacao: !!alimentacao, hospedagem: !!hospedagem };
+    let tipoRefeicoes = 0;
 
     if (tipo_inscricao && usaTipos) {
       const { data: tipo } = await supabase
         .from('evento_tipos_inscricao')
-        .select('nome, valor, inclui_alimentacao, inclui_hospedagem')
+        .select('nome, valor, inclui_alimentacao, inclui_hospedagem, quantidade_refeicoes')
         .eq('evento_id', evento.id)
         .ilike('nome', String(tipo_inscricao).trim())
         .eq('ativo', true)
@@ -143,6 +144,9 @@ export async function POST(request: NextRequest) {
         valorBase  = tipo.valor;
         tipoNome   = tipo.nome;
         tipoInclui = { alimentacao: tipo.inclui_alimentacao, hospedagem: tipo.inclui_hospedagem };
+        tipoRefeicoes = (tipo.inclui_alimentacao && tipo.quantidade_refeicoes > 0)
+          ? tipo.quantidade_refeicoes
+          : 0;
       }
     }
 
@@ -317,6 +321,7 @@ export async function POST(request: NextRequest) {
       status_pagamento: isGratuito ? 'isento' : 'pendente',
       forma_pagamento:  isGratuito ? null : 'pix',
       qr_code:          qr_code || null,
+      refeicoes_total:  tipoInclui.alimentacao ? tipoRefeicoes : 0,
       // Campos hospedagem AGO
       hosp_necessidade_especial:  !!hosp_necessidade_especial,
       hosp_descricao_necessidade: hosp_descricao_necessidade?.trim() || null,
