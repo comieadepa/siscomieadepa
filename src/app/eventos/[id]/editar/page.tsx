@@ -1219,79 +1219,6 @@ export default function EditarEventoPage() {
                 />
               </div>
 
-              {/* Controle de Plenárias */}
-              <div>
-                <p className="block text-sm font-semibold text-[#123b63] mb-2">Controle de Plenárias AGO</p>
-                <label className="flex items-center gap-3 cursor-pointer mb-3">
-                  <input
-                    type="checkbox"
-                    checked={agoHospConfig.habilitar_controle_plenarias}
-                    onChange={e => setAgoHospConfig(c => ({ ...c, habilitar_controle_plenarias: e.target.checked }))}
-                    className="w-4 h-4 accent-[#123b63]"
-                  />
-                  <span className="text-sm text-gray-700">Habilitar controle de frequência nas plenárias</span>
-                </label>
-                {agoHospConfig.habilitar_controle_plenarias && (
-                  <div className="pl-2 space-y-2">
-                    <p className="text-xs text-gray-500 mb-1">Datas das sessões plenárias:</p>
-                    {agoHospConfig.plenarias_datas.map((d, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <input
-                          type="date"
-                          value={d}
-                          onChange={e => setAgoHospConfig(c => {
-                            const arr = [...c.plenarias_datas];
-                            arr[i] = e.target.value;
-                            return { ...c, plenarias_datas: arr };
-                          })}
-                          className="border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setAgoHospConfig(c => ({ ...c, plenarias_datas: c.plenarias_datas.filter((_, j) => j !== i) }))}
-                          className="text-red-400 hover:text-red-600 text-lg leading-none"
-                        >×</button>
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setAgoHospConfig(c => ({ ...c, plenarias_datas: [...c.plenarias_datas, ''] }))}
-                      className="text-xs text-[#123b63] underline hover:no-underline"
-                    >+ Adicionar data de plenária</button>
-                  </div>
-                )}
-              </div>
-
-              {/* Desconto Campo Missionário */}
-              <div className="border border-green-200 rounded-xl p-4 bg-green-50">
-                <p className="block text-sm font-semibold text-green-800 mb-2">🏷 Desconto — Campo Missionário</p>
-                <p className="text-xs text-green-700 mb-3">Quando habilitado, Pastores Presidentes pertencentes a um Campo Missionário recebem um valor diferenciado automaticamente.</p>
-                <label className="flex items-center gap-3 cursor-pointer mb-3">
-                  <input
-                    type="checkbox"
-                    checked={agoHospConfig.habilitar_desconto_campo_missionario}
-                    onChange={e => setAgoHospConfig(c => ({ ...c, habilitar_desconto_campo_missionario: e.target.checked }))}
-                    className="w-4 h-4 accent-green-700"
-                  />
-                  <span className="text-sm text-gray-700">Habilitar desconto para Pastor Presidente de Campo Missionário</span>
-                </label>
-                {agoHospConfig.habilitar_desconto_campo_missionario && (
-                  <div className="pl-2">
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">Valor especial (R$)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={agoHospConfig.valor_pastor_presidente_campo_missionario}
-                      onChange={e => setAgoHospConfig(c => ({ ...c, valor_pastor_presidente_campo_missionario: e.target.value }))}
-                      className="border border-green-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-600 bg-white w-40"
-                      placeholder="210.00"
-                    />
-                    <p className="mt-1 text-xs text-green-700">Este valor substitui o valor padrão de Pastor Presidente quando o campo é missionário.</p>
-                  </div>
-                )}
-              </div>
-
               {/* Setores de Hospedagem */}
               <div className="border border-blue-200 rounded-xl p-4 bg-blue-50">
                 <div className="flex items-center justify-between mb-3">
@@ -1453,6 +1380,79 @@ export default function EditarEventoPage() {
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* Controle de Plenárias */}
+              <div>
+                <p className="block text-sm font-semibold text-[#123b63] mb-2">Controle de Plenárias AGO</p>
+                <label className="flex items-center gap-3 cursor-pointer mb-3">
+                  <input
+                    type="checkbox"
+                    checked={agoHospConfig.habilitar_controle_plenarias}
+                    onChange={e => setAgoHospConfig(c => ({ ...c, habilitar_controle_plenarias: e.target.checked }))}
+                    className="w-4 h-4 accent-[#123b63]"
+                  />
+                  <span className="text-sm text-gray-700">Habilitar controle de frequência nas plenárias</span>
+                </label>
+                {agoHospConfig.habilitar_controle_plenarias && (
+                  <div className="pl-2 space-y-2">
+                    <p className="text-xs text-gray-500 mb-1">Datas das sessões plenárias:</p>
+                    {agoHospConfig.plenarias_datas.map((d, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <input
+                          type="date"
+                          value={d}
+                          onChange={e => setAgoHospConfig(c => {
+                            const arr = [...c.plenarias_datas];
+                            arr[i] = e.target.value;
+                            return { ...c, plenarias_datas: arr };
+                          })}
+                          className="border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setAgoHospConfig(c => ({ ...c, plenarias_datas: c.plenarias_datas.filter((_, j) => j !== i) }))}
+                          className="text-red-400 hover:text-red-600 text-lg leading-none"
+                        >×</button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setAgoHospConfig(c => ({ ...c, plenarias_datas: [...c.plenarias_datas, ''] }))}
+                      className="text-xs text-[#123b63] underline hover:no-underline"
+                    >+ Adicionar data de plenária</button>
+                  </div>
+                )}
+              </div>
+
+              {/* Desconto Campo Missionário */}
+              <div className="border border-green-200 rounded-xl p-4 bg-green-50">
+                <p className="block text-sm font-semibold text-green-800 mb-2">🏷 Desconto — Campo Missionário</p>
+                <p className="text-xs text-green-700 mb-3">Quando habilitado, Pastores Presidentes pertencentes a um Campo Missionário recebem um valor diferenciado automaticamente.</p>
+                <label className="flex items-center gap-3 cursor-pointer mb-3">
+                  <input
+                    type="checkbox"
+                    checked={agoHospConfig.habilitar_desconto_campo_missionario}
+                    onChange={e => setAgoHospConfig(c => ({ ...c, habilitar_desconto_campo_missionario: e.target.checked }))}
+                    className="w-4 h-4 accent-green-700"
+                  />
+                  <span className="text-sm text-gray-700">Habilitar desconto para Pastor Presidente de Campo Missionário</span>
+                </label>
+                {agoHospConfig.habilitar_desconto_campo_missionario && (
+                  <div className="pl-2">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Valor especial (R$)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={agoHospConfig.valor_pastor_presidente_campo_missionario}
+                      onChange={e => setAgoHospConfig(c => ({ ...c, valor_pastor_presidente_campo_missionario: e.target.value }))}
+                      className="border border-green-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-600 bg-white w-40"
+                      placeholder="210.00"
+                    />
+                    <p className="mt-1 text-xs text-green-700">Este valor substitui o valor padrão de Pastor Presidente quando o campo é missionário.</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
