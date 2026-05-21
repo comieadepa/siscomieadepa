@@ -201,6 +201,7 @@ export default function CongregacoesPage() {
     longitude: '',
   });
   const [showFormD2, setShowFormD2] = useState(false);
+  const [editingD2, setEditingD2] = useState<Divisao2 | null>(null);
 
   const [pastorResults, setPastorResults] = useState<MemberLookup[]>([]);
   const [pastorStatus, setPastorStatus] = useState<'idle' | 'loading' | 'selected' | 'not_found' | 'error'>('idle');
@@ -1567,6 +1568,7 @@ export default function CongregacoesPage() {
         supervisao_id: '',
         nome: '',
         is_sede: false,
+        is_campo_missionario: false,
         data_fundacao: '',
         cnpj: '',
         possui_cnpj: false,
@@ -3155,6 +3157,8 @@ export default function CongregacoesPage() {
                     </div>
 
                     <div className="flex gap-3 pt-4">
+                      <button
+                        onClick={handleSaveD2}
                         className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition font-bold text-sm"
                       >
                         {editingD2 ? '💾 Atualizar' : '✓ Cadastrar'}

@@ -424,6 +424,7 @@ export default function GerenciarEventoPage() {
 
   // ── Stats calculadas ─────────────────────────────────────────
   const stats = useMemo(() => {
+    const pagos    = inscricoes.filter(i => i.status_pagamento === 'pago');
     const pend     = inscricoes.filter(i => i.status_pagamento === 'pendente');
     const isentos  = inscricoes.filter(i => i.status_pagamento === 'isento');
     return {

@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase-server';
 import { sendEmail } from '@/services/email';
 import { registrarHistoricoMinisterial } from '@/lib/historico-ministerial';
 import { cleanCpf } from '@/lib/cpf';
+import { logDB } from '@/lib/audit';
 
 const ASAAS_WEBHOOK_TOKEN = process.env.ASAAS_WEBHOOK_TOKEN;
 
@@ -127,25 +128,56 @@ async function enviarEmailComDeduplicacao(
   }
 }
 
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    message: 'Webhook ASAAS ativo',
+    method: 'GET',
+    timestamp: new Date().toISOString(),
+  });
+}
+
 export async function POST(request: NextRequest) {
+  // 0. Lê payload PRIMEIRO — log antes de qualquer validação
+  let payload: Record<string, unknown> = {};
+  try {
+    payload = await request.json();
+  } catch {
+    console.error('[EVENTOS WEBHOOK] Body inválido — não é JSON');
+    return NextResponse.json({ error: 'Body inválido' }, { status: 400 });
+  }
+
+  const event   = String(payload?.event || '').toUpperCase();
+  const payment = payload?.payment as Record<string, unknown> | undefined;
+  const asaasId = String(payment?.id ?? '');
+  const extRef  = String(payment?.externalReference ?? '');
+
+  // Log inicial — registrado ANTES de qualquer validação de token
+  console.log('[EVENTOS WEBHOOK] ▶ Evento recebido', {
+    event,
+    paymentId: asaasId || '(ausente)',
+    externalReference: extRef || '(ausente)',
+    tipoEvento: event || '(ausente)',
+    timestamp: new Date().toISOString(),
+  });
+
   try {
     // 1. Valida token
     if (!ASAAS_WEBHOOK_TOKEN) {
       console.error('[EVENTOS WEBHOOK] ASAAS_WEBHOOK_TOKEN não configurado');
+      void logDB({ acao: 'erro_critico', modulo: 'eventos', entidade: 'webhook', descricao: 'ASAAS_WEBHOOK_TOKEN não configurado', status: 'erro', detalhes: { event, paymentId: asaasId } });
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const token = resolveToken(request);
     if (!token || token !== ASAAS_WEBHOOK_TOKEN) {
+      console.warn('[EVENTOS WEBHOOK] Token inválido — acesso negado', { event, paymentId: asaasId });
+      void logDB({ acao: 'erro_critico', modulo: 'eventos', entidade: 'webhook', descricao: 'Token de webhook inválido', status: 'erro', detalhes: { event, paymentId: asaasId } });
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // 2. Lê payload
-    const payload = await request.json();
-    const event   = String(payload?.event || '').toUpperCase();
-    const payment = payload?.payment;
-    const asaasId = payment?.id;
-
+    // 2. Payload já lido — valida payment ID
     if (!asaasId) {
+      void logDB({ acao: 'erro_critico', modulo: 'eventos', entidade: 'webhook', descricao: 'Payment ID ausente no payload', status: 'erro', detalhes: { event, rawPayload: payload } });
       return NextResponse.json({ error: 'Payment ID ausente' }, { status: 400 });
     }
 
@@ -171,11 +203,10 @@ export async function POST(request: NextRequest) {
     const supabase = createServerClient();
 
     // 4. Verifica se é cobrança de lote (externalReference inicia com "lote:")
-    const extRef = String(payment?.externalReference ?? '');
     if (extRef.startsWith('lote:')) {
       const loteId = extRef.slice(5);
       const updateLote: Record<string, unknown> = { status_pagamento: novoStatus };
-      if (novoStatus === 'pago') updateLote.comprovante_url = payment.transactionReceiptUrl ?? null;
+      if (novoStatus === 'pago') updateLote.comprovante_url = payment?.transactionReceiptUrl ?? null;
 
       const { error: loteErr } = await supabase
         .from('evento_lotes_inscricao')
@@ -289,8 +320,8 @@ export async function POST(request: NextRequest) {
     };
 
     if (novoStatus === 'pago') {
-      updateData.valor_pago    = payment.value ?? 0;
-      updateData.comprovante_url = payment.transactionReceiptUrl ?? null;
+      updateData.valor_pago    = payment?.value ?? 0;
+      updateData.comprovante_url = payment?.transactionReceiptUrl ?? null;
     }
 
     const { error: updErr } = await supabase
@@ -371,8 +402,18 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ received: true, inscricaoId: ins.id, status: novoStatus });
 
-  } catch (err: any) {
-    console.error('[EVENTOS WEBHOOK] Erro inesperado:', err.message);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[EVENTOS WEBHOOK] Erro inesperado:', msg);
+    void logDB({
+      acao: 'erro_critico',
+      modulo: 'eventos',
+      entidade: 'webhook',
+      descricao: `Erro inesperado no webhook ASAAS: ${msg}`,
+      status: 'erro',
+      detalhes: { event, paymentId: asaasId, extRef },
+      mensagemErro: msg,
+    });
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 });
   }
 }
