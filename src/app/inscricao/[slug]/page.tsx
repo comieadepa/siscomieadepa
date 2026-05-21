@@ -170,7 +170,7 @@ export default function InscricaoPublicaPage() {
     if (!slug) return;
     setLoading(true);
 
-    const estruturaPromise = fetch('/api/public/estrutura')
+    const estruturaPromise = fetch('/api/public/estrutura?includeCamposInactive=true')
       .then(async (res) => (res.ok ? res.json() : null))
       .catch(() => null);
 

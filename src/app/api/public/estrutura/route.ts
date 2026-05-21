@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase-server';
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const includeCongregacoes = searchParams.get('includeCongregacoes') === 'true';
+  const includeCamposInactive = searchParams.get('includeCamposInactive') === 'true';
 
   const supabase = createServerClient();
 
@@ -13,11 +14,16 @@ export async function GET(request: NextRequest) {
     .neq('is_active', false)
     .order('nome');
 
-  const camposQuery = supabase
-    .from('campos')
-    .select('id,nome,supervisao_id,is_campo_missionario')
-    .neq('is_active', false)
-    .order('nome');
+  const camposQuery = includeCamposInactive
+    ? supabase
+      .from('campos')
+      .select('id,nome,supervisao_id,is_campo_missionario')
+      .order('nome')
+    : supabase
+      .from('campos')
+      .select('id,nome,supervisao_id,is_campo_missionario')
+      .neq('is_active', false)
+      .order('nome');
 
   const congregacoesQuery = includeCongregacoes
     ? supabase
