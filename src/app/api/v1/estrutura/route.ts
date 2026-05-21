@@ -25,8 +25,7 @@ export async function GET(request: NextRequest) {
   let camposQuery = supabase
     .from('campos')
     .select('id,nome,supervisao_id,is_active,pastor_member_id,presidente_nome,presidente_cpf,presidente_matricula,telefone')
-    .order('nome')
-    .limit(10000);
+    .order('nome');
 
   let congregacoesQuery = supabase
     .from('congregacoes')
@@ -43,27 +42,34 @@ export async function GET(request: NextRequest) {
     camposQuery = camposQuery.or('is_active.eq.true,is_active.is.null');
   }
 
-  const [supRes, camRes, congRes] = await Promise.all([
-    supervisoesQuery,
-    camposQuery,
-    congregacoesQuery,
-  ]);
+  // Supervisoes e congregacoes: busca unica (geralmente < 1000)
+  const [supRes, congRes] = await Promise.all([supervisoesQuery, congregacoesQuery]);
 
   if (supRes.error) {
     return NextResponse.json({ error: supRes.error.message }, { status: 500 });
   }
-
-  if (camRes.error) {
-    return NextResponse.json({ error: camRes.error.message }, { status: 500 });
-  }
-
   if (congRes.error) {
     return NextResponse.json({ error: congRes.error.message }, { status: 500 });
   }
 
+  // Campos: pagina em loop para ultrapassar o limite de 1000 linhas do PostgREST
+  const pageSize = 1000;
+  let from = 0;
+  let allCampos: any[] = [];
+  while (true) {
+    const { data, error } = await camposQuery.range(from, from + pageSize - 1);
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    const chunk = (data || []) as any[];
+    allCampos = allCampos.concat(chunk);
+    if (chunk.length < pageSize) break;
+    from += pageSize;
+  }
+
   return NextResponse.json({
     supervisoes: supRes.data ?? [],
-    campos: camRes.data ?? [],
+    campos: allCampos,
     congregacoes: congRes.data ?? [],
   });
 }
