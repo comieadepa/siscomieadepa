@@ -9,7 +9,7 @@ import AssistenteWidget from '@/components/AssistenteWidget';
 
 // ─── Tipos ────────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
-interface Campo      { id: string; nome: string; supervisao_id: string; }
+interface Campo      { id: string; nome: string; supervisao_id: string; is_campo_missionario?: boolean; }
 
 interface TipoInscricao {
   id: string; nome: string; valor: number;
@@ -33,7 +33,7 @@ interface Evento {
   status: 'programado' | 'realizado' | 'cancelado';
   suporte_nome: string | null;
   suporte_whatsapp: string | null;
-  configuracoes_ago?: { enabled?: boolean; grupos?: string[]; leitos_inferiores_preferenciais?: boolean; preferencia_60_mais?: boolean; preferencia_necessidade_especial?: boolean; observacoes?: string; } | null;
+  configuracoes_ago?: { enabled?: boolean; grupos?: string[]; leitos_inferiores_preferenciais?: boolean; preferencia_60_mais?: boolean; preferencia_necessidade_especial?: boolean; observacoes?: string; habilitar_desconto_campo_missionario?: boolean; valor_pastor_presidente_campo_missionario?: number | string; } | null;
 }
 
 interface FormData {
@@ -129,6 +129,7 @@ export default function InscricaoPublicaPage() {
   const [cupomStatus,     setCupomStatus]     = useState<'idle' | 'validando' | 'ok' | 'erro'>('idle');
   const [cupomDesconto,   setCupomDesconto]   = useState(0);
   const [cupomMensagem,   setCupomMensagem]   = useState('');
+  const [descontoCampoMissionario, setDescontoCampoMissionario] = useState(false);
 
   // Termos/LGPD
   const [modalTermosAberto, setModalTermosAberto] = useState(false);
@@ -250,6 +251,13 @@ export default function InscricaoPublicaPage() {
       setCpfStatus('encontrado');
       const sup = supervisoes.find(s => s.id === payload.supervisao_id);
       const cam = campos.find(c => c.id === payload.campo_id);
+
+      // Verifica desconto Campo Missionário
+      const confAgo = evento.configuracoes_ago;
+      const descontoHabilitado = !!(confAgo?.habilitar_desconto_campo_missionario);
+      const campoMissionario = cam?.is_campo_missionario ?? false;
+      setDescontoCampoMissionario(descontoHabilitado && campoMissionario);
+
       setForm(f => ({
         ...f,
         nome_inscrito: nome                          || f.nome_inscrito,
@@ -323,7 +331,13 @@ export default function InscricaoPublicaPage() {
   }
 
   // Valor a pagar calculado
-  const valorBase  = tipoSelecionado?.valor ?? (evento?.valor_inscricao ?? 0);
+  const isPastorPresidenteTipo = !!(tipoSelecionado && /pastor\s*presidente/i.test(tipoSelecionado.nome));
+  const valorEspecialMissionario = descontoCampoMissionario && isPastorPresidenteTipo
+    ? parseFloat(String(evento?.configuracoes_ago?.valor_pastor_presidente_campo_missionario ?? '0')) || 0
+    : 0;
+  const valorBase  = (descontoCampoMissionario && isPastorPresidenteTipo && valorEspecialMissionario > 0)
+    ? valorEspecialMissionario
+    : (tipoSelecionado?.valor ?? (evento?.valor_inscricao ?? 0));
   const valorFinal = Math.max(0, valorBase - cupomDesconto);
   const qtdTotal   = modoLote ? 1 + participantesExtra.length : 1;
   const totalLote  = valorFinal * qtdTotal;
@@ -921,6 +935,17 @@ export default function InscricaoPublicaPage() {
                     rows={2}
                     placeholder="Alguma informação relevante para a equipe de hospedagem..."
                     className={INP + ' resize-none'} />
+                </div>
+              </div>
+            )}
+
+            {/* Badge Campo Missionário */}
+            {descontoCampoMissionario && isPastorPresidenteTipo && (
+              <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-xl flex items-start gap-2">
+                <span className="text-green-700 text-base">🏷</span>
+                <div>
+                  <p className="text-sm font-bold text-green-800">Campo Missionário</p>
+                  <p className="text-xs text-green-700">Seu campo possui classificação missionária. O valor especial de Pastor Presidente foi aplicado automaticamente.</p>
                 </div>
               </div>
             )}

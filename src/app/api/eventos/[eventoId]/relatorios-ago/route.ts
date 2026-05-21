@@ -124,6 +124,19 @@ export async function GET(
   const incs = totalInscritos ?? 0;
   void incs; // used in total_ausentes_plenaria below
 
+  // Contagem de inscritos de Campos Missionários
+  const { data: inscricoesMissionario } = await supabase
+    .from('evento_inscricoes')
+    .select('ministro_snapshot')
+    .eq('evento_id', eventoId)
+    .neq('status_pagamento', 'cancelado');
+
+  let totalCampoMissionario = 0;
+  for (const ins of inscricoesMissionario ?? []) {
+    const snap = ins.ministro_snapshot as Record<string, unknown> | null;
+    if (snap?.is_campo_missionario === true) totalCampoMissionario++;
+  }
+
   return NextResponse.json({
     status_evento: evento.status,
     encerrado_em:  evento.encerrado_em ?? null,
@@ -135,5 +148,6 @@ export async function GET(
     total_ausentes_consolidado: totalAusentesConsolidado,
     refeicoes_consumidas: refeicoesConsumidas,
     refeicoes_restantes:  refeicoesRestantes,
+    total_campo_missionario: totalCampoMissionario,
   });
 }

@@ -197,6 +197,7 @@ export default function GerenciarEventoPage() {
   const [activeTab, setActiveTab] = useState<TabId>('inscritos');
   const [encerrandoAGO, setEncerrandoAGO] = useState(false);
   const [showEncerrarModal, setShowEncerrarModal] = useState(false);
+  const [pausandoInscricoes, setPausandoInscricoes] = useState(false);
   const tabsTrackRef = useRef<HTMLDivElement | null>(null);
   const tabButtonRefs = useRef(new Map<TabId, HTMLButtonElement | null>());
   const [showLeftFade, setShowLeftFade] = useState(false);
@@ -406,9 +407,23 @@ export default function GerenciarEventoPage() {
     ]);
   }, [authLoading, perfil.loading, perfil.isGlobal, id, permissaoNesseEvento, equipeSessao, fetchEvento, fetchInscricoes, fetchEquipe, supabase, router, searchParams]);
 
+  // ── Toggle inscrições abertas/pausadas ───────────────────────
+  async function toggleInscricoes() {
+    if (!evento || pausandoInscricoes) return;
+    const novoValor = !evento.inscricoes_abertas;
+    setPausandoInscricoes(true);
+    const { error } = await supabase
+      .from('eventos')
+      .update({ inscricoes_abertas: novoValor })
+      .eq('id', evento.id);
+    if (!error) {
+      setEvento(ev => ev ? { ...ev, inscricoes_abertas: novoValor } : ev);
+    }
+    setPausandoInscricoes(false);
+  }
+
   // ── Stats calculadas ─────────────────────────────────────────
   const stats = useMemo(() => {
-    const pagos    = inscricoes.filter(i => i.status_pagamento === 'pago');
     const pend     = inscricoes.filter(i => i.status_pagamento === 'pendente');
     const isentos  = inscricoes.filter(i => i.status_pagamento === 'isento');
     return {
@@ -544,6 +559,25 @@ export default function GerenciarEventoPage() {
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-red-700 text-white hover:bg-red-800 transition"
               >
                 🔒 Encerrar AGO
+              </button>
+            )}
+            {perfil.podeEditar && evento.status === 'programado' && (
+              <button
+                onClick={toggleInscricoes}
+                disabled={pausandoInscricoes}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition disabled:opacity-60 ${
+                  evento.inscricoes_abertas
+                    ? 'bg-amber-500 text-white hover:bg-amber-600'
+                    : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                }`}
+                title={evento.inscricoes_abertas ? 'Pausar inscrições (emergência ASAAS/Webhook)' : 'Retomar inscrições'}
+              >
+                {pausandoInscricoes
+                  ? '...'
+                  : evento.inscricoes_abertas
+                    ? '⏸ Pausar Inscrições'
+                    : '▶ Retomar Inscrições'
+                }
               </button>
             )}
           </div>

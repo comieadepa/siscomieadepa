@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
     // ── Busca evento ──────────────────────────────────────────
     const { data: evento, error: evErr } = await supabase
       .from('eventos')
-      .select('id, nome, valor_inscricao, usar_tipos_inscricao, inscricoes_abertas, limite_vagas, limite_hospedagem, limite_brindes, status, departamento')
+      .select('id, nome, valor_inscricao, usar_tipos_inscricao, inscricoes_abertas, limite_vagas, limite_hospedagem, limite_brindes, status, departamento, configuracoes_ago')
       .eq('slug', slug)
       .single();
 
@@ -210,22 +210,51 @@ export async function POST(request: NextRequest) {
     if (cpfLimpo && evento.departamento === 'AGO') {
       const { data: membro } = await supabase
         .from('members')
-        .select('id, nome, cpf, matricula, data_nascimento, campo, campo_id, supervisao, supervisao_id, status_ministerial, cargo, is_pastor_presidente, is_pastor_auxiliar, is_pastor_jubilado, is_campo_missionario')
+        .select('id, nome, cpf, matricula, data_nascimento, campo, campo_id, supervisao, supervisao_id, status_ministerial, cargo, pastor_presidente, pastor_auxiliar, jubilado')
         .eq('cpf', cpfLimpo)
         .maybeSingle();
       if (membro) {
+        // Verifica se o campo do membro é missionário
+        let isCampoMissionario = false;
+        let campoNome: string | null = membro.campo ?? null;
+        let supervisaoNome: string | null = membro.supervisao ?? null;
+        if (membro.campo_id) {
+          const { data: campoData } = await supabase
+            .from('campos')
+            .select('nome, is_campo_missionario, supervisao_id')
+            .eq('id', membro.campo_id)
+            .maybeSingle();
+          if (campoData) {
+            isCampoMissionario = !!campoData.is_campo_missionario;
+            campoNome = campoData.nome ?? campoNome;
+          }
+        }
+
+        // Aplica desconto Campo Missionário se aplicável
+        const confAgo = (evento as any).configuracoes_ago as Record<string, unknown> | null;
+        const descontoHabilitado = !!(confAgo?.habilitar_desconto_campo_missionario);
+        const isPastorPresidente = !!(membro as any).pastor_presidente;
+        const ehPastorPresidentePorTipo = tipoNome ? /pastor\s*presidente/i.test(tipoNome) : false;
+        if (descontoHabilitado && isCampoMissionario && (isPastorPresidente || ehPastorPresidentePorTipo)) {
+          const valorEspecial = parseFloat(String(confAgo?.valor_pastor_presidente_campo_missionario ?? '0')) || 0;
+          if (valorEspecial > 0 && valorEspecial < valorBase) {
+            valorBase = valorEspecial;
+            valorFinal = valorBase - desconto > 0 ? valorBase - desconto : 0;
+          }
+        }
+
         ministroSnapshot = {
           ministro_id: membro.id, nome: membro.nome, cpf: membro.cpf,
           matricula: membro.matricula ?? null,
           data_nascimento: membro.data_nascimento ?? null,
-          campo: membro.campo ?? null, campo_id: membro.campo_id ?? null,
-          supervisao: membro.supervisao ?? null, supervisao_id: membro.supervisao_id ?? null,
+          campo: campoNome, campo_id: membro.campo_id ?? null,
+          supervisao: supervisaoNome, supervisao_id: membro.supervisao_id ?? null,
           status_ministerial: membro.status_ministerial ?? null,
           cargo: membro.cargo ?? null,
-          is_pastor_presidente: !!membro.is_pastor_presidente,
-          is_pastor_auxiliar: !!membro.is_pastor_auxiliar,
-          is_pastor_jubilado: !!membro.is_pastor_jubilado,
-          is_campo_missionario: !!membro.is_campo_missionario,
+          is_pastor_presidente: !!((membro as any).pastor_presidente),
+          is_pastor_auxiliar: !!((membro as any).pastor_auxiliar),
+          is_pastor_jubilado: !!((membro as any).jubilado),
+          is_campo_missionario: isCampoMissionario,
         };
       }
     }

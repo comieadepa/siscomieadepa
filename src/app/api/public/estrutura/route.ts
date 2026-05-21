@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
 
   const camposQuery = supabase
     .from('campos')
-    .select('id,nome,supervisao_id')
+    .select('id,nome,supervisao_id,is_campo_missionario')
     .neq('is_active', false)
     .order('nome');
 

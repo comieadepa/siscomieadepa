@@ -33,6 +33,7 @@ interface Divisao2 {
   supervisao_id?: string | null;
   nome: string;
   is_sede: boolean;
+  is_campo_missionario?: boolean | null;
   data_fundacao?: string | null;
   cnpj?: string | null;
   email?: string | null;
@@ -176,6 +177,7 @@ export default function CongregacoesPage() {
     supervisao_id: '',
     nome: '',
     is_sede: false,
+    is_campo_missionario: false,
     data_fundacao: '',
     cnpj: '',
     possui_cnpj: false,
@@ -198,7 +200,6 @@ export default function CongregacoesPage() {
     latitude: '',
     longitude: '',
   });
-  const [editingD2, setEditingD2] = useState<Divisao2 | null>(null);
   const [showFormD2, setShowFormD2] = useState(false);
 
   const [pastorResults, setPastorResults] = useState<MemberLookup[]>([]);
@@ -1406,8 +1407,8 @@ export default function CongregacoesPage() {
       supervisao_id: formD2.supervisao_id || null,
       nome: formD2.nome.trim(),
       is_sede: !!formD2.is_sede,
+      is_campo_missionario: !!formD2.is_campo_missionario,
       data_fundacao: formD2.data_fundacao || null,
-      cnpj: formD2.possui_cnpj ? (formD2.cnpj || null) : null,
       email: formD2.email || null,
       telefone: formD2.telefone || null,
       observacoes: formD2.observacoes || null,
@@ -2904,7 +2905,7 @@ export default function CongregacoesPage() {
                         {editingD2 ? '✏️ Editar Campo' : '➕ Novo Campo'}
                       </h3>
                       <button
-                        onClick={() => { setShowFormD2(false); setEditingD2(null); setFormD2({ supervisao_id: '', nome: '', is_sede: false, data_fundacao: '', cnpj: '', possui_cnpj: false, email: '', telefone: '', observacoes: '', logomarca_url: '', informar_pastor: false, pastor_nome_input: '', pastor_member_id: '', pastor_nome: '', pastor_data_posse: '', cep: '', endereco: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '', latitude: '', longitude: '' }); setPastorResults([]); setPastorStatus('idle'); setPastorMsg(''); setSelectedD1IdsForD2([]); }}
+                        onClick={() => { setShowFormD2(false); setEditingD2(null); setFormD2({ supervisao_id: '', nome: '', is_sede: false, is_campo_missionario: false, data_fundacao: '', cnpj: '', possui_cnpj: false, email: '', telefone: '', observacoes: '', logomarca_url: '', informar_pastor: false, pastor_nome_input: '', pastor_member_id: '', pastor_nome: '', pastor_data_posse: '', cep: '', endereco: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '', latitude: '', longitude: '' }); setPastorResults([]); setPastorStatus('idle'); setPastorMsg(''); setSelectedD1IdsForD2([]); }}
                         className="text-white hover:text-teal-200 text-2xl font-bold leading-none"
                       >×</button>
                     </div>
@@ -3139,8 +3140,21 @@ export default function CongregacoesPage() {
                       </div>
                     </div>
 
+                    {/* Campo Missionário */}
+                    <div className="mt-4 border border-green-200 rounded-xl p-4 bg-green-50">
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={!!formD2.is_campo_missionario}
+                          onChange={e => setFormD2(prev => ({ ...prev, is_campo_missionario: e.target.checked }))}
+                          className="w-4 h-4 accent-green-700"
+                        />
+                        <span className="text-sm font-semibold text-green-800">🏷 Campo Missionário</span>
+                      </label>
+                      <p className="text-xs text-green-700 mt-1 ml-7">Quando marcado, Pastores Presidentes deste campo recebem valor diferenciado na AGO (se configurado no evento).</p>
+                    </div>
+
                     <div className="flex gap-3 pt-4">
-                      <button onClick={handleSaveD2}
                         className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition font-bold text-sm"
                       >
                         {editingD2 ? '💾 Atualizar' : '✓ Cadastrar'}
@@ -3148,7 +3162,7 @@ export default function CongregacoesPage() {
                       <button
                         onClick={() => {
                           setShowFormD2(false); setEditingD2(null);
-                          setFormD2({ supervisao_id: '', nome: '', is_sede: false, data_fundacao: '', cnpj: '', possui_cnpj: false, email: '', telefone: '', observacoes: '', logomarca_url: '', informar_pastor: false, pastor_nome_input: '', pastor_member_id: '', pastor_nome: '', pastor_data_posse: '', cep: '', endereco: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '', latitude: '', longitude: '' });
+                          setFormD2({ supervisao_id: '', nome: '', is_sede: false, is_campo_missionario: false, data_fundacao: '', cnpj: '', possui_cnpj: false, email: '', telefone: '', observacoes: '', logomarca_url: '', informar_pastor: false, pastor_nome_input: '', pastor_member_id: '', pastor_nome: '', pastor_data_posse: '', cep: '', endereco: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '', latitude: '', longitude: '' });
                           setPastorResults([]); setPastorStatus('idle'); setPastorMsg(''); setSelectedD1IdsForD2([]);
                         }}
                         className="flex-1 px-4 py-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition font-bold text-sm"
@@ -3167,7 +3181,7 @@ export default function CongregacoesPage() {
                         if (planLimits.max_divisao2 > 0 && divisoes2.length >= planLimits.max_divisao2) return;
                         setShowFormD2(true);
                         setEditingD2(null);
-                        setFormD2({ supervisao_id: '', nome: '', is_sede: false, data_fundacao: '', cnpj: '', possui_cnpj: false, email: '', telefone: '', observacoes: '', logomarca_url: '', informar_pastor: false, pastor_nome_input: '', pastor_member_id: '', pastor_nome: '', pastor_data_posse: '', cep: '', endereco: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '', latitude: '', longitude: '' });
+                        setFormD2({ supervisao_id: '', nome: '', is_sede: false, is_campo_missionario: false, data_fundacao: '', cnpj: '', possui_cnpj: false, email: '', telefone: '', observacoes: '', logomarca_url: '', informar_pastor: false, pastor_nome_input: '', pastor_member_id: '', pastor_nome: '', pastor_data_posse: '', cep: '', endereco: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '', latitude: '', longitude: '' });
                         setPastorResults([]);
                         setPastorStatus('idle');
                         setPastorMsg('');
@@ -3353,6 +3367,7 @@ export default function CongregacoesPage() {
                                         uf: c.uf || '',
                                         latitude: c.latitude != null ? String(c.latitude) : '',
                                         longitude: c.longitude != null ? String(c.longitude) : '',
+                                        is_campo_missionario: !!c.is_campo_missionario,
                                       });
                                       setSelectedD1IdsForD2(divisoes3.filter(cg => cg.campo_id === c.id).map(cg => cg.id));
                                       setPastorResults([]);
