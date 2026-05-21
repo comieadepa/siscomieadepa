@@ -133,6 +133,7 @@ export default function CongregacoesPage() {
   const [filterUfCampos,  setFilterUfCampos]  = useState('');
   const [filterSupCampos, setFilterSupCampos] = useState('');
   const [filterCnpjCampos, setFilterCnpjCampos] = useState('');
+  const [filterMissionarioCampos, setFilterMissionarioCampos] = useState(false);
   const [pageCampos,   setPageCampos]         = useState(0);
   const [searchSups,      setSearchSups]      = useState('');
   const [filterUfSups,    setFilterUfSups]    = useState('');
@@ -2304,6 +2305,7 @@ export default function CongregacoesPage() {
     if (filterUfCampos) filtros.push(`Estado: ${filterUfCampos}`);
     if (filterSupCampos) { const s = divisoes1.find(s => s.id === filterSupCampos); if (s) filtros.push(`Supervisão: ${s.nome}`); }
     if (filterCnpjCampos) filtros.push(filterCnpjCampos === 'sim' ? 'Com CNPJ' : 'Sem CNPJ');
+    if (filterMissionarioCampos) filtros.push('Campos Missionários');
     if (searchCampos) filtros.push(`Busca: "${searchCampos}"`);
     const titulo = `LISTA DE CAMPOS${filtros.length ? ' — ' + filtros.join(' | ') : ''} — QTD.: ${lista.length}`;
     const rows = lista.map(c => {
@@ -2311,7 +2313,7 @@ export default function CongregacoesPage() {
       return `<tr>
         <td>${sup ? sup.nome : '—'}</td>
         <td>${c.uf || '—'}</td>
-        <td>${c.nome}</td>
+        <td>${c.nome}${ (c as any).is_campo_missionario ? ' <span style="color:#166534;font-weight:700;font-size:0.75em">[Missionário]</span>' : ''}</td>
         <td>${(c as any).presidente_nome || '—'}</td>
         <td>${c.cnpj ? 'SIM' : 'NÃO'}</td>
       </tr>`;
@@ -3248,9 +3250,22 @@ export default function CongregacoesPage() {
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
                 </div>
 
+                {/* MISSIONÁRIOS toggle */}
+                <button
+                  onClick={() => { setFilterMissionarioCampos(v => !v); setPageCampos(0); }}
+                  className={`px-4 py-2 text-sm font-semibold rounded-lg border transition flex items-center gap-1 ${
+                    filterMissionarioCampos
+                      ? 'bg-green-700 text-white border-green-700 shadow-inner'
+                      : 'bg-white text-green-700 border-green-600 hover:bg-green-50'
+                  }`}
+                  title="Filtrar apenas Campos Missionários"
+                >
+                  🏴 Missionários
+                </button>
+
                 {/* LIMPAR */}
                 <button
-                  onClick={() => { setSearchCampos(''); setFilterUfCampos(''); setFilterSupCampos(''); setFilterCnpjCampos(''); setPageCampos(0); }}
+                  onClick={() => { setSearchCampos(''); setFilterUfCampos(''); setFilterSupCampos(''); setFilterCnpjCampos(''); setFilterMissionarioCampos(false); setPageCampos(0); }}
                   className="px-4 py-2 bg-teal-600 text-white text-sm font-semibold rounded-lg hover:bg-teal-700 transition"
                 >
                   LIMPAR
@@ -3263,6 +3278,7 @@ export default function CongregacoesPage() {
                       if (filterSupCampos && c.supervisao_id !== filterSupCampos) return false;
                       if (filterCnpjCampos === 'sim' && !c.cnpj) return false;
                       if (filterCnpjCampos === 'nao' && c.cnpj) return false;
+                      if (filterMissionarioCampos && !c.is_campo_missionario) return false;
                       if (q) { const s = divisoes1.find(s => s.id === c.supervisao_id); return c.nome.toLowerCase().includes(q) || (c.cidade||'').toLowerCase().includes(q) || (c.uf||'').toLowerCase().includes(q) || (c.pastor_nome||'').toLowerCase().includes(q) || ((c as any).presidente_nome||'').toLowerCase().includes(q) || (s ? s.nome.toLowerCase().includes(q) : false); }
                       return true;
                     });
@@ -3282,6 +3298,7 @@ export default function CongregacoesPage() {
                   if (filterSupCampos && c.supervisao_id !== filterSupCampos) return false;
                   if (filterCnpjCampos === 'sim' && !c.cnpj) return false;
                   if (filterCnpjCampos === 'nao' && c.cnpj) return false;
+                  if (filterMissionarioCampos && !c.is_campo_missionario) return false;
                   if (q) {
                     const s = divisoes1.find(s => s.id === c.supervisao_id);
                     return (
