@@ -2303,7 +2303,7 @@ export default function CongregacoesPage() {
   function handlePrintCampos(lista: typeof divisoes2) {
     const filtros: string[] = [];
     if (filterUfCampos) filtros.push(`Estado: ${filterUfCampos}`);
-    if (filterSupCampos) { const s = divisoes1.find(s => s.id === filterSupCampos); if (s) filtros.push(`Supervisão: ${s.nome}`); }
+    if (filterSupCampos) { const s = divisoes1.find(s => s.id === filterSupCampos); if (s) filtros.push(`Supervisão: ${s.nome}${(s as any).supervisor_nome ? ` — Pastor: ${(s as any).supervisor_nome}` : ''}`); }
     if (filterCnpjCampos) filtros.push(filterCnpjCampos === 'sim' ? 'Com CNPJ' : 'Sem CNPJ');
     if (filterMissionarioCampos) filtros.push('Campos Missionários');
     if (searchCampos) filtros.push(`Busca: "${searchCampos}"`);
