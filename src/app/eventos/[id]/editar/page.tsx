@@ -67,7 +67,7 @@ interface SetorHospedagem {
   id: string;
   nome: string;
   grupo: string;
-  tipo_leito: 'beliche' | 'colchonete' | 'rede';
+  tipos_leito: ('beliche' | 'colchonete' | 'rede')[];
   quantidade_leitos: number;
   quantidade_leitos_inferiores: number;
   observacoes: string;
@@ -1231,7 +1231,7 @@ export default function EditarEventoPage() {
                         id: `s_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
                         nome: '',
                         grupo: 'Todos',
-                        tipo_leito: 'beliche' as const,
+                        tipos_leito: ['beliche'],
                         quantidade_leitos: 0,
                         quantidade_leitos_inferiores: 0,
                         observacoes: '',
@@ -1249,10 +1249,10 @@ export default function EditarEventoPage() {
                   const atv = (agoHospConfig.setores || []).filter(s => s.ativo);
                   const t = {
                     leitos:     atv.reduce((n, s) => n + (s.quantidade_leitos || 0), 0),
-                    beliche:    atv.filter(s => s.tipo_leito === 'beliche').reduce((n, s) => n + (s.quantidade_leitos || 0), 0),
-                    colchonete: atv.filter(s => s.tipo_leito === 'colchonete').reduce((n, s) => n + (s.quantidade_leitos || 0), 0),
-                    rede:       atv.filter(s => s.tipo_leito === 'rede').reduce((n, s) => n + (s.quantidade_leitos || 0), 0),
-                    inferiores: atv.filter(s => s.tipo_leito === 'beliche').reduce((n, s) => n + (s.quantidade_leitos_inferiores || 0), 0),
+                    beliche:    atv.filter(s => (s.tipos_leito||[]).includes('beliche')).reduce((n, s) => n + (s.quantidade_leitos || 0), 0),
+                    colchonete: atv.filter(s => (s.tipos_leito||[]).includes('colchonete')).reduce((n, s) => n + (s.quantidade_leitos || 0), 0),
+                    rede:       atv.filter(s => (s.tipos_leito||[]).includes('rede')).reduce((n, s) => n + (s.quantidade_leitos || 0), 0),
+                    inferiores: atv.filter(s => (s.tipos_leito||[]).includes('beliche')).reduce((n, s) => n + (s.quantidade_leitos_inferiores || 0), 0),
                   };
                   return (
                     <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-4">
@@ -1312,20 +1312,25 @@ export default function EditarEventoPage() {
                             {agoHospConfig.grupos.map(g => <option key={g} value={g}>{g}</option>)}
                           </select>
                         </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-1">Tipo de Leito</label>
-                          <select
-                            value={setor.tipo_leito}
-                            onChange={e => {
-                              const tipo = e.target.value as SetorHospedagem['tipo_leito'];
-                              setAgoHospConfig(c => { const s = [...(c.setores||[])]; s[idx] = { ...s[idx], tipo_leito: tipo, quantidade_leitos_inferiores: tipo !== 'beliche' ? 0 : s[idx].quantidade_leitos_inferiores }; return { ...c, setores: s }; });
-                            }}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                          >
-                            <option value="beliche">Beliche</option>
-                            <option value="colchonete">Colchonete</option>
-                            <option value="rede">Rede</option>
-                          </select>
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Tipos de Leito</label>
+                          <div className="flex flex-wrap gap-4 mt-1">
+                            {(['beliche', 'colchonete', 'rede'] as const).map(tipo => (
+                              <label key={tipo} className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={(setor.tipos_leito || []).includes(tipo)}
+                                  onChange={e => {
+                                    const atual = setor.tipos_leito || [];
+                                    const novo = e.target.checked ? [...atual, tipo] : atual.filter(t => t !== tipo);
+                                    setAgoHospConfig(c => { const s = [...(c.setores||[])]; s[idx] = { ...s[idx], tipos_leito: novo, quantidade_leitos_inferiores: !novo.includes('beliche') ? 0 : s[idx].quantidade_leitos_inferiores }; return { ...c, setores: s }; });
+                                  }}
+                                  className="w-4 h-4 accent-blue-700"
+                                />
+                                <span className="text-sm text-gray-700 capitalize">{tipo}</span>
+                              </label>
+                            ))}
+                          </div>
                         </div>
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 mb-1">Quantidade de Leitos *</label>
@@ -1340,7 +1345,7 @@ export default function EditarEventoPage() {
                             className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                           />
                         </div>
-                        {setor.tipo_leito === 'beliche' ? (
+                        {(setor.tipos_leito || []).includes('beliche') ? (
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1">Leitos Inferiores (beliches de baixo)</label>
                             <input
