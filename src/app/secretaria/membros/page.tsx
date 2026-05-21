@@ -1319,7 +1319,20 @@ useEffect(() => {
     });
     setCargoSelecionado(resolveCargoValue(membro.cargoMinisterial));
     setDadosCargos(membro.dadosCargos || {});
-    setDadosConsagracao(prev => ({ ...prev, diretoria: membro.diretoria || false, cargo_diretoria: membro.diretoriaCargo || '' }));
+    setDadosConsagracao({
+      ev_autorizado_data:    (membro as any).evAutorizadoData    || '',
+      ev_autorizado_local:   (membro as any).evAutorizadoLocal   || '',
+      ev_consagrado_data:    (membro as any).evConsagradoData    || '',
+      ev_consagrado_local:   (membro as any).evConsagradoLocal   || '',
+      cons_missionario_data: (membro as any).consMissionarioData || '',
+      cons_missionario_local:(membro as any).consMissionarioLocal|| '',
+      orden_pastor_data:     (membro as any).ordenPastorData     || '',
+      orden_pastor_local:    (membro as any).ordenPastorLocal    || '',
+      diretoria:             membro.diretoria     || false,
+      local_batismo:         (membro as any).localBatismo  || '',
+      data_filiacao:         (membro as any).dataFiliacao  || '',
+      cargo_diretoria:       membro.diretoriaCargo || '',
+    });
     setIsEditando(false);
     setIsAdminMode(true); // Modo admin ativado para edição
     setShowForm(true);

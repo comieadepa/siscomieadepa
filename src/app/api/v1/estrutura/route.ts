@@ -21,17 +21,20 @@ export async function GET(request: NextRequest) {
   let camposQuery = supabase
     .from('campos')
     .select('id,nome,supervisao_id,is_active,pastor_member_id,presidente_nome,presidente_cpf,presidente_matricula,telefone')
-    .order('nome');
+    .order('nome')
+    .limit(10000);
 
   let congregacoesQuery = supabase
     .from('congregacoes')
     .select('id,nome,supervisao_id,campo_id,is_active')
-    .order('nome');
+    .order('nome')
+    .limit(10000);
 
   if (!includeInactive) {
     supervisoesQuery = supervisoesQuery.neq('is_active', false);
-    camposQuery = camposQuery.neq('is_active', false);
-    congregacoesQuery = congregacoesQuery.neq('is_active', false);
+    // neq exclui NULLs em SQL; usar or() para incluir linhas sem is_active definido
+    camposQuery = camposQuery.or('is_active.eq.true,is_active.is.null');
+    congregacoesQuery = congregacoesQuery.or('is_active.eq.true,is_active.is.null');
   }
 
   const [supRes, camRes, congRes] = await Promise.all([

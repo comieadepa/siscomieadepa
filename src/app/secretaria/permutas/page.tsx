@@ -197,6 +197,15 @@ export default function PermutasPage() {
     ? campos.filter(c => c.supervisao_id === supervisaoDestinoId)
     : campos;
 
+  // Log de diagnóstico (dev only)
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return;
+    if (!supervisaoDestinoId) return;
+    const sup = supervisoes.find(s => s.id === supervisaoDestinoId);
+    const filtrados = campos.filter(c => c.supervisao_id === supervisaoDestinoId);
+    console.log('[Permutas] Supervisão destino:', sup?.nome ?? supervisaoDestinoId, '| Campos carregados (total):', campos.length, '| Campos desta supervisão:', filtrados.length);
+  }, [supervisaoDestinoId, campos, supervisoes]);
+
   const campoDestinoObj = campos.find(c => c.id === campoDestinoId);
   const supervisaoDestinoObj = supervisoes.find(s => s.id === supervisaoDestinoId);
 
