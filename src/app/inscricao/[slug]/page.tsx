@@ -160,17 +160,30 @@ export default function InscricaoPublicaPage() {
   const [statusChecked,  setStatusChecked]  = useState<string | null>(null);
   const [copiado,        setCopiado]        = useState(false);
 
-  const camposFiltrados = useMemo(
-    () => form.supervisao_id ? campos.filter(c => c.supervisao_id === form.supervisao_id) : campos,
-    [form.supervisao_id, campos]
-  );
+  const [carregandoCampos, setCarregandoCampos] = useState(false);
+
+  // ── Busca campos de uma supervisão específica (on-demand, evita limite 1000 do Supabase) ──
+  const fetchCamposDaSupervisao = useCallback(async (supervisaoId: string) => {
+    if (!supervisaoId) { setCampos([]); return; }
+    setCarregandoCampos(true);
+    try {
+      const res = await fetch(`/api/public/estrutura?supervisao_id=${encodeURIComponent(supervisaoId)}&includeCamposInactive=true`);
+      const json = res.ok ? await res.json().catch(() => null) : null;
+      setCampos((json?.campos as Campo[]) || []);
+    } catch {
+      setCampos([]);
+    } finally {
+      setCarregandoCampos(false);
+    }
+  }, []);
 
   // ── Carrega evento ───────────────────────────────────────
   const fetchEvento = useCallback(async () => {
     if (!slug) return;
     setLoading(true);
 
-    const estruturaPromise = fetch('/api/public/estrutura?includeCamposInactive=true')
+    // Carrega apenas supervisões no início (campos são buscados on-demand)
+    const estruturaPromise = fetch('/api/public/estrutura')
       .then(async (res) => (res.ok ? res.json() : null))
       .catch(() => null);
 
@@ -213,7 +226,8 @@ export default function InscricaoPublicaPage() {
 
     setEvento(ev);
     setSupervisoes((estrutura?.supervisoes as Supervisao[]) || []);
-    setCampos((estrutura?.campos as Campo[]) || []);
+    // Campos serão carregados on-demand ao selecionar supervisão
+    setCampos([]);
     setLoading(false);
   }, [slug]);
 
@@ -250,22 +264,37 @@ export default function InscricaoPublicaPage() {
       const nome = (payload.nome ?? '') as string;
       setCpfStatus('encontrado');
       const sup = supervisoes.find(s => s.id === payload.supervisao_id);
-      const cam = campos.find(c => c.id === payload.campo_id);
 
-      // Verifica desconto Campo Missionário
-      const confAgo = evento.configuracoes_ago;
-      const descontoHabilitado = !!(confAgo?.habilitar_desconto_campo_missionario);
-      const campoMissionario = cam?.is_campo_missionario ?? false;
-      setDescontoCampoMissionario(descontoHabilitado && campoMissionario);
+      // Carrega os campos da supervisão encontrada e depois preenche o campo_id
+      if (sup?.id) {
+        const res = await fetch(`/api/public/estrutura?supervisao_id=${encodeURIComponent(sup.id)}&includeCamposInactive=true`).catch(() => null);
+        const json = res?.ok ? await res.json().catch(() => null) : null;
+        const camposDaSup: Campo[] = (json?.campos as Campo[]) || [];
+        setCampos(camposDaSup);
+        const cam = camposDaSup.find(c => c.id === payload.campo_id);
 
-      setForm(f => ({
-        ...f,
-        nome_inscrito: nome                          || f.nome_inscrito,
-        supervisao_id: sup?.id                       || f.supervisao_id,
-        campo_id:      cam?.id                       || f.campo_id,
-        ...(isAGO && payload.sexo             ? { sexo: payload.sexo } : {}),
-        ...(isAGO && payload.data_nascimento  ? { data_nascimento: payload.data_nascimento } : {}),
-      }));
+        // Verifica desconto Campo Missionário
+        const confAgo = evento.configuracoes_ago;
+        const descontoHabilitado = !!(confAgo?.habilitar_desconto_campo_missionario);
+        const campoMissionario = cam?.is_campo_missionario ?? false;
+        setDescontoCampoMissionario(descontoHabilitado && campoMissionario);
+
+        setForm(f => ({
+          ...f,
+          nome_inscrito: nome                          || f.nome_inscrito,
+          supervisao_id: sup.id,
+          campo_id:      cam?.id                       || '',
+          ...(isAGO && payload.sexo             ? { sexo: payload.sexo } : {}),
+          ...(isAGO && payload.data_nascimento  ? { data_nascimento: payload.data_nascimento } : {}),
+        }));
+      } else {
+        setForm(f => ({
+          ...f,
+          nome_inscrito: nome || f.nome_inscrito,
+          ...(isAGO && payload.sexo             ? { sexo: payload.sexo } : {}),
+          ...(isAGO && payload.data_nascimento  ? { data_nascimento: payload.data_nascimento } : {}),
+        }));
+      }
     } else {
       setCpfStatus('nao_encontrado');
     }
@@ -281,6 +310,7 @@ export default function InscricaoPublicaPage() {
     }
     if (name === 'supervisao_id') {
       setForm(f => ({ ...f, supervisao_id: value, campo_id: '' }));
+      fetchCamposDaSupervisao(value);
       return;
     }
     setForm(f => ({ ...f, [name]: value }));
@@ -813,9 +843,12 @@ export default function InscricaoPublicaPage() {
             {/* Campo */}
             <div className="mb-6">
               <label className={LBL}>Campo</label>
-              <select name="campo_id" value={form.campo_id} onChange={handleText} className={INP}>
-                <option value="">Selecione o campo...</option>
-                {camposFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              <select name="campo_id" value={form.campo_id} onChange={handleText} className={INP}
+                disabled={carregandoCampos || !form.supervisao_id}>
+                <option value="">
+                  {carregandoCampos ? 'Carregando...' : !form.supervisao_id ? 'Selecione a supervisão primeiro' : 'Selecione o campo...'}
+                </option>
+                {campos.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
               </select>
             </div>
 
