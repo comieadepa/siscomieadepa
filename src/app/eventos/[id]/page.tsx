@@ -127,7 +127,7 @@ interface Ministro {
   supervisao_id?: string | null; campo_id?: string | null;
 }
 
-type TabId = 'inscritos' | 'inscricao-manual' | 'checkin' | 'etiquetas' | 'financeiro' | 'relatorios' | 'comunicacao' | 'equipe' | 'configuracoes' | 'hospedagem' | 'backup' | 'programacao' | 'certificados' | 'relatorios-ago' | 'ausentes';
+type TabId = 'inscritos' | 'inscricao-manual' | 'checkin' | 'etiquetas' | 'financeiro' | 'relatorios' | 'comunicacao' | 'equipe' | 'configuracoes' | 'hospedagem' | 'backup' | 'programacao' | 'certificados' | 'relatorios-ago' | 'ausentes' | 'homologacao';
 // Nota: 'inscricao-manual' e 'configuracoes' mantidos no tipo para compatibilidade com ?tab= mas removidos da nav
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -251,6 +251,7 @@ export default function GerenciarEventoPage() {
     ...(isAGO ? [
       { id: 'relatorios-ago' as TabId, label: 'Relatórios AGO', icon: '📈' },
       { id: 'ausentes'       as TabId, label: 'Ausentes',       icon: '🚨' },
+      { id: 'homologacao'    as TabId, label: 'Homologação',    icon: '⚖️' },
     ] : []),
   ];
 
@@ -260,7 +261,7 @@ export default function GerenciarEventoPage() {
     if (perfil.loading) return TODAS_TABS;
     if (perfil.isGlobal) return TODAS_TABS;
     return TODAS_TABS.filter(t => {
-      if (t.id === 'relatorios-ago' || t.id === 'ausentes') return isAGO && perfil.podeEditar;
+      if (t.id === 'relatorios-ago' || t.id === 'ausentes' || t.id === 'homologacao') return isAGO && perfil.podeEditar;
       return tabsPermitidasEvento.includes(t.id as import('@/hooks/useEventosPerfil').TabEventoId);
     });
   })();
@@ -385,7 +386,7 @@ export default function GerenciarEventoPage() {
     } else {
       // Aplica aba inicial via query param ?tab=X
       const tabParam = searchParams?.get('tab') as TabId | null;
-      const TABS_VALIDAS: TabId[] = ['inscritos','inscricao-manual','checkin','etiquetas','financeiro','relatorios','comunicacao','equipe','configuracoes','hospedagem','backup','programacao','certificados']; // inscricao-manual e configuracoes acessíveis via ?tab= mas não mostrados na nav
+      const TABS_VALIDAS: TabId[] = ['inscritos','inscricao-manual','checkin','etiquetas','financeiro','relatorios','comunicacao','equipe','configuracoes','hospedagem','backup','programacao','certificados','relatorios-ago','ausentes','homologacao']; // inscricao-manual e configuracoes acessíveis via ?tab= mas não mostrados na nav
       if (tabParam && TABS_VALIDAS.includes(tabParam)) {
         setActiveTab(tabParam);
       }
@@ -632,6 +633,7 @@ export default function GerenciarEventoPage() {
           relatorios:       'Relatórios gerenciais por supervisão, campo e financeiro',
           'relatorios-ago': 'Painel de indicadores e atalhos para relatórios da AGO',
           ausentes:         'Lista de ministros ausentes nas plenárias',
+          homologacao:      'Homologação administrativa da frequência para geração de advertências',
         };
         const desc = TAB_DESCS[tab.id];
         const BADGE: Partial<Record<TabId, React.ReactNode>> = {
@@ -780,6 +782,9 @@ export default function GerenciarEventoPage() {
       )}
       {activeTab === 'ausentes' && (
         <TabAusentes eventoId={id} evento={evento} podeEditar={perfil.podeEditar} />
+      )}
+      {activeTab === 'homologacao' && (
+        <TabHomologacao eventoId={id} podeEditar={perfil.podeEditar} />
       )}
 
       {/* ── MODAL ENCERRAR AGO ─────────────────────────────── */}
@@ -5320,6 +5325,434 @@ function TabAusentes({ eventoId, podeEditar }: { eventoId: string; evento: Event
           >
             {salvando ? 'Salvando...' : '📋 Salvar Seleção'}
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── TabHomologacao ───────────────────────────────────────────────────────────
+
+type HomologacaoStatus = 'pendente_analise' | 'regular' | 'ausente' | 'ausencia_justificada' | 'dispensado';
+
+interface HomologacaoRecord {
+  id: string;
+  nome: string;
+  matricula: string | null;
+  campo: string | null;
+  supervisao: string | null;
+  categoria: string | null;
+  total_plenarias: number;
+  presencas: number;
+  faltas: number;
+  percentual_frequencia: number;
+  status: HomologacaoStatus;
+  motivo_justificativa: string | null;
+  observacao_justificativa: string | null;
+  usuario_responsavel_nome: string | null;
+  homologado_em: string | null;
+  historico_registrado: boolean;
+}
+
+interface HomologacaoStats {
+  total: number;
+  iniciado: boolean;
+  finalizado: boolean;
+  pendente_analise: number;
+  regular: number;
+  ausente: number;
+  ausencia_justificada: number;
+  dispensado: number;
+}
+
+const STATUS_HMLG_CFG: Record<HomologacaoStatus, { label: string; cls: string; bg: string }> = {
+  pendente_analise:    { label: 'Pendente',    cls: 'bg-yellow-100 text-yellow-800', bg: 'bg-yellow-50'  },
+  regular:             { label: 'Regular',     cls: 'bg-green-100  text-green-800',  bg: 'bg-green-50'   },
+  ausente:             { label: 'Ausente',     cls: 'bg-red-100    text-red-800',    bg: 'bg-red-50'     },
+  ausencia_justificada:{ label: 'Justificado', cls: 'bg-blue-100   text-blue-800',   bg: 'bg-blue-50'    },
+  dispensado:          { label: 'Dispensado',  cls: 'bg-purple-100 text-purple-800', bg: 'bg-purple-50'  },
+};
+
+function TabHomologacao({ eventoId, podeEditar }: { eventoId: string; podeEditar: boolean }) {
+  const [records, setRecords]     = useState<HomologacaoRecord[]>([]);
+  const [stats,   setStats]       = useState<HomologacaoStats | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [erro, setErro]           = useState<string | null>(null);
+  const [filtroNome,   setFiltroNome]   = useState('');
+  const [filtroCampo,  setFiltroCampo]  = useState('');
+  const [filtroStatus, setFiltroStatus] = useState<string>('');
+  const [iniciando,    setIniciando]    = useState(false);
+  const [finalizando,  setFinalizando]  = useState(false);
+  const [confirmFinal, setConfirmFinal] = useState(false);
+  const [modal, setModal] = useState<{
+    record: HomologacaoRecord;
+    novoStatus: HomologacaoStatus;
+  } | null>(null);
+  const [motivo, setMotivo]           = useState('');
+  const [observacao, setObservacao]   = useState('');
+  const [salvandoModal, setSalvandoModal] = useState(false);
+
+  const fetchData = async () => {
+    setLoading(true);
+    setErro(null);
+    try {
+      const res = await authenticatedFetch(`/api/eventos/${eventoId}/homologacao`);
+      if (!res.ok) { setErro('Erro ao carregar dados.'); return; }
+      const data = await res.json();
+      setRecords(data.records ?? []);
+      setStats(data.stats ?? null);
+    } catch {
+      setErro('Erro de rede.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void fetchData(); }, [eventoId]);
+
+  const handleIniciar = async () => {
+    setIniciando(true);
+    setErro(null);
+    try {
+      const res = await authenticatedFetch(`/api/eventos/${eventoId}/homologacao`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'iniciar' }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setErro(data.error ?? 'Erro ao iniciar.'); return; }
+      await fetchData();
+    } catch {
+      setErro('Erro de rede.');
+    } finally {
+      setIniciando(false);
+    }
+  };
+
+  const handleAtualizar = async (
+    id: string,
+    novoStatus: HomologacaoStatus,
+    motivoVal?: string,
+    obsVal?: string
+  ) => {
+    setSalvandoModal(true);
+    setErro(null);
+    try {
+      const res = await authenticatedFetch(`/api/eventos/${eventoId}/homologacao/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: novoStatus, motivo_justificativa: motivoVal, observacao_justificativa: obsVal }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setErro(data.error ?? 'Erro ao atualizar.'); return; }
+      setModal(null);
+      setMotivo('');
+      setObservacao('');
+      await fetchData();
+    } catch {
+      setErro('Erro de rede.');
+    } finally {
+      setSalvandoModal(false);
+    }
+  };
+
+  const handleFinalizar = async () => {
+    setFinalizando(true);
+    setErro(null);
+    try {
+      const res = await authenticatedFetch(`/api/eventos/${eventoId}/homologacao/finalizar`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) { setErro(data.error ?? 'Erro ao finalizar.'); return; }
+      setConfirmFinal(false);
+      await fetchData();
+    } catch {
+      setErro('Erro de rede.');
+    } finally {
+      setFinalizando(false);
+    }
+  };
+
+  const filtrados = records.filter(r => {
+    if (filtroNome   && !r.nome.toLowerCase().includes(filtroNome.toLowerCase()))   return false;
+    if (filtroCampo  && !(r.campo ?? '').toLowerCase().includes(filtroCampo.toLowerCase())) return false;
+    if (filtroStatus && r.status !== filtroStatus) return false;
+    return true;
+  });
+
+  if (loading) return <div className="flex items-center justify-center py-20 text-gray-400">Carregando...</div>;
+
+  // Evento não encerrado
+  if (stats && !stats.iniciado && !loading) {
+    return (
+      <div className="space-y-6">
+        {erro && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">{erro}</div>}
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
+          <div className="text-4xl mb-3">⚖️</div>
+          <h3 className="text-lg font-black text-amber-900 mb-2">Homologação não iniciada</h3>
+          <p className="text-sm text-amber-700 mb-5">
+            Inicie a homologação para classificar a frequência de cada ministro.<br />
+            O evento precisa estar <strong>encerrado</strong> antes de iniciar.
+          </p>
+          {podeEditar && (
+            <button
+              onClick={handleIniciar}
+              disabled={iniciando}
+              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold bg-amber-700 text-white hover:bg-amber-800 transition disabled:opacity-50"
+            >
+              {iniciando ? '⏳ Iniciando...' : '⚖️ Iniciar Homologação'}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {erro && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">{erro}</div>}
+
+      {/* Cards de stats */}
+      {stats && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {([ 
+            { key: 'pendente_analise', label: 'Pendentes', icon: '⏳', cls: 'border-yellow-200 bg-yellow-50' },
+            { key: 'regular',          label: 'Regulares', icon: '✅', cls: 'border-green-200 bg-green-50' },
+            { key: 'ausente',          label: 'Ausentes',  icon: '❌', cls: 'border-red-200 bg-red-50' },
+            { key: 'ausencia_justificada', label: 'Justificados', icon: '📄', cls: 'border-blue-200 bg-blue-50' },
+            { key: 'dispensado',       label: 'Dispensados', icon: '🔵', cls: 'border-purple-200 bg-purple-50' },
+          ] as { key: keyof HomologacaoStats; label: string; icon: string; cls: string }[]).map(card => (
+            <div key={card.key} className={`border rounded-xl p-4 text-center ${card.cls}`}>
+              <div className="text-2xl mb-1">{card.icon}</div>
+              <div className="text-2xl font-black text-gray-900">{stats[card.key] as number}</div>
+              <div className="text-xs text-gray-600 font-semibold">{card.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Badge finalizado ou botão finalizar */}
+      {podeEditar && stats && (
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          {stats.finalizado ? (
+            <span className="inline-flex items-center gap-2 bg-green-100 text-green-800 text-sm font-bold px-4 py-2 rounded-full">
+              ✅ Homologação Finalizada — Histórico registrado
+            </span>
+          ) : (
+            <button
+              onClick={() => setConfirmFinal(true)}
+              disabled={stats.pendente_analise > 0}
+              title={stats.pendente_analise > 0 ? `${stats.pendente_analise} registro(s) pendentes de análise` : ''}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold bg-[#123b63] text-white hover:bg-[#0f3154] transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              🏁 Finalizar Homologação
+            </button>
+          )}
+          <span className="text-xs text-gray-500">{stats.total} ministro{stats.total !== 1 ? 's' : ''} no total</span>
+        </div>
+      )}
+
+      {/* Filtros */}
+      <div className="flex flex-wrap gap-3">
+        <input
+          value={filtroNome}
+          onChange={e => setFiltroNome(e.target.value)}
+          placeholder="Filtrar por nome…"
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 min-w-[180px] focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+        />
+        <input
+          value={filtroCampo}
+          onChange={e => setFiltroCampo(e.target.value)}
+          placeholder="Filtrar por campo…"
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 min-w-[160px] focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+        />
+        <select
+          value={filtroStatus}
+          onChange={e => setFiltroStatus(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+        >
+          <option value="">Todos os status</option>
+          <option value="pendente_analise">Pendente</option>
+          <option value="regular">Regular</option>
+          <option value="ausente">Ausente</option>
+          <option value="ausencia_justificada">Justificado</option>
+          <option value="dispensado">Dispensado</option>
+        </select>
+      </div>
+
+      {/* Tabela */}
+      <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 text-left border-b border-gray-200">
+              <th className="px-4 py-3 font-semibold text-gray-600">Nome</th>
+              <th className="px-3 py-3 font-semibold text-gray-600">Matrícula</th>
+              <th className="px-3 py-3 font-semibold text-gray-600">Campo</th>
+              <th className="px-3 py-3 font-semibold text-gray-600">Supervisão</th>
+              <th className="px-3 py-3 font-semibold text-gray-600">Categoria</th>
+              <th className="px-3 py-3 font-semibold text-gray-600 text-center">Pres.</th>
+              <th className="px-3 py-3 font-semibold text-gray-600 text-center">Falt.</th>
+              <th className="px-3 py-3 font-semibold text-gray-600 text-center">%</th>
+              <th className="px-3 py-3 font-semibold text-gray-600">Status</th>
+              {podeEditar && !stats?.finalizado && (
+                <th className="px-3 py-3 font-semibold text-gray-600 text-center">Ações</th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {filtrados.length === 0 && (
+              <tr>
+                <td colSpan={podeEditar && !stats?.finalizado ? 10 : 9} className="text-center py-10 text-gray-400">
+                  Nenhum registro encontrado.
+                </td>
+              </tr>
+            )}
+            {filtrados.map((r, idx) => {
+              const cfg = STATUS_HMLG_CFG[r.status];
+              return (
+                <tr key={r.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'}`}>
+                  <td className="px-4 py-3 font-semibold text-gray-900">
+                    {r.nome}
+                    {r.motivo_justificativa && (
+                      <div className="text-xs text-gray-500 font-normal mt-0.5">{r.motivo_justificativa}</div>
+                    )}
+                  </td>
+                  <td className="px-3 py-3 text-gray-600 text-xs">{r.matricula ?? '—'}</td>
+                  <td className="px-3 py-3 text-gray-600 text-xs">{r.campo ?? '—'}</td>
+                  <td className="px-3 py-3 text-gray-600 text-xs">{r.supervisao ?? '—'}</td>
+                  <td className="px-3 py-3 text-gray-600 text-xs">{r.categoria ?? '—'}</td>
+                  <td className="px-3 py-3 text-center">
+                    <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-0.5 rounded-full">{r.presencas}</span>
+                  </td>
+                  <td className="px-3 py-3 text-center">
+                    <span className="bg-red-100 text-red-700 text-xs font-bold px-2 py-0.5 rounded-full">{r.faltas}</span>
+                  </td>
+                  <td className="px-3 py-3 text-center">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${r.percentual_frequencia >= 100 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                      {r.percentual_frequencia}%
+                    </span>
+                  </td>
+                  <td className="px-3 py-3">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${cfg.cls}`}>{cfg.label}</span>
+                  </td>
+                  {podeEditar && !stats?.finalizado && (
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1 justify-center flex-wrap">
+                        {r.status !== 'regular' && (
+                          <button
+                            onClick={() => handleAtualizar(r.id, 'regular')}
+                            className="text-xs px-2 py-1 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 font-semibold transition"
+                          >✅</button>
+                        )}
+                        {r.status !== 'ausente' && (
+                          <button
+                            onClick={() => handleAtualizar(r.id, 'ausente')}
+                            className="text-xs px-2 py-1 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 font-semibold transition"
+                          >❌</button>
+                        )}
+                        {r.status !== 'ausencia_justificada' && (
+                          <button
+                            onClick={() => { setModal({ record: r, novoStatus: 'ausencia_justificada' }); setMotivo(''); setObservacao(''); }}
+                            className="text-xs px-2 py-1 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 font-semibold transition"
+                          >📄</button>
+                        )}
+                        {r.status !== 'dispensado' && (
+                          <button
+                            onClick={() => { setModal({ record: r, novoStatus: 'dispensado' }); setMotivo(''); setObservacao(''); }}
+                            className="text-xs px-2 py-1 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 font-semibold transition"
+                          >🔵</button>
+                        )}
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Modal justificativa / dispensar */}
+      {modal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-7 space-y-4">
+            <div className="text-center">
+              <span className="text-4xl block mb-2">{modal.novoStatus === 'ausencia_justificada' ? '📄' : '🔵'}</span>
+              <h3 className="text-lg font-black text-gray-900">
+                {modal.novoStatus === 'ausencia_justificada' ? 'Justificar Ausência' : 'Dispensar'}
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">{modal.record.nome}</p>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">
+                Motivo <span className="text-red-500">*</span>
+              </label>
+              <input
+                value={motivo}
+                onChange={e => setMotivo(e.target.value)}
+                placeholder="Ex: Doença, viagem a serviço…"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Observação (opcional)</label>
+              <textarea
+                value={observacao}
+                onChange={e => setObservacao(e.target.value)}
+                rows={3}
+                placeholder="Detalhes adicionais…"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] resize-none"
+              />
+            </div>
+            {erro && <p className="text-red-600 text-xs">{erro}</p>}
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setModal(null); setErro(null); }}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold border border-gray-300 hover:bg-gray-50 transition"
+              >Cancelar</button>
+              <button
+                onClick={() => handleAtualizar(modal.record.id, modal.novoStatus, motivo, observacao)}
+                disabled={salvandoModal || !motivo.trim()}
+                className="flex-1 py-2 rounded-xl text-sm font-bold bg-[#123b63] text-white hover:bg-[#0f3154] transition disabled:opacity-50"
+              >
+                {salvandoModal ? 'Salvando...' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal confirmar finalização */}
+      {confirmFinal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-7">
+            <div className="text-center mb-5">
+              <span className="text-5xl block mb-3">🏁</span>
+              <h2 className="text-xl font-black text-gray-900 mb-2">Finalizar Homologação?</h2>
+              <p className="text-sm text-gray-500">
+                Esta ação irá registrar no <strong>Histórico Ministerial</strong> de cada ministro e
+                sincronizar a lista de <strong>ausentes para advertência</strong>.
+              </p>
+              {stats && stats.ausente > 0 && (
+                <p className="text-sm text-red-600 font-semibold mt-2">
+                  ⚠️ {stats.ausente} ministro{stats.ausente !== 1 ? 's' : ''} serão marcados para advertência.
+                </p>
+              )}
+            </div>
+            {erro && <p className="text-red-600 text-xs text-center mb-3">{erro}</p>}
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setConfirmFinal(false); setErro(null); }}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold border border-gray-300 hover:bg-gray-50 transition"
+              >Cancelar</button>
+              <button
+                onClick={handleFinalizar}
+                disabled={finalizando}
+                className="flex-1 py-2 rounded-xl text-sm font-bold bg-[#123b63] text-white hover:bg-[#0f3154] transition disabled:opacity-50"
+              >
+                {finalizando ? '⏳ Finalizando...' : '🏁 Confirmar'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
