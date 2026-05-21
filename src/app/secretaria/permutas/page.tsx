@@ -123,7 +123,8 @@ export default function PermutasPage() {
     if (loading) return;
     const load = async () => {
       const [estruturaRes, pm] = await Promise.all([
-        authedFetch('/api/v1/estrutura').then(r => r.json()),
+        // includeCamposInactive=true: garante que campos com is_active=false também apareçam
+        authedFetch('/api/v1/estrutura?includeCamposInactive=true').then(r => r.json()),
         authedFetch('/api/permutas').then(r => r.json()),
       ]);
 
@@ -203,7 +204,12 @@ export default function PermutasPage() {
     if (!supervisaoDestinoId) return;
     const sup = supervisoes.find(s => s.id === supervisaoDestinoId);
     const filtrados = campos.filter(c => c.supervisao_id === supervisaoDestinoId);
-    console.log('[Permutas] Supervisão destino:', sup?.nome ?? supervisaoDestinoId, '| Campos carregados (total):', campos.length, '| Campos desta supervisão:', filtrados.length);
+    console.log('[Permutas] Supervisão destino:', sup?.nome ?? supervisaoDestinoId);
+    console.table({
+      totalCamposRecebidosDaAPI: campos.length,
+      totalCamposDestaSupervisao: filtrados.length,
+      nomesDestaSupervisao: filtrados.map(c => c.nome).join(', '),
+    });
   }, [supervisaoDestinoId, campos, supervisoes]);
 
   const campoDestinoObj = campos.find(c => c.id === campoDestinoId);
@@ -251,7 +257,7 @@ export default function PermutasPage() {
     setPermutas(pm.data || []);
 
     // Recarrega campos (presidente_nome pode ter mudado)
-    const estrutura = await authedFetch('/api/v1/estrutura').then(r => r.json()).catch(() => null as any);
+    const estrutura = await authedFetch('/api/v1/estrutura?includeCamposInactive=true').then(r => r.json()).catch(() => null as any);
     const reloadCampos = (estrutura?.campos as any[]) || [];
     setCampos(reloadCampos.map((row: any) => ({
       id: row.id,

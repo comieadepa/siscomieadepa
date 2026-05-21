@@ -10,6 +10,9 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const includeInactive = searchParams.get('includeInactive') === 'true';
+  // includeCamposInactive=true: retorna todos os campos independente de is_active
+  // (usado em Permutas para mostrar o mesmo conjunto que o módulo Campos)
+  const includeCamposInactive = includeInactive || searchParams.get('includeCamposInactive') === 'true';
 
   const supabase = createServerClient();
 
@@ -32,9 +35,11 @@ export async function GET(request: NextRequest) {
 
   if (!includeInactive) {
     supervisoesQuery = supervisoesQuery.neq('is_active', false);
+    congregacoesQuery = congregacoesQuery.or('is_active.eq.true,is_active.is.null');
+  }
+  if (!includeCamposInactive) {
     // neq exclui NULLs em SQL; usar or() para incluir linhas sem is_active definido
     camposQuery = camposQuery.or('is_active.eq.true,is_active.is.null');
-    congregacoesQuery = congregacoesQuery.or('is_active.eq.true,is_active.is.null');
   }
 
   const [supRes, camRes, congRes] = await Promise.all([
