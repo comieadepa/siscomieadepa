@@ -127,7 +127,7 @@ interface Ministro {
   supervisao_id?: string | null; campo_id?: string | null;
 }
 
-type TabId = 'inscritos' | 'inscricao-manual' | 'checkin' | 'etiquetas' | 'financeiro' | 'relatorios' | 'comunicacao' | 'equipe' | 'configuracoes' | 'hospedagem' | 'backup' | 'programacao' | 'certificados' | 'relatorios-ago' | 'ausentes' | 'homologacao';
+type TabId = 'inscritos' | 'inscricao-manual' | 'checkin' | 'etiquetas' | 'financeiro' | 'relatorios' | 'comunicacao' | 'equipe' | 'configuracoes' | 'hospedagem' | 'backup' | 'programacao' | 'certificados' | 'relatorios-ago' | 'ausentes' | 'homologacao' | 'deliberacoes';
 // Nota: 'inscricao-manual' e 'configuracoes' mantidos no tipo para compatibilidade com ?tab= mas removidos da nav
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -252,6 +252,7 @@ export default function GerenciarEventoPage() {
       { id: 'relatorios-ago' as TabId, label: 'Relatórios AGO', icon: '📈' },
       { id: 'ausentes'       as TabId, label: 'Ausentes',       icon: '🚨' },
       { id: 'homologacao'    as TabId, label: 'Homologação',    icon: '⚖️' },
+      { id: 'deliberacoes'   as TabId, label: 'Deliberações',   icon: '📜' },
     ] : []),
   ];
 
@@ -261,7 +262,7 @@ export default function GerenciarEventoPage() {
     if (perfil.loading) return TODAS_TABS;
     if (perfil.isGlobal) return TODAS_TABS;
     return TODAS_TABS.filter(t => {
-      if (t.id === 'relatorios-ago' || t.id === 'ausentes' || t.id === 'homologacao') return isAGO && perfil.podeEditar;
+      if (t.id === 'relatorios-ago' || t.id === 'ausentes' || t.id === 'homologacao' || t.id === 'deliberacoes') return isAGO && perfil.podeEditar;
       return tabsPermitidasEvento.includes(t.id as import('@/hooks/useEventosPerfil').TabEventoId);
     });
   })();
@@ -386,7 +387,7 @@ export default function GerenciarEventoPage() {
     } else {
       // Aplica aba inicial via query param ?tab=X
       const tabParam = searchParams?.get('tab') as TabId | null;
-      const TABS_VALIDAS: TabId[] = ['inscritos','inscricao-manual','checkin','etiquetas','financeiro','relatorios','comunicacao','equipe','configuracoes','hospedagem','backup','programacao','certificados','relatorios-ago','ausentes','homologacao']; // inscricao-manual e configuracoes acessíveis via ?tab= mas não mostrados na nav
+      const TABS_VALIDAS: TabId[] = ['inscritos','inscricao-manual','checkin','etiquetas','financeiro','relatorios','comunicacao','equipe','configuracoes','hospedagem','backup','programacao','certificados','relatorios-ago','ausentes','homologacao','deliberacoes']; // inscricao-manual e configuracoes acessíveis via ?tab= mas não mostrados na nav
       if (tabParam && TABS_VALIDAS.includes(tabParam)) {
         setActiveTab(tabParam);
       }
@@ -634,6 +635,7 @@ export default function GerenciarEventoPage() {
           'relatorios-ago': 'Painel de indicadores e atalhos para relatórios da AGO',
           ausentes:         'Lista de ministros ausentes nas plenárias',
           homologacao:      'Homologação administrativa da frequência para geração de advertências',
+          deliberacoes:     'Deliberações oficiais aprovadas durante a AGO',
         };
         const desc = TAB_DESCS[tab.id];
         const BADGE: Partial<Record<TabId, React.ReactNode>> = {
@@ -785,6 +787,9 @@ export default function GerenciarEventoPage() {
       )}
       {activeTab === 'homologacao' && (
         <TabHomologacao eventoId={id} podeEditar={perfil.podeEditar} />
+      )}
+      {activeTab === 'deliberacoes' && (
+        <TabDeliberacoes eventoId={id} evento={evento} podeEditar={perfil.podeEditar} />
       )}
 
       {/* ── MODAL ENCERRAR AGO ─────────────────────────────── */}
@@ -5750,6 +5755,672 @@ function TabHomologacao({ eventoId, podeEditar }: { eventoId: string; podeEditar
                 className="flex-1 py-2 rounded-xl text-sm font-bold bg-[#123b63] text-white hover:bg-[#0f3154] transition disabled:opacity-50"
               >
                 {finalizando ? '⏳ Finalizando...' : '🏁 Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── TabDeliberacoes ──────────────────────────────────────────────────────────
+
+const TIPOS_DELIB = [
+  { value: 'consagracao',          label: 'Consagração' },
+  { value: 'ordenacao',            label: 'Ordenação' },
+  { value: 'separacao_ministerio', label: 'Separação ao Ministério' },
+  { value: 'recebimento',          label: 'Recebimento' },
+  { value: 'transferencia',        label: 'Transferência' },
+  { value: 'jubilacao',            label: 'Jubilação' },
+  { value: 'mudanca_cargo',        label: 'Mudança de Cargo' },
+  { value: 'aprovacao_candidato',  label: 'Aprovação de Candidato' },
+  { value: 'exclusao',             label: 'Exclusão' },
+  { value: 'observacao_geral',     label: 'Observação Geral' },
+] as const;
+
+
+const STATUS_DELIB_CFG: Record<string, { label: string; cls: string }> = {
+  rascunho: { label: 'Rascunho', cls: 'bg-yellow-100 text-yellow-800' },
+  aprovado: { label: 'Aprovado', cls: 'bg-blue-100 text-blue-800' },
+  aplicado: { label: 'Aplicado', cls: 'bg-green-100 text-green-800' },
+};
+
+interface DeliberacaoRecord {
+  id: string;
+  ministro_id: string | null;
+  ministro_nome: string;
+  ministro_matricula: string | null;
+  ministro_campo: string | null;
+  ministro_supervisao: string | null;
+  tipo: string;
+  data_deliberacao: string | null;
+  situacao_anterior: string | null;
+  situacao_nova: string | null;
+  observacao: string | null;
+  numero_ata: string | null;
+  status: 'rascunho' | 'aprovado' | 'aplicado';
+  aprovado_em: string | null;
+  aprovado_por_nome: string | null;
+  aplicado_em: string | null;
+  aplicado_por_nome: string | null;
+  created_by_nome: string | null;
+  created_at: string;
+}
+
+interface DelibStats { total: number; rascunho: number; aprovado: number; aplicado: number }
+interface MemberHit  { id: string; name: string | null; matricula: string | null; campo: string | null; supervisao: string | null; cargo_ministerial: string | null }
+
+const FORM_VAZIO = {
+  ministroSearch:    '',
+  ministroSelecionado: null as MemberHit | null,
+  tipo:              '' as string,
+  data_deliberacao:  '',
+  situacao_anterior: '',
+  situacao_nova:     '',
+  observacao:        '',
+  numero_ata:        '',
+};
+
+function fmtTipoDelib(tipo: string) {
+  return TIPOS_DELIB.find(t => t.value === tipo)?.label ?? tipo;
+}
+
+function fmtDate(d: string | null) {
+  if (!d) return '—';
+  const [y, m, day] = d.slice(0, 10).split('-');
+  return `${day}/${m}/${y}`;
+}
+
+function exportarCSV(records: DeliberacaoRecord[], eventoNome: string) {
+  const headers = ['Nome','Matrícula','Campo','Supervisão','Tipo','Data','Sit. Anterior','Sit. Nova','Nº Ata','Status','Observação'];
+  const rows = records.map(r => [
+    r.ministro_nome,
+    r.ministro_matricula ?? '',
+    r.ministro_campo ?? '',
+    r.ministro_supervisao ?? '',
+    fmtTipoDelib(r.tipo),
+    fmtDate(r.data_deliberacao),
+    r.situacao_anterior ?? '',
+    r.situacao_nova ?? '',
+    r.numero_ata ?? '',
+    STATUS_DELIB_CFG[r.status]?.label ?? r.status,
+    r.observacao ?? '',
+  ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `deliberacoes-ago-${eventoNome.replace(/\s+/g, '-').toLowerCase()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportarImpressao(records: DeliberacaoRecord[], eventoNome: string) {
+  const linhas = records.map(r => `
+    <tr>
+      <td>${r.ministro_nome}</td>
+      <td>${r.ministro_matricula ?? '—'}</td>
+      <td>${r.ministro_campo ?? '—'}</td>
+      <td>${fmtTipoDelib(r.tipo)}</td>
+      <td>${fmtDate(r.data_deliberacao)}</td>
+      <td>${r.situacao_anterior ?? '—'}</td>
+      <td>${r.situacao_nova ?? '—'}</td>
+      <td>${r.numero_ata ?? '—'}</td>
+      <td>${STATUS_DELIB_CFG[r.status]?.label ?? r.status}</td>
+    </tr>`).join('');
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+    <title>Deliberações AGO — ${eventoNome}</title>
+    <style>
+      body { font-family: Arial, sans-serif; font-size: 11px; padding: 20px; }
+      h2 { font-size: 14px; margin-bottom: 4px; }
+      h3 { font-size: 11px; color: #555; margin-bottom: 12px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border: 1px solid #ccc; padding: 4px 6px; }
+      th { background: #163b66; color: #fff; font-weight: bold; }
+      tr:nth-child(even) { background: #f5f5f5; }
+      @media print { button { display: none; } }
+    </style></head><body>
+    <button onclick="window.print()">🖨️ Imprimir</button>
+    <h2>Deliberações AGO</h2><h3>${eventoNome}</h3>
+    <table><thead><tr>
+      <th>Nome</th><th>Matrícula</th><th>Campo</th><th>Tipo</th>
+      <th>Data</th><th>Sit. Anterior</th><th>Sit. Nova</th><th>Nº Ata</th><th>Status</th>
+    </tr></thead><tbody>${linhas}</tbody></table>
+    </body></html>`;
+  const w = window.open('', '_blank');
+  if (w) { w.document.write(html); w.document.close(); }
+}
+
+function TabDeliberacoes({ eventoId, evento, podeEditar }: { eventoId: string; evento: Evento | null; podeEditar: boolean }) {
+  const [records,  setRecords]  = useState<DeliberacaoRecord[]>([]);
+  const [stats,    setStats]    = useState<DelibStats>({ total: 0, rascunho: 0, aprovado: 0, aplicado: 0 });
+  const [loading,  setLoading]  = useState(true);
+  const [erro,     setErro]     = useState<string | null>(null);
+
+  // Filtros
+  const [filtroNome,   setFiltroNome]   = useState('');
+  const [filtroTipo,   setFiltroTipo]   = useState('');
+  const [filtroStatus, setFiltroStatus] = useState('');
+  const [filtroCampo,  setFiltroCampo]  = useState('');
+
+  // Modal criar/editar
+  const [modalAberto,  setModalAberto]  = useState(false);
+  const [editando,     setEditando]     = useState<DeliberacaoRecord | null>(null);
+  const [form,         setForm]         = useState(FORM_VAZIO);
+  const [buscaMembro,  setBuscaMembro]  = useState('');
+  const [resultsMembro,setResultsMembro] = useState<MemberHit[]>([]);
+  const [buscandoMembro, setBuscandoMembro] = useState(false);
+  const [salvandoModal,  setSalvandoModal]  = useState(false);
+  const [erroModal,      setErroModal]      = useState<string | null>(null);
+
+  // Confirmações de ação
+  const [confirmAprovar, setConfirmAprovar] = useState<DeliberacaoRecord | null>(null);
+  const [confirmAplicar, setConfirmAplicar] = useState<DeliberacaoRecord | null>(null);
+  const [confirmExcluir, setConfirmExcluir] = useState<DeliberacaoRecord | null>(null);
+  const [agindo, setAgindo] = useState(false);
+
+  const eventoNome = evento?.nome ?? 'AGO';
+
+  const fetchData = async () => {
+    setLoading(true);
+    setErro(null);
+    try {
+      const res = await authenticatedFetch(`/api/eventos/${eventoId}/deliberacoes`);
+      if (!res.ok) { setErro('Erro ao carregar deliberações.'); return; }
+      const data = await res.json();
+      setRecords(data.records ?? []);
+      setStats(data.stats ?? { total: 0, rascunho: 0, aprovado: 0, aplicado: 0 });
+    } catch { setErro('Erro de rede.'); }
+    finally   { setLoading(false); }
+  };
+
+  useEffect(() => { void fetchData(); }, [eventoId]);
+
+  // Autocomplete de membros
+  const buscarMembro = async (termo: string) => {
+    if (!termo.trim() || termo.length < 2) { setResultsMembro([]); return; }
+    setBuscandoMembro(true);
+    try {
+      const res = await authenticatedFetch(`/api/v1/members/lookup?search=${encodeURIComponent(termo)}&limit=8`);
+      if (res.ok) {
+        const data = await res.json();
+        setResultsMembro((data.data ?? []) as MemberHit[]);
+      }
+    } catch { /* ignore */ }
+    finally { setBuscandoMembro(false); }
+  };
+
+  useEffect(() => {
+    const t = setTimeout(() => void buscarMembro(buscaMembro), 300);
+    return () => clearTimeout(t);
+  }, [buscaMembro]);
+
+  const abrirCriar = () => {
+    setEditando(null);
+    setForm(FORM_VAZIO);
+    setBuscaMembro('');
+    setResultsMembro([]);
+    setErroModal(null);
+    setModalAberto(true);
+  };
+
+  const abrirEditar = (r: DeliberacaoRecord) => {
+    setEditando(r);
+    setForm({
+      ministroSearch:      r.ministro_nome,
+      ministroSelecionado: r.ministro_id ? {
+        id: r.ministro_id, name: r.ministro_nome, matricula: r.ministro_matricula,
+        campo: r.ministro_campo, supervisao: r.ministro_supervisao, cargo_ministerial: null,
+      } : null,
+      tipo:              r.tipo,
+      data_deliberacao:  r.data_deliberacao ?? '',
+      situacao_anterior: r.situacao_anterior ?? '',
+      situacao_nova:     r.situacao_nova ?? '',
+      observacao:        r.observacao ?? '',
+      numero_ata:        r.numero_ata ?? '',
+    });
+    setBuscaMembro(r.ministro_nome);
+    setResultsMembro([]);
+    setErroModal(null);
+    setModalAberto(true);
+  };
+
+  const selecionarMembro = (m: MemberHit) => {
+    setForm(f => ({
+      ...f,
+      ministroSelecionado: m,
+      ministroSearch: m.name ?? '',
+    }));
+    setBuscaMembro(m.name ?? '');
+    setResultsMembro([]);
+  };
+
+  const handleSalvar = async () => {
+    if (!form.tipo) { setErroModal('Selecione o tipo.'); return; }
+    const nome = form.ministroSelecionado?.name ?? form.ministroSearch.trim();
+    if (!nome) { setErroModal('Informe o nome do ministro.'); return; }
+
+    setSalvandoModal(true);
+    setErroModal(null);
+    try {
+      const payload = {
+        ministro_id:         form.ministroSelecionado?.id ?? null,
+        ministro_nome:       nome,
+        ministro_matricula:  form.ministroSelecionado?.matricula ?? null,
+        ministro_campo:      form.ministroSelecionado?.campo ?? null,
+        ministro_supervisao: form.ministroSelecionado?.supervisao ?? null,
+        tipo:                form.tipo,
+        data_deliberacao:    form.data_deliberacao || null,
+        situacao_anterior:   form.situacao_anterior || null,
+        situacao_nova:       form.situacao_nova || null,
+        observacao:          form.observacao || null,
+        numero_ata:          form.numero_ata || null,
+      };
+
+      let res: Response;
+      if (editando) {
+        res = await authenticatedFetch(`/api/eventos/${eventoId}/deliberacoes/${editando.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        res = await authenticatedFetch(`/api/eventos/${eventoId}/deliberacoes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
+      const data = await res.json();
+      if (!res.ok) { setErroModal(data.error ?? 'Erro ao salvar.'); return; }
+      setModalAberto(false);
+      await fetchData();
+    } catch { setErroModal('Erro de rede.'); }
+    finally  { setSalvandoModal(false); }
+  };
+
+  const handleAprovar = async () => {
+    if (!confirmAprovar) return;
+    setAgindo(true);
+    try {
+      const res = await authenticatedFetch(`/api/eventos/${eventoId}/deliberacoes/${confirmAprovar.id}/aprovar`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) { setErro(data.error ?? 'Erro ao aprovar.'); }
+      else { setConfirmAprovar(null); await fetchData(); }
+    } catch { setErro('Erro de rede.'); }
+    finally  { setAgindo(false); }
+  };
+
+  const handleAplicar = async () => {
+    if (!confirmAplicar) return;
+    setAgindo(true);
+    try {
+      const res = await authenticatedFetch(`/api/eventos/${eventoId}/deliberacoes/${confirmAplicar.id}/aplicar`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) { setErro(data.error ?? 'Erro ao aplicar.'); }
+      else { setConfirmAplicar(null); await fetchData(); }
+    } catch { setErro('Erro de rede.'); }
+    finally  { setAgindo(false); }
+  };
+
+  const handleExcluir = async () => {
+    if (!confirmExcluir) return;
+    setAgindo(true);
+    try {
+      const res = await authenticatedFetch(`/api/eventos/${eventoId}/deliberacoes/${confirmExcluir.id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) { setErro(data.error ?? 'Erro ao excluir.'); }
+      else { setConfirmExcluir(null); await fetchData(); }
+    } catch { setErro('Erro de rede.'); }
+    finally  { setAgindo(false); }
+  };
+
+  const filtrados = records.filter(r => {
+    if (filtroNome   && !r.ministro_nome.toLowerCase().includes(filtroNome.toLowerCase()))   return false;
+    if (filtroTipo   && r.tipo !== filtroTipo)                                                return false;
+    if (filtroStatus && r.status !== filtroStatus)                                            return false;
+    if (filtroCampo  && !(r.ministro_campo ?? '').toLowerCase().includes(filtroCampo.toLowerCase())) return false;
+    return true;
+  });
+
+  if (loading) return <div className="flex items-center justify-center py-20 text-gray-400">Carregando...</div>;
+
+  return (
+    <div className="space-y-6">
+      {erro && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">{erro}</div>}
+
+      {/* Cards de stats + ações */}
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex flex-wrap gap-3 flex-1">
+          {([
+            { key: 'rascunho', label: 'Rascunhos', icon: '📝', cls: 'border-yellow-200 bg-yellow-50' },
+            { key: 'aprovado', label: 'Aprovadas',  icon: '✅', cls: 'border-blue-200 bg-blue-50' },
+            { key: 'aplicado', label: 'Aplicadas',  icon: '🏆', cls: 'border-green-200 bg-green-50' },
+          ] as { key: keyof DelibStats; label: string; icon: string; cls: string }[]).map(c => (
+            <div key={c.key} className={`border rounded-xl px-4 py-3 text-center ${c.cls}`}>
+              <div className="text-xl mb-0.5">{c.icon}</div>
+              <div className="text-2xl font-black text-gray-900">{stats[c.key]}</div>
+              <div className="text-xs text-gray-600 font-semibold">{c.label}</div>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          {podeEditar && (
+            <button
+              onClick={abrirCriar}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-[#123b63] text-white hover:bg-[#0f3154] transition"
+            >
+              ➕ Nova Deliberação
+            </button>
+          )}
+          {records.length > 0 && (
+            <>
+              <button
+                onClick={() => exportarCSV(filtrados, eventoNome)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border border-gray-300 hover:bg-gray-50 transition"
+              >📊 Excel</button>
+              <button
+                onClick={() => exportarImpressao(filtrados, eventoNome)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border border-gray-300 hover:bg-gray-50 transition"
+              >🖨️ PDF</button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Filtros */}
+      <div className="flex flex-wrap gap-3">
+        <input
+          value={filtroNome} onChange={e => setFiltroNome(e.target.value)}
+          placeholder="Filtrar por ministro…"
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 min-w-[180px] focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+        />
+        <input
+          value={filtroCampo} onChange={e => setFiltroCampo(e.target.value)}
+          placeholder="Filtrar por campo…"
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 min-w-[150px] focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+        />
+        <select
+          value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+        >
+          <option value="">Todos os tipos</option>
+          {TIPOS_DELIB.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+        <select
+          value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+        >
+          <option value="">Todos os status</option>
+          <option value="rascunho">Rascunho</option>
+          <option value="aprovado">Aprovado</option>
+          <option value="aplicado">Aplicado</option>
+        </select>
+      </div>
+
+      {/* Tabela */}
+      {filtrados.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <div className="text-4xl mb-3">📜</div>
+          <p className="text-sm">Nenhuma deliberação encontrada.</p>
+          {podeEditar && records.length === 0 && (
+            <button onClick={abrirCriar} className="mt-4 px-5 py-2 rounded-xl text-sm font-bold bg-[#123b63] text-white hover:bg-[#0f3154] transition">
+              ➕ Criar primeira deliberação
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-gray-200">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 text-left border-b border-gray-200">
+                <th className="px-4 py-3 font-semibold text-gray-600">Ministro</th>
+                <th className="px-3 py-3 font-semibold text-gray-600">Campo</th>
+                <th className="px-3 py-3 font-semibold text-gray-600">Tipo</th>
+                <th className="px-3 py-3 font-semibold text-gray-600">Data</th>
+                <th className="px-3 py-3 font-semibold text-gray-600">Sit. Anterior</th>
+                <th className="px-3 py-3 font-semibold text-gray-600">Sit. Nova</th>
+                <th className="px-3 py-3 font-semibold text-gray-600">Nº Ata</th>
+                <th className="px-3 py-3 font-semibold text-gray-600">Status</th>
+                {podeEditar && <th className="px-3 py-3 font-semibold text-gray-600 text-center">Ações</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {filtrados.map((r, idx) => (
+                <tr key={r.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'}`}>
+                  <td className="px-4 py-3">
+                    <div className="font-semibold text-gray-900">{r.ministro_nome}</div>
+                    {r.ministro_matricula && <div className="text-xs text-gray-500">{r.ministro_matricula}</div>}
+                  </td>
+                  <td className="px-3 py-3 text-gray-600 text-xs">{r.ministro_campo ?? '—'}</td>
+                  <td className="px-3 py-3">
+                    <span className="inline-block bg-gray-100 text-gray-700 text-xs font-semibold px-2 py-0.5 rounded-full">
+                      {fmtTipoDelib(r.tipo)}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 text-gray-600 text-xs whitespace-nowrap">{fmtDate(r.data_deliberacao)}</td>
+                  <td className="px-3 py-3 text-gray-600 text-xs max-w-[140px] truncate" title={r.situacao_anterior ?? ''}>{r.situacao_anterior ?? '—'}</td>
+                  <td className="px-3 py-3 text-gray-600 text-xs max-w-[140px] truncate" title={r.situacao_nova ?? ''}>{r.situacao_nova ?? '—'}</td>
+                  <td className="px-3 py-3 text-gray-600 text-xs">{r.numero_ata ?? '—'}</td>
+                  <td className="px-3 py-3">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${STATUS_DELIB_CFG[r.status]?.cls ?? ''}`}>
+                      {STATUS_DELIB_CFG[r.status]?.label ?? r.status}
+                    </span>
+                    {r.aplicado_por_nome && (
+                      <div className="text-xs text-gray-400 mt-0.5">por {r.aplicado_por_nome}</div>
+                    )}
+                  </td>
+                  {podeEditar && (
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1 justify-center flex-wrap">
+                        {r.status === 'rascunho' && (
+                          <>
+                            <button onClick={() => abrirEditar(r)} title="Editar" className="text-xs px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold transition">✏️</button>
+                            <button onClick={() => setConfirmAprovar(r)} title="Aprovar" className="text-xs px-2 py-1 rounded-lg bg-blue-100 hover:bg-blue-200 text-blue-700 font-semibold transition">✅ Aprovar</button>
+                            <button onClick={() => setConfirmExcluir(r)} title="Excluir" className="text-xs px-2 py-1 rounded-lg bg-red-100 hover:bg-red-200 text-red-700 font-semibold transition">🗑️</button>
+                          </>
+                        )}
+                        {r.status === 'aprovado' && (
+                          <button onClick={() => setConfirmAplicar(r)} title="Aplicar" className="text-xs px-2 py-1 rounded-lg bg-green-100 hover:bg-green-200 text-green-700 font-semibold transition">🏆 Aplicar</button>
+                        )}
+                        {r.status === 'aplicado' && (
+                          <span className="text-xs text-green-600 font-semibold">✓ Aplicado</span>
+                        )}
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Modal Criar/Editar ──────────────────────────────── */}
+      {modalAberto && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-7 my-8 space-y-5">
+            <h3 className="text-lg font-black text-gray-900">
+              {editando ? '✏️ Editar Deliberação' : '➕ Nova Deliberação'}
+            </h3>
+
+            {/* Busca de membro */}
+            <div className="relative">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">
+                Ministro <span className="text-red-500">*</span>
+              </label>
+              <input
+                value={buscaMembro}
+                onChange={e => { setBuscaMembro(e.target.value); setForm(f => ({ ...f, ministroSelecionado: null, ministroSearch: e.target.value })); }}
+                placeholder="Digite o nome para buscar…"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+              />
+              {form.ministroSelecionado && (
+                <div className="mt-1 flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-1.5">
+                  <span>✅</span>
+                  <span className="font-semibold">{form.ministroSelecionado.name}</span>
+                  {form.ministroSelecionado.matricula && <span className="text-gray-500">— {form.ministroSelecionado.matricula}</span>}
+                  {form.ministroSelecionado.campo && <span className="text-gray-500">— {form.ministroSelecionado.campo}</span>}
+                  <button onClick={() => { setForm(f => ({ ...f, ministroSelecionado: null })); setBuscaMembro(''); }} className="ml-auto text-red-400 hover:text-red-600">✕</button>
+                </div>
+              )}
+              {buscandoMembro && <div className="text-xs text-gray-400 mt-1">Buscando…</div>}
+              {resultsMembro.length > 0 && !form.ministroSelecionado && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                  {resultsMembro.map(m => (
+                    <button
+                      key={m.id}
+                      onClick={() => selecionarMembro(m)}
+                      className="w-full text-left px-4 py-2.5 hover:bg-gray-50 border-b border-gray-100 last:border-0"
+                    >
+                      <div className="font-semibold text-sm text-gray-900">{m.name}</div>
+                      <div className="text-xs text-gray-500">{[m.matricula, m.campo].filter(Boolean).join(' — ')}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Tipo <span className="text-red-500">*</span></label>
+                <select
+                  value={form.tipo}
+                  onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                >
+                  <option value="">Selecione…</option>
+                  {TIPOS_DELIB.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Data</label>
+                <input
+                  type="date"
+                  value={form.data_deliberacao}
+                  onChange={e => setForm(f => ({ ...f, data_deliberacao: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Situação Anterior</label>
+                <input
+                  value={form.situacao_anterior}
+                  onChange={e => setForm(f => ({ ...f, situacao_anterior: e.target.value }))}
+                  placeholder="Ex: Evangelista"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Situação Nova</label>
+                <input
+                  value={form.situacao_nova}
+                  onChange={e => setForm(f => ({ ...f, situacao_nova: e.target.value }))}
+                  placeholder="Ex: Pastor"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Número da Ata</label>
+                <input
+                  value={form.numero_ata}
+                  onChange={e => setForm(f => ({ ...f, numero_ata: e.target.value }))}
+                  placeholder="Ex: 12/2026"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Observação</label>
+              <textarea
+                value={form.observacao}
+                onChange={e => setForm(f => ({ ...f, observacao: e.target.value }))}
+                rows={3}
+                placeholder="Detalhes adicionais da deliberação…"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] resize-none"
+              />
+            </div>
+
+            {erroModal && <p className="text-red-600 text-sm">{erroModal}</p>}
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setModalAberto(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-300 hover:bg-gray-50 transition"
+              >Cancelar</button>
+              <button
+                onClick={handleSalvar}
+                disabled={salvandoModal}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-[#123b63] text-white hover:bg-[#0f3154] transition disabled:opacity-50"
+              >
+                {salvandoModal ? 'Salvando...' : editando ? '💾 Salvar' : '➕ Criar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal Confirmar Aprovação ─────────────────────── */}
+      {confirmAprovar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-7 text-center space-y-4">
+            <span className="text-5xl block">✅</span>
+            <h3 className="text-lg font-black text-gray-900">Aprovar Deliberação?</h3>
+            <p className="text-sm text-gray-500">
+              <strong>{fmtTipoDelib(confirmAprovar.tipo)}</strong> — {confirmAprovar.ministro_nome}
+            </p>
+            <p className="text-xs text-gray-400">A deliberação passará para <strong>Aprovado</strong>. A alteração no cadastro só ocorre ao <em>Aplicar</em>.</p>
+            {erro && <p className="text-red-600 text-xs">{erro}</p>}
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmAprovar(null)} className="flex-1 py-2 rounded-xl text-sm font-semibold border border-gray-300 hover:bg-gray-50">Cancelar</button>
+              <button onClick={handleAprovar} disabled={agindo} className="flex-1 py-2 rounded-xl text-sm font-bold bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-50">
+                {agindo ? 'Aprovando...' : '✅ Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal Confirmar Aplicação ──────────────────────── */}
+      {confirmAplicar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-7 text-center space-y-4">
+            <span className="text-5xl block">🏆</span>
+            <h3 className="text-lg font-black text-gray-900">Aplicar Deliberação?</h3>
+            <p className="text-sm text-gray-500">
+              <strong>{fmtTipoDelib(confirmAplicar.tipo)}</strong> — {confirmAplicar.ministro_nome}
+            </p>
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              ⚠️ Esta ação irá registrar no <strong>Histórico Ministerial</strong>
+              {confirmAplicar.ministro_id ? ' e atualizar o cadastro do ministro' : ''}.
+              Não pode ser desfeita.
+            </p>
+            {erro && <p className="text-red-600 text-xs">{erro}</p>}
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmAplicar(null)} className="flex-1 py-2 rounded-xl text-sm font-semibold border border-gray-300 hover:bg-gray-50">Cancelar</button>
+              <button onClick={handleAplicar} disabled={agindo} className="flex-1 py-2 rounded-xl text-sm font-bold bg-green-600 text-white hover:bg-green-700 transition disabled:opacity-50">
+                {agindo ? 'Aplicando...' : '🏆 Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal Confirmar Exclusão ────────────────────────── */}
+      {confirmExcluir && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-7 text-center space-y-4">
+            <span className="text-5xl block">🗑️</span>
+            <h3 className="text-lg font-black text-gray-900">Excluir Deliberação?</h3>
+            <p className="text-sm text-gray-500">{fmtTipoDelib(confirmExcluir.tipo)} — {confirmExcluir.ministro_nome}</p>
+            {erro && <p className="text-red-600 text-xs">{erro}</p>}
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmExcluir(null)} className="flex-1 py-2 rounded-xl text-sm font-semibold border border-gray-300 hover:bg-gray-50">Cancelar</button>
+              <button onClick={handleExcluir} disabled={agindo} className="flex-1 py-2 rounded-xl text-sm font-bold bg-red-600 text-white hover:bg-red-700 transition disabled:opacity-50">
+                {agindo ? 'Excluindo...' : '🗑️ Excluir'}
               </button>
             </div>
           </div>
