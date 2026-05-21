@@ -8,6 +8,15 @@ interface Evento {
   id: string; nome: string; departamento: string;
   data_inicio: string; data_fim: string;
   permite_hospedagem: boolean;
+  configuracoes_ago?: Record<string, unknown> | null;
+}
+
+interface SetorAgo {
+  id: string; nome: string; grupo: string;
+  tipos_leito: ('beliche' | 'colchonete' | 'rede')[];
+  quantidade_leitos: number;
+  quantidade_leitos_inferiores: number;
+  observacoes: string; ativo: boolean;
 }
 
 interface Supervisao { id: string; nome: string; }
@@ -75,14 +84,14 @@ const thCls = 'text-left text-xs font-semibold text-gray-500 uppercase tracking-
 const tdCls = 'py-2.5 px-3 text-sm text-gray-700 border-t border-gray-50 whitespace-nowrap';
 
 // ─── Sub-aba ────────────────────────────────────────────────────────────────
-type SubAba = 'hospedagens' | 'alojamentos' | 'relatorios';
+type SubAba = 'hospedagens' | 'alojamentos' | 'relatorios' | 'painel_ago';
 
 // ════════════════════════════════════════════════════════════════════════════
 // COMPONENTE PRINCIPAL
 // ════════════════════════════════════════════════════════════════════════════
 export default function TabHospedagem({
   eventoId,
-  evento: _evento,
+  evento,
   supervisoes,
   campos: _campos,
   nomeSup,
@@ -112,7 +121,6 @@ export default function TabHospedagem({
   const [filtroSexo,    setFiltroSexo]    = useState('');
   const [filtroSup,     setFiltroSup]     = useState('');
   const [filtroNecEsp,  setFiltroNecEsp]  = useState('');
-  const [filtroCamaInf, setFiltroCamaInf] = useState('');
 
   // Modal edição
   const [editando, setEditando] = useState<Hospedagem | null>(null);
@@ -176,10 +184,8 @@ export default function TabHospedagem({
     if (filtroSup)     list = list.filter(h => h.supervisao_id === filtroSup);
     if (filtroNecEsp === '1') list = list.filter(h => h.necessidade_especial);
     if (filtroNecEsp === '0') list = list.filter(h => !h.necessidade_especial);
-    if (filtroCamaInf === '1') list = list.filter(h => h.cama_inferior);
-    if (filtroCamaInf === '0') list = list.filter(h => !h.cama_inferior);
     return list;
-  }, [hospedagens, filtroStatus, filtroAloj, filtroSexo, filtroSup, filtroNecEsp, filtroCamaInf]);
+  }, [hospedagens, filtroStatus, filtroAloj, filtroSexo, filtroSup, filtroNecEsp]);
 
   // ── Stats ──────────────────────────────────────────────────
   const stats = useMemo(() => ({
@@ -300,6 +306,7 @@ export default function TabHospedagem({
           { id: 'hospedagens', label: '🛏️ Alocações' },
           { id: 'alojamentos', label: '🏠 Alojamentos' },
           { id: 'relatorios',  label: '📊 Relatórios' },
+          ...(evento.departamento === 'AGO' ? [{ id: 'painel_ago' as SubAba, label: '🎯 Painel AGO' }] : []),
         ] as { id: SubAba; label: string }[]).map(t => (
           <button key={t.id} onClick={() => setSubAba(t.id)}
             className={`px-4 py-2 rounded-lg text-xs font-semibold transition whitespace-nowrap flex-shrink-0 ${
@@ -311,14 +318,13 @@ export default function TabHospedagem({
       </div>
 
       {/* ── Cards de resumo ───────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
         {[
           { label: 'Total',        value: stats.total,       cor: 'text-[#123b63]' },
           { label: 'Solicitadas',  value: stats.solicitadas, cor: 'text-yellow-600' },
           { label: 'Confirmadas',  value: stats.confirmadas, cor: 'text-emerald-600' },
           { label: 'Lista Espera', value: stats.listaEspera, cor: 'text-orange-600' },
           { label: 'Nec. Especial',value: stats.necEsp,      cor: 'text-purple-600' },
-          { label: 'Cama Inferior',value: stats.camaInf,     cor: 'text-sky-600' },
           { label: 'Vagas Livres', value: stats.vagasDisp,   cor: 'text-teal-600' },
         ].map(s => (
           <div key={s.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 text-center">
@@ -390,13 +396,6 @@ export default function TabHospedagem({
               <select value={filtroNecEsp} onChange={e => setFiltroNecEsp(e.target.value)}
                 className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
                 <option value="">Nec. especial?</option>
-                <option value="1">Sim</option>
-                <option value="0">Não</option>
-              </select>
-
-              <select value={filtroCamaInf} onChange={e => setFiltroCamaInf(e.target.value)}
-                className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-                <option value="">Cama inferior?</option>
                 <option value="1">Sim</option>
                 <option value="0">Não</option>
               </select>
@@ -524,6 +523,17 @@ export default function TabHospedagem({
           alojamentos={alojamentos}
           nomeSup={nomeSup}
           nomeCampo={nomeCampo}
+          eventoId={eventoId}
+          exportarCSV={exportarCSV}
+        />
+      )}
+
+      {/* ════════════ SUB-ABA: PAINEL AGO ═══════════════════════ */}
+      {subAba === 'painel_ago' && (
+        <SecaoPainelAgo
+          hospedagens={hospedagens}
+          alojamentos={alojamentos}
+          configuracoes={evento.configuracoes_ago ?? null}
           eventoId={eventoId}
           exportarCSV={exportarCSV}
         />
@@ -997,6 +1007,364 @@ function SecaoRelatorios({
           </div>
         )
       )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SEÇÃO: PAINEL AGO
+// ════════════════════════════════════════════════════════════════════════════
+const PUBLICO_GRUPO: Record<string, string> = {
+  presidentes:     'Pastor Presidente / Pastor Jubilado',
+  jubilados:       'Pastor Presidente / Pastor Jubilado',
+  masculino_geral: 'Pastor Auxiliar / Juventude',
+  feminino:        'Mulheres',
+  misto:           'Misto',
+};
+
+const PUBLICO_LABEL: Record<string, string> = {
+  presidentes:     'Presidentes',
+  jubilados:       'Jubilados',
+  masculino_geral: 'Masculino (Geral)',
+  feminino:        'Feminino',
+  misto:           'Misto',
+};
+
+const TIPO_LEITO_LABEL: Record<string, string> = {
+  beliche:    '🛏️ Beliche',
+  colchonete: '🟦 Colchonete',
+  rede:       '🌿 Rede',
+};
+
+function SecaoPainelAgo({
+  hospedagens,
+  alojamentos,
+  configuracoes,
+  eventoId,
+  exportarCSV,
+}: {
+  hospedagens: Hospedagem[];
+  alojamentos: Alojamento[];
+  configuracoes: Record<string, unknown> | null;
+  eventoId: string;
+  exportarCSV: (lista: Hospedagem[], nome: string) => void;
+}) {
+  // Mapear alojamento_id → publico
+  const alojMap = useMemo(() => {
+    const m = new Map<string, Alojamento>();
+    alojamentos.forEach(a => m.set(a.id, a));
+    return m;
+  }, [alojamentos]);
+
+  // Extrair dados de configuração AGO
+  const grupos = useMemo(() => {
+    return (configuracoes?.grupos as string[] | undefined) ?? [
+      'Pastor Presidente / Pastor Jubilado',
+      'Pastor Auxiliar / Juventude',
+      'Mulheres',
+    ];
+  }, [configuracoes]);
+
+  const setores = useMemo(() => {
+    return (configuracoes?.setores as SetorAgo[] | undefined) ?? [];
+  }, [configuracoes]);
+
+  // Estatísticas por grupo (baseado no alojamento do inscrito)
+  const statsPorGrupo = useMemo(() => {
+    const map = new Map<string, { total: number; confirmados: number; listaEspera: number; solicitados: number }>();
+    grupos.forEach(g => map.set(g, { total: 0, confirmados: 0, listaEspera: 0, solicitados: 0 }));
+    map.set('Sem grupo', { total: 0, confirmados: 0, listaEspera: 0, solicitados: 0 });
+
+    hospedagens.forEach(h => {
+      const aloj = h.alojamento_id ? alojMap.get(h.alojamento_id) : null;
+      const grupo = aloj ? (PUBLICO_GRUPO[aloj.publico] ?? 'Sem grupo') : 'Sem grupo';
+      const cur = map.get(grupo) ?? map.get('Sem grupo')!;
+      cur.total++;
+      if (h.status === 'confirmada')   cur.confirmados++;
+      if (h.status === 'lista_espera') cur.listaEspera++;
+      if (h.status === 'solicitada')   cur.solicitados++;
+    });
+    return map;
+  }, [hospedagens, alojMap, grupos]);
+
+  // Estatísticas por alojamento com tipo público
+  const statsAloj = useMemo(() => {
+    return alojamentos.map(a => {
+      const inscritos = hospedagens.filter(h => h.alojamento_id === a.id);
+      return {
+        ...a,
+        inscritos: inscritos.length,
+        confirmados: inscritos.filter(h => h.status === 'confirmada').length,
+        nec_especial: inscritos.filter(h => h.necessidade_especial).length,
+        cama_inf: inscritos.filter(h => h.cama_inferior).length,
+      };
+    }).sort((a, b) => b.inscritos - a.inscritos);
+  }, [hospedagens, alojamentos]);
+
+  // Preferências gerais
+  const prefStats = useMemo(() => ({
+    total:       hospedagens.length,
+    confirmados: hospedagens.filter(h => h.status === 'confirmada').length,
+    necEsp:      hospedagens.filter(h => h.necessidade_especial).length,
+    camaInf:     hospedagens.filter(h => h.cama_inferior).length,
+    listaEspera: hospedagens.filter(h => h.status === 'lista_espera').length,
+    semAloj:     hospedagens.filter(h => !h.alojamento_id).length,
+  }), [hospedagens]);
+
+  // Total de vagas por setor (capacity planejada)
+  const totalVagasSetores = setores.filter(s => s.ativo).reduce((sum, s) => sum + s.quantidade_leitos, 0);
+
+  const thP = 'text-left text-xs font-semibold text-gray-500 uppercase tracking-wide py-2.5 px-3 bg-gray-50 whitespace-nowrap';
+  const tdP = 'py-2.5 px-3 text-sm text-gray-700 border-t border-gray-50 whitespace-nowrap';
+  const tdPn = `${tdP} text-right tabular-nums`;
+
+  return (
+    <div className="space-y-6">
+
+      {/* ── Header ──────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-lg font-black text-[#123b63]">🎯 Painel de Controle — AGO</h2>
+          <p className="text-xs text-gray-400 mt-0.5">Visão consolidada do sistema de hospedagem da Assembleia Geral Ordinária</p>
+        </div>
+        <button
+          onClick={() => exportarCSV(hospedagens, 'ago_completo')}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition">
+          📥 Exportar tudo (CSV)
+        </button>
+      </div>
+
+      {/* ── KPIs gerais ─────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {[
+          { label: 'Total inscritos', value: prefStats.total,        cor: 'text-[#123b63]', bg: 'from-blue-50' },
+          { label: 'Confirmados',     value: prefStats.confirmados,  cor: 'text-emerald-700', bg: 'from-emerald-50' },
+          { label: 'Lista espera',    value: prefStats.listaEspera,  cor: 'text-orange-600',  bg: 'from-orange-50' },
+          { label: 'Sem alojamento',  value: prefStats.semAloj,      cor: 'text-red-600',     bg: 'from-red-50' },
+          { label: 'Nec. Especial',   value: prefStats.necEsp,       cor: 'text-purple-600',  bg: 'from-purple-50' },
+          { label: 'Cama inferior',   value: prefStats.camaInf,      cor: 'text-sky-600',     bg: 'from-sky-50' },
+        ].map(s => (
+          <div key={s.label} className={`bg-gradient-to-b ${s.bg} to-white rounded-xl border border-gray-100 shadow-sm p-4 text-center`}>
+            <p className={`text-2xl font-black ${s.cor}`}>{s.value}</p>
+            <p className="text-[10px] text-gray-500 mt-1 leading-tight">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Resumo por Grupo de Alocação ────────────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h3 className="font-bold text-[#123b63] text-sm">👥 Resumo por Grupo de Alocação</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px]">
+            <thead><tr>
+              <th className={thP}>Grupo</th>
+              <th className={thP + ' text-right'}>Total</th>
+              <th className={thP + ' text-right'}>Confirmados</th>
+              <th className={thP + ' text-right'}>Lista Espera</th>
+              <th className={thP + ' text-right'}>Solicitados</th>
+              <th className={thP + ' text-right'}>Ações</th>
+            </tr></thead>
+            <tbody>
+              {grupos.map(g => {
+                const s = statsPorGrupo.get(g) ?? { total: 0, confirmados: 0, listaEspera: 0, solicitados: 0 };
+                const listaGrupo = hospedagens.filter(h => {
+                  const aloj = h.alojamento_id ? alojMap.get(h.alojamento_id) : null;
+                  return aloj ? PUBLICO_GRUPO[aloj.publico] === g : false;
+                });
+                return (
+                  <tr key={g} className="hover:bg-gray-50 transition">
+                    <td className={tdP + ' font-semibold text-gray-900'}>{g}</td>
+                    <td className={tdPn + ' font-bold text-[#123b63]'}>{s.total}</td>
+                    <td className={tdPn + ' text-emerald-700 font-semibold'}>{s.confirmados}</td>
+                    <td className={tdPn + ' text-orange-600'}>{s.listaEspera}</td>
+                    <td className={tdPn + ' text-yellow-600'}>{s.solicitados}</td>
+                    <td className={tdPn}>
+                      {listaGrupo.length > 0 && (
+                        <button
+                          onClick={() => exportarCSV(listaGrupo, `grupo_${g.replace(/\//g, '_').replace(/\s+/g, '_').toLowerCase()}`)}
+                          className="text-xs px-2 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition">
+                          📥 CSV
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {(statsPorGrupo.get('Sem grupo')?.total ?? 0) > 0 && (() => {
+                const s = statsPorGrupo.get('Sem grupo')!;
+                return (
+                  <tr className="hover:bg-gray-50 transition bg-gray-50/50">
+                    <td className={tdP + ' text-gray-400 italic'}>Sem alojamento definido</td>
+                    <td className={tdPn + ' text-gray-400'}>{s.total}</td>
+                    <td className={tdPn + ' text-gray-400'}>{s.confirmados}</td>
+                    <td className={tdPn + ' text-gray-400'}>{s.listaEspera}</td>
+                    <td className={tdPn + ' text-gray-400'}>{s.solicitados}</td>
+                    <td className={tdPn}></td>
+                  </tr>
+                );
+              })()}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Setores Configurados ────────────────────────────────── */}
+      {setores.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
+            <h3 className="font-bold text-[#123b63] text-sm">🏠 Setores de Hospedagem Configurados</h3>
+            <span className="text-xs text-gray-400">{setores.filter(s => s.ativo).length} ativo(s) · {totalVagasSetores} vagas planejadas</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-5">
+            {setores.map(setor => (
+              <div key={setor.id} className={`rounded-xl border p-4 ${setor.ativo ? 'border-gray-200 bg-white' : 'border-gray-100 bg-gray-50 opacity-60'}`}>
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <h4 className="font-bold text-gray-900 text-sm">{setor.nome}</h4>
+                    <p className="text-xs text-gray-500 mt-0.5">{setor.grupo}</p>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${setor.ativo ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                    {setor.ativo ? 'Ativo' : 'Inativo'}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {setor.tipos_leito.map(t => (
+                    <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold">
+                      {TIPO_LEITO_LABEL[t] ?? t}
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-4 text-xs text-gray-500">
+                  <span><strong className="text-gray-800">{setor.quantidade_leitos}</strong> leitos</span>
+                  {setor.tipos_leito.includes('beliche') && (
+                    <span><strong className="text-sky-700">{setor.quantidade_leitos_inferiores}</strong> inf.</span>
+                  )}
+                </div>
+                {setor.observacoes && (
+                  <p className="mt-2 text-[10px] text-gray-400 italic">{setor.observacoes}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Alojamentos — Ocupação Detalhada ───────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h3 className="font-bold text-[#123b63] text-sm">📊 Alojamentos — Ocupação</h3>
+        </div>
+        {statsAloj.length === 0 ? (
+          <div className="p-8 text-center text-gray-400 text-sm">Nenhum alojamento cadastrado ainda.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px]">
+              <thead><tr>
+                <th className={thP}>Alojamento</th>
+                <th className={thP}>Grupo</th>
+                <th className={thP + ' text-right'}>Vagas</th>
+                <th className={thP + ' text-right'}>Confirmados</th>
+                <th className={thP + ' text-right'}>Livres</th>
+                <th className={thP + ' text-right'}>Nec. Esp.</th>
+                <th className={thP + ' text-right'}>Inf.</th>
+                <th className={thP}>Ocupação</th>
+              </tr></thead>
+              <tbody>
+                {statsAloj.map(a => {
+                  const pct = a.total_vagas > 0 ? Math.round((a.confirmados / a.total_vagas) * 100) : 0;
+                  const cor = pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-orange-500' : 'bg-emerald-500';
+                  return (
+                    <tr key={a.id} className={`hover:bg-gray-50 transition ${!a.ativo ? 'opacity-50' : ''}`}>
+                      <td className={tdP + ' font-medium text-gray-900'}>
+                        {a.nome}
+                        {!a.ativo && <span className="ml-1 text-[10px] text-gray-400">(inativo)</span>}
+                      </td>
+                      <td className={tdP + ' text-xs text-gray-500'}>{PUBLICO_LABEL[a.publico] ?? a.publico}</td>
+                      <td className={tdPn}>{a.total_vagas}</td>
+                      <td className={tdPn + ' text-emerald-700 font-semibold'}>{a.confirmados}</td>
+                      <td className={tdPn + (( a.vagas_livres ?? 0) === 0 ? ' text-red-600 font-bold' : ' text-teal-700')}>{a.vagas_livres ?? '—'}</td>
+                      <td className={tdPn + ' text-purple-600'}>{a.nec_especial || '—'}</td>
+                      <td className={tdPn + ' text-sky-600'}>{a.cama_inf || '—'}</td>
+                      <td className={tdP}>
+                        <div className="flex items-center gap-2 min-w-[120px]">
+                          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${cor}`} style={{ width: `${Math.min(100, pct)}%` }} />
+                          </div>
+                          <span className={`text-xs font-semibold tabular-nums ${pct >= 100 ? 'text-red-600' : 'text-gray-600'}`}>{pct}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Relatórios Rápidos ──────────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h3 className="font-bold text-[#123b63] text-sm mb-4">📥 Relatórios Rápidos</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {[
+            { label: 'Todos os inscritos',      lista: hospedagens, nome: 'ago_geral' },
+            { label: 'Confirmados',              lista: hospedagens.filter(h => h.status === 'confirmada'), nome: 'ago_confirmados' },
+            { label: 'Lista de espera',          lista: hospedagens.filter(h => h.status === 'lista_espera'), nome: 'ago_lista_espera' },
+            { label: 'Sem alojamento',           lista: hospedagens.filter(h => !h.alojamento_id), nome: 'ago_sem_alojamento' },
+            { label: 'Necessidade especial',     lista: hospedagens.filter(h => h.necessidade_especial), nome: 'ago_nec_especial' },
+            { label: 'Sol. cama inferior',       lista: hospedagens.filter(h => h.cama_inferior), nome: 'ago_cama_inferior' },
+            { label: 'Masculino',                lista: hospedagens.filter(h => h.sexo === 'M'), nome: 'ago_masculino' },
+            { label: 'Feminino',                 lista: hospedagens.filter(h => h.sexo === 'F'), nome: 'ago_feminino' },
+          ].map(rel => (
+            <button
+              key={rel.nome}
+              disabled={rel.lista.length === 0}
+              onClick={() => exportarCSV(rel.lista, rel.nome)}
+              className="flex items-center justify-between gap-2 px-4 py-3 rounded-xl border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed text-left">
+              <span>{rel.label}</span>
+              <span className="ml-auto bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-[10px] tabular-nums font-bold">{rel.lista.length}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Preferências — Hospedagens sem Alocação ─────────────── */}
+      {prefStats.semAloj > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
+          <h3 className="font-bold text-amber-800 text-sm mb-3">⚠️ {prefStats.semAloj} Inscrito(s) Sem Alojamento Definido</h3>
+          <div className="overflow-x-auto max-h-64">
+            <table className="w-full min-w-[520px] text-sm">
+              <thead><tr>
+                <th className="text-left text-xs font-semibold text-amber-700 uppercase tracking-wide py-2 px-3 bg-amber-100/60">Nome</th>
+                <th className="text-left text-xs font-semibold text-amber-700 uppercase tracking-wide py-2 px-3 bg-amber-100/60">Status</th>
+                <th className="text-left text-xs font-semibold text-amber-700 uppercase tracking-wide py-2 px-3 bg-amber-100/60">Sexo</th>
+                <th className="text-left text-xs font-semibold text-amber-700 uppercase tracking-wide py-2 px-3 bg-amber-100/60">Prioridade</th>
+              </tr></thead>
+              <tbody>
+                {hospedagens
+                  .filter(h => !h.alojamento_id)
+                  .sort((a, b) => b.prioridade - a.prioridade)
+                  .map(h => {
+                    const stCfg = STATUS_HOSP_CFG[h.status] ?? STATUS_HOSP_CFG.solicitada;
+                    return (
+                      <tr key={h.id} className="border-t border-amber-100 hover:bg-amber-50/50">
+                        <td className="py-2 px-3 font-medium text-gray-900">{h.nome_inscrito ?? '—'}</td>
+                        <td className="py-2 px-3">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${stCfg.cls}`}>{stCfg.label}</span>
+                        </td>
+                        <td className="py-2 px-3 text-gray-600">{h.sexo === 'M' ? '👨 M' : h.sexo === 'F' ? '👩 F' : '—'}</td>
+                        <td className="py-2 px-3 font-mono text-xs text-gray-500">{h.prioridade}</td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
