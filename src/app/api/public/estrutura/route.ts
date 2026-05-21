@@ -12,18 +12,21 @@ export async function GET(request: NextRequest) {
     .from('supervisoes')
     .select('id,nome')
     .neq('is_active', false)
-    .order('nome');
+    .order('nome')
+    .limit(9999);
 
   const camposQuery = includeCamposInactive
     ? supabase
       .from('campos')
       .select('id,nome,supervisao_id,is_campo_missionario')
       .order('nome')
+      .limit(9999)
     : supabase
       .from('campos')
       .select('id,nome,supervisao_id,is_campo_missionario')
       .neq('is_active', false)
-      .order('nome');
+      .order('nome')
+      .limit(9999);
 
   const congregacoesQuery = includeCongregacoes
     ? supabase

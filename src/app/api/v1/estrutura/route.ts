@@ -19,7 +19,8 @@ export async function GET(request: NextRequest) {
   let supervisoesQuery = supabase
     .from('supervisoes')
     .select('id,nome,is_active')
-    .order('nome');
+    .order('nome')
+    .limit(9999);
 
   let camposQuery = supabase
     .from('campos')
