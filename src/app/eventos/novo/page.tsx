@@ -84,6 +84,7 @@ const AGO_CATEGORIAS_DEFAULT: AgoCategoriaDraft[] = [
   { key: 'pastor_jubilado',          nome: 'Pastor Jubilado',             valor_str: '0.00',   cortesia: true,  ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
   { key: 'viuva',                    nome: 'Viúva',                       valor_str: '0.00',   cortesia: true,  ativo: true, limite_vagas_str: '', inclui_alimentacao: false, quantidade_refeicoes_str: '0'  },
   { key: 'esposa_pastor_jubilado',   nome: 'Esposa de Pastor Jubilado',   valor_str: '0.00',   cortesia: true,  ativo: true, limite_vagas_str: '', inclui_alimentacao: false, quantidade_refeicoes_str: '0'  },
+  { key: 'campo_missionario',         nome: 'Campo Missionário',            valor_str: '210.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
 ];
 
 const AGO_HOSP_DEFAULT: AgoHospedagemConfig = {
