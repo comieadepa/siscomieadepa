@@ -118,18 +118,23 @@ export default function PermutasPage() {
 
   // ────────────────────────────────────────────────
   // Carrega supervisões, campos e permutas
+  // Usa os mesmos endpoints que o módulo Campos/Congregações
+  // (secretaria/supervisoes + secretaria/campos) para garantir
+  // que supervisões com is_active=null e campos de todas as
+  // situações apareçam igualmente em ambos os módulos.
   // ────────────────────────────────────────────────
   useEffect(() => {
     if (loading) return;
     const load = async () => {
-      const [estruturaRes, pm] = await Promise.all([
-        // includeCamposInactive=true: garante que campos com is_active=false também apareçam
-        authedFetch('/api/v1/estrutura?includeCamposInactive=true').then(r => r.json()),
+      const [supRes, camposRes, pm] = await Promise.all([
+        authedFetch('/api/v1/secretaria/supervisoes?includeInactive=true').then(r => r.json()),
+        authedFetch('/api/v1/secretaria/campos?includeInactive=true').then(r => r.json()),
         authedFetch('/api/permutas').then(r => r.json()),
       ]);
 
-      setSupervisoes((estruturaRes?.supervisoes as any[]) || []);
-      setCampos(((estruturaRes?.campos as any[]) || []).map((row: any) => ({
+      // Mostra no dropdown apenas supervisões ativas; mantém todas para filtragem
+      setSupervisoes(((supRes?.data as any[]) || []).filter((s: any) => s.is_active !== false));
+      setCampos(((camposRes?.data as any[]) || []).map((row: any) => ({
         id: row.id,
         nome: row.nome,
         supervisao_id: row.supervisao_id,
@@ -257,8 +262,8 @@ export default function PermutasPage() {
     setPermutas(pm.data || []);
 
     // Recarrega campos (presidente_nome pode ter mudado)
-    const estrutura = await authedFetch('/api/v1/estrutura?includeCamposInactive=true').then(r => r.json()).catch(() => null as any);
-    const reloadCampos = (estrutura?.campos as any[]) || [];
+    const camposRes = await authedFetch('/api/v1/secretaria/campos?includeInactive=true').then(r => r.json()).catch(() => null as any);
+    const reloadCampos = (camposRes?.data as any[]) || [];
     setCampos(reloadCampos.map((row: any) => ({
       id: row.id,
       nome: row.nome,
