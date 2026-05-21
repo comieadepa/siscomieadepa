@@ -63,6 +63,17 @@ interface AgoCategoriaDraft {
   quantidade_refeicoes_str: string;
 }
 
+interface SetorHospedagem {
+  id: string;
+  nome: string;
+  grupo: string;
+  tipo_leito: 'beliche' | 'colchonete' | 'rede';
+  quantidade_leitos: number;
+  quantidade_leitos_inferiores: number;
+  observacoes: string;
+  ativo: boolean;
+}
+
 interface AgoHospedagemConfig {
   enabled: boolean;
   grupos: string[];
@@ -74,6 +85,7 @@ interface AgoHospedagemConfig {
   plenarias_datas: string[];
   habilitar_desconto_campo_missionario: boolean;
   valor_pastor_presidente_campo_missionario: string;
+  setores: SetorHospedagem[];
 }
 
 const AGO_CATEGORIAS_DEFAULT: AgoCategoriaDraft[] = [
@@ -99,6 +111,7 @@ const AGO_HOSP_DEFAULT: AgoHospedagemConfig = {
   plenarias_datas: [],
   habilitar_desconto_campo_missionario: false,
   valor_pastor_presidente_campo_missionario: '210.00',
+  setores: [],
 };
 
 const TIPOS_PADRAO: TipoDraft[] = [
@@ -1177,6 +1190,169 @@ export default function NovoEventoPage() {
                     <p className="mt-1 text-xs text-green-700">Este valor substitui o valor padrão de Pastor Presidente quando o campo é missionário.</p>
                   </div>
                 )}
+              </div>
+
+              {/* Setores de Hospedagem */}
+              <div className="border border-blue-200 rounded-xl p-4 bg-blue-50">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-bold text-blue-900">🏠 Setores de Hospedagem</p>
+                  <button
+                    type="button"
+                    onClick={() => setAgoHospConfig(c => ({
+                      ...c,
+                      setores: [...(c.setores || []), {
+                        id: `s_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                        nome: '',
+                        grupo: 'Todos',
+                        tipo_leito: 'beliche' as const,
+                        quantidade_leitos: 0,
+                        quantidade_leitos_inferiores: 0,
+                        observacoes: '',
+                        ativo: true,
+                      }],
+                    }))}
+                    className="text-xs bg-blue-700 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-blue-800 transition"
+                  >
+                    + Adicionar Setor
+                  </button>
+                </div>
+
+                {/* Resumo de leitos */}
+                {(agoHospConfig.setores || []).filter(s => s.ativo).length > 0 && (() => {
+                  const atv = (agoHospConfig.setores || []).filter(s => s.ativo);
+                  const t = {
+                    leitos:     atv.reduce((n, s) => n + (s.quantidade_leitos || 0), 0),
+                    beliche:    atv.filter(s => s.tipo_leito === 'beliche').reduce((n, s) => n + (s.quantidade_leitos || 0), 0),
+                    colchonete: atv.filter(s => s.tipo_leito === 'colchonete').reduce((n, s) => n + (s.quantidade_leitos || 0), 0),
+                    rede:       atv.filter(s => s.tipo_leito === 'rede').reduce((n, s) => n + (s.quantidade_leitos || 0), 0),
+                    inferiores: atv.filter(s => s.tipo_leito === 'beliche').reduce((n, s) => n + (s.quantidade_leitos_inferiores || 0), 0),
+                  };
+                  return (
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-4">
+                      {([
+                        { label: 'Setores ativos', v: atv.length,   bg: 'bg-blue-100 text-blue-900'      },
+                        { label: 'Total leitos',   v: t.leitos,     bg: 'bg-indigo-100 text-indigo-900'  },
+                        { label: 'Beliches',       v: t.beliche,    bg: 'bg-purple-100 text-purple-900'  },
+                        { label: 'Colchonetes',    v: t.colchonete, bg: 'bg-orange-100 text-orange-900'  },
+                        { label: 'Redes',          v: t.rede,       bg: 'bg-emerald-100 text-emerald-900'},
+                        { label: 'L. inferiores',  v: t.inferiores, bg: 'bg-pink-100 text-pink-900'      },
+                      ] as { label: string; v: number; bg: string }[]).map(card => (
+                        <div key={card.label} className={`rounded-lg p-2 text-center ${card.bg}`}>
+                          <div className="text-xl font-bold leading-tight">{card.v}</div>
+                          <div className="text-xs leading-tight mt-0.5">{card.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+
+                {(agoHospConfig.setores || []).length === 0 && (
+                  <p className="text-xs text-blue-600 text-center py-4 italic">Nenhum setor cadastrado. Clique em "+ Adicionar Setor" para iniciar.</p>
+                )}
+
+                <div className="space-y-3">
+                  {(agoHospConfig.setores || []).map((setor, idx) => (
+                    <div key={setor.id} className={`rounded-xl border border-gray-200 p-4 bg-white${!setor.ativo ? ' opacity-60' : ''}`}>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">
+                          Setor #{idx + 1}{!setor.ativo && <span className="text-red-400 ml-2 normal-case">(inativo)</span>}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setAgoHospConfig(c => ({ ...c, setores: (c.setores || []).filter((_, j) => j !== idx) }))}
+                          className="text-xs text-red-500 hover:text-red-700 font-semibold"
+                        >✕ Remover</button>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Nome do Setor *</label>
+                          <input
+                            type="text"
+                            value={setor.nome}
+                            onChange={e => setAgoHospConfig(c => { const s = [...(c.setores||[])]; s[idx] = { ...s[idx], nome: e.target.value }; return { ...c, setores: s }; })}
+                            placeholder="Ex: Alojamento Masculino 01, Ginásio, Sala 03"
+                            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Grupo Permitido</label>
+                          <select
+                            value={setor.grupo}
+                            onChange={e => setAgoHospConfig(c => { const s = [...(c.setores||[])]; s[idx] = { ...s[idx], grupo: e.target.value }; return { ...c, setores: s }; })}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                          >
+                            <option value="Todos">Todos</option>
+                            {agoHospConfig.grupos.map(g => <option key={g} value={g}>{g}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Tipo de Leito</label>
+                          <select
+                            value={setor.tipo_leito}
+                            onChange={e => {
+                              const tipo = e.target.value as SetorHospedagem['tipo_leito'];
+                              setAgoHospConfig(c => { const s = [...(c.setores||[])]; s[idx] = { ...s[idx], tipo_leito: tipo, quantidade_leitos_inferiores: tipo !== 'beliche' ? 0 : s[idx].quantidade_leitos_inferiores }; return { ...c, setores: s }; });
+                            }}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                          >
+                            <option value="beliche">Beliche</option>
+                            <option value="colchonete">Colchonete</option>
+                            <option value="rede">Rede</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Quantidade de Leitos *</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={setor.quantidade_leitos || ''}
+                            onChange={e => {
+                              const v = Math.max(0, parseInt(e.target.value) || 0);
+                              setAgoHospConfig(c => { const s = [...(c.setores||[])]; s[idx] = { ...s[idx], quantidade_leitos: v, quantidade_leitos_inferiores: Math.min(s[idx].quantidade_leitos_inferiores, v) }; return { ...c, setores: s }; });
+                            }}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+                        {setor.tipo_leito === 'beliche' ? (
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Leitos Inferiores (beliches de baixo)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              max={setor.quantidade_leitos}
+                              value={setor.quantidade_leitos_inferiores || ''}
+                              onChange={e => {
+                                const v = Math.min(Math.max(0, parseInt(e.target.value) || 0), setor.quantidade_leitos);
+                                setAgoHospConfig(c => { const s = [...(c.setores||[])]; s[idx] = { ...s[idx], quantidade_leitos_inferiores: v }; return { ...c, setores: s }; });
+                              }}
+                              className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                            />
+                          </div>
+                        ) : <div />}
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Observações internas</label>
+                          <input
+                            type="text"
+                            value={setor.observacoes}
+                            onChange={e => setAgoHospConfig(c => { const s = [...(c.setores||[])]; s[idx] = { ...s[idx], observacoes: e.target.value }; return { ...c, setores: s }; })}
+                            placeholder="Ex: Sem ventilação, acesso por rampa..."
+                            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+                        <div className="sm:col-span-2 flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id={`ativo-${setor.id}`}
+                            checked={setor.ativo}
+                            onChange={e => setAgoHospConfig(c => { const s = [...(c.setores||[])]; s[idx] = { ...s[idx], ativo: e.target.checked }; return { ...c, setores: s }; })}
+                            className="w-4 h-4 accent-blue-700"
+                          />
+                          <label htmlFor={`ativo-${setor.id}`} className="text-xs text-gray-700 cursor-pointer">Setor ativo (participa da alocação)</label>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
