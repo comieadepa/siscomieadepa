@@ -75,6 +75,10 @@ export default function PublicAssistenteWidget({ scope, departamento }: Props) {
   const [ctxEventoNome, setCtxEventoNome] = useState<string | null>(null);
   const [ctxUltimaIntencao, setCtxUltimaIntencao] = useState<string | null>(null);
   const fimRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const isPointerCoarse = () =>
+    typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
 
   const sugestoes = useMemo(() => {
     return scope === 'departamento' ? SUGESTOES_DEPTO : SUGESTOES_GERAIS;
@@ -95,11 +99,24 @@ export default function PublicAssistenteWidget({ scope, departamento }: Props) {
       setMensagens([criarMensagemInicial()]);
       setInicializado(true);
     }
+    // Focar input ao abrir o chat (apenas em desktop para não forçar teclado mobile)
+    if (aberto && !isPointerCoarse()) {
+      const t = setTimeout(() => inputRef.current?.focus(), 300);
+      return () => clearTimeout(t);
+    }
   }, [aberto, inicializado, criarMensagemInicial]);
 
   useEffect(() => {
     fimRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [mensagens]);
+
+  // Restaurar foco no input após cada resposta da Maia (loading false → input reabilitado)
+  useEffect(() => {
+    if (!loading && aberto) {
+      inputRef.current?.focus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   function limparConversa() {
     setMensagens([criarMensagemInicial()]);
@@ -112,6 +129,7 @@ export default function PublicAssistenteWidget({ scope, departamento }: Props) {
     setCtxEventoId(null);
     setCtxEventoNome(null);
     setCtxUltimaIntencao(null);
+    setTimeout(() => inputRef.current?.focus(), 0);
   }
 
   async function enviarPergunta(pergunta: string) {
@@ -374,6 +392,7 @@ export default function PublicAssistenteWidget({ scope, departamento }: Props) {
           }}
         >
           <input
+            ref={inputRef}
             value={texto}
             onChange={event => setTexto(event.target.value)}
             placeholder="Digite sua mensagem..."
