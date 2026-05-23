@@ -646,11 +646,15 @@ export async function POST(req: NextRequest) {
       'fazer minha inscricao',
     ]);
     const querEventosAbertos = hasAny(pergunta, [
-      'eventos abertos',
-      'eventos com inscricao',
-      'inscricoes abertas',
-      'eventos disponiveis',
-      'quais eventos',
+      'quais eventos', 'qual eventos',
+      'eventos abertos', 'eventos em aberto',
+      'estao em aberto', 'estao abertos', 'estao abertas',
+      'eventos com inscricao', 'inscricoes abertas',
+      'eventos disponiveis', 'eventos disponivel',
+      'quero ver os eventos', 'mostrar eventos',
+      'onde posso me inscrever', 'tem eventos',
+      'ha eventos', 'quais congressos',
+      'eventos acontecendo', 'estao acontecendo',
     ]);
     const querParticiparDepto = departamento && hasAny(pergunta, [
       'participar',
@@ -694,6 +698,37 @@ export async function POST(req: NextRequest) {
       'onde e o evento', 'cidade do evento', 'onde fica o evento',
     ]);
     const querDetalhesEvento = querProgramacao || querDescricaoEvento || querLocalEvento;
+    const querValorInscricao = !isSegundaVia && !isPagamento && hasAny(pergunta, [
+      'valor da inscricao', 'quanto custa', 'qual o valor',
+      'quanto e a inscricao', 'quanto fica', 'qual o preco',
+      'taxa de inscricao', 'preco da inscricao',
+      'inscricao gratis', 'inscricao gratuita',
+      'evento gratis', 'evento gratuito',
+      'quanto custa o evento', 'quanto e o evento',
+    ]);
+    const querContato = hasAny(pergunta, [
+      'contato', 'suporte do evento', 'whatsapp do evento',
+      'como entro em contato', 'telefone do evento',
+      'atendimento do evento', 'falar com a organizacao',
+      'falar com o suporte',
+    ]);
+
+    // [TEMP] Log de intencoes para teste
+    console.log(`[Maia] INTENCAO_DETECTADA | mensagem: "${perguntaRaw}" | ${[
+      isSegundaVia && 'segunda_via',
+      querConfirmarInscricao && 'confirmar_inscricao',
+      isPagamento && 'consultar_pagamento',
+      querHospedagem && 'consultar_hospedagem',
+      querAlimentacao && 'consultar_alimentacao',
+      querProgramacao && 'consultar_programacao',
+      querDescricaoEvento && 'consultar_descricao',
+      querLocalEvento && 'consultar_local',
+      querDetalhesEvento && 'consultar_detalhes',
+      querValorInscricao && 'consultar_valor_inscricao',
+      querEventosAbertos && 'listar_eventos_abertos',
+      querContato && 'consultar_contato',
+      cpfDetectado && `cpf(${cpfDetectado})`,
+    ].filter(Boolean).join(' | ') || 'fallback'}`);
 
     if (isSegundaVia) {
       if (!cpfDetectado) {
@@ -782,6 +817,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ resposta: perguntaQual, cards });
     }
 
+    if (querValorInscricao) {
+      const { eventos, cards } = await fetchEventosComCards(departamento);
+      if (eventos.length === 0) {
+        return NextResponse.json({ resposta: buildSemEventosMensagem(departamento) });
+      }
+      const intro = departamento
+        ? `Valores de inscricao para eventos de ${departamento.nome} 😊`
+        : 'Valores de inscricao dos eventos com inscricoes abertas 😊';
+      return NextResponse.json({ resposta: intro, cards });
+    }
+
     if (querParticiparDepto && departamento) {
       const { eventos, cards } = await fetchEventosComCards(departamento);
       if (eventos.length === 0) {
@@ -817,14 +863,44 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(resposta);
     }
 
-    if (hasAny(pergunta, ['brinde', 'certificado'])) {
-      const { eventos, cards } = await fetchEventosComCards(departamento);
-      if (eventos.length === 0) {
-        return NextResponse.json({ resposta: buildSemEventosMensagem(departamento) });
+    if (hasAny(pergunta, ['certificado'])) {
+      const supabase = createServerClient();
+      const eventoIdCert = ctxEventoId;
+      if (eventoIdCert) {
+        const { data } = await supabase.from('eventos').select('nome,gerar_certificado').eq('id', eventoIdCert).maybeSingle();
+        if (data) {
+          const ev = data as Record<string, unknown>;
+          return NextResponse.json({
+            resposta: Boolean(ev.gerar_certificado)
+              ? `Sim! O evento *${String(ev.nome)}* emite certificado de participacao 🎓`
+              : `O evento *${String(ev.nome)}* nao preve emissao de certificado.`,
+            _ctx: { evento_id: eventoIdCert },
+          });
+        }
       }
+      const { eventos, cards } = await fetchEventosComCards(departamento);
+      if (eventos.length === 0) return NextResponse.json({ resposta: buildSemEventosMensagem(departamento) });
+      if (eventos.length === 1) {
+        const { data } = await supabase.from('eventos').select('nome,gerar_certificado').eq('id', eventos[0].id).maybeSingle();
+        if (data) {
+          const ev = data as Record<string, unknown>;
+          return NextResponse.json({
+            resposta: Boolean(ev.gerar_certificado)
+              ? `Sim! O evento *${String(ev.nome)}* emite certificado 🎓`
+              : `O evento *${String(ev.nome)}* nao preve emissao de certificado.`,
+            _ctx: { evento_id: eventos[0].id },
+          });
+        }
+      }
+      return NextResponse.json({ resposta: 'A emissao de certificado depende de cada evento. Veja os eventos abertos:', cards });
+    }
+
+    if (hasAny(pergunta, ['brinde'])) {
+      const { eventos, cards } = await fetchEventosComCards(departamento);
+      if (eventos.length === 0) return NextResponse.json({ resposta: buildSemEventosMensagem(departamento) });
       const resposta = departamento
-        ? `Esses detalhes variam por evento em ${departamento.nome}. Veja os eventos abertos para escolher o seu.`
-        : 'Esses detalhes variam por evento. Veja os eventos com inscricoes abertas para escolher o seu.';
+        ? `Informacoes sobre brindes variam por evento em ${departamento.nome}. Veja os eventos abertos:`
+        : 'Informacoes sobre brindes variam por evento. Veja os eventos abertos:';
       return NextResponse.json({ resposta, cards });
     }
 
@@ -851,6 +927,33 @@ export async function POST(req: NextRequest) {
       }
       const resposta = await responderCpfConsulta(cpfDetectado, departamento);
       return NextResponse.json(resposta);
+    }
+
+    if (querContato) {
+      const supabase = createServerClient();
+      const evAbertos = await fetchOpenEvents({ departamento: departamento?.key });
+      if (evAbertos.length === 0) {
+        return NextResponse.json({ resposta: buildSemEventosMensagem(departamento) });
+      }
+      const ids = evAbertos.map(e => e.id);
+      const { data: evData } = await supabase.from('eventos').select('id,nome,suporte_whatsapp,link_whatsapp').in('id', ids);
+      const evLista = (evData ?? []) as Array<Record<string, unknown>>;
+      const cards: AssistenteCard[] = evLista
+        .filter(ev => ev.suporte_whatsapp || ev.link_whatsapp)
+        .map(ev => {
+          const nome = String(ev.nome || 'Evento');
+          const suporte = buildWhatsAppLink(ev.suporte_whatsapp, 'Ola, preciso de ajuda com o evento!');
+          const inscricao = buildWhatsAppLink(ev.link_whatsapp);
+          const actions: AssistenteAction[] = [];
+          if (suporte) actions.push({ label: '💬 Falar com suporte', href: suporte, variant: 'primary' });
+          if (inscricao && inscricao !== suporte) actions.push({ label: '📞 WhatsApp', href: inscricao, variant: 'ghost' });
+          return { id: String(ev.id || nome), title: `📞 ${nome}`, actions } as AssistenteCard;
+        })
+        .filter(c => c.actions && c.actions.length > 0);
+      if (cards.length === 0) {
+        return NextResponse.json({ resposta: 'Os dados de contato nao foram informados pela organizacao ainda.' });
+      }
+      return NextResponse.json({ resposta: 'Aqui estao os contatos dos eventos 😊', cards });
     }
 
     const fallback = departamento
