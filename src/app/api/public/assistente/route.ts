@@ -31,7 +31,7 @@ type AssistenteCard = {
 type AssistenteResposta = {
   resposta: string;
   cards?: AssistenteCard[];
-  _ctx?: { cpf?: string; inscricao_id?: string; pending_intent?: string; evento_id?: string };
+  _ctx?: { cpf?: string; inscricao_id?: string; pending_intent?: string; evento_id?: string; evento_nome?: string; ultima_intencao?: string };
 };
 
 function normalizeText(value: string) {
@@ -502,7 +502,7 @@ async function responderDetalhesEvento(
   const localStr = [ev.local, ev.cidade].filter(Boolean).join(' - ');
   const descricao = ev.descricao ? String(ev.descricao).trim() : null;
   const publicoAlvo = ev.publico_alvo ? String(ev.publico_alvo).trim() : null;
-  const ctx = { evento_id: eventoId };
+  const ctx = { evento_id: eventoId, evento_nome: nomeEvento, ultima_intencao: `consultar_${tipo}` };
 
   if (tipo === 'local') {
     if (localStr) {
@@ -543,7 +543,7 @@ async function responderDetalhesEvento(
 
     if (prog.length === 0) {
       resposta += '\n\nA programacao detalhada ainda nao foi cadastrada pela organizacao. Posso te mostrar as informacoes disponiveis do evento.';
-      return { resposta, _ctx: ctx };
+      return { resposta, _ctx: { ...ctx, ultima_intencao: 'consultar_geral' } };
     }
 
     const byDate = new Map<string, Array<Record<string, unknown>>>();
@@ -592,6 +592,8 @@ export async function POST(req: NextRequest) {
     const ctxInscricaoId = typeof contexto?.inscricao_id === 'string' && contexto.inscricao_id ? String(contexto.inscricao_id) : null;
     const ctxPendingIntent = typeof contexto?.pending_intent === 'string' && contexto.pending_intent ? String(contexto.pending_intent) : null;
     const ctxEventoId = typeof contexto?.evento_id === 'string' && contexto.evento_id ? String(contexto.evento_id) : null;
+    const ctxEventoNome = typeof contexto?.evento_nome === 'string' && contexto.evento_nome ? String(contexto.evento_nome) : null;
+    const ctxUltimaIntencao = typeof contexto?.ultima_intencao === 'string' && contexto.ultima_intencao ? String(contexto.ultima_intencao) : null;
 
     if (!perguntaRaw) {
       return NextResponse.json({ resposta: 'Me conte sua duvida para que eu possa ajudar.' });
@@ -712,14 +714,20 @@ export async function POST(req: NextRequest) {
       'atendimento do evento', 'falar com a organizacao',
       'falar com o suporte',
     ]);
+    const querContinuidade = !querEventosAbertos && !querDetalhesEvento && hasAny(pergunta, [
+      'me mostre', 'mostrar mais', 'quero ver mais', 'ver detalhes', 'ver mais',
+      'mais informacoes', 'saber mais', 'me fale mais', 'me conte mais',
+      'pode mostrar', 'pode detalhar', 'me diga mais', 'quero saber mais',
+    ]);
 
     // [TEMP] Log de intencoes para teste
-    console.log(`[Maia] INTENCAO_DETECTADA | mensagem: "${perguntaRaw}" | ${[
+    console.log(`[Maia] INTENCAO_DETECTADA | mensagem: "${perguntaRaw}" | ctx: evento(${ctxEventoId?.slice(0,8) ?? '-'}) nome(${ctxEventoNome ?? '-'}) intent(${ctxUltimaIntencao ?? '-'}) | ${[
       isSegundaVia && 'segunda_via',
       querConfirmarInscricao && 'confirmar_inscricao',
       isPagamento && 'consultar_pagamento',
       querHospedagem && 'consultar_hospedagem',
       querAlimentacao && 'consultar_alimentacao',
+      querContinuidade && 'continuidade',
       querProgramacao && 'consultar_programacao',
       querDescricaoEvento && 'consultar_descricao',
       querLocalEvento && 'consultar_local',
@@ -791,6 +799,28 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(infoInscricao);
       }
       return NextResponse.json({ resposta: 'Para verificar a alimentacao da sua inscricao, me informe seu CPF (11 digitos).', _ctx: { pending_intent: 'alimentacao' } });
+    }
+
+    if (querContinuidade) {
+      if (ctxEventoId) {
+        const tipoMap: Record<string, 'programacao' | 'descricao' | 'local' | 'geral'> = {
+          consultar_programacao: 'programacao',
+          consultar_descricao: 'descricao',
+          consultar_local: 'local',
+        };
+        const tipo = ctxUltimaIntencao ? (tipoMap[ctxUltimaIntencao] ?? 'geral') : 'geral';
+        const resposta = await responderDetalhesEvento(ctxEventoId, tipo);
+        return NextResponse.json(resposta);
+      }
+      const { eventos, cards } = await fetchEventosComCards(departamento);
+      if (eventos.length === 0) {
+        return NextResponse.json({ resposta: buildSemEventosMensagem(departamento) });
+      }
+      if (eventos.length === 1) {
+        const resposta = await responderDetalhesEvento(eventos[0].id, 'geral');
+        return NextResponse.json(resposta);
+      }
+      return NextResponse.json({ resposta: 'Aqui estao os eventos com inscricoes abertas 😊', cards });
     }
 
     if (querDetalhesEvento) {
@@ -954,6 +984,11 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ resposta: 'Os dados de contato nao foram informados pela organizacao ainda.' });
       }
       return NextResponse.json({ resposta: 'Aqui estao os contatos dos eventos 😊', cards });
+    }
+
+    if (ctxEventoId) {
+      const resposta = await responderDetalhesEvento(ctxEventoId, 'geral');
+      return NextResponse.json(resposta);
     }
 
     const fallback = departamento
