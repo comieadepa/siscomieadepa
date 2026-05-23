@@ -31,7 +31,7 @@ type AssistenteCard = {
 type AssistenteResposta = {
   resposta: string;
   cards?: AssistenteCard[];
-  _ctx?: { cpf?: string; inscricao_id?: string; pending_intent?: string };
+  _ctx?: { cpf?: string; inscricao_id?: string; pending_intent?: string; evento_id?: string };
 };
 
 function normalizeText(value: string) {
@@ -480,6 +480,105 @@ async function responderAlimentacaoInscricao(inscricaoId: string): Promise<Assis
   return { resposta: `O evento *${nomeEvento}* nao oferece alimentacao.` };
 }
 
+async function responderDetalhesEvento(
+  eventoId: string,
+  tipo: 'programacao' | 'descricao' | 'local' | 'geral'
+): Promise<AssistenteResposta> {
+  const supabase = createServerClient();
+
+  const { data: eventoData } = await supabase
+    .from('eventos')
+    .select('id,nome,data_inicio,data_fim,local,cidade,descricao,publico_alvo')
+    .eq('id', eventoId)
+    .maybeSingle();
+
+  if (!eventoData) {
+    return { resposta: 'Nao consegui encontrar informacoes sobre esse evento.' };
+  }
+
+  const ev = eventoData as Record<string, unknown>;
+  const nomeEvento = String(ev.nome || 'Evento');
+  const dataRange = formatDateRange(String(ev.data_inicio || ''), ev.data_fim ? String(ev.data_fim) : null);
+  const localStr = [ev.local, ev.cidade].filter(Boolean).join(' - ');
+  const descricao = ev.descricao ? String(ev.descricao).trim() : null;
+  const publicoAlvo = ev.publico_alvo ? String(ev.publico_alvo).trim() : null;
+  const ctx = { evento_id: eventoId };
+
+  if (tipo === 'local') {
+    if (localStr) {
+      return {
+        resposta: `O evento *${nomeEvento}* acontecera em *${localStr}* 📍\n📅 ${dataRange}`,
+        _ctx: ctx,
+      };
+    }
+    return {
+      resposta: `O local do evento *${nomeEvento}* ainda nao foi divulgado pela organizacao.`,
+      _ctx: ctx,
+    };
+  }
+
+  if (tipo === 'descricao') {
+    let resposta = `*${nomeEvento}*\n📅 ${dataRange}`;
+    if (localStr) resposta += `\n📍 ${localStr}`;
+    if (descricao) {
+      resposta += `\n\n${descricao}`;
+    } else {
+      resposta += '\n\nA descricao detalhada ainda nao foi cadastrada pela organizacao.';
+    }
+    if (publicoAlvo) resposta += `\n\n👥 Publico-alvo: ${publicoAlvo}`;
+    return { resposta, _ctx: ctx };
+  }
+
+  if (tipo === 'programacao') {
+    const { data: progData } = await supabase
+      .from('evento_programacao')
+      .select('data,horario,titulo,descricao,palestrante,local,ordem')
+      .eq('evento_id', eventoId)
+      .order('data', { ascending: true })
+      .order('ordem', { ascending: true });
+
+    const prog = (progData ?? []) as Array<Record<string, unknown>>;
+    let resposta = `Programacao de *${nomeEvento}*\n📅 ${dataRange}`;
+    if (localStr) resposta += `\n📍 ${localStr}`;
+
+    if (prog.length === 0) {
+      resposta += '\n\nA programacao detalhada ainda nao foi cadastrada pela organizacao. Posso te mostrar as informacoes disponiveis do evento.';
+      return { resposta, _ctx: ctx };
+    }
+
+    const byDate = new Map<string, Array<Record<string, unknown>>>();
+    for (const item of prog) {
+      const key = String(item.data || '');
+      if (!byDate.has(key)) byDate.set(key, []);
+      byDate.get(key)!.push(item);
+    }
+
+    for (const [date, items] of byDate) {
+      resposta += `\n\n📅 *${formatDate(date)}*`;
+      for (const item of items) {
+        const horario = item.horario ? String(item.horario).slice(0, 5) : null;
+        const titulo = String(item.titulo || '');
+        const palestrante = item.palestrante ? String(item.palestrante) : null;
+        const itemDescricao = item.descricao ? String(item.descricao) : null;
+        let linha = horario ? `• ${horario} – ${titulo}` : `• ${titulo}`;
+        if (palestrante) linha += ` (${palestrante})`;
+        if (itemDescricao) linha += `\n  ${itemDescricao}`;
+        resposta += `\n${linha}`;
+      }
+    }
+
+    return { resposta, _ctx: ctx };
+  }
+
+  // geral
+  let resposta = `Aqui estao as informacoes de *${nomeEvento}*:\n📅 ${dataRange}`;
+  if (localStr) resposta += `\n📍 ${localStr}`;
+  if (descricao) resposta += `\n\n${descricao}`;
+  if (publicoAlvo) resposta += `\n\n👥 Publico-alvo: ${publicoAlvo}`;
+  if (!descricao) resposta += '\n\nAs informacoes detalhadas ainda nao foram cadastradas pela organizacao.';
+  return { resposta, _ctx: ctx };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -492,6 +591,7 @@ export async function POST(req: NextRequest) {
     const ctxCpf = typeof contexto?.cpf === 'string' && contexto.cpf ? String(contexto.cpf) : null;
     const ctxInscricaoId = typeof contexto?.inscricao_id === 'string' && contexto.inscricao_id ? String(contexto.inscricao_id) : null;
     const ctxPendingIntent = typeof contexto?.pending_intent === 'string' && contexto.pending_intent ? String(contexto.pending_intent) : null;
+    const ctxEventoId = typeof contexto?.evento_id === 'string' && contexto.evento_id ? String(contexto.evento_id) : null;
 
     if (!perguntaRaw) {
       return NextResponse.json({ resposta: 'Me conte sua duvida para que eu possa ajudar.' });
@@ -581,6 +681,19 @@ export async function POST(req: NextRequest) {
     ]) || (pergunta.includes('minha inscricao') && !hasAny(pergunta, NEGAR_CONFIRMAR));
     const querHospedagem = hasAny(pergunta, ['hospedagem', 'alojamento']);
     const querAlimentacao = hasAny(pergunta, ['alimentacao', 'refeicao', 'refeicoes']);
+    const querProgramacao = hasAny(pergunta, [
+      'programacao', 'agenda', 'cronograma', 'horario', 'horarios',
+      'atividades', 'palestrante', 'palestrantes',
+    ]);
+    const querDescricaoEvento = !querProgramacao && hasAny(pergunta, [
+      'descricao', 'sobre o evento', 'fale sobre', 'detalhes do evento',
+      'informacoes do evento', 'publico alvo', 'para quem e',
+    ]);
+    const querLocalEvento = !querProgramacao && !querDescricaoEvento && hasAny(pergunta, [
+      'onde sera', 'onde vai ser', 'onde acontece', 'local do evento',
+      'onde e o evento', 'cidade do evento', 'onde fica o evento',
+    ]);
+    const querDetalhesEvento = querProgramacao || querDescricaoEvento || querLocalEvento;
 
     if (isSegundaVia) {
       if (!cpfDetectado) {
@@ -645,6 +758,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ resposta: 'Para verificar a alimentacao da sua inscricao, me informe seu CPF (11 digitos).', _ctx: { pending_intent: 'alimentacao' } });
     }
 
+    if (querDetalhesEvento) {
+      const tipo = querProgramacao ? 'programacao' : querLocalEvento ? 'local' : querDescricaoEvento ? 'descricao' : 'geral';
+
+      if (ctxEventoId) {
+        const resposta = await responderDetalhesEvento(ctxEventoId, tipo);
+        return NextResponse.json(resposta);
+      }
+
+      const { eventos, cards } = await fetchEventosComCards(departamento);
+      if (eventos.length === 0) {
+        return NextResponse.json({ resposta: buildSemEventosMensagem(departamento) });
+      }
+      if (eventos.length === 1) {
+        const resposta = await responderDetalhesEvento(eventos[0].id, tipo);
+        return NextResponse.json(resposta);
+      }
+      const perguntaQual = querProgramacao
+        ? 'De qual evento voce quer saber a programacao? Escolha um dos eventos abaixo:'
+        : querLocalEvento
+          ? 'Sobre qual evento voce quer saber o local?'
+          : 'Sobre qual evento voce quer mais informacoes?';
+      return NextResponse.json({ resposta: perguntaQual, cards });
+    }
+
     if (querParticiparDepto && departamento) {
       const { eventos, cards } = await fetchEventosComCards(departamento);
       if (eventos.length === 0) {
@@ -680,7 +817,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(resposta);
     }
 
-    if (hasAny(pergunta, ['brinde', 'programacao', 'certificado'])) {
+    if (hasAny(pergunta, ['brinde', 'certificado'])) {
       const { eventos, cards } = await fetchEventosComCards(departamento);
       if (eventos.length === 0) {
         return NextResponse.json({ resposta: buildSemEventosMensagem(departamento) });

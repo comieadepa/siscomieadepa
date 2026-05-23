@@ -71,6 +71,7 @@ export default function PublicAssistenteWidget({ scope, departamento }: Props) {
   const [ctxCpf, setCtxCpf] = useState<string | null>(null);
   const [ctxInscricaoId, setCtxInscricaoId] = useState<string | null>(null);
   const [ctxPendingIntent, setCtxPendingIntent] = useState<string | null>(null);
+  const [ctxEventoId, setCtxEventoId] = useState<string | null>(null);
   const fimRef = useRef<HTMLDivElement | null>(null);
 
   const sugestoes = useMemo(() => {
@@ -106,6 +107,7 @@ export default function PublicAssistenteWidget({ scope, departamento }: Props) {
     setCtxCpf(null);
     setCtxInscricaoId(null);
     setCtxPendingIntent(null);
+    setCtxEventoId(null);
   }
 
   async function enviarPergunta(pergunta: string) {
@@ -134,6 +136,7 @@ export default function PublicAssistenteWidget({ scope, departamento }: Props) {
             cpf: ctxCpf,
             inscricao_id: ctxInscricaoId,
             pending_intent: ctxPendingIntent,
+            evento_id: ctxEventoId,
           },
         }),
       });
@@ -142,6 +145,7 @@ export default function PublicAssistenteWidget({ scope, departamento }: Props) {
       const resposta = String(data?.resposta || 'Desculpe, nao consegui responder agora.');
       if (data?._ctx?.cpf) setCtxCpf(String(data._ctx.cpf));
       if (data?._ctx?.inscricao_id) setCtxInscricaoId(String(data._ctx.inscricao_id));
+      if (data?._ctx?.evento_id) setCtxEventoId(String(data._ctx.evento_id));
       setCtxPendingIntent(typeof data?._ctx?.pending_intent === 'string' ? data._ctx.pending_intent : null);
       const maiaMsg: Message = {
         id: `maia-${Date.now()}`,
