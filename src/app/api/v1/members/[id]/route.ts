@@ -67,6 +67,7 @@ export async function PUT(
         'data_nascimento_conjuge',
         'data_batismo_aguas',
         'data_batismo_espirito_santo',
+        'data_consagracao',
         'data_filiacao',
         'ev_autorizado_data',
         'ev_consagrado_data',
@@ -136,6 +137,7 @@ export async function PUT(
       numero_cgadb: normalizedBody.numero_cgadb ?? null,
       data_batismo_aguas: normalizedBody.data_batismo_aguas ?? null,
       data_batismo_espirito_santo: normalizedBody.data_batismo_espirito_santo ?? null,
+      data_consagracao: normalizedBody.data_consagracao ?? null,
       // Aba Endereço
       cep: normalizedBody.cep ?? null,
       logradouro: normalizedBody.logradouro ?? null,

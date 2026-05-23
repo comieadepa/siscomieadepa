@@ -31,6 +31,7 @@ type AssistenteCard = {
 type AssistenteResposta = {
   resposta: string;
   cards?: AssistenteCard[];
+  _ctx?: { cpf?: string; inscricao_id?: string; pending_intent?: string };
 };
 
 function normalizeText(value: string) {
@@ -302,6 +303,183 @@ async function responderCpfConsulta(
   return { resposta: 'Nao encontrei pagamentos pendentes para este CPF 😊' };
 }
 
+async function responderConfirmarInscricao(
+  cpf: string,
+  departamento: DepartamentoConfig | null
+): Promise<AssistenteResposta> {
+  const supabase = createServerClient();
+  let query = supabase
+    .from('evento_inscricoes')
+    .select(
+      'id,nome_inscrito,status_pagamento,hospedagem,alimentacao,tipo_inscricao,valor_final,eventos!inner(id,nome,departamento,data_inicio,data_fim,permite_hospedagem,permite_alimentacao,suporte_whatsapp)'
+    )
+    .eq('cpf', cpf)
+    .order('created_at', { ascending: false })
+    .limit(3);
+
+  if (departamento) {
+    query = query.eq('eventos.departamento', departamento.key);
+  }
+
+  const { data } = await query;
+  const lista = (data ?? []) as Array<Record<string, unknown>>;
+
+  if (lista.length === 0) {
+    return {
+      resposta: departamento
+        ? `Nao encontrei inscricoes para este CPF em ${departamento.nome}.\nVerifique o CPF e tente novamente ou entre em contato com a organizacao.`
+        : 'Nao encontrei inscricoes para este CPF.\nVerifique o CPF e tente novamente ou entre em contato com a organizacao.',
+    };
+  }
+
+  const cards: AssistenteCard[] = lista.map(insc => {
+    const ev = insc.eventos as Record<string, unknown>;
+    const nomeInscrito = String(insc.nome_inscrito || 'Inscrito');
+    const nomeEvento = String(ev?.nome || 'Evento');
+    const statusPag = String(insc.status_pagamento || '');
+    const temHospedagem = Boolean(insc.hospedagem);
+    const temAlimentacao = Boolean(insc.alimentacao);
+    const permiteHospedagem = Boolean(ev?.permite_hospedagem);
+    const permiteAlimentacao = Boolean(ev?.permite_alimentacao);
+    const tipoInscricao = insc.tipo_inscricao ? String(insc.tipo_inscricao) : null;
+    const valorFinal = typeof insc.valor_final === 'number' ? insc.valor_final : null;
+
+    const statusLabel =
+      statusPag === 'pago' ? '✅ Pago' :
+      statusPag === 'isento' ? '✅ Isento' :
+      statusPag === 'pendente' ? '⚠️ Pendente' :
+      statusPag === 'cancelado' ? '❌ Cancelado' :
+      statusPag || 'Sem status';
+
+    const hospLabel = temHospedagem
+      ? '✅ Incluida'
+      : permiteHospedagem
+        ? '❌ Nao incluida (evento oferece hospedagem)'
+        : '➖ Evento nao oferece hospedagem';
+
+    const alimLabel = temAlimentacao
+      ? '✅ Incluida'
+      : permiteAlimentacao
+        ? '❌ Nao incluida (evento oferece alimentacao)'
+        : '➖ Evento nao oferece alimentacao';
+
+    const meta: string[] = [`Evento: ${nomeEvento}`, `Pagamento: ${statusLabel}`];
+    if (tipoInscricao) meta.push(`Modalidade: ${tipoInscricao}`);
+    if (valorFinal !== null) meta.push(`Valor: ${fmtMoeda(valorFinal)}`);
+    meta.push(`Hospedagem: ${hospLabel}`);
+    meta.push(`Alimentacao: ${alimLabel}`);
+
+    return {
+      id: String(insc.id || `insc-${Date.now()}`),
+      title: `📋 ${nomeInscrito}`,
+      subtitle: 'Inscricao localizada',
+      meta,
+    };
+  });
+
+  const primeiro = lista[0];
+  return {
+    resposta: lista.length === 1
+      ? 'Encontrei sua inscricao 😊'
+      : `Encontrei ${lista.length} inscricoes para este CPF 😊`,
+    cards,
+    _ctx: { cpf, inscricao_id: String(primeiro.id || '') },
+  };
+}
+
+async function responderHospedagemInscricao(inscricaoId: string): Promise<AssistenteResposta> {
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from('evento_inscricoes')
+    .select('id,hospedagem,tipo_inscricao,eventos!inner(nome,permite_hospedagem,departamento)')
+    .eq('id', inscricaoId)
+    .maybeSingle();
+
+  if (error || !data) {
+    return { resposta: 'Nao consegui confirmar essa informacao automaticamente. Fale com a organizacao.' };
+  }
+
+  const insc = data as Record<string, unknown>;
+  const ev = insc.eventos as Record<string, unknown>;
+  const nomeEvento = String(ev?.nome || 'Evento');
+  const temHospedagem = Boolean(insc.hospedagem);
+  const permiteHospedagem = Boolean(ev?.permite_hospedagem);
+
+  if (temHospedagem) {
+    if (String(ev?.departamento) === 'AGO') {
+      const { data: hospData } = await supabase
+        .from('evento_hospedagens')
+        .select('status')
+        .eq('inscricao_id', inscricaoId)
+        .maybeSingle();
+      if (hospData) {
+        const status = String((hospData as Record<string, unknown>).status || '');
+        if (status === 'confirmada') {
+          return { resposta: `Sim! Sua inscricao em *${nomeEvento}* inclui hospedagem e ja esta confirmada ✅` };
+        }
+        if (status === 'solicitada') {
+          return { resposta: `Sua inscricao em *${nomeEvento}* inclui hospedagem. Aguardando alocacao de alojamento 🛏️` };
+        }
+        if (status === 'lista_espera') {
+          return { resposta: `Sua inscricao inclui hospedagem, porem voce esta na lista de espera por alojamento.` };
+        }
+      }
+    }
+    return { resposta: `Sim! Sua inscricao em *${nomeEvento}* inclui hospedagem 🛏️` };
+  }
+
+  if (permiteHospedagem) {
+    return {
+      resposta: `O evento *${nomeEvento}* oferece hospedagem, mas sua inscricao atual nao inclui essa opcao.\n\nPara mais informacoes, entre em contato com a organizacao.`,
+    };
+  }
+
+  return { resposta: `O evento *${nomeEvento}* nao oferece hospedagem.` };
+}
+
+async function responderAlimentacaoInscricao(inscricaoId: string): Promise<AssistenteResposta> {
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from('evento_inscricoes')
+    .select('id,alimentacao,tipo_inscricao,evento_id,eventos!inner(nome,permite_alimentacao)')
+    .eq('id', inscricaoId)
+    .maybeSingle();
+
+  if (error || !data) {
+    return { resposta: 'Nao consegui confirmar essa informacao automaticamente. Fale com a organizacao.' };
+  }
+
+  const insc = data as Record<string, unknown>;
+  const ev = insc.eventos as Record<string, unknown>;
+  const nomeEvento = String(ev?.nome || 'Evento');
+  const temAlimentacao = Boolean(insc.alimentacao);
+  const permiteAlimentacao = Boolean(ev?.permite_alimentacao);
+
+  if (temAlimentacao) {
+    const tipoNome = insc.tipo_inscricao ? String(insc.tipo_inscricao) : null;
+    const eventoId = insc.evento_id ? String(insc.evento_id) : null;
+    if (tipoNome && eventoId) {
+      const { data: tipoData } = await supabase
+        .from('evento_tipos_inscricao')
+        .select('quantidade_refeicoes')
+        .eq('evento_id', eventoId)
+        .ilike('nome', tipoNome)
+        .maybeSingle();
+      const qtd = (tipoData as Record<string, unknown> | null)?.quantidade_refeicoes;
+      if (typeof qtd === 'number' && qtd > 0) {
+        return { resposta: `Sim! Sua inscricao em *${nomeEvento}* inclui alimentacao 🍽️\nQuantidade de refeicoes: ${qtd}` };
+      }
+    }
+    return { resposta: `Sim! Sua inscricao em *${nomeEvento}* inclui alimentacao 🍽️` };
+  }
+
+  if (permiteAlimentacao) {
+    return { resposta: `O evento *${nomeEvento}* oferece alimentacao, mas sua inscricao atual nao inclui essa opcao.` };
+  }
+
+  return { resposta: `O evento *${nomeEvento}* nao oferece alimentacao.` };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -311,6 +489,9 @@ export async function POST(req: NextRequest) {
     const departamentoFromContext = contexto?.departamento
       ? getDepartamentoByKey(String(contexto.departamento))
       : null;
+    const ctxCpf = typeof contexto?.cpf === 'string' && contexto.cpf ? String(contexto.cpf) : null;
+    const ctxInscricaoId = typeof contexto?.inscricao_id === 'string' && contexto.inscricao_id ? String(contexto.inscricao_id) : null;
+    const ctxPendingIntent = typeof contexto?.pending_intent === 'string' && contexto.pending_intent ? String(contexto.pending_intent) : null;
 
     if (!perguntaRaw) {
       return NextResponse.json({ resposta: 'Me conte sua duvida para que eu possa ajudar.' });
@@ -380,12 +561,44 @@ export async function POST(req: NextRequest) {
       'inscricao',
       'evento',
     ]);
+    const NEGAR_CONFIRMAR = ['como faco', 'como fazer', 'fazer minha inscricao', 'quero fazer minha', 'quero fazer inscricao', 'quero fazer a'];
+    const querConfirmarInscricao = hasAny(pergunta, [
+      'confirmar minha inscricao',
+      'confirmar inscricao',
+      'ja me inscrevi',
+      'consultar minha inscricao',
+      'consultar inscricao',
+      'ver minha inscricao',
+      'ver inscricao',
+      'status da inscricao',
+      'situacao da inscricao',
+      'como esta minha inscricao',
+      'verificar minha inscricao',
+      'ja fiz inscricao',
+      'ja estou inscrito',
+      'ja estou inscrita',
+      'ja tenho inscricao',
+    ]) || (pergunta.includes('minha inscricao') && !hasAny(pergunta, NEGAR_CONFIRMAR));
+    const querHospedagem = hasAny(pergunta, ['hospedagem', 'alojamento']);
+    const querAlimentacao = hasAny(pergunta, ['alimentacao', 'refeicao', 'refeicoes']);
 
     if (isSegundaVia) {
       if (!cpfDetectado) {
         return NextResponse.json({ resposta: 'Claro! Me informe seu CPF para localizar sua inscricao.' });
       }
       const resposta = await responderCpfConsulta(cpfDetectado, departamento);
+      return NextResponse.json(resposta);
+    }
+
+    if (querConfirmarInscricao) {
+      const cpfParaUsar = cpfDetectado ?? ctxCpf;
+      if (!cpfParaUsar) {
+        return NextResponse.json({
+          resposta: 'Para confirmar sua inscricao, preciso do seu CPF. Me informe apenas os 11 numeros.',
+          _ctx: { pending_intent: 'confirmar_inscricao' },
+        });
+      }
+      const resposta = await responderConfirmarInscricao(cpfParaUsar, departamento);
       return NextResponse.json(resposta);
     }
 
@@ -396,6 +609,40 @@ export async function POST(req: NextRequest) {
         `${intro}\n\nEscolha um dos eventos disponiveis para continuar.`
       );
       return NextResponse.json(resposta);
+    }
+
+    if (querHospedagem) {
+      if (ctxInscricaoId) {
+        const resposta = await responderHospedagemInscricao(ctxInscricaoId);
+        return NextResponse.json({ ...resposta, _ctx: { cpf: ctxCpf ?? undefined, inscricao_id: ctxInscricaoId } });
+      }
+      const cpfParaUsar = cpfDetectado ?? ctxCpf;
+      if (cpfParaUsar) {
+        const infoInscricao = await responderConfirmarInscricao(cpfParaUsar, departamento);
+        if (infoInscricao._ctx?.inscricao_id) {
+          const respHosp = await responderHospedagemInscricao(infoInscricao._ctx.inscricao_id);
+          return NextResponse.json({ ...respHosp, _ctx: infoInscricao._ctx });
+        }
+        return NextResponse.json(infoInscricao);
+      }
+      return NextResponse.json({ resposta: 'Para verificar a hospedagem da sua inscricao, me informe seu CPF (11 digitos).', _ctx: { pending_intent: 'hospedagem' } });
+    }
+
+    if (querAlimentacao) {
+      if (ctxInscricaoId) {
+        const resposta = await responderAlimentacaoInscricao(ctxInscricaoId);
+        return NextResponse.json({ ...resposta, _ctx: { cpf: ctxCpf ?? undefined, inscricao_id: ctxInscricaoId } });
+      }
+      const cpfParaUsar = cpfDetectado ?? ctxCpf;
+      if (cpfParaUsar) {
+        const infoInscricao = await responderConfirmarInscricao(cpfParaUsar, departamento);
+        if (infoInscricao._ctx?.inscricao_id) {
+          const respAlim = await responderAlimentacaoInscricao(infoInscricao._ctx.inscricao_id);
+          return NextResponse.json({ ...respAlim, _ctx: infoInscricao._ctx });
+        }
+        return NextResponse.json(infoInscricao);
+      }
+      return NextResponse.json({ resposta: 'Para verificar a alimentacao da sua inscricao, me informe seu CPF (11 digitos).', _ctx: { pending_intent: 'alimentacao' } });
     }
 
     if (querParticiparDepto && departamento) {
@@ -433,7 +680,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(resposta);
     }
 
-    if (hasAny(pergunta, ['hospedagem', 'alojamento', 'brinde', 'alimentacao', 'programacao', 'certificado'])) {
+    if (hasAny(pergunta, ['brinde', 'programacao', 'certificado'])) {
       const { eventos, cards } = await fetchEventosComCards(departamento);
       if (eventos.length === 0) {
         return NextResponse.json({ resposta: buildSemEventosMensagem(departamento) });
@@ -445,6 +692,26 @@ export async function POST(req: NextRequest) {
     }
 
     if (cpfDetectado) {
+      if (ctxPendingIntent === 'confirmar_inscricao') {
+        const resposta = await responderConfirmarInscricao(cpfDetectado, departamento);
+        return NextResponse.json(resposta);
+      }
+      if (ctxPendingIntent === 'hospedagem') {
+        const infoInscricao = await responderConfirmarInscricao(cpfDetectado, departamento);
+        if (infoInscricao._ctx?.inscricao_id) {
+          const respHosp = await responderHospedagemInscricao(infoInscricao._ctx.inscricao_id);
+          return NextResponse.json({ ...respHosp, _ctx: infoInscricao._ctx });
+        }
+        return NextResponse.json(infoInscricao);
+      }
+      if (ctxPendingIntent === 'alimentacao') {
+        const infoInscricao = await responderConfirmarInscricao(cpfDetectado, departamento);
+        if (infoInscricao._ctx?.inscricao_id) {
+          const respAlim = await responderAlimentacaoInscricao(infoInscricao._ctx.inscricao_id);
+          return NextResponse.json({ ...respAlim, _ctx: infoInscricao._ctx });
+        }
+        return NextResponse.json(infoInscricao);
+      }
       const resposta = await responderCpfConsulta(cpfDetectado, departamento);
       return NextResponse.json(resposta);
     }

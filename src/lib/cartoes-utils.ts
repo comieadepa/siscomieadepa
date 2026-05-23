@@ -134,7 +134,13 @@ export function substituirPlaceholders(texto: string, membro: any, nomenclaturas
     }
 
     if (ph.campo === 'dataConsagracao') {
-      valor = membro.dataConsagracao || membro.dataConsagracaoRecebimento || '';
+      valor = membro.dataConsagracao
+        || membro.dataConsagracaoRecebimento
+        || membro.ordenPastorData
+        || membro.evConsagradoData
+        || membro.consMissionarioData
+        || membro.evAutorizadoData
+        || '';
     }
 
     if (ph.campo === 'dataEmissao') {

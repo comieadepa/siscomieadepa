@@ -1504,6 +1504,7 @@ useEffect(() => {
         jubilado: (dadosPessoais as any).jubilado ?? false,
         data_batismo_aguas: dadosMinisteriais.dataBatismoAguas || null,
         data_batismo_espirito_santo: dadosMinisteriais.dataBatismoEspiritoSanto || null,
+        data_consagracao: dadosMinisteriais.dataConsagracao || null,
         // Aba Endereço
         cep: onlyDigits(enderecoData.cep) || null,
         logradouro: enderecoData.logradouro || null,
