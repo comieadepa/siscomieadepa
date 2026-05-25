@@ -115,7 +115,7 @@ const memberToMembro = (member: Member): Membro => {
     numero: String(member.numero || (cf as any).numero || ''),
     bairro: String(member.bairro || (cf as any).bairro || ''),
     cidade: String(member.cidade || (cf as any).cidade || ''),
-    dataConsagracao: String(member.data_consagracao || (cf as any).dataConsagracao || ''),
+    dataConsagracao: String((cf as any).dataConsagracao || ''),
     dataEmissao: String(member.data_emissao || (cf as any).dataEmissao || ''),
     dataValidadeCredencial: String(member.data_validade_credencial || member.cred_validade || (cf as any).dataValidadeCredencial || ''),
     qualFuncao: String(member.qual_funcao || member.profissao || (cf as any).qualFuncao || ''),
