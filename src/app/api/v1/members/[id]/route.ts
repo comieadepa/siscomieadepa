@@ -255,6 +255,20 @@ export async function PATCH(
       return NextResponse.json({ error: 'Payload invalido' }, { status: 400 })
     }
 
+    // Buscar estado atual para registrar anterior no log
+    const { data: current } = await supabase
+      .from('members')
+      .select('status, jubilado, name')
+      .eq('id', id)
+      .maybeSingle()
+
+    const statusAnterior = current?.status ?? null
+    const jubiladoAnterior = current?.jubilado ?? false
+
+    // Metadados extras enviados pelo cliente (não persistidos diretamente)
+    const clientStatusAnterior: string | null = body._status_anterior ?? null
+    const clientMotivo: string | null = body._motivo ?? null
+
     const updates: Record<string, any> = {}
     if ('custom_fields' in body) updates.custom_fields = body.custom_fields ?? {}
     if ('status' in body) updates.status = body.status ?? null
@@ -282,15 +296,25 @@ export async function PATCH(
       return NextResponse.json({ error: 'Membro não encontrado' }, { status: 404 })
     }
 
+    const alterandoStatus = 'status' in updates && updates.status !== statusAnterior
     void logDB({
       userId: auth.ctx.userId,
       userEmail: auth.ctx.user.email ?? undefined,
-      acao: 'editar',
-      modulo: 'membros',
+      acao: alterandoStatus ? 'alterar_status_membro' : 'editar',
+      modulo: 'secretaria',
       entidade: 'members',
       entidadeId: id,
-      descricao: `Membro atualizado: ${data.nome ?? id}`,
-      detalhes: updates,
+      descricao: alterandoStatus
+        ? `Status alterado de ${statusAnterior ?? clientStatusAnterior ?? '?'} para ${updates.status}. Membro: ${current?.name ?? id}`
+        : `Membro atualizado: ${current?.name ?? id}`,
+      detalhes: {
+        status_anterior: statusAnterior ?? clientStatusAnterior,
+        status_novo: updates.status,
+        jubilado_anterior: jubiladoAnterior,
+        jubilado_novo: updates.jubilado,
+        motivo: clientMotivo,
+        member_id: id,
+      },
       request,
     })
 

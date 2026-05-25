@@ -33,7 +33,7 @@ interface Membro {
   supervisao: string;
   campo: string;
   congregacao: string;
-  status: 'ativo' | 'inativo' | 'desligado' | 'em_processo' | 'falecido';
+  status: 'ativo' | 'inativo' | 'desligado' | 'jubilado' | 'em_processo' | 'falecido';
   jubilado?: boolean;
   // Dados pessoais
   dataNascimento?: string;
@@ -170,6 +170,7 @@ export default function MembrosPage() {
     if (status === 'active' || status === 'ativo') return 'ativo';
     if (status === 'falecido' || status === 'deceased') return 'falecido';
     if (status === 'desligado') return 'desligado';
+    if (status === 'jubilado') return 'jubilado';
     if (status === 'em_processo') return 'em_processo';
     return 'inativo'; // inactive e qualquer outro
   };
@@ -188,6 +189,7 @@ export default function MembrosPage() {
   const uiStatusToDb = (status: Membro['status']): string => {
     if (status === 'ativo') return 'active';
     if (status === 'desligado') return 'desligado';
+    if (status === 'jubilado') return 'jubilado';
     if (status === 'em_processo') return 'em_processo';
     if (status === 'falecido') return 'deceased';
     return 'inactive';
@@ -2105,98 +2107,160 @@ useEffect(() => {
       )}
 
       {/* Modal Alterar Status */}
-      {membroAlterandoStatus && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
-            <div className="bg-blue-900 text-white px-6 py-4 rounded-t-xl flex justify-between items-center">
-              <h2 className="text-lg font-bold">Alterar Status do Membro</h2>
-              <button onClick={() => setMembroAlterandoStatus(null)} className="text-white hover:text-gray-300 text-2xl leading-none">&times;</button>
-            </div>
-            <div className="p-6 flex flex-col gap-4">
-              <p className="text-sm text-gray-600">Membro: <strong>{membroAlterandoStatus.nome}</strong></p>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">SITUAÇÃO:</label>
-                <select
-                  value={novoStatus}
-                  onChange={(e) => setNovoStatus(e.target.value)}
-                  className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-                >
-                  <option value="ativo">ATIVO</option>
-                  <option value="desligado">DESLIGADO</option>
-                  <option value="em_processo">EM PROCESSO</option>
-                  <option value="falecido">FALECIDO</option>
-                  <option value="inativo">INATIVO</option>
-                </select>
+      {membroAlterandoStatus && (() => {
+        const statusOriginal = membroAlterandoStatus.status || 'ativo';
+        const jubiladoOriginal = membroAlterandoStatus.jubilado ?? false;
+        const motivoObrigatorio = novoStatus === 'desligado' || novoStatus === 'jubilado';
+        const semAlteracao = novoStatus === statusOriginal && isJubilado === jubiladoOriginal;
+        const podeAlterar = !semAlteracao && (!motivoObrigatorio || motivoStatus.trim().length > 0);
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+              <div className="bg-blue-900 text-white px-6 py-4 rounded-t-xl flex justify-between items-center">
+                <h2 className="text-lg font-bold">Alterar Status do Membro</h2>
+                <button onClick={() => setMembroAlterandoStatus(null)} className="text-white hover:text-gray-300 text-2xl leading-none">&times;</button>
               </div>
+              <div className="p-6 flex flex-col gap-4">
+                <p className="text-sm text-gray-600">Membro: <strong>{membroAlterandoStatus.nome}</strong></p>
+                <p className="text-xs text-gray-400">Status atual: <strong>{statusOriginal.toUpperCase()}</strong>{jubiladoOriginal ? ' · JUBILADO' : ''}</p>
 
-              <div className="flex items-center gap-3">
-                <label className="text-sm font-semibold text-gray-700">JUBILADO?</label>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">NOVA SITUAÇÃO:</label>
+                  <select
+                    value={novoStatus}
+                    onChange={(e) => {
+                      const s = e.target.value;
+                      setNovoStatus(s);
+                      if (s === 'jubilado') setIsJubilado(true);
+                      if (s === 'desligado') setIsJubilado(false);
+                    }}
+                    className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="ativo">ATIVO</option>
+                    <option value="desligado">DESLIGADO</option>
+                    <option value="jubilado">JUBILADO</option>
+                    <option value="em_processo">EM PROCESSO</option>
+                    <option value="falecido">FALECIDO</option>
+                    <option value="inativo">INATIVO</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <label className="text-sm font-semibold text-gray-700">JUBILADO?</label>
+                  <button
+                    type="button"
+                    disabled={novoStatus === 'jubilado' || novoStatus === 'desligado'}
+                    onClick={() => setIsJubilado(v => !v)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
+                      isJubilado ? 'bg-blue-600' : 'bg-gray-300'
+                    }`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                      isJubilado ? 'translate-x-6' : 'translate-x-1'
+                    }`} />
+                  </button>
+                  {isJubilado && <span className="text-xs text-blue-600 font-semibold">Membro está jubilado</span>}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    OBSERVAÇÃO / MOTIVO:{motivoObrigatorio && <span className="text-red-500 ml-1">*</span>}
+                  </label>
+                  <textarea
+                    value={motivoStatus}
+                    onChange={(e) => setMotivoStatus(e.target.value)}
+                    placeholder={motivoObrigatorio ? 'Motivo obrigatório para este status...' : 'Escreva aqui as Observações...'}
+                    rows={4}
+                    className={`w-full border-2 rounded-lg px-3 py-2 text-sm focus:outline-none resize-none ${
+                      motivoObrigatorio && motivoStatus.trim().length === 0
+                        ? 'border-red-400 focus:border-red-500'
+                        : 'border-gray-300 focus:border-blue-500'
+                    }`}
+                  />
+                  {motivoObrigatorio && motivoStatus.trim().length === 0 && (
+                    <p className="text-xs text-red-500 mt-1">O motivo é obrigatório para status DESLIGADO ou JUBILADO.</p>
+                  )}
+                </div>
+
                 <button
-                  type="button"
-                  onClick={() => setIsJubilado(v => !v)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    isJubilado ? 'bg-blue-600' : 'bg-gray-300'
-                  }`}
-                >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                    isJubilado ? 'translate-x-6' : 'translate-x-1'
-                  }`} />
-                </button>
-                {isJubilado && <span className="text-xs text-blue-600 font-semibold">Status permanece ATIVO</span>}
-              </div>
+                  disabled={salvandoStatus || !podeAlterar}
+                  onClick={async () => {
+                    setSalvandoStatus(true);
+                    try {
+                      const dbStatus = uiStatusToDb(novoStatus as Membro['status']);
+                      const statusAnterior = uiStatusToDb(statusOriginal as Membro['status']);
+                      const payload: Record<string, unknown> = {
+                        status: dbStatus,
+                        jubilado: isJubilado,
+                        observacoes: motivoStatus.trim() || null,
+                        _status_anterior: statusAnterior,
+                        _motivo: motivoStatus.trim() || null,
+                      };
+                      const res = await authenticatedFetch(`/api/v1/members/${membroAlterandoStatus.id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                      });
+                      if (!res.ok) {
+                        const errJson = await res.json().catch(() => null as any);
+                        throw new Error(errJson?.error || 'Erro ao salvar.');
+                      }
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">OBSERVAÇÃO / MOTIVO:</label>
-                <textarea
-                  value={motivoStatus}
-                  onChange={(e) => setMotivoStatus(e.target.value)}
-                  placeholder="Escreva aqui as Observações..."
-                  rows={4}
-                  className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none"
-                />
-              </div>
+                      // Registrar no Histórico do Ministro
+                      const novoStatusLabel = novoStatus.toUpperCase();
+                      const statusAnteriorLabel = statusOriginal.toUpperCase();
+                      const descricaoHistorico = `Status alterado de ${statusAnteriorLabel} para ${novoStatusLabel}.${
+                        motivoStatus.trim() ? ` Motivo: ${motivoStatus.trim()}` : ''
+                      }${
+                        isJubilado !== jubiladoOriginal
+                          ? ` Jubilado: ${isJubilado ? 'Sim' : 'Não'}.`
+                          : ''
+                      }`;
+                      void authenticatedFetch(`/api/membros/${membroAlterandoStatus.id}/historico`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          tipo: 'alteracao_status',
+                          titulo: 'Alteração de status ministerial',
+                          descricao: descricaoHistorico,
+                          origem: 'secretaria/membros',
+                          referencia_id: `status_${Date.now()}`,
+                        }),
+                      });
 
-              <button
-                disabled={salvandoStatus}
-                onClick={async () => {
-                  setSalvandoStatus(true);
-                  try {
-                    const dbStatus = uiStatusToDb(novoStatus as Membro['status']);
-                    const payload: Record<string, unknown> = {
-                      status: dbStatus,
-                      jubilado: isJubilado,
-                      observacoes: motivoStatus || null,
-                    };
-                    const res = await authenticatedFetch(`/api/v1/members/${membroAlterandoStatus.id}`, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(payload),
-                    });
-                    if (!res.ok) {
-                      const errJson = await res.json().catch(() => null as any);
-                      throw new Error(errJson?.error || 'Erro ao salvar.');
+                      setMembros(prev => prev.map(m =>
+                        m.id === membroAlterandoStatus.id
+                          ? { ...m, status: novoStatus as Membro['status'], jubilado: isJubilado }
+                          : m
+                      ));
+                      setMembroAlterandoStatus(null);
+                      setNotification({
+                        isOpen: true,
+                        title: 'Status Alterado',
+                        message: `Status de ${membroAlterandoStatus.nome} alterado para ${novoStatusLabel} com sucesso.`,
+                        type: 'success',
+                        autoClose: 4000,
+                      });
+                    } catch (e) {
+                      setNotification({
+                        isOpen: true,
+                        title: 'Erro ao Alterar Status',
+                        message: e instanceof Error ? e.message : String(e),
+                        type: 'error',
+                      });
+                    } finally {
+                      setSalvandoStatus(false);
                     }
-                    setMembros(prev => prev.map(m =>
-                      m.id === membroAlterandoStatus.id
-                        ? { ...m, status: novoStatus as Membro['status'], jubilado: isJubilado }
-                        : m
-                    ));
-                    setMembroAlterandoStatus(null);
-                  } catch (e) {
-                    alert('Erro ao salvar: ' + (e instanceof Error ? e.message : String(e)));
-                  } finally {
-                    setSalvandoStatus(false);
-                  }
-                }}
-                className="w-full py-2 bg-gray-400 hover:bg-gray-500 disabled:opacity-60 text-white font-bold rounded-lg transition text-sm tracking-widest"
-              >
-                {salvandoStatus ? 'SALVANDO...' : 'ALTERAR'}
-              </button>
+                  }}
+                  className="w-full py-2 bg-blue-900 hover:bg-blue-800 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold rounded-lg transition text-sm tracking-widest"
+                >
+                  {salvandoStatus ? 'SALVANDO...' : 'ALTERAR'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Modal: Histórico do Ministro */}
       {membroHistorico && (
