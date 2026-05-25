@@ -62,7 +62,7 @@ export type Member = {
   phone: string | null
   cpf: string | null
   // Datas ministeriais
-  data_consagracao?: string | null
+  // data_consagracao não existe como coluna em members (está em consagracao_registros)
   data_emissao?: string | null
   data_validade_credencial?: string | null
   // Aba Dados

@@ -260,7 +260,7 @@ export default function MembrosPage() {
       temFuncaoIgreja: member.tem_funcao_igreja ?? (cf as any).temFuncaoIgreja ?? false,
       setorDepartamento: String(member.setor_departamento || (cf as any).setorDepartamento || ''),
       observacoesMinisteriais: String(member.observacoes_ministeriais || (cf as any).observacoesMinisteriais || ''),
-      dataConsagracao: String(member.data_consagracao || (cf as any).dataConsagracao || ''),
+      dataConsagracao: String((cf as any).dataConsagracao || ''),
       dataEmissao: String(member.data_emissao || (cf as any).dataEmissao || ''),
       dataValidadeCredencial: String((member as any).cred_validade || (cf as any).dataValidadeCredencial || ''),
       dataBatismoAguas: String(member.data_batismo_aguas || (cf as any).dataBatismoAguas || ''),
@@ -1504,7 +1504,6 @@ useEffect(() => {
         jubilado: (dadosPessoais as any).jubilado ?? false,
         data_batismo_aguas: dadosMinisteriais.dataBatismoAguas || null,
         data_batismo_espirito_santo: dadosMinisteriais.dataBatismoEspiritoSanto || null,
-        data_consagracao: dadosMinisteriais.dataConsagracao || null,
         // Aba Endereço
         cep: onlyDigits(enderecoData.cep) || null,
         logradouro: enderecoData.logradouro || null,
