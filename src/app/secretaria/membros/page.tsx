@@ -1173,11 +1173,13 @@ useEffect(() => {
         membro.nome,
         membro.cpf,
         membro.cargoMinisterial || '-',
-        (membro as any).dadosCargos?.dataConsagracao
-          ? new Date((membro as any).dadosCargos.dataConsagracao).toLocaleDateString('pt-BR')
-          : (membro as any).dataConsagracao
-            ? new Date((membro as any).dataConsagracao).toLocaleDateString('pt-BR')
-            : '-',
+        isPastorPresidente
+          ? (membro.campo || '-')
+          : ((membro as any).dadosCargos?.dataConsagracao
+              ? new Date((membro as any).dadosCargos.dataConsagracao).toLocaleDateString('pt-BR')
+              : (membro as any).dataConsagracao
+                ? new Date((membro as any).dataConsagracao).toLocaleDateString('pt-BR')
+                : '-'),
         membro.status === 'ativo' ? 'Ativo' : 'Inativo',
       ];
       if (isPastorPresidente) {
@@ -1189,7 +1191,7 @@ useEffect(() => {
       return row;
     });
 
-    const cabecalho = ['Matrícula', 'Nome', 'CPF', 'Cargo', 'Dt. Consagração', 'Status'];
+    const cabecalho = ['Matrícula', 'Nome', 'CPF', 'Cargo', isPastorPresidente ? 'Campo' : 'Dt. Consagração', 'Status'];
     if (isPastorPresidente) cabecalho.push('Contato');
 
     // Gerar tabela
