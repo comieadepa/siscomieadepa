@@ -1151,7 +1151,10 @@ useEffect(() => {
     yPos += 8;
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.text('Listagem de Ministros', pageWidth / 2, yPos, { align: 'center' });
+    const tituloPDF = pastorPresidenteFilter
+      ? 'Listagem de Ministros - Pastores Presidente'
+      : 'Listagem de Ministros';
+    doc.text(tituloPDF, pageWidth / 2, yPos, { align: 'center' });
 
     // Informações do relatório
     doc.setFontSize(9);
@@ -1162,23 +1165,37 @@ useEffect(() => {
     doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')}`, pageWidth - 14, yPos, { align: 'right' });
 
     // Preparar dados da tabela
-    const tableData = membrosFiltrados.map(membro => [
-      membro.matricula,
-      membro.nome,
-      membro.cpf,
-      membro.cargoMinisterial || '-',
-      (membro as any).dadosCargos?.dataConsagracao
-        ? new Date((membro as any).dadosCargos.dataConsagracao).toLocaleDateString('pt-BR')
-        : (membro as any).dataConsagracao
-          ? new Date((membro as any).dataConsagracao).toLocaleDateString('pt-BR')
-          : '-',
-      membro.status === 'ativo' ? 'Ativo' : 'Inativo'
-    ]);
+    const isPastorPresidente = pastorPresidenteFilter;
+
+    const tableData = membrosFiltrados.map(membro => {
+      const row: (string | number)[] = [
+        membro.matricula,
+        membro.nome,
+        membro.cpf,
+        membro.cargoMinisterial || '-',
+        (membro as any).dadosCargos?.dataConsagracao
+          ? new Date((membro as any).dadosCargos.dataConsagracao).toLocaleDateString('pt-BR')
+          : (membro as any).dataConsagracao
+            ? new Date((membro as any).dataConsagracao).toLocaleDateString('pt-BR')
+            : '-',
+        membro.status === 'ativo' ? 'Ativo' : 'Inativo',
+      ];
+      if (isPastorPresidente) {
+        const partes: string[] = [];
+        if (membro.celular) partes.push(membro.celular);
+        if (membro.email) partes.push(membro.email);
+        row.push(partes.join('\n') || '-');
+      }
+      return row;
+    });
+
+    const cabecalho = ['Matrícula', 'Nome', 'CPF', 'Cargo', 'Dt. Consagração', 'Status'];
+    if (isPastorPresidente) cabecalho.push('Contato');
 
     // Gerar tabela
     autoTable(doc, {
       startY: yPos + 5,
-      head: [['Matrícula', 'Nome', 'CPF', 'Cargo', 'Dt. Consagração', 'Status']],
+      head: [cabecalho],
       body: tableData,
       theme: 'grid',
       headStyles: {
@@ -1197,7 +1214,8 @@ useEffect(() => {
         2: { halign: 'center', cellWidth: 35 },
         3: { halign: 'left', cellWidth: 35 },
         4: { halign: 'center', cellWidth: 30 },
-        5: { halign: 'center', cellWidth: 20 }
+        5: { halign: 'center', cellWidth: 20 },
+        ...(isPastorPresidente ? { 6: { halign: 'left', cellWidth: 50 } } : {})
       },
       alternateRowStyles: {
         fillColor: [245, 245, 245]
