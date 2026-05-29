@@ -226,6 +226,7 @@ export default function NovoEventoPage() {
   const [tiposDraft, setTiposDraft] = useState<TipoDraft[]>(TIPOS_PADRAO.map(t => ({ ...t })));
   const [agoCategorias, setAgoCategorias] = useState<AgoCategoriaDraft[]>(AGO_CATEGORIAS_DEFAULT.map(c => ({ ...c })));
   const [agoHospConfig, setAgoHospConfig] = useState<AgoHospedagemConfig>({ ...AGO_HOSP_DEFAULT });
+  const [savedSetorSnapshots, setSavedSetorSnapshots] = useState<Record<string, string>>({});
   const isAGO = form.departamento === 'AGO';
   const [supervisoes, setSupervisoes] = useState<Supervisao[]>([]);
   const [campos, setCampos]           = useState<Campo[]>([]);
@@ -275,6 +276,7 @@ export default function NovoEventoPage() {
     if (form.departamento !== 'AGO') {
       setAgoCategorias(AGO_CATEGORIAS_DEFAULT.map(c => ({ ...c })));
       setAgoHospConfig({ ...AGO_HOSP_DEFAULT });
+      setSavedSetorSnapshots({});
     }
   }, [form.departamento]);
 
@@ -1144,6 +1146,14 @@ export default function NovoEventoPage() {
                   </button>
                 </div>
 
+                {/* Aviso confirmação */}
+                {(agoHospConfig.setores || []).length > 0 && (
+                  <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3 text-xs text-amber-800">
+                    <span>💡</span>
+                    <span>Confirme cada setor individualmente. Os setores serão <strong>gravados definitivamente ao clicar em &quot;Salvar Evento&quot;</strong>.</span>
+                  </div>
+                )}
+
                 {/* Resumo de leitos */}
                 {(agoHospConfig.setores || []).filter(s => s.ativo).length > 0 && (() => {
                   const atv = (agoHospConfig.setores || []).filter(s => s.ativo);
@@ -1179,14 +1189,24 @@ export default function NovoEventoPage() {
 
                 <div className="space-y-3">
                   {(agoHospConfig.setores || []).map((setor, idx) => (
-                    <div key={setor.id} className={`rounded-xl border border-gray-200 p-4 bg-white${!setor.ativo ? ' opacity-60' : ''}`}>
+                    <div key={setor.id} className={`rounded-xl border p-4 bg-white transition-colors${!setor.ativo ? ' opacity-60' : ''}${(() => { const snap = savedSetorSnapshots[setor.id]; return (!snap || snap !== JSON.stringify(setor)) ? ' border-yellow-400' : ' border-green-400'; })()}`}>
                       <div className="flex items-center justify-between mb-3">
-                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">
-                          Setor #{idx + 1}{!setor.ativo && <span className="text-red-400 ml-2 normal-case">(inativo)</span>}
-                        </span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">
+                            Setor #{idx + 1}{!setor.ativo && <span className="text-red-400 ml-2 normal-case">(inativo)</span>}
+                          </span>
+                          {(() => { const snap = savedSetorSnapshots[setor.id]; return (!snap || snap !== JSON.stringify(setor)) ? (
+                            <span className="text-xs bg-yellow-100 text-yellow-800 border border-yellow-300 px-2 py-0.5 rounded-full font-semibold">⚠ Não confirmado</span>
+                          ) : (
+                            <span className="text-xs bg-green-100 text-green-800 border border-green-300 px-2 py-0.5 rounded-full font-semibold">✓ Confirmado</span>
+                          ); })()}
+                        </div>
                         <button
                           type="button"
-                          onClick={() => setAgoHospConfig(c => ({ ...c, setores: (c.setores || []).filter((_, j) => j !== idx) }))}
+                          onClick={() => {
+                            setSavedSetorSnapshots(snaps => { const n = { ...snaps }; delete n[setor.id]; return n; });
+                            setAgoHospConfig(c => ({ ...c, setores: (c.setores || []).filter((_, j) => j !== idx) }));
+                          }}
                           className="text-xs text-red-500 hover:text-red-700 font-semibold"
                         >✕ Remover</button>
                       </div>
@@ -1280,6 +1300,18 @@ export default function NovoEventoPage() {
                             className="w-4 h-4 accent-blue-700"
                           />
                           <label htmlFor={`ativo-${setor.id}`} className="text-xs text-gray-700 cursor-pointer">Setor ativo (participa da alocação)</label>
+                        </div>
+                        <div className="sm:col-span-2 flex items-center justify-between pt-3 border-t border-gray-100 mt-1">
+                          <p className="text-xs text-gray-400 italic">Confirme o setor; os dados serão gravados ao salvar o evento.</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!setor.nome.trim()) { alert('O Nome do Setor é obrigatório.'); return; }
+                              if (!setor.quantidade_leitos || setor.quantidade_leitos < 1) { alert('Informe a Quantidade de Leitos (mínimo 1).'); return; }
+                              setSavedSetorSnapshots(snaps => ({ ...snaps, [setor.id]: JSON.stringify(setor) }));
+                            }}
+                            className="text-xs bg-blue-700 hover:bg-blue-800 text-white px-4 py-1.5 rounded-lg font-bold transition"
+                          >✔ Confirmar setor</button>
                         </div>
                       </div>
                     </div>

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
+import { logDB } from '@/lib/audit';
 
 const ASAAS_WEBHOOK_TOKEN = process.env.ASAAS_WEBHOOK_TOKEN;
 
@@ -59,6 +60,44 @@ export async function POST(request: NextRequest) {
       updatePayload.payment_date = paymentDate;
     }
 
+    // ── Credencial impressão ─────────────────────────────────────────────────
+    const externalRef = String(payment?.externalReference || '');
+    if (externalRef.startsWith('credencial_impressao:')) {
+      const solicitacaoId = externalRef.replace('credencial_impressao:', '');
+      if (
+        solicitacaoId &&
+        (event === 'PAYMENT_CONFIRMED' || event === 'PAYMENT_RECEIVED')
+      ) {
+        const { error: impErr } = await supabase
+          .from('credencial_impressoes_solicitacoes')
+          .update({
+            status: 'pago_pendente_impressao',
+            asaas_payment_id: asaasPaymentId,
+            pago_em: paymentDate || new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', solicitacaoId)
+          .eq('status', 'aguardando_pagamento'); // idempotente
+
+        if (impErr) {
+          console.error('[ASAAS WEBHOOK] Erro ao atualizar impressão:', impErr.message);
+        } else {
+          void logDB({
+            acao: 'editar',
+            modulo: 'portal_ministro',
+            entidade: 'credencial_impressao',
+            entidadeId: solicitacaoId,
+            descricao: `Pagamento confirmado pelo ASAAS: ${asaasPaymentId}`,
+            status: 'sucesso',
+            detalhes: { event, asaasPaymentId, externalRef },
+          });
+        }
+        return NextResponse.json({ received: true });
+      }
+      return NextResponse.json({ received: true });
+    }
+
+    // ── Pagamentos mensalidade ───────────────────────────────────────────────
     const { error } = await supabase
       .from('payments')
       .update(updatePayload)

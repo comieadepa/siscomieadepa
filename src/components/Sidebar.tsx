@@ -132,10 +132,10 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
   // Abre automaticamente o menu pai quando um submenu está ativo
   useEffect(() => {
     const menusComSubmenu: Record<string, string[]> = {
-      secretaria: ['estrutura-hierarquica', 'membros', 'funcionarios', 'consagracao', 'cartas', 'certificados', 'permutas'],
+      secretaria: ['estrutura-hierarquica', 'membros', 'funcionarios', 'consagracao', 'cartas', 'certificados', 'permutas', 'impressoes-credenciais'],
       cgadb: ['cgadb-dashboard', 'cgadb-debitos', 'cgadb-relatorios', 'cgadb-historico'],
       eventos: ['eventos-lista', 'eventos-dashboard'],
-      configuracoes: ['config-geral', 'importar-membros', 'config-certificados', 'config-cartoes'],
+      configuracoes: ['config-geral', 'importar-membros', 'config-certificados', 'config-cartoes', 'config-video-presidente'],
     };
     for (const [parent, children] of Object.entries(menusComSubmenu)) {
       if (children.includes(activeMenu)) {
@@ -165,6 +165,7 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
             { id: 'cartas', label: 'Cartas ministeriais', icon: FileText, path: '/secretaria/cartas' },
             { id: 'certificados', label: 'Certificados', icon: ShieldCheck, path: '/secretaria/certificados' },
             { id: 'permutas', label: 'Permutas', icon: ArrowRight, path: '/secretaria/permutas' },
+            { id: 'impressoes-credenciais', label: 'Impressões de Credenciais', icon: CreditCard, path: '/secretaria/impressoes-credenciais' },
           ],
         },
         {
@@ -211,6 +212,7 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
             { id: 'importar-membros', label: 'Importar Ministros', icon: ArrowRight, path: '/secretaria/membros/importar' },
             { id: 'config-certificados', label: 'Certificados', icon: ShieldCheck, path: '/configuracoes/certificados' },
             { id: 'config-cartoes', label: 'Cartões', icon: FileText, path: '/configuracoes/cartoes' },
+            { id: 'config-video-presidente', label: 'Vídeo Palavra do Presidente', icon: FileText, path: '/configuracoes/video-presidente' },
           ],
         },
       ],
