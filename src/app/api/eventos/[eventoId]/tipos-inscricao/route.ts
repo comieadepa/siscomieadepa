@@ -18,7 +18,7 @@ export async function GET(
   const supabase = guard.ctx.supabaseAdmin;
   const { data, error } = await supabase
     .from('evento_tipos_inscricao')
-    .select('id, nome, valor, inclui_alimentacao, inclui_hospedagem, cortesia, limite_vagas, quantidade_refeicoes, ordem')
+    .select('id, nome, valor, inclui_alimentacao, inclui_hospedagem, cortesia, limite_vagas, quantidade_refeicoes, ordem, administrativo')
     .eq('evento_id', eventoId)
     .eq('ativo', true)
     .order('ordem');
@@ -44,6 +44,7 @@ export async function POST(
     cortesia: boolean;
     limite_vagas: number | null;
     quantidade_refeicoes: number;
+    administrativo: boolean;
     ativo: boolean;
     ordem: number;
   }>;
@@ -55,9 +56,9 @@ export async function POST(
   const supabase = createServerClient();
 
   // Remove os tipos antigos e insere os novos (evita duplicados)
-  // Valida quantidade_refeicoes quando inclui_alimentacao = true
+  // Valida quantidade_refeicoes quando inclui_alimentacao = true (exceto tipos administrativos)
   for (const t of tipos) {
-    if (t.inclui_alimentacao && !(t.quantidade_refeicoes > 0)) {
+    if (!t.administrativo && t.inclui_alimentacao && !(t.quantidade_refeicoes > 0)) {
       return NextResponse.json(
         { error: `Tipo "${t.nome}": informe a quantidade de refeicoes (> 0) quando alimentacao esta marcada.` },
         { status: 400 }
@@ -68,12 +69,13 @@ export async function POST(
   const rows = tipos.map(t => ({
     evento_id:            eventoId,
     nome:                 normalizeUppercase(String(t.nome || '')),
-    valor:                t.cortesia ? 0 : t.valor,
+    valor:                t.cortesia ? 0 : (t.valor ?? 0),
     inclui_alimentacao:   t.inclui_alimentacao,
     inclui_hospedagem:    t.inclui_hospedagem,
     cortesia:             t.cortesia ?? false,
     limite_vagas:         t.limite_vagas ?? null,
     quantidade_refeicoes: t.inclui_alimentacao ? (t.quantidade_refeicoes ?? 0) : 0,
+    administrativo:       t.administrativo ?? false,
     ativo:                t.ativo,
     ordem:                t.ordem,
   }));

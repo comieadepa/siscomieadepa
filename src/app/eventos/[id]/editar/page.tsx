@@ -61,6 +61,7 @@ interface AgoCategoriaDraft {
   limite_vagas_str: string;
   inclui_alimentacao: boolean;
   quantidade_refeicoes_str: string;
+  administrativo?: boolean; // uso interno — não aparece no seletor público
 }
 
 interface SetorHospedagem {
@@ -90,15 +91,16 @@ interface AgoHospedagemConfig {
 }
 
 const AGO_CATEGORIAS_DEFAULT: AgoCategoriaDraft[] = [
-  { key: 'pastor_presidente',        nome: 'Pastor Presidente',           valor_str: '470.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
-  { key: 'esposa_pastor_presidente', nome: 'Esposa de Pastor Presidente', valor_str: '210.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
-  { key: 'pastor_auxiliar',          nome: 'Pastor Auxiliar',             valor_str: '210.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
-  { key: 'esposa_pastor_auxiliar',   nome: 'Esposa de Pastor Auxiliar',   valor_str: '130.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
-  { key: 'visitante',                nome: 'Visitante',                   valor_str: '210.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
-  { key: 'juventude_comieadepa',     nome: 'Juventude COMIEADEPA',        valor_str: '130.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
-  { key: 'pastor_jubilado',          nome: 'Pastor Jubilado',             valor_str: '0.00',   cortesia: true,  ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
-  { key: 'viuva',                    nome: 'Viúva',                       valor_str: '0.00',   cortesia: true,  ativo: true, limite_vagas_str: '', inclui_alimentacao: false, quantidade_refeicoes_str: '0'  },
-  { key: 'esposa_pastor_jubilado',   nome: 'Esposa de Pastor Jubilado',   valor_str: '0.00',   cortesia: true,  ativo: true, limite_vagas_str: '', inclui_alimentacao: false, quantidade_refeicoes_str: '0'  },
+  { key: 'pastor_presidente',           nome: 'Pastor Presidente',                              valor_str: '470.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
+  { key: 'esposa_pastor_presidente',    nome: 'Esposa de Pastor Presidente',                    valor_str: '210.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
+  { key: 'esposa_pp_campo_missionario', nome: 'Esposa de Pastor Presidente Campo Missionário', valor_str: '0.00',   cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15', administrativo: true },
+  { key: 'pastor_auxiliar',             nome: 'Pastor Auxiliar',                               valor_str: '210.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
+  { key: 'esposa_pastor_auxiliar',      nome: 'Esposa de Pastor Auxiliar',                     valor_str: '130.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
+  { key: 'visitante',                   nome: 'Visitante',                                     valor_str: '210.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
+  { key: 'juventude_comieadepa',        nome: 'Juventude COMIEADEPA',                          valor_str: '130.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
+  { key: 'pastor_jubilado',             nome: 'Pastor Jubilado',                               valor_str: '0.00',   cortesia: true,  ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
+  { key: 'viuva',                       nome: 'Viúva',                                         valor_str: '0.00',   cortesia: true,  ativo: true, limite_vagas_str: '', inclui_alimentacao: false, quantidade_refeicoes_str: '0'  },
+  { key: 'esposa_pastor_jubilado',      nome: 'Esposa de Pastor Jubilado',                     valor_str: '0.00',   cortesia: true,  ativo: true, limite_vagas_str: '', inclui_alimentacao: false, quantidade_refeicoes_str: '0'  },
 ];
 
 const AGO_HOSP_DEFAULT: AgoHospedagemConfig = {
@@ -340,7 +342,7 @@ export default function EditarEventoPage() {
             nome: string; valor: number;
             inclui_alimentacao: boolean; inclui_hospedagem: boolean;
             cortesia: boolean; limite_vagas: number | null; ativo: boolean;
-            quantidade_refeicoes: number;
+            quantidade_refeicoes: number; administrativo?: boolean;
           }>;
           if (tipos.length > 0) {
             if (data.departamento === 'AGO') {
@@ -549,6 +551,7 @@ export default function EditarEventoPage() {
             cortesia: c.cortesia,
             limite_vagas: c.limite_vagas_str ? parseInt(c.limite_vagas_str) : null,
             quantidade_refeicoes: c.inclui_alimentacao ? (parseInt(c.quantidade_refeicoes_str) || 0) : 0,
+            administrativo: !!c.administrativo,
             ativo: true,
             ordem: i + 1,
           }));
@@ -879,7 +882,7 @@ export default function EditarEventoPage() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {agoCategorias.map((cat, i) => (
-                        <tr key={cat.key} className={cat.ativo ? 'bg-white' : 'bg-gray-50 opacity-60'}>
+                        <tr key={cat.key} className={`${cat.ativo ? 'bg-white' : 'bg-gray-50 opacity-60'} ${cat.administrativo ? 'bg-purple-50' : ''}`}>
                           <td className="px-3 py-2">
                             <input
                               type="checkbox"
@@ -889,15 +892,26 @@ export default function EditarEventoPage() {
                             />
                           </td>
                           <td className="px-3 py-2">
-                            <input
-                              value={cat.nome}
-                              onChange={e => setAgoCategorias(prev => prev.map((c, j) => j === i ? { ...c, nome: e.target.value } : c))}
-                              className="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
-                              disabled={!cat.ativo}
-                            />
+                            {cat.administrativo ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm text-gray-700">{cat.nome}</span>
+                                <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 border border-purple-300 rounded-full whitespace-nowrap">🔒 Automática</span>
+                              </div>
+                            ) : (
+                              <input
+                                value={cat.nome}
+                                onChange={e => setAgoCategorias(prev => prev.map((c, j) => j === i ? { ...c, nome: e.target.value } : c))}
+                                className="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+                                disabled={!cat.ativo}
+                              />
+                            )}
                           </td>
                           <td className="px-3 py-2 w-28">
-                            {cat.cortesia ? (
+                            {cat.administrativo ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-bold rounded-full border border-purple-300 whitespace-nowrap">
+                                config. CM
+                              </span>
+                            ) : cat.cortesia ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-bold rounded-full border border-green-300">
                                 🎁 Cortesia
                               </span>
@@ -917,7 +931,7 @@ export default function EditarEventoPage() {
                               checked={cat.cortesia}
                               onChange={e => setAgoCategorias(prev => prev.map((c, j) => j === i ? { ...c, cortesia: e.target.checked, valor_str: e.target.checked ? '0.00' : c.valor_str } : c))}
                               className="w-4 h-4 accent-green-600"
-                              disabled={!cat.ativo}
+                              disabled={!cat.ativo || !!cat.administrativo}
                             />
                           </td>
                           <td className="px-3 py-2 text-center">
