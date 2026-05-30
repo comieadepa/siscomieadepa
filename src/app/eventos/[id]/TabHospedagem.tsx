@@ -131,7 +131,6 @@ export default function TabHospedagem({
   // Filtros hospedagens
   const [filtroStatus,  setFiltroStatus]  = useState('');
   const [filtroAloj,    setFiltroAloj]    = useState('');
-  const [filtroSexo,    setFiltroSexo]    = useState('');
   const [filtroSup,     setFiltroSup]     = useState('');
   const [filtroNecEsp,  setFiltroNecEsp]  = useState('');
   const [filtroGrupo,   setFiltroGrupo]   = useState('');
@@ -237,7 +236,6 @@ export default function TabHospedagem({
     let list = hospedagens;
     if (filtroStatus)  list = list.filter(h => h.status === filtroStatus);
     if (filtroAloj)    list = list.filter(h => h.alojamento_id === filtroAloj);
-    if (filtroSexo)    list = list.filter(h => h.sexo === filtroSexo);
     if (filtroSup)     list = list.filter(h => h.supervisao_id === filtroSup);
     if (filtroNecEsp === '1') list = list.filter(h => h.necessidade_especial);
     if (filtroNecEsp === '0') list = list.filter(h => !h.necessidade_especial);
@@ -250,7 +248,7 @@ export default function TabHospedagem({
       );
     }
     return list;
-  }, [hospedagens, filtroStatus, filtroAloj, filtroSexo, filtroSup, filtroNecEsp, filtroGrupo, busca]);
+  }, [hospedagens, filtroStatus, filtroAloj, filtroSup, filtroNecEsp, filtroGrupo, busca]);
 
   // ── Stats ──────────────────────────────────────────────────
   const stats = useMemo(() => ({
@@ -657,13 +655,6 @@ export default function TabHospedagem({
                 {alojamentos.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
               </select>
 
-              <select value={filtroSexo} onChange={e => setFiltroSexo(e.target.value)}
-                className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-                <option value="">Ambos os sexos</option>
-                <option value="M">Masculino</option>
-                <option value="F">Feminino</option>
-              </select>
-
               <select value={filtroSup} onChange={e => setFiltroSup(e.target.value)}
                 className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
                 <option value="">Toda supervisão</option>
@@ -690,7 +681,7 @@ export default function TabHospedagem({
                 value={busca}
                 onChange={e => setBusca(e.target.value)}
                 placeholder="Buscar nome ou CPF..."
-                className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] min-w-[160px]"
+                className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]"
               />
             </div>
 
