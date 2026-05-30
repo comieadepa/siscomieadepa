@@ -597,158 +597,96 @@ export default function BalcaoPage() {
       const isGratuito = valorFinal <= 0 || form.forma_pagamento === 'isento';
       const hospedagem = tipoSel ? tipoSel.inclui_hospedagem : form.hospedagem;
       const alimentacao = tipoSel ? tipoSel.inclui_alimentacao : form.alimentacao;
-
-      // ── Inscrição via ASAAS (rota pública de inscrição) ──
-      if (form.forma_pagamento === 'asaas' && !isGratuito) {
-        const qrTokenAsaas = generateQRCodeToken();
-        const payloadApi = normalizePayloadUppercase({
-          slug:          evento.slug,
-          nome_inscrito: form.nome.trim(),
-          cpf:           form.cpf.replace(/\D/g, '') || undefined,
-          email:         form.email.trim() || undefined,
-          whatsapp:      form.whatsapp.trim() || undefined,
-          sexo:          form.sexo || undefined,
-          data_nascimento: form.data_nascimento || undefined,
-          supervisao_id: form.supervisao_id,
-          campo_id:      form.campo_id || undefined,
-          hospedagem,
-          alimentacao,
-          brinde:        form.brinde,
-          tipo_inscricao: tipoSel?.nome || undefined,
-          cupom_codigo:  form.cupom && cupomStatus === 'ok' ? form.cupom.trim().toUpperCase() : undefined,
-          qr_code:       qrTokenAsaas,
-          // Campos hospedagem AGO
-          hosp_necessidade_especial:  form.hosp_necessidade_especial,
-          hosp_descricao_necessidade: form.hosp_descricao_necessidade.trim() || undefined,
-          hosp_cama_inferior:         form.hosp_cama_inferior,
-          hosp_observacoes:           form.hosp_observacoes.trim() || undefined,
-        });
-        const res = await fetch('/api/eventos/inscricao', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payloadApi),
-        });
-        const json = await res.json() as {
-          inscricaoId?: string; statusPagamento?: string;
-          pagamento?: { invoiceUrl?: string; pixCopiaECola?: string; valor?: number } | null;
-          error?: string;
-        };
-
-        if (!res.ok || json.error) {
-          setErroSave(json.error || 'Erro ao processar inscrição.');
-          setSalvando(false);
-          return;
-        }
-
-        // Busca inscrição completa
-        const { data: insc } = await supabase
-          .from('evento_inscricoes')
-          .select('id,nome_inscrito,cpf,supervisao_id,campo_id,status_pagamento,hospedagem,alimentacao,brinde,qr_code,checkin_realizado')
-          .eq('id', json.inscricaoId!)
-          .single();
-
-        setInscricaoSalva(insc as InscricaoSalva);
-        registrarInscricaoCriada(insc as InscricaoSalva);
-        if (json.pagamento) {
-          setAsaasData({ invoiceUrl: json.pagamento.invoiceUrl, pixCopiaECola: json.pagamento.pixCopiaECola, valor: json.pagamento.valor ?? valorFinal });
-        }
-        setContadorTotal(c => c + 1);
-        setSalvando(false);
-        return;
-      }
-
-      // ── Inscrição local (dinheiro/pix_manual/cartão/isento) ──
+      const cupomCodigo = form.cupom && cupomStatus === 'ok'
+        ? form.cupom.trim().toUpperCase()
+        : undefined;
       const qrToken = generateQRCodeToken();
-      const cupomCodigo = form.cupom && cupomStatus === 'ok' ? form.cupom.trim().toUpperCase() : null;
-      const statusPag = isGratuito ? 'isento' : 'pago';
 
-      const payload: Record<string, unknown> = normalizePayloadUppercase({
-        evento_id:        evento.id,
+      const payload = {
         nome_inscrito:    form.nome.trim(),
-        cpf:              form.cpf.replace(/\D/g, '') || null,
-        email:            form.email.trim() || null,
-        whatsapp:         form.whatsapp.trim() || null,
-        sexo:             form.sexo || null,
-        data_nascimento:  form.data_nascimento || null,
+        cpf:              form.cpf.replace(/\D/g, '') || undefined,
+        email:            form.email.trim() || undefined,
+        whatsapp:         form.whatsapp.trim() || undefined,
+        sexo:             form.sexo || undefined,
+        data_nascimento:  form.data_nascimento || undefined,
         supervisao_id:    form.supervisao_id,
-        campo_id:         form.campo_id || null,
+        campo_id:         form.campo_id || undefined,
         hospedagem,
         alimentacao,
         brinde:           form.brinde,
-        tipo_inscricao:   tipoSel?.nome || null,
-        valor_original:   valorBase,
+        tipo_inscricao:   tipoSel?.nome || undefined,
         cupom_codigo:     cupomCodigo,
+        valor_original:   valorBase,
         desconto_valor:   cupomDesconto,
         valor_final:      valorFinal,
-        valor_pago:       isGratuito ? 0 : valorFinal,
-        status_pagamento: statusPag,
-        forma_pagamento:  isGratuito ? null : form.forma_pagamento === 'pix_manual' ? 'pix' : form.forma_pagamento,
-        observacoes:      form.observacoes.trim() || null,
+        forma_pagamento:  isGratuito ? 'isento' : form.forma_pagamento,
+        observacoes:      form.observacoes.trim() || undefined,
         qr_code:          qrToken,
-        // Campos hospedagem AGO
         hosp_necessidade_especial:  form.hosp_necessidade_especial,
-        hosp_descricao_necessidade: form.hosp_descricao_necessidade.trim() || null,
+        hosp_descricao_necessidade: form.hosp_descricao_necessidade.trim() || undefined,
         hosp_cama_inferior:         form.hosp_cama_inferior,
-        hosp_observacoes:           form.hosp_observacoes.trim() || null,
+        hosp_observacoes:           form.hosp_observacoes.trim() || undefined,
+      };
+
+      const res = await authenticatedFetch(`/api/eventos/${id}/balcao/inscricao`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
 
-      const { data: insc, error } = await supabase
-        .from('evento_inscricoes')
-        .insert([payload])
-        .select('id,nome_inscrito,cpf,supervisao_id,campo_id,status_pagamento,hospedagem,alimentacao,brinde,qr_code,checkin_realizado')
-        .single();
+      const json = await res.json() as {
+        inscricaoId?: string;
+        inscricao?: InscricaoSalva;
+        statusPagamento?: string;
+        pagamento?: { invoiceUrl?: string; pixCopiaECola?: string; valor?: number } | null;
+        asaasError?: string;
+        error?: string;
+      };
 
-      if (error) {
-        setErroSave('Erro ao salvar: ' + error.message);
-        setSalvando(false);
+      if (!res.ok || json.error) {
+        setErroSave(json.error || 'Erro ao processar inscrição.');
         return;
       }
 
-      // Incrementa cupom se usado
-      if (cupomCodigo) {
-        const { data: cup } = await supabase
-          .from('evento_cupons')
-          .select('usados')
-          .eq('evento_id', evento.id)
-          .eq('codigo', cupomCodigo)
+      // Usa objeto completo retornado pelo endpoint ou busca pelo ID
+      let inscCompleta: InscricaoSalva | null = null;
+      if (json.inscricao) {
+        inscCompleta = json.inscricao as InscricaoSalva;
+      } else if (json.inscricaoId) {
+        const { data: insc } = await supabase
+          .from('evento_inscricoes')
+          .select('id,nome_inscrito,cpf,supervisao_id,campo_id,status_pagamento,hospedagem,alimentacao,brinde,qr_code,checkin_realizado')
+          .eq('id', json.inscricaoId)
           .single();
-        if (cup) {
-          await supabase.from('evento_cupons').update({ usados: cup.usados + 1 }).eq('evento_id', evento.id).eq('codigo', cupomCodigo);
-        }
+        if (insc) inscCompleta = insc as InscricaoSalva;
       }
 
-      // Cria registro de hospedagem AGO (fluxo local)
-      if (hospedagem && evento.departamento === 'AGO' && insc) {
-        const tipoNome = (tipoSel?.nome ?? '').toLowerCase();
-        const prioridade =
-          (form.hosp_necessidade_especial ? 100 : 0) +
-          (form.hosp_cama_inferior        ?  80 : 0) +
-          (tipoNome.includes('jubilado')  ?  40 : 0) +
-          (tipoNome.includes('presidente')?  30 : 0);
-        const hospedagemPayload = normalizePayloadUppercase({
-          evento_id:            evento.id,
-          inscricao_id:         (insc as { id: string }).id,
-          status:               'solicitada',
-          prioridade,
-          necessidade_especial: form.hosp_necessidade_especial,
-          descricao_necessidade: form.hosp_descricao_necessidade.trim() || null,
-          cama_inferior:        form.hosp_cama_inferior,
-          observacoes:          form.hosp_observacoes.trim() || null,
-          alocacao_automatica:  true,
+      if (inscCompleta) {
+        setInscricaoSalva(inscCompleta);
+        registrarInscricaoCriada(inscCompleta);
+      }
+
+      if (json.pagamento) {
+        setAsaasData({
+          invoiceUrl:    json.pagamento.invoiceUrl,
+          pixCopiaECola: json.pagamento.pixCopiaECola,
+          valor:         json.pagamento.valor ?? valorFinal,
         });
-        await supabase.from('evento_hospedagens').insert([hospedagemPayload]);
+      } else {
+        setAsaasData(null);
       }
 
-      setInscricaoSalva(insc as InscricaoSalva);
-      registrarInscricaoCriada(insc as InscricaoSalva);
-      setAsaasData(null);
+      if (json.asaasError) {
+        setErroSave(json.asaasError);
+      }
+
       setContadorTotal(c => c + 1);
     } catch (err: unknown) {
       setErroSave('Erro inesperado: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setSalvando(false);
     }
-  }, [evento, form, tipoSel, valorBase, valorFinal, cupomDesconto, cupomStatus, supabase]);
+  }, [evento, form, tipoSel, valorBase, valorFinal, cupomDesconto, cupomStatus, supabase, id]);
 
   // ─────────────────────────────────────────────────────────
   // Impressão de crachá
