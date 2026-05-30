@@ -689,7 +689,7 @@ export default function BalcaoPage() {
           data_nascimento: formEsposa.data_nascimento || undefined,
           whatsapp:        formEsposa.whatsapp.trim() || undefined,
           sexo:            'F',
-          tipo_inscricao:  'Esposa de Pastor Presidente',
+          tipo_inscricao:  'Esposa de Pastor Presidente Campo Missionário',
           hospedagem:      hospEsposa.solicitar,
           qr_code:         generateQRCodeToken(),
           hosp_necessidade_especial:  hospEsposa.hosp_necessidade_especial,
@@ -1017,8 +1017,27 @@ export default function BalcaoPage() {
     }
   }
 
-  function imprimirEtiqueta(ins: InscricaoResumo) {
-    window.open(`/eventos/${id}/etiquetas/print?mode=thermal&ids=${ins.id}`, '_blank', 'width=520,height=420');
+  async function imprimirEtiqueta(ins: InscricaoResumo) {
+    let printIds: string[] = [ins.id];
+
+    if (ins.lote_id) {
+      // Tenta resolver irmãos já carregados na lista
+      const siblings = inscricoesLista.filter(i => i.lote_id === ins.lote_id);
+      if (siblings.length > 1) {
+        printIds = siblings.map(i => i.id);
+      } else {
+        // Busca no banco todas as inscrições do lote
+        const { data } = await supabase
+          .from('evento_inscricoes')
+          .select('id')
+          .eq('lote_id', ins.lote_id);
+        if (data && data.length > 1) {
+          printIds = (data as { id: string }[]).map(r => r.id);
+        }
+      }
+    }
+
+    window.open(`/eventos/${id}/etiquetas/print?mode=thermal&ids=${printIds.join(',')}`, '_blank', 'width=520,height=420');
   }
 
   async function alternarEtiquetaImpressa(ins: InscricaoResumo) {

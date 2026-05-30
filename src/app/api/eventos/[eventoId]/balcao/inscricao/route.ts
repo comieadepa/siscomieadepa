@@ -175,12 +175,12 @@ export async function POST(
         ? (typeof cmConfig.valor_esposa === 'number' ? cmConfig.valor_esposa : parseFloat(String(cmConfig.valor_esposa)) || 0)
         : 0;
 
-      // Consulta tipo "Esposa de Pastor Presidente" para determinar alimentação
+      // Consulta tipo "Esposa de Pastor Presidente*" para nome e alimentação
       const { data: tipoEsposa } = await supabase
         .from('evento_tipos_inscricao')
-        .select('inclui_alimentacao')
+        .select('nome, inclui_alimentacao')
         .eq('evento_id', eventoId)
-        .ilike('nome', 'Esposa de Pastor Presidente')
+        .ilike('nome', 'Esposa de Pastor Presidente%')
         .eq('ativo', true)
         .maybeSingle();
 
@@ -237,7 +237,7 @@ export async function POST(
         sexo: 'F', data_nascimento: esposaData.data_nascimento || null,
         supervisao_id: supervisao_id || null, campo_id: campo_id || null,
         hospedagem: !!esposaData.hospedagem, alimentacao: !!(tipoEsposa?.inclui_alimentacao), brinde: false,
-        tipo_inscricao: 'Esposa de Pastor Presidente',
+        tipo_inscricao: tipoEsposa?.nome ?? 'Esposa de Pastor Presidente Campo Missionário',
         valor_original: valorEsposaBase, cupom_codigo: null, desconto_valor: 0,
         valor_final: valorEsposaBase, valor_pago: isGratuito2 ? 0 : isPresencial ? valorEsposaBase : 0,
         status_pagamento: statusPag, forma_pagamento: formaPagSalva,

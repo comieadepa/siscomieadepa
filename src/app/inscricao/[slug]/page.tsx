@@ -659,7 +659,7 @@ export default function InscricaoPublicaPage() {
           data_nascimento: formEsposa.data_nascimento || null,
           whatsapp:        formEsposa.whatsapp.trim() || null,
           sexo:            'F',
-          tipo_inscricao:  'Esposa de Pastor Presidente',
+          tipo_inscricao:  'Esposa de Pastor Presidente Campo Missionário',
           hospedagem:      hospEsposa.solicitar,
           qr_code:         generateQRCodeToken(),
           // Campos hospedagem da esposa
