@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { normalizePayloadUppercase } from '@/lib/text';
 import AssistenteWidget from '@/components/AssistenteWidget';
+import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
 
 // ─── Tipos ────────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -46,7 +47,7 @@ interface Evento {
   status: 'programado' | 'realizado' | 'cancelado';
   suporte_nome: string | null;
   suporte_whatsapp: string | null;
-  configuracoes_ago?: { enabled?: boolean; grupos?: string[]; leitos_inferiores_preferenciais?: boolean; preferencia_60_mais?: boolean; preferencia_necessidade_especial?: boolean; observacoes?: string; habilitar_desconto_campo_missionario?: boolean; valor_pastor_presidente_campo_missionario?: number | string; } | null;
+  configuracoes_ago?: { enabled?: boolean; grupos?: string[]; leitos_inferiores_preferenciais?: boolean; preferencia_60_mais?: boolean; preferencia_necessidade_especial?: boolean; observacoes?: string; habilitar_desconto_campo_missionario?: boolean; valor_pastor_presidente_campo_missionario?: number | string; campo_missionario?: { enabled?: boolean; valor_pastor_presidente?: number | string; valor_esposa?: number | string; } | null; } | null;
 }
 
 interface FormData {
@@ -76,6 +77,38 @@ interface ParticipanteExtra {
   nome_inscrito: string; cpf: string; email: string; whatsapp: string;
   sexo: string; data_nascimento: string; supervisao_id: string; campo_id: string;
 }
+
+// Dados da esposa (AGO — Campo Missionário)
+interface FormEsposa {
+  nome: string;
+  cpf: string;
+  data_nascimento: string;
+  whatsapp: string;
+}
+
+const FORM_ESPOSA_VAZIO: FormEsposa = { nome: '', cpf: '', data_nascimento: '', whatsapp: '' };
+
+interface HospEsposa {
+  solicitar: boolean;
+  hosp_necessidade_especial: boolean;
+  hosp_descricao_necessidade: string;
+  hosp_cama_inferior: boolean;
+  hosp_observacoes: string;
+  hosp_possui_comorbidade: boolean;
+  hosp_descricao_comorbidade: string;
+  grupo_hospedagem: string;
+}
+
+const HOSP_ESPOSA_VAZIO: HospEsposa = {
+  solicitar: false,
+  hosp_necessidade_especial: false,
+  hosp_descricao_necessidade: '',
+  hosp_cama_inferior: false,
+  hosp_observacoes: '',
+  hosp_possui_comorbidade: false,
+  hosp_descricao_comorbidade: '',
+  grupo_hospedagem: '',
+};
 
 const FORM_VAZIO: FormData = {
   nome_inscrito: '', cpf: '', email: '', whatsapp: '',
@@ -154,6 +187,11 @@ export default function InscricaoPublicaPage() {
   const [ministroInfo, setMinistroInfo] = useState<MinistroInfo | null>(null);
   // Hospedagem AGO: solicitada pelo usuário mesmo quando tipo não inclui automaticamente
   const [solicitaHospedagem, setSolicitaHospedagem] = useState(false);
+
+  // AGO — Campo Missionário: esposa do pastor
+  const [incluirEsposa, setIncluirEsposa] = useState(false);
+  const [formEsposa, setFormEsposa] = useState<FormEsposa>({ ...FORM_ESPOSA_VAZIO });
+  const [hospEsposa, setHospEsposa] = useState<HospEsposa>({ ...HOSP_ESPOSA_VAZIO });
 
   // Termos/LGPD
   const [modalTermosAberto, setModalTermosAberto] = useState(false);
@@ -286,6 +324,9 @@ export default function InscricaoPublicaPage() {
       pastor_auxiliar?: boolean;
       jubilado?: boolean;
       status?: string | null;
+      nome_conjuge?: string | null;
+      cpf_conjuge?: string | null;
+      data_nascimento_conjuge?: string | null;
     };
 
     setBuscandoCPF(false);
@@ -308,18 +349,37 @@ export default function InscricaoPublicaPage() {
         const campoMissionario = cam?.is_campo_missionario ?? false;
         setDescontoCampoMissionario(descontoHabilitado && campoMissionario);
 
+        const isPP = !!payload.pastor_presidente;
+        const statusMinistro = payload.status ?? null;
+        const ministerioAtivo = ['active', 'ativo'].includes((statusMinistro ?? '').toLowerCase());
+
         setMinistroInfo({
           nome,
           matricula: payload.matricula ?? null,
           cargoMinisterial: payload.cargo_ministerial ?? null,
-          isPastorPresidente: !!payload.pastor_presidente,
+          isPastorPresidente: isPP,
           isPastorAuxiliar: !!payload.pastor_auxiliar,
           isJubilado: !!payload.jubilado,
-          status: payload.status ?? null,
+          status: statusMinistro,
           supervisao_id: payload.supervisao_id ?? null,
           campo_id: payload.campo_id ?? null,
           isCampoMissionario: campoMissionario,
         });
+
+        // Pré-preenche dados da esposa se elegível ao campo missionário
+        const podeEsposa = ministerioAtivo && isPP && campoMissionario;
+        if (podeEsposa) {
+          setFormEsposa({
+            nome: payload.nome_conjuge || '',
+            cpf: payload.cpf_conjuge ? formatarCPF(payload.cpf_conjuge) : '',
+            data_nascimento: payload.data_nascimento_conjuge || '',
+            whatsapp: '',
+          });
+        } else {
+          setIncluirEsposa(false);
+          setFormEsposa({ ...FORM_ESPOSA_VAZIO });
+          setHospEsposa({ ...HOSP_ESPOSA_VAZIO });
+        }
 
         setForm(f => ({
           ...f,
@@ -353,6 +413,9 @@ export default function InscricaoPublicaPage() {
     } else {
       setCpfStatus('nao_encontrado');
       setMinistroInfo(null);
+      setIncluirEsposa(false);
+      setFormEsposa({ ...FORM_ESPOSA_VAZIO });
+      setHospEsposa({ ...HOSP_ESPOSA_VAZIO });
     }
   }
 
@@ -418,15 +481,22 @@ export default function InscricaoPublicaPage() {
 
   // Valor a pagar calculado
   const isPastorPresidenteTipo = !!(tipoSelecionado && /pastor\s*presidente/i.test(tipoSelecionado.nome));
+  const configCM = parseCampoMissionarioConfig(evento?.configuracoes_ago ?? null);
   const valorEspecialMissionario = descontoCampoMissionario && isPastorPresidenteTipo
-    ? parseFloat(String(evento?.configuracoes_ago?.valor_pastor_presidente_campo_missionario ?? '0')) || 0
+    ? (configCM ? (typeof configCM.valor_pastor_presidente === 'number' ? configCM.valor_pastor_presidente : parseFloat(String(configCM.valor_pastor_presidente)) || 0)
+        : parseFloat(String(evento?.configuracoes_ago?.valor_pastor_presidente_campo_missionario ?? '0')) || 0)
     : 0;
   const valorBase  = (descontoCampoMissionario && isPastorPresidenteTipo && valorEspecialMissionario > 0)
     ? valorEspecialMissionario
     : (tipoSelecionado?.valor ?? (evento?.valor_inscricao ?? 0));
   const valorFinal = Math.max(0, valorBase - cupomDesconto);
+  // Valor da esposa (AGO Campo Missionário)
+  const valorEsposaBase = configCM
+    ? (typeof configCM.valor_esposa === 'number' ? configCM.valor_esposa : parseFloat(String(configCM.valor_esposa)) || 0)
+    : 0;
   const qtdTotal   = modoLote ? 1 + participantesExtra.length : 1;
   const totalLote  = valorFinal * qtdTotal;
+  const totalComEsposa = incluirEsposa ? valorFinal + valorEsposaBase : valorFinal;
 
   // ── Filtragem de categorias AGO ──────────────────────────────────────────────
   // Ordem: 1.CPF/status  2.Cargo ministerial  3.Sexo  4.Idade  5.Campo Missionário (aplicado ao valor, não à categoria)
@@ -550,7 +620,8 @@ export default function InscricaoPublicaPage() {
         data_nascimento: form.data_nascimento || null,
         supervisao_id:   form.supervisao_id || null,
         campo_id:        form.campo_id || null,
-        hospedagem:      tipoSelecionado?.inclui_hospedagem ?? solicitaHospedagem ?? form.hospedagem,
+        // Regra 8: AGO — hospedagem é sempre opt-in (nunca automática pelo tipo)
+        hospedagem:      evento.departamento === 'AGO' ? solicitaHospedagem : (tipoSelecionado?.inclui_hospedagem ?? form.hospedagem),
         alimentacao:     tipoSelecionado?.inclui_alimentacao ?? form.alimentacao,
         brinde:          form.brinde,
         qr_code:         qr,
@@ -577,6 +648,30 @@ export default function InscricaoPublicaPage() {
           qr_code:       generateQRCodeToken(),
           lgpd_aceito:   true,
         }));
+      }
+
+      // AGO Campo Missionário — inscrição da esposa junto
+      if (incluirEsposa && formEsposa.nome.trim() && evento.departamento === 'AGO') {
+        body.incluir_esposa = true;
+        body.esposa = normalizePayloadUppercase({
+          nome_inscrito:   formEsposa.nome.trim(),
+          cpf:             formEsposa.cpf,
+          data_nascimento: formEsposa.data_nascimento || null,
+          whatsapp:        formEsposa.whatsapp.trim() || null,
+          sexo:            'F',
+          tipo_inscricao:  'Esposa de Pastor Presidente',
+          hospedagem:      hospEsposa.solicitar,
+          qr_code:         generateQRCodeToken(),
+          // Campos hospedagem da esposa
+          hosp_necessidade_especial:  hospEsposa.hosp_necessidade_especial,
+          hosp_descricao_necessidade: hospEsposa.hosp_descricao_necessidade.trim() || null,
+          hosp_cama_inferior:         hospEsposa.hosp_cama_inferior,
+          hosp_observacoes:           hospEsposa.hosp_observacoes.trim() || null,
+          hosp_possui_comorbidade:    hospEsposa.hosp_possui_comorbidade,
+          hosp_descricao_comorbidade: hospEsposa.hosp_descricao_comorbidade.trim() || null,
+          grupo_hospedagem:           hospEsposa.grupo_hospedagem || null,
+          lgpd_aceito:                true,
+        });
       }
 
       const res = await fetch('/api/eventos/inscricao', {
@@ -1318,6 +1413,119 @@ export default function InscricaoPublicaPage() {
               </div>
             )}
 
+            {/* AGO — Incluir Esposa (Campo Missionário) */}
+            {evento?.departamento === 'AGO' && descontoCampoMissionario && isPastorPresidenteTipo && ministroAtivo && (
+              <div className="mb-5 p-4 bg-purple-50 border border-purple-200 rounded-xl">
+                <label className="flex items-center gap-3 cursor-pointer select-none">
+                  <input type="checkbox" checked={incluirEsposa}
+                    onChange={e => { setIncluirEsposa(e.target.checked); if (!e.target.checked) { setHospEsposa({ ...HOSP_ESPOSA_VAZIO }); } }}
+                    className="accent-purple-700 w-4 h-4" />
+                  <div>
+                    <span className="text-sm font-semibold text-purple-900">👩 Incluir inscrição da esposa</span>
+                    <p className="text-xs text-purple-700 mt-0.5">
+                      Valor: {valorEsposaBase > 0 ? fmtMoeda(valorEsposaBase) : 'gratuito'}
+                      {' '}— Será gerada uma inscrição separada com pagamento unificado.
+                    </p>
+                  </div>
+                </label>
+
+                {incluirEsposa && (
+                  <div className="mt-4 space-y-3">
+                    <p className="text-xs font-bold text-purple-800 uppercase tracking-wide">Dados da Esposa</p>
+                    <div>
+                      <label className={LBL}>Nome completo *</label>
+                      <input value={formEsposa.nome} onChange={e => setFormEsposa(f => ({ ...f, nome: e.target.value }))}
+                        placeholder="Nome completo da esposa" className={INP} required />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className={LBL}>CPF</label>
+                        <input value={formEsposa.cpf} onChange={e => setFormEsposa(f => ({ ...f, cpf: formatarCPF(e.target.value) }))}
+                          placeholder="000.000.000-00" maxLength={14} className={INP} />
+                      </div>
+                      <div>
+                        <label className={LBL}>Data de Nascimento</label>
+                        <input type="date" value={formEsposa.data_nascimento}
+                          onChange={e => setFormEsposa(f => ({ ...f, data_nascimento: e.target.value }))}
+                          className={INP} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className={LBL}>WhatsApp da esposa</label>
+                      <input value={formEsposa.whatsapp} onChange={e => setFormEsposa(f => ({ ...f, whatsapp: e.target.value }))}
+                        placeholder="(00) 00000-0000" className={INP} />
+                    </div>
+
+                    {/* Hospedagem da esposa */}
+                    {evento.permite_hospedagem && (
+                      <div className="mt-3 p-3 bg-white border border-purple-200 rounded-lg">
+                        <label className="flex items-start gap-3 cursor-pointer select-none">
+                          <input type="checkbox" checked={hospEsposa.solicitar}
+                            onChange={e => setHospEsposa(h => ({ ...h, solicitar: e.target.checked }))}
+                            className="mt-0.5 accent-purple-700" />
+                          <div>
+                            <span className="text-sm font-semibold text-gray-700">🛏️ Desejo solicitar hospedagem para a esposa</span>
+                            <p className="text-xs text-gray-500 mt-0.5">A hospedagem é independente — cada inscrição decide individualmente.</p>
+                          </div>
+                        </label>
+
+                        {hospEsposa.solicitar && (
+                          <div className="mt-3 space-y-3">
+                            <div className="flex items-start gap-3">
+                              <input type="checkbox" id="hosp_esp_nec_especial" checked={hospEsposa.hosp_necessidade_especial}
+                                onChange={e => setHospEsposa(h => ({ ...h, hosp_necessidade_especial: e.target.checked }))}
+                                className="mt-0.5 accent-amber-600" />
+                              <label htmlFor="hosp_esp_nec_especial" className="text-sm text-gray-700 cursor-pointer">
+                                Possui <strong>necessidade especial</strong> de acessibilidade
+                              </label>
+                            </div>
+                            {hospEsposa.hosp_necessidade_especial && (
+                              <input value={hospEsposa.hosp_descricao_necessidade}
+                                onChange={e => setHospEsposa(h => ({ ...h, hosp_descricao_necessidade: e.target.value }))}
+                                placeholder="Descreva a necessidade..." className={INP} />
+                            )}
+                            <div className="flex items-start gap-3">
+                              <input type="checkbox" id="hosp_esp_comorbidade" checked={hospEsposa.hosp_possui_comorbidade}
+                                onChange={e => setHospEsposa(h => ({ ...h, hosp_possui_comorbidade: e.target.checked }))}
+                                className="mt-0.5 accent-amber-600" />
+                              <label htmlFor="hosp_esp_comorbidade" className="text-sm text-gray-700 cursor-pointer">
+                                Possui <strong>comorbidade</strong> relevante
+                              </label>
+                            </div>
+                            {hospEsposa.hosp_possui_comorbidade && (
+                              <input value={hospEsposa.hosp_descricao_comorbidade}
+                                onChange={e => setHospEsposa(h => ({ ...h, hosp_descricao_comorbidade: e.target.value }))}
+                                placeholder="Descreva a comorbidade..." className={INP} />
+                            )}
+                            <div className="flex items-center gap-3">
+                              <input type="checkbox" id="hosp_esp_cama_inf" checked={hospEsposa.hosp_cama_inferior}
+                                onChange={e => setHospEsposa(h => ({ ...h, hosp_cama_inferior: e.target.checked }))}
+                                className="accent-amber-600" />
+                              <label htmlFor="hosp_esp_cama_inf" className="text-sm text-gray-700 cursor-pointer">
+                                Precisa de <strong>cama inferior</strong>
+                              </label>
+                            </div>
+                            {Array.isArray(evento.configuracoes_ago?.grupos) && evento.configuracoes_ago!.grupos!.length > 0 && (
+                              <select value={hospEsposa.grupo_hospedagem}
+                                onChange={e => setHospEsposa(h => ({ ...h, grupo_hospedagem: e.target.value }))} className={INP}>
+                                <option value="">Grupo de hospedagem...</option>
+                                {evento.configuracoes_ago!.grupos!.map((g: string) => (
+                                  <option key={g} value={g}>{g}</option>
+                                ))}
+                              </select>
+                            )}
+                            <textarea value={hospEsposa.hosp_observacoes}
+                              onChange={e => setHospEsposa(h => ({ ...h, hosp_observacoes: e.target.value }))}
+                              rows={2} placeholder="Observações de hospedagem (opcional)" className={INP + ' resize-none'} />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Cupom de desconto */}
             {(evento.usar_tipos_inscricao || evento.valor_inscricao > 0) && (
               <div className="mb-6">
@@ -1349,7 +1557,7 @@ export default function InscricaoPublicaPage() {
             )}
 
             {/* Resumo do valor */}
-            {(evento.usar_tipos_inscricao || evento.valor_inscricao > 0 || modoLote) && (
+            {(evento.usar_tipos_inscricao || evento.valor_inscricao > 0 || modoLote || incluirEsposa) && (
               <div className="mb-5 p-4 bg-[#123b63]/5 rounded-xl border border-[#123b63]/20 text-sm">
                 {cupomDesconto > 0 && (
                   <div className="flex justify-between text-gray-600 mb-1">
@@ -1366,9 +1574,14 @@ export default function InscricaoPublicaPage() {
                     <span>Participantes</span><span>× {qtdTotal}</span>
                   </div>
                 )}
+                {incluirEsposa && (
+                  <div className="flex justify-between text-purple-700 mb-1">
+                    <span>Esposa (Campo Missionário)</span><span>+ {fmtMoeda(valorEsposaBase)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between font-bold text-[#123b63] border-t border-[#123b63]/20 pt-2 mt-1">
                   <span>Total a pagar</span>
-                  <span>{modoLote && qtdTotal > 1 ? fmtMoeda(totalLote) : fmtMoeda(valorFinal)}</span>
+                  <span>{modoLote && qtdTotal > 1 ? fmtMoeda(totalLote) : fmtMoeda(incluirEsposa ? totalComEsposa : valorFinal)}</span>
                 </div>
               </div>
             )}

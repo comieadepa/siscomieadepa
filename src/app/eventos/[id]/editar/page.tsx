@@ -85,6 +85,7 @@ interface AgoHospedagemConfig {
   plenarias_datas: string[];
   habilitar_desconto_campo_missionario: boolean;
   valor_pastor_presidente_campo_missionario: string;
+  valor_esposa_campo_missionario: string;
   setores: SetorHospedagem[];
 }
 
@@ -111,6 +112,7 @@ const AGO_HOSP_DEFAULT: AgoHospedagemConfig = {
   plenarias_datas: [],
   habilitar_desconto_campo_missionario: false,
   valor_pastor_presidente_campo_missionario: '210.00',
+  valor_esposa_campo_missionario: '210.00',
   setores: [],
 };
 
@@ -319,6 +321,7 @@ export default function EditarEventoPage() {
           plenarias_datas:                  Array.isArray((cfg as any).plenarias_datas) ? (cfg as any).plenarias_datas : [],
           habilitar_desconto_campo_missionario: (cfg as any).habilitar_desconto_campo_missionario ?? false,
           valor_pastor_presidente_campo_missionario: (cfg as any).valor_pastor_presidente_campo_missionario ?? '210.00',
+          valor_esposa_campo_missionario: (cfg as any).valor_esposa_campo_missionario ?? (cfg as any).campo_missionario?.valor_esposa ?? '210.00',
           setores: Array.isArray((cfg as any).setores) ? (cfg as any).setores : [],
         });
         if (Array.isArray((cfg as any).setores) && (cfg as any).setores.length > 0) {
@@ -525,7 +528,7 @@ export default function EditarEventoPage() {
         limite_brindes:         form.limite_brindes ? parseInt(form.limite_brindes) : null,
         publico_alvo:           form.publico_alvo.trim() || null,
         status:                 form.status,
-        configuracoes_ago:      isAGO ? { ...agoHospConfig, enabled: true } : null,
+        configuracoes_ago:      isAGO ? { ...agoHospConfig, enabled: true, campo_missionario: agoHospConfig.habilitar_desconto_campo_missionario ? { enabled: true, valor_pastor_presidente: parseFloat(agoHospConfig.valor_pastor_presidente_campo_missionario) || 0, valor_esposa: parseFloat(agoHospConfig.valor_esposa_campo_missionario) || 0 } : null } : null,
       });
 
       const { error } = await supabase
@@ -1480,18 +1483,33 @@ export default function EditarEventoPage() {
                   <span className="text-sm text-gray-700">Habilitar desconto para Pastor Presidente de Campo Missionário</span>
                 </label>
                 {agoHospConfig.habilitar_desconto_campo_missionario && (
-                  <div className="pl-2">
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">Valor especial (R$)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={agoHospConfig.valor_pastor_presidente_campo_missionario}
-                      onChange={e => setAgoHospConfig(c => ({ ...c, valor_pastor_presidente_campo_missionario: e.target.value }))}
-                      className="border border-green-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-600 bg-white w-40"
-                      placeholder="210.00"
-                    />
-                    <p className="mt-1 text-xs text-green-700">Este valor substitui o valor padrão de Pastor Presidente quando o campo é missionário.</p>
+                  <div className="pl-2 space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">Valor especial — Pastor Presidente (R$)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={agoHospConfig.valor_pastor_presidente_campo_missionario}
+                        onChange={e => setAgoHospConfig(c => ({ ...c, valor_pastor_presidente_campo_missionario: e.target.value }))}
+                        className="border border-green-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-600 bg-white w-40"
+                        placeholder="210.00"
+                      />
+                      <p className="mt-1 text-xs text-green-700">Substitui o valor padrão de Pastor Presidente quando o campo é missionário.</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">Valor especial — Esposa de Pastor Presidente (R$)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={agoHospConfig.valor_esposa_campo_missionario}
+                        onChange={e => setAgoHospConfig(c => ({ ...c, valor_esposa_campo_missionario: e.target.value }))}
+                        className="border border-green-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-600 bg-white w-40"
+                        placeholder="210.00"
+                      />
+                      <p className="mt-1 text-xs text-green-700">Quando o pastor inclui a esposa, este é o valor cobrado por ela.</p>
+                    </div>
                   </div>
                 )}
               </div>

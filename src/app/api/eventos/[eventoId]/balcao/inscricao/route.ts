@@ -6,6 +6,7 @@ import { calcularPrioridadeHospedagem } from '@/lib/hospedagem-helpers';
 import { createOrFindAsaasCustomer, createEventoPayment } from '@/lib/asaas';
 import { cleanCpf } from '@/lib/cpf';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
+import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
 
 const VENCIMENTO_DIAS = 3;
 
@@ -79,6 +80,8 @@ export async function POST(
       hosp_cama_inferior,
       hosp_observacoes,
       grupo_hospedagem,
+      incluir_esposa,
+      esposa,
     } = body;
 
     if (!nome_inscrito || !String(nome_inscrito).trim() || !supervisao_id) {
@@ -162,6 +165,119 @@ export async function POST(
     const cupomCodigo = cupom_codigo
       ? String(cupom_codigo).trim().toUpperCase()
       : null;
+
+    // ── Fluxo esposa (AGO Campo Missionário) ─────────────────
+    const ehEsposaFlow = !!(incluir_esposa) && !!(esposa) && (evento as any).departamento === 'AGO';
+    if (ehEsposaFlow) {
+      const confAgo = (evento as any).configuracoes_ago as Record<string, unknown> | null;
+      const cmConfig = parseCampoMissionarioConfig(confAgo);
+      const valorEsposaBase = cmConfig
+        ? (typeof cmConfig.valor_esposa === 'number' ? cmConfig.valor_esposa : parseFloat(String(cmConfig.valor_esposa)) || 0)
+        : 0;
+
+      const esposaData = esposa as Record<string, unknown>;
+      const valorTotal2 = vFinal + valorEsposaBase;
+      const isGratuito2 = valorTotal2 <= 0 || formaStr === 'isento';
+      const codigoLote2 = 'LOTE-' + Date.now().toString(36).toUpperCase() + '-B';
+
+      const { data: lote2, error: loteErr2 } = await supabase
+        .from('evento_lotes_inscricao')
+        .insert([normalizePayloadUppercase({
+          evento_id:            eventoId,
+          codigo:               codigoLote2,
+          responsavel_nome:     String(nome_inscrito).trim(),
+          responsavel_email:    email ? String(email).trim() : null,
+          responsavel_whatsapp: whatsapp ? String(whatsapp).trim() : null,
+          valor_total:          valorTotal2,
+          status_pagamento:     isGratuito2 ? 'isento' : isPresencial ? 'pago' : 'pendente',
+          cupom_codigo:         cupomCodigo,
+          desconto_valor:       vDesconto,
+        })])
+        .select('id')
+        .single();
+
+      if (loteErr2 || !lote2) return NextResponse.json({ error: 'Erro ao criar lote casal.' }, { status: 500 });
+
+      const rowPastor = normalizePayloadUppercase({
+        evento_id: eventoId, lote_id: lote2.id,
+        nome_inscrito: String(nome_inscrito).trim(),
+        cpf: cpfLimpo || null, email: email ? String(email).trim() : null,
+        whatsapp: whatsapp ? String(whatsapp).trim() : null,
+        sexo: sexo || null, data_nascimento: data_nascimento || null,
+        supervisao_id: supervisao_id || null, campo_id: campo_id || null,
+        hospedagem: !!hospedagem, alimentacao: !!alimentacao, brinde: !!brinde,
+        tipo_inscricao: tipo_inscricao || null,
+        valor_original: vOriginal, cupom_codigo: cupomCodigo, desconto_valor: vDesconto,
+        valor_final: vFinal, valor_pago: isGratuito2 ? 0 : isPresencial ? vFinal : 0,
+        status_pagamento: statusPag, forma_pagamento: formaPagSalva,
+        observacoes: observacoes ? String(observacoes).trim() : null,
+        qr_code: qrFinal, operador_id: operadorId, ministro_snapshot: ministroSnapshot,
+        hosp_necessidade_especial: !!hosp_necessidade_especial,
+        hosp_descricao_necessidade: hosp_descricao_necessidade ? String(hosp_descricao_necessidade).trim() : null,
+        hosp_cama_inferior: !!hosp_cama_inferior,
+        hosp_observacoes: hosp_observacoes ? String(hosp_observacoes).trim() : null,
+        grupo_hospedagem: grupo_hospedagem ? String(grupo_hospedagem).trim() : null,
+        lgpd_aceito: true, lgpd_aceito_em: new Date().toISOString(),
+      });
+
+      const rowEsposa = normalizePayloadUppercase({
+        evento_id: eventoId, lote_id: lote2.id,
+        nome_inscrito: String(esposaData.nome_inscrito ?? '').trim(),
+        cpf: String(esposaData.cpf ?? '').replace(/\D/g, '') || null,
+        whatsapp: esposaData.whatsapp ? String(esposaData.whatsapp).trim() : null,
+        sexo: 'F', data_nascimento: esposaData.data_nascimento || null,
+        supervisao_id: supervisao_id || null, campo_id: campo_id || null,
+        hospedagem: !!esposaData.hospedagem, alimentacao: false, brinde: false,
+        tipo_inscricao: 'Esposa de Pastor Presidente',
+        valor_original: valorEsposaBase, cupom_codigo: null, desconto_valor: 0,
+        valor_final: valorEsposaBase, valor_pago: isGratuito2 ? 0 : isPresencial ? valorEsposaBase : 0,
+        status_pagamento: statusPag, forma_pagamento: formaPagSalva,
+        qr_code: esposaData.qr_code ? String(esposaData.qr_code) : generateQRCodeToken(),
+        operador_id: operadorId,
+        hosp_necessidade_especial: !!esposaData.hosp_necessidade_especial,
+        hosp_descricao_necessidade: esposaData.hosp_descricao_necessidade ? String(esposaData.hosp_descricao_necessidade).trim() : null,
+        hosp_cama_inferior: !!esposaData.hosp_cama_inferior,
+        hosp_observacoes: esposaData.hosp_observacoes ? String(esposaData.hosp_observacoes).trim() : null,
+        grupo_hospedagem: esposaData.grupo_hospedagem ? String(esposaData.grupo_hospedagem).trim() : null,
+        lgpd_aceito: true, lgpd_aceito_em: new Date().toISOString(),
+      });
+
+      const { data: insRows, error: insErr2 } = await supabase
+        .from('evento_inscricoes').insert([rowPastor, rowEsposa]).select('id,nome_inscrito,cpf,supervisao_id,campo_id,status_pagamento,hospedagem,alimentacao,brinde,qr_code,checkin_realizado');
+
+      if (insErr2 || !insRows || insRows.length < 2) {
+        return NextResponse.json({ error: 'Erro ao inserir inscrições do casal.' }, { status: 500 });
+      }
+
+      const [insPastor, insEsposa] = insRows as { id: string }[];
+
+      // Hospedagem
+      if (!!hospedagem) {
+        const priorPastor = calcularPrioridadeHospedagem({ id: insPastor.id, nome_inscrito: String(nome_inscrito).trim(), sexo: sexo ? String(sexo) : null, data_nascimento: data_nascimento ? String(data_nascimento) : null, tipo_inscricao: tipo_inscricao ? String(tipo_inscricao) : null, hosp_necessidade_especial: !!hosp_necessidade_especial, hosp_descricao_necessidade: hosp_descricao_necessidade ? String(hosp_descricao_necessidade).trim() : null, hosp_cama_inferior: !!hosp_cama_inferior, hosp_observacoes: hosp_observacoes ? String(hosp_observacoes).trim() : null });
+        await supabase.from('evento_hospedagens').insert([normalizePayloadUppercase({ evento_id: eventoId, inscricao_id: insPastor.id, status: 'solicitada', prioridade: priorPastor, necessidade_especial: !!hosp_necessidade_especial, descricao_necessidade: hosp_descricao_necessidade ? String(hosp_descricao_necessidade).trim() : null, cama_inferior: !!hosp_cama_inferior, observacoes: hosp_observacoes ? String(hosp_observacoes).trim() : null, grupo_hospedagem: grupo_hospedagem ? String(grupo_hospedagem).trim() : null, alocacao_automatica: true })]);
+      }
+      if (!!esposaData.hospedagem) {
+        const priorEsposa = calcularPrioridadeHospedagem({ id: insEsposa.id, nome_inscrito: String(esposaData.nome_inscrito ?? ''), sexo: 'F', data_nascimento: esposaData.data_nascimento ? String(esposaData.data_nascimento) : null, tipo_inscricao: 'Esposa de Pastor Presidente', hosp_necessidade_especial: !!esposaData.hosp_necessidade_especial, hosp_descricao_necessidade: esposaData.hosp_descricao_necessidade ? String(esposaData.hosp_descricao_necessidade).trim() : null, hosp_cama_inferior: !!esposaData.hosp_cama_inferior, hosp_observacoes: esposaData.hosp_observacoes ? String(esposaData.hosp_observacoes).trim() : null });
+        await supabase.from('evento_hospedagens').insert([normalizePayloadUppercase({ evento_id: eventoId, inscricao_id: insEsposa.id, status: 'solicitada', prioridade: priorEsposa, necessidade_especial: !!esposaData.hosp_necessidade_especial, descricao_necessidade: esposaData.hosp_descricao_necessidade ? String(esposaData.hosp_descricao_necessidade).trim() : null, cama_inferior: !!esposaData.hosp_cama_inferior, observacoes: esposaData.hosp_observacoes ? String(esposaData.hosp_observacoes).trim() : null, grupo_hospedagem: esposaData.grupo_hospedagem ? String(esposaData.grupo_hospedagem).trim() : null, alocacao_automatica: true })]);
+      }
+
+      if (cupomCodigo) await incrementarCupom(supabase, eventoId, cupomCodigo);
+
+      if (isAsaas) {
+        try {
+          const customerId2 = await createOrFindAsaasCustomer({ nome: String(nome_inscrito).trim(), email: email ? String(email).trim() : null, cpf: cleanCpf(cpfLimpo ?? ''), whatsapp: whatsapp ? String(whatsapp) : null });
+          const dueDate2 = dueDateFromNow();
+          const pagamento2 = await createEventoPayment({ customerId: customerId2, value: valorTotal2, dueDate: dueDate2, description: `Inscrição Casal CM Balcão — ${(evento as any).nome}`, externalReference: `lote:${lote2.id}` });
+          await supabase.from('evento_lotes_inscricao').update({ asaas_payment_id: pagamento2.id, invoice_url: pagamento2.invoiceUrl, pix_copia_cola: pagamento2.pixCopiaECola, pix_qr_code: pagamento2.pixQrCode, asaas_due_date: dueDate2 }).eq('id', lote2.id);
+          return NextResponse.json({ inscricaoId: insPastor.id, loteId: lote2.id, inscricoes: 2, inscricao: insRows[0], statusPagamento: 'aguardando_pagamento', pagamento: { invoiceUrl: pagamento2.invoiceUrl, pixCopiaECola: pagamento2.pixCopiaECola, valor: valorTotal2 } });
+        } catch (asaasErr2) {
+          console.error('[BALCAO CASAL ASAAS]', (asaasErr2 as Error).message);
+          return NextResponse.json({ inscricaoId: insPastor.id, loteId: lote2.id, inscricoes: 2, inscricao: insRows[0], statusPagamento: 'pendente', pagamento: null, asaasError: 'Cobrança ASAAS não gerada.' });
+        }
+      }
+
+      return NextResponse.json({ inscricaoId: insPastor.id, loteId: lote2.id, inscricoes: 2, inscricao: insRows[0], statusPagamento: statusPag, pagamento: null });
+    }
 
     // Monta payload
     const inscricaoPayload = normalizePayloadUppercase({

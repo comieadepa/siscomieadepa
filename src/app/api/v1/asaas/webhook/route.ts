@@ -60,8 +60,24 @@ export async function POST(request: NextRequest) {
       updatePayload.payment_date = paymentDate;
     }
 
-    // ── Credencial impressão ─────────────────────────────────────────────────
+    // ── Lote de inscrições AGO (esposa / grupo) ──────────────────────────────
     const externalRef = String(payment?.externalReference || '');
+    if (externalRef.startsWith('lote:') && (event === 'PAYMENT_CONFIRMED' || event === 'PAYMENT_RECEIVED')) {
+      const loteId = externalRef.replace('lote:', '');
+      if (loteId) {
+        await supabase
+          .from('evento_inscricoes')
+          .update({ status_pagamento: 'pago', forma_pagamento: 'pix' })
+          .eq('lote_id', loteId);
+        await supabase
+          .from('evento_lotes_inscricao')
+          .update({ status_pagamento: 'pago', asaas_payment_id: asaasPaymentId })
+          .eq('id', loteId);
+      }
+      return NextResponse.json({ received: true });
+    }
+
+    // ── Credencial impressão ─────────────────────────────────────────────────
     if (externalRef.startsWith('credencial_impressao:')) {
       const solicitacaoId = externalRef.replace('credencial_impressao:', '');
       if (
