@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/lib/supabase-client';
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
@@ -168,13 +168,19 @@ export default function TabHospedagem({
   const [salvandoReal,    setSalvandoReal]    = useState(false);
   const [erroReal,        setErroReal]        = useState<string | null>(null);
 
+  // ── Sincronização setores AGO ──────────────────────────
+  const [sincronizando, setSincronizando] = useState(false);
+  const autoSincronizadoRef = useRef(false);
+
   // ── Fetch ──────────────────────────────────────────────────
-  const fetchAlojamentos = useCallback(async () => {
+  const fetchAlojamentos = useCallback(async (): Promise<Alojamento[]> => {
     setLoadingAloj(true);
     const res = await fetch(`/api/eventos/${eventoId}/alojamentos`);
     const json = await res.json();
-    setAlojamentos(json.alojamentos ?? []);
+    const list: Alojamento[] = json.alojamentos ?? [];
+    setAlojamentos(list);
     setLoadingAloj(false);
+    return list;
   }, [eventoId]);
 
   const fetchHospedagens = useCallback(async () => {
@@ -189,6 +195,17 @@ export default function TabHospedagem({
     fetchAlojamentos();
     fetchHospedagens();
   }, [fetchAlojamentos, fetchHospedagens]);
+
+  // ── Sincronização manual de setores AGO ────────────────────────
+  const sincronizarSetores = useCallback(async () => {
+    setSincronizando(true);
+    try {
+      await fetch(`/api/eventos/${eventoId}/alojamentos/sincronizar`, { method: 'POST' });
+      await fetchAlojamentos();
+    } finally {
+      setSincronizando(false);
+    }
+  }, [eventoId, fetchAlojamentos]);
 
   // ── Autoalocar ─────────────────────────────────────────────
   async function autoalocar() {
@@ -246,10 +263,37 @@ export default function TabHospedagem({
     vagasDisp:   alojamentos.filter(a => a.ativo).reduce((sum, a) => sum + (a.vagas_livres ?? 0), 0),
   }), [hospedagens, alojamentos]);
 
-  // ── Stats de capacidade (Fase 6) ───────────────────────────
+  // ── Setores planejados (configuracoes_ago.setores) ─────────
+  const setoresConfigurados = useMemo(
+    () => (evento.configuracoes_ago?.setores as SetorAgo[] | undefined) ?? [],
+    [evento.configuracoes_ago],
+  );
+
+  // ── Auto-sincronização: quando alojamentos carrega vazio e há setores planejados
+  useEffect(() => {
+    if (loadingAloj) return;
+    if (autoSincronizadoRef.current) return;
+    if (alojamentos.length > 0) return;
+    if (setoresConfigurados.length === 0) return;
+
+    autoSincronizadoRef.current = true;
+    setSincronizando(true);
+    fetch(`/api/eventos/${eventoId}/alojamentos/sincronizar`, { method: 'POST' })
+      .then(() => fetchAlojamentos())
+      .catch(console.error)
+      .finally(() => setSincronizando(false));
+  }, [loadingAloj, alojamentos.length, setoresConfigurados.length, eventoId, fetchAlojamentos]);
+
+  // ── Stats de capacidade ────────────────────────────────────
   const statsCapacidade = useMemo(() => {
-    const capacidadeTotal = alojamentos.filter(a => a.ativo).reduce((s, a) => s + a.total_vagas, 0);
-    const inferioresTotal = alojamentos.filter(a => a.ativo).reduce((s, a) => s + a.camas_inferiores, 0);
+    // Quando não há alojamentos físicos, usar capacidade dos setores planejados
+    const semAlojamentos = alojamentos.length === 0 && setoresConfigurados.length > 0;
+    const capacidadeTotal = semAlojamentos
+      ? setoresConfigurados.filter(s => s.ativo).reduce((sum, s) => sum + s.quantidade_leitos, 0)
+      : alojamentos.filter(a => a.ativo).reduce((s, a) => s + a.total_vagas, 0);
+    const inferioresTotal = semAlojamentos
+      ? setoresConfigurados.filter(s => s.ativo).reduce((sum, s) => sum + s.quantidade_leitos_inferiores, 0)
+      : alojamentos.filter(a => a.ativo).reduce((s, a) => s + a.camas_inferiores, 0);
     const confirmadas     = hospedagens.filter(h => h.status === 'confirmada').length;
     const infOcupados     = hospedagens.filter(h => h.status === 'confirmada' && h.tipo_cama === 'inferior').length;
     const checkins        = hospedagens.filter(h => h.status === 'checkin_realizado').length;
@@ -268,7 +312,7 @@ export default function TabHospedagem({
       checkouts,
       ausentes,
     };
-  }, [hospedagens, alojamentos]);
+  }, [hospedagens, alojamentos, setoresConfigurados]);
 
   // ── Abrir modal edição ─────────────────────────────────────
   function abrirEdicao(h: Hospedagem) {
@@ -866,6 +910,8 @@ export default function TabHospedagem({
           hospedagens={hospedagens}
           alojamentos={alojamentos}
           configuracoes={evento.configuracoes_ago ?? null}
+          onSincronizar={sincronizarSetores}
+          sincronizando={sincronizando}
         />
       )}
 
@@ -1649,20 +1695,26 @@ function SecaoSetores({
   hospedagens,
   alojamentos,
   configuracoes,
+  onSincronizar,
+  sincronizando = false,
 }: {
   hospedagens: Hospedagem[];
   alojamentos: Alojamento[];
   configuracoes: Record<string, unknown> | null;
+  onSincronizar?: () => void;
+  sincronizando?: boolean;
 }) {
   const setoresConfig = useMemo(
     () => (configuracoes?.setores as SetorAgo[] | undefined) ?? [],
     [configuracoes],
   );
 
+  // Stats por alojamento físico (tabela evento_alojamentos)
   const statsAloj = useMemo(() => {
+    if (alojamentos.length === 0) return [];
     return alojamentos.map(a => {
       const todos       = hospedagens.filter(h => h.alojamento_id === a.id);
-      const confirmados = todos.filter(h => h.status === 'confirmada').length;
+      const confirmados = todos.filter(h => h.status === 'confirmada' || h.status === 'checkin_realizado').length;
       const solicitados = todos.filter(h => h.status === 'solicitada').length;
       const taxa        = a.total_vagas > 0 ? Math.round(confirmados / a.total_vagas * 100) : 0;
       const livres      = Math.max(0, a.total_vagas - confirmados);
@@ -1670,24 +1722,74 @@ function SecaoSetores({
     }).sort((a, b) => b.confirmados - a.confirmados);
   }, [hospedagens, alojamentos]);
 
-  const totalCapacidade = alojamentos.filter(a => a.ativo).reduce((s, a) => s + a.total_vagas, 0);
-  const totalOcupados   = hospedagens.filter(h => h.status === 'confirmada').length;
-  const taxaGlobal      = totalCapacidade > 0 ? Math.round(totalOcupados / totalCapacidade * 100) : 0;
+  // Stats por setor planejado (configuracoes_ago.setores)
+  // Vincula por grupo_hospedagem === setor.grupo
+  const statsSetores = useMemo(() => {
+    return setoresConfig.map(s => {
+      const porGrupo    = hospedagens.filter(h => h.grupo_hospedagem === s.grupo);
+      const confirmados = porGrupo.filter(h => h.status === 'confirmada' || h.status === 'checkin_realizado').length;
+      const solicitados = porGrupo.filter(h => h.status === 'solicitada').length;
+      const taxa        = s.quantidade_leitos > 0 ? Math.round(confirmados / s.quantidade_leitos * 100) : 0;
+      const livres      = Math.max(0, s.quantidade_leitos - confirmados);
+      const infOcup     = porGrupo.filter(h => (h.status === 'confirmada' || h.status === 'checkin_realizado') && h.tipo_cama === 'inferior').length;
+      const infLivres   = Math.max(0, s.quantidade_leitos_inferiores - infOcup);
+      return { ...s, confirmados, solicitados, taxa, livres, infLivres };
+    });
+  }, [hospedagens, setoresConfig]);
 
-  const thS = 'text-left text-xs font-semibold text-gray-500 uppercase tracking-wide py-2.5 px-3 bg-gray-50 whitespace-nowrap';
-  const tdS = 'py-2.5 px-3 text-sm text-gray-700 border-t border-gray-50 whitespace-nowrap';
+  // Usar setores planejados quando não há alojamentos físicos cadastrados
+  const usarSetoresPlanejados = alojamentos.length === 0 && setoresConfig.length > 0;
+
+  const totalCapacidade = usarSetoresPlanejados
+    ? setoresConfig.filter(s => s.ativo).reduce((sum, s) => sum + s.quantidade_leitos, 0)
+    : alojamentos.filter(a => a.ativo).reduce((sum, a) => sum + a.total_vagas, 0);
+
+  const setoresAtivos = usarSetoresPlanejados
+    ? setoresConfig.filter(s => s.ativo).length
+    : alojamentos.filter(a => a.ativo).length;
+
+  const totalOcupados = hospedagens.filter(h => h.status === 'confirmada' || h.status === 'checkin_realizado').length;
+  const totalLivres   = Math.max(0, totalCapacidade - totalOcupados);
+  const taxaGlobal    = totalCapacidade > 0 ? Math.round(totalOcupados / totalCapacidade * 100) : 0;
+
+  const thS  = 'text-left text-xs font-semibold text-gray-500 uppercase tracking-wide py-2.5 px-3 bg-gray-50 whitespace-nowrap';
+  const tdS  = 'py-2.5 px-3 text-sm text-gray-700 border-t border-gray-50 whitespace-nowrap';
   const tdSn = `${tdS} text-right tabular-nums`;
 
   return (
     <div className="space-y-5">
 
-      {/* Resumo geral */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {/* Aviso quando usando setores planejados */}
+      {usarSetoresPlanejados && (
+        <div className="bg-sky-50 border border-sky-200 rounded-xl px-4 py-2.5 flex items-center justify-between gap-3 text-xs text-sky-800">
+          <div className="flex items-center gap-2">
+            <span>{sincronizando ? '⏳' : 'ℹ️'}</span>
+            <span>
+              {sincronizando
+                ? 'Sincronizando setores planejados com alojamentos…'
+                : <>Capacidade calculada a partir dos <strong>setores planejados</strong>. Sincronize para criar os alojamentos físicos.</>
+              }
+            </span>
+          </div>
+          {onSincronizar && !sincronizando && (
+            <button
+              onClick={onSincronizar}
+              className="shrink-0 bg-sky-600 text-white font-medium px-3 py-1.5 rounded-lg hover:bg-sky-700 transition"
+            >
+              🔄 Sincronizar
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Cards de resumo */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {[
-          { label: 'Setores Ativos',   value: alojamentos.filter(a => a.ativo).length, cor: 'text-[#123b63]' },
-          { label: 'Cap. Total',       value: totalCapacidade,                          cor: 'text-[#123b63]' },
-          { label: 'Ocupados',         value: totalOcupados,                            cor: 'text-rose-600' },
-          { label: `Taxa ${taxaGlobal}%`, value: `${taxaGlobal}%`,                     cor: taxaGlobal >= 90 ? 'text-red-600' : taxaGlobal >= 70 ? 'text-yellow-600' : 'text-teal-600' },
+          { label: 'Setores Ativos', value: setoresAtivos,            cor: 'text-[#123b63]' },
+          { label: 'Cap. Total',     value: totalCapacidade,          cor: 'text-[#123b63]' },
+          { label: 'Ocupados',       value: totalOcupados,            cor: 'text-rose-600' },
+          { label: 'Livres',         value: totalLivres,              cor: totalLivres === 0 ? 'text-red-600' : 'text-emerald-600' },
+          { label: 'Taxa',           value: `${taxaGlobal}%`,         cor: taxaGlobal >= 90 ? 'text-red-600' : taxaGlobal >= 70 ? 'text-yellow-600' : 'text-teal-600' },
         ].map(s => (
           <div key={s.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-center">
             <p className={`text-2xl font-black ${s.cor}`}>{s.value}</p>
@@ -1696,16 +1798,8 @@ function SecaoSetores({
         ))}
       </div>
 
-      {/* Tabela de alojamentos */}
-      {alojamentos.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-          <span className="text-4xl mb-3 block">🏗️</span>
-          <p className="text-gray-500 font-medium">Nenhum setor/alojamento cadastrado</p>
-          <p className="text-xs text-gray-400 mt-1">
-            Crie alojamentos na aba &quot;Alojamentos&quot; para visualizar a ocupação por setor.
-          </p>
-        </div>
-      ) : (
+      {/* Tabela: alojamentos físicos (quando existem na DB) */}
+      {!usarSetoresPlanejados && alojamentos.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
           <table className="w-full min-w-[720px]">
             <thead>
@@ -1727,9 +1821,7 @@ function SecaoSetores({
                   <tr key={a.id} className={`border-t border-gray-50 hover:bg-gray-50 transition ${!a.ativo ? 'opacity-50' : ''}`}>
                     <td className={tdS + ' font-medium text-gray-900'}>
                       {a.nome}
-                      {!a.ativo && (
-                        <span className="ml-2 text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">Inativo</span>
-                      )}
+                      {!a.ativo && <span className="ml-2 text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">Inativo</span>}
                     </td>
                     <td className={tdS + ' text-xs text-gray-500'}>{PUBLICO_LABEL[a.publico] ?? a.publico}</td>
                     <td className={tdSn}>{a.total_vagas}</td>
@@ -1739,10 +1831,7 @@ function SecaoSetores({
                     <td className={tdS}>
                       <div className="flex items-center gap-2 min-w-[130px]">
                         <div className="flex-1 bg-gray-100 rounded-full h-2">
-                          <div
-                            className={`h-2 rounded-full transition-all ${corBar}`}
-                            style={{ width: `${Math.min(100, a.taxa)}%` }}
-                          />
+                          <div className={`h-2 rounded-full transition-all ${corBar}`} style={{ width: `${Math.min(100, a.taxa)}%` }} />
                         </div>
                         <span className={`text-xs font-bold tabular-nums ${corText}`}>{a.taxa}%</span>
                       </div>
@@ -1755,8 +1844,66 @@ function SecaoSetores({
         </div>
       )}
 
-      {/* Setores planejados (configuração AGO) */}
-      {setoresConfig.length > 0 && (
+      {/* Tabela: setores planejados (quando não há alojamentos físicos) */}
+      {usarSetoresPlanejados && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+          <table className="w-full min-w-[780px]">
+            <thead>
+              <tr>
+                <th className={thS}>Setor Planejado</th>
+                <th className={thS}>Grupo Permitido</th>
+                <th className={thS + ' text-right'}>Capacidade</th>
+                <th className={thS + ' text-right'}>⬇ Inf. Livres</th>
+                <th className={thS + ' text-right'}>Ocupados</th>
+                <th className={thS + ' text-right'}>Livres</th>
+                <th className={thS + ' text-right'}>Pendentes</th>
+                <th className={thS}>Tipos de Leito</th>
+                <th className={thS}>Ocupação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {statsSetores.map(s => {
+                const corBar  = s.taxa >= 90 ? 'bg-red-500' : s.taxa >= 70 ? 'bg-yellow-500' : 'bg-emerald-500';
+                const corText = s.taxa >= 90 ? 'text-red-600' : s.taxa >= 70 ? 'text-yellow-600' : 'text-emerald-600';
+                return (
+                  <tr key={s.id} className={`border-t border-gray-50 hover:bg-gray-50 transition ${!s.ativo ? 'opacity-50' : ''}`}>
+                    <td className={tdS + ' font-medium text-gray-900'}>
+                      {s.nome}
+                      {!s.ativo && <span className="ml-2 text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">Inativo</span>}
+                    </td>
+                    <td className={tdS + ' text-xs text-gray-500 max-w-[160px] truncate'}>{s.grupo}</td>
+                    <td className={tdSn}>{s.quantidade_leitos}</td>
+                    <td className={tdSn + ' text-sky-700'}>{s.infLivres}</td>
+                    <td className={tdSn + ' text-rose-700 font-semibold'}>{s.confirmados}</td>
+                    <td className={tdSn + (s.livres === 0 ? ' text-gray-400' : ' text-emerald-700 font-semibold')}>{s.livres}</td>
+                    <td className={tdSn + ' text-yellow-700'}>{s.solicitados}</td>
+                    <td className={tdS}>
+                      <div className="flex gap-1 flex-wrap">
+                        {s.tipos_leito.map(t => (
+                          <span key={t} className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                            {TIPO_LEITO_LABEL[t] ?? t}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className={tdS}>
+                      <div className="flex items-center gap-2 min-w-[110px]">
+                        <div className="flex-1 bg-gray-100 rounded-full h-2">
+                          <div className={`h-2 rounded-full transition-all ${corBar}`} style={{ width: `${Math.min(100, s.taxa)}%` }} />
+                        </div>
+                        <span className={`text-xs font-bold tabular-nums ${corText}`}>{s.taxa}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Setores planejados como painel secundário (quando já há alojamentos físicos) */}
+      {!usarSetoresPlanejados && setoresConfig.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
           <h3 className="font-bold text-[#123b63] text-sm mb-3">
             📋 Setores Planejados
@@ -1784,10 +1931,24 @@ function SecaoSetores({
           </div>
         </div>
       )}
+
+      {/* Sem dados */}
+      {!usarSetoresPlanejados && alojamentos.length === 0 && setoresConfig.length === 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+          <span className="text-4xl mb-3 block">🏗️</span>
+          <p className="text-gray-500 font-medium">Nenhum setor configurado</p>
+          <p className="text-xs text-gray-400 mt-1">
+            Configure os setores em <strong>Configurações do Evento → AGO → Setores de Hospedagem</strong>.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// SEÇÃO: PAINEL AGO
+// ════════════════════════════════════════════════════════════════════════════
 function SecaoPainelAgo({
   hospedagens,
   alojamentos,

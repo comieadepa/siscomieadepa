@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireEventoAccess } from '@/lib/evento-guard';
+import { materializarSetoresHospedagemAGO } from '@/lib/materializar-setores';
 import {
   calcularPrioridadeHospedagem,
   sugerirAlojamento,
@@ -31,13 +32,23 @@ export async function POST(
   const supabase = guard.ctx.supabaseAdmin;
 
   // ── 1. Alojamentos ativos ────────────────────────────────────
-  const { data: alojamentosRaw, error: errAloj } = await supabase
-    .from('evento_alojamentos')
-    .select('id,nome,publico,sexo,total_vagas,camas_inferiores,camas_superiores,ativo')
-    .eq('evento_id', eventoId)
-    .eq('ativo', true);
+  const fetchAlojAtivos = () =>
+    supabase
+      .from('evento_alojamentos')
+      .select('id,nome,publico,sexo,total_vagas,camas_inferiores,camas_superiores,ativo')
+      .eq('evento_id', eventoId)
+      .eq('ativo', true);
 
+  const { data: alojamentosRaw0, error: errAloj } = await fetchAlojAtivos();
   if (errAloj) return NextResponse.json({ error: errAloj.message }, { status: 500 });
+
+  // Auto-materializa setores AGO se ainda não há alojamentos cadastrados
+  let alojamentosRaw = alojamentosRaw0;
+  if ((alojamentosRaw ?? []).length === 0) {
+    await materializarSetoresHospedagemAGO(supabase, eventoId);
+    const { data: recarregados } = await fetchAlojAtivos();
+    alojamentosRaw = recarregados ?? alojamentosRaw0;
+  }
 
   // ── 2. Materializa registros ausentes em evento_hospedagens ──
   const { data: todasInscricoes } = await supabase
