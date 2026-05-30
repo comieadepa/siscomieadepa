@@ -175,6 +175,15 @@ export async function POST(
         ? (typeof cmConfig.valor_esposa === 'number' ? cmConfig.valor_esposa : parseFloat(String(cmConfig.valor_esposa)) || 0)
         : 0;
 
+      // Consulta tipo "Esposa de Pastor Presidente" para determinar alimentação
+      const { data: tipoEsposa } = await supabase
+        .from('evento_tipos_inscricao')
+        .select('inclui_alimentacao')
+        .eq('evento_id', eventoId)
+        .ilike('nome', 'Esposa de Pastor Presidente')
+        .eq('ativo', true)
+        .maybeSingle();
+
       const esposaData = esposa as Record<string, unknown>;
       const valorTotal2 = vFinal + valorEsposaBase;
       const isGratuito2 = valorTotal2 <= 0 || formaStr === 'isento';
@@ -227,7 +236,7 @@ export async function POST(
         whatsapp: esposaData.whatsapp ? String(esposaData.whatsapp).trim() : null,
         sexo: 'F', data_nascimento: esposaData.data_nascimento || null,
         supervisao_id: supervisao_id || null, campo_id: campo_id || null,
-        hospedagem: !!esposaData.hospedagem, alimentacao: false, brinde: false,
+        hospedagem: !!esposaData.hospedagem, alimentacao: !!(tipoEsposa?.inclui_alimentacao), brinde: false,
         tipo_inscricao: 'Esposa de Pastor Presidente',
         valor_original: valorEsposaBase, cupom_codigo: null, desconto_valor: 0,
         valor_final: valorEsposaBase, valor_pago: isGratuito2 ? 0 : isPresencial ? valorEsposaBase : 0,
@@ -238,6 +247,8 @@ export async function POST(
         hosp_descricao_necessidade: esposaData.hosp_descricao_necessidade ? String(esposaData.hosp_descricao_necessidade).trim() : null,
         hosp_cama_inferior: !!esposaData.hosp_cama_inferior,
         hosp_observacoes: esposaData.hosp_observacoes ? String(esposaData.hosp_observacoes).trim() : null,
+        hosp_possui_comorbidade: !!esposaData.hosp_possui_comorbidade,
+        hosp_descricao_comorbidade: esposaData.hosp_descricao_comorbidade ? String(esposaData.hosp_descricao_comorbidade).trim() : null,
         grupo_hospedagem: esposaData.grupo_hospedagem ? String(esposaData.grupo_hospedagem).trim() : null,
         lgpd_aceito: true, lgpd_aceito_em: new Date().toISOString(),
       });
