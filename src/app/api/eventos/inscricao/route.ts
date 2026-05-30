@@ -97,6 +97,7 @@ export async function POST(request: NextRequest) {
       hosp_descricao_necessidade,
       hosp_cama_inferior,
       hosp_observacoes,
+      grupo_hospedagem,
     } = body;
 
     if (!slug || !nome_inscrito?.trim() || !supervisao_id) {
@@ -210,14 +211,14 @@ export async function POST(request: NextRequest) {
     if (cpfLimpo && evento.departamento === 'AGO') {
       const { data: membro } = await supabase
         .from('members')
-        .select('id, nome, cpf, matricula, data_nascimento, campo, campo_id, supervisao, supervisao_id, status_ministerial, cargo, pastor_presidente, pastor_auxiliar, jubilado')
+        .select('id, name, cpf, matricula, data_nascimento, campo_id, supervisao_id, status, cargo_ministerial, pastor_presidente, pastor_auxiliar, jubilado')
         .eq('cpf', cpfLimpo)
         .maybeSingle();
       if (membro) {
         // Verifica se o campo do membro é missionário
         let isCampoMissionario = false;
-        let campoNome: string | null = membro.campo ?? null;
-        let supervisaoNome: string | null = membro.supervisao ?? null;
+        let campoNome: string | null = null;
+        let supervisaoNome: string | null = null;
         if (membro.campo_id) {
           const { data: campoData } = await supabase
             .from('campos')
@@ -244,13 +245,13 @@ export async function POST(request: NextRequest) {
         }
 
         ministroSnapshot = {
-          ministro_id: membro.id, nome: membro.nome, cpf: membro.cpf,
+          ministro_id: membro.id, nome: membro.name, cpf: membro.cpf,
           matricula: membro.matricula ?? null,
           data_nascimento: membro.data_nascimento ?? null,
           campo: campoNome, campo_id: membro.campo_id ?? null,
           supervisao: supervisaoNome, supervisao_id: membro.supervisao_id ?? null,
-          status_ministerial: membro.status_ministerial ?? null,
-          cargo: membro.cargo ?? null,
+          status_ministerial: (membro as any).status ?? null,
+          cargo: (membro as any).cargo_ministerial ?? null,
           is_pastor_presidente: !!((membro as any).pastor_presidente),
           is_pastor_auxiliar: !!((membro as any).pastor_auxiliar),
           is_pastor_jubilado: !!((membro as any).jubilado),
@@ -383,6 +384,9 @@ export async function POST(request: NextRequest) {
       hosp_descricao_necessidade: hosp_descricao_necessidade?.trim() || null,
       hosp_cama_inferior:         !!hosp_cama_inferior,
       hosp_observacoes:           hosp_observacoes?.trim() || null,
+      hosp_possui_comorbidade:    !!(body as any).hosp_possui_comorbidade,
+      hosp_descricao_comorbidade: ((body as any).hosp_descricao_comorbidade as string)?.trim() || null,
+      grupo_hospedagem:           (grupo_hospedagem as string)?.trim() || null,
       lgpd_aceito:      true,
       lgpd_aceito_em:   new Date().toISOString(),
     });
@@ -423,6 +427,7 @@ export async function POST(request: NextRequest) {
         descricao_necessidade: hosp_descricao_necessidade?.trim() || null,
         cama_inferior:        !!hosp_cama_inferior,
         observacoes:          hosp_observacoes?.trim() || null,
+        grupo_hospedagem:     (grupo_hospedagem as string)?.trim() || null,
         alocacao_automatica:  true,
       });
       await supabase.from('evento_hospedagens').insert([hospedagemPayload]);

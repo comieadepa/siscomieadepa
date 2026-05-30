@@ -18,6 +18,7 @@ import TabHospedagem    from './TabHospedagem';
 import TabBackup        from './TabBackup';
 import TabProgramacao   from './TabProgramacao';
 import TabCertificados  from './TabCertificados';
+import TabControleAGO  from './TabControleAGO';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -127,7 +128,7 @@ interface Ministro {
   supervisao_id?: string | null; campo_id?: string | null;
 }
 
-type TabId = 'inscritos' | 'inscricao-manual' | 'checkin' | 'etiquetas' | 'financeiro' | 'relatorios' | 'comunicacao' | 'equipe' | 'configuracoes' | 'hospedagem' | 'backup' | 'programacao' | 'certificados' | 'relatorios-ago' | 'ausentes' | 'homologacao' | 'deliberacoes';
+type TabId = 'inscritos' | 'inscricao-manual' | 'checkin' | 'etiquetas' | 'financeiro' | 'relatorios' | 'comunicacao' | 'equipe' | 'configuracoes' | 'hospedagem' | 'backup' | 'programacao' | 'certificados' | 'relatorios-ago' | 'ausentes' | 'homologacao' | 'deliberacoes' | 'controle-ago';
 // Nota: 'inscricao-manual' e 'configuracoes' mantidos no tipo para compatibilidade com ?tab= mas removidos da nav
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -250,10 +251,11 @@ export default function GerenciarEventoPage() {
     { id: 'programacao',    label: 'Programação',   icon: '📋' },
     { id: 'relatorios',     label: 'Relatórios',    icon: '📊' },
     ...(isAGO ? [
-      { id: 'relatorios-ago' as TabId, label: 'Relatórios AGO', icon: '📈' },
-      { id: 'ausentes'       as TabId, label: 'Ausentes',       icon: '🚨' },
-      { id: 'homologacao'    as TabId, label: 'Homologação',    icon: '⚖️' },
-      { id: 'deliberacoes'   as TabId, label: 'Deliberações',   icon: '📜' },
+      { id: 'relatorios-ago' as TabId, label: 'Relatórios AGO',    icon: '📈' },
+      { id: 'ausentes'       as TabId, label: 'Ausentes',          icon: '🚨' },
+      { id: 'homologacao'    as TabId, label: 'Homologação',       icon: '⚖️' },
+      { id: 'deliberacoes'   as TabId, label: 'Deliberações',      icon: '📜' },
+      { id: 'controle-ago'   as TabId, label: 'Centro de Controle', icon: '📊' },
     ] : []),
   ];
 
@@ -263,7 +265,7 @@ export default function GerenciarEventoPage() {
     if (perfil.loading) return TODAS_TABS;
     if (perfil.isGlobal) return TODAS_TABS;
     return TODAS_TABS.filter(t => {
-      if (t.id === 'relatorios-ago' || t.id === 'ausentes' || t.id === 'homologacao' || t.id === 'deliberacoes') return isAGO && perfil.podeEditar;
+      if (t.id === 'relatorios-ago' || t.id === 'ausentes' || t.id === 'homologacao' || t.id === 'deliberacoes' || t.id === 'controle-ago') return isAGO && perfil.podeEditar;
       return tabsPermitidasEvento.includes(t.id as import('@/hooks/useEventosPerfil').TabEventoId);
     });
   })();
@@ -388,7 +390,7 @@ export default function GerenciarEventoPage() {
     } else {
       // Aplica aba inicial via query param ?tab=X
       const tabParam = searchParams?.get('tab') as TabId | null;
-      const TABS_VALIDAS: TabId[] = ['inscritos','inscricao-manual','checkin','etiquetas','financeiro','relatorios','comunicacao','equipe','configuracoes','hospedagem','backup','programacao','certificados','relatorios-ago','ausentes','homologacao','deliberacoes']; // inscricao-manual e configuracoes acessíveis via ?tab= mas não mostrados na nav
+      const TABS_VALIDAS: TabId[] = ['inscritos','inscricao-manual','checkin','etiquetas','financeiro','relatorios','comunicacao','equipe','configuracoes','hospedagem','backup','programacao','certificados','relatorios-ago','ausentes','homologacao','deliberacoes','controle-ago']; // inscricao-manual e configuracoes acessíveis via ?tab= mas não mostrados na nav
       if (tabParam && TABS_VALIDAS.includes(tabParam)) {
         setActiveTab(tabParam);
       }
@@ -825,6 +827,9 @@ export default function GerenciarEventoPage() {
       )}
       {activeTab === 'deliberacoes' && (
         <TabDeliberacoes eventoId={id} evento={evento} podeEditar={perfil.podeEditar} />
+      )}
+      {activeTab === 'controle-ago' && (
+        <TabControleAGO eventoId={id} podeEditar={perfil.podeEditar} />
       )}
 
       {/* ── MODAL ENCERRAR AGO ─────────────────────────────── */}

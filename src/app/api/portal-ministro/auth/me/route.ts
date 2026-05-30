@@ -23,24 +23,35 @@ export async function GET(request: NextRequest) {
     .from('members')
     .select(`
       id, name, matricula, cpf, cargo_ministerial, status,
-      foto_url, data_nascimento, data_validade_credencial, data_emissao,
-      pastor_presidente, custom_fields, unique_id
+      foto_url, data_nascimento, pastor_presidente, custom_fields, unique_id
     `)
     .eq('id', session.ministroId)
     .maybeSingle();
 
-  if (error || !ministro) {
+  if (error) {
+    console.error('[auth/me] supabase error:', error.message);
+    return NextResponse.json({ error: 'Erro interno.' }, { status: 500 });
+  }
+
+  if (!ministro) {
     return NextResponse.json({ error: 'Ministro não encontrado.' }, { status: 404 });
   }
 
+  if (ministro.status !== 'active') {
+    return NextResponse.json(
+      { error: 'Seu acesso não está disponível. Procure a Secretaria.' },
+      { status: 403 },
+    );
+  }
+
   const cf = (ministro.custom_fields && typeof ministro.custom_fields === 'object')
-    ? ministro.custom_fields as Record<string, any>
-    : {};
+    ? ministro.custom_fields as Record<string, string | null>
+    : {} as Record<string, string | null>;
 
   return NextResponse.json({
     id: ministro.id,
     nome: ministro.name,
-    matricula: ministro.matricula,
+    matricula: ministro.matricula ?? null,
     cpfMascarado: maskCpf(ministro.cpf),
     cargo: ministro.cargo_ministerial || cf.cargoMinisterial || cf.cargo_ministerial || '',
     status: ministro.status,
@@ -48,10 +59,9 @@ export async function GET(request: NextRequest) {
     campo: cf.campo || '',
     congregacao: cf.congregacao || '',
     fotoUrl: ministro.foto_url || cf.fotoUrl || null,
-    dataNascimento: ministro.data_nascimento,
-    dataValidadeCredencial: ministro.data_validade_credencial,
-    dataEmissao: ministro.data_emissao,
+    dataNascimento: ministro.data_nascimento ?? null,
+    dataValidadeCredencial: cf.dataValidadeCredencial || cf.data_validade_credencial || null,
     isPastorPresidente: !!ministro.pastor_presidente,
-    uniqueId: ministro.unique_id,
+    uniqueId: ministro.unique_id ?? null,
   });
 }

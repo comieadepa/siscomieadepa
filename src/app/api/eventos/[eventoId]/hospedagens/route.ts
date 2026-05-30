@@ -3,7 +3,8 @@ import { requireEventoAccess } from '@/lib/evento-guard';
 import { normalizePayloadUppercase } from '@/lib/text';
 
 // GET /api/eventos/[eventoId]/hospedagens
-// Lista todas as hospedagens com dados do inscrito
+// Lista todas as solicitações de hospedagem (inscricoes com hospedagem=true)
+// Abordagem híbrida: inscricoes como fonte primária + LEFT JOIN evento_hospedagens
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ eventoId: string }> }
@@ -15,60 +16,84 @@ export async function GET(
     return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
   }
   const supabase = guard.ctx.supabaseAdmin;
-  const { data, error } = await supabase
-    .from('evento_hospedagens')
+
+  // 1. Todas as inscrições com hospedagem solicitada
+  const { data: inscricoes, error: insErr } = await supabase
+    .from('evento_inscricoes')
     .select(`
-      id, status, prioridade, necessidade_especial, descricao_necessidade,
-      cama_inferior, tipo_cama, numero_cama, observacoes, alocacao_automatica, created_at,
-      alojamento_id,
-      evento_alojamentos ( id, nome, publico ),
-      inscricao_id,
-      evento_inscricoes (
-        id, nome_inscrito, cpf, sexo, data_nascimento,
-        supervisao_id, campo_id, tipo_inscricao, status_pagamento,
-        hosp_necessidade_especial, hosp_descricao_necessidade,
-        hosp_cama_inferior, hosp_observacoes
-      )
+      id, nome_inscrito, cpf, sexo, data_nascimento,
+      supervisao_id, campo_id, tipo_inscricao, status_pagamento,
+      hosp_necessidade_especial, hosp_descricao_necessidade,
+      hosp_cama_inferior, hosp_observacoes,
+      hosp_possui_comorbidade, hosp_descricao_comorbidade,
+      grupo_hospedagem
     `)
     .eq('evento_id', eventoId)
-    .order('prioridade', { ascending: false })
-    .order('created_at');
+    .eq('hospedagem', true)
+    .order('nome_inscrito');
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
 
-  // Flatten nested Supabase join objects so the client sees flat fields
-  type JoinRow = Record<string, unknown>;
-  const hospedagens = (data ?? []).map(h => {
-    const raw = h as unknown as Record<string, unknown>;
-    const insc = raw.evento_inscricoes as JoinRow | null;
-    const aloj = raw.evento_alojamentos as JoinRow | null;
+  // 2. Registros de alocação existentes
+  const { data: alocacoes } = await supabase
+    .from('evento_hospedagens')
+    .select(`
+      id, inscricao_id, alojamento_id, status, prioridade,
+      tipo_cama, numero_cama, observacoes, alocacao_automatica,
+      grupo_hospedagem,
+      checkin_at, checkout_at, checkin_operador, checkout_operador,
+      evento_alojamentos ( id, nome, publico )
+    `)
+    .eq('evento_id', eventoId);
+
+  // 3. Mapa inscricao_id → alocação
+  type AlocRow = Record<string, unknown>;
+  const alocMap = new Map<string, AlocRow>();
+  (alocacoes ?? []).forEach(a => {
+    const raw = a as unknown as AlocRow;
+    alocMap.set(raw.inscricao_id as string, raw);
+  });
+
+  // 4. Merge: inscrições como base + alocações como overlay
+  type InscRow = Record<string, unknown>;
+  const hospedagens = (inscricoes ?? []).map(insc => {
+    const ei = insc as unknown as InscRow;
+    const aloc = alocMap.get(insc.id);
+    const aloj = aloc ? (aloc.evento_alojamentos as AlocRow | null) : null;
     return {
-      id:                    raw.id,
-      inscricao_id:          raw.inscricao_id,
-      alojamento_id:         raw.alojamento_id,
-      status:                raw.status,
-      prioridade:            raw.prioridade,
-      necessidade_especial:  raw.necessidade_especial,
-      descricao_necessidade: raw.descricao_necessidade,
-      cama_inferior:         raw.cama_inferior,
-      tipo_cama:             raw.tipo_cama,
-      numero_cama:           raw.numero_cama,
-      observacoes:           raw.observacoes,
-      alocacao_automatica:   raw.alocacao_automatica,
-      created_at:            raw.created_at,
-      // Flattened from evento_inscricoes
-      nome_inscrito:     insc?.nome_inscrito    ?? null,
-      cpf:               insc?.cpf              ?? null,
-      sexo:              insc?.sexo             ?? null,
-      data_nascimento:   insc?.data_nascimento  ?? null,
-      supervisao_id:     insc?.supervisao_id    ?? null,
-      campo_id:          insc?.campo_id         ?? null,
-      tipo_inscricao:    insc?.tipo_inscricao   ?? null,
-      status_pagamento:  insc?.status_pagamento ?? null,
-      // Flattened from evento_alojamentos
+      id:                    aloc?.id              ?? null,
+      inscricao_id:          insc.id,
+      alojamento_id:         aloc?.alojamento_id   ?? null,
+      status:                (aloc?.status         ?? 'solicitada') as string,
+      prioridade:            (aloc?.prioridade     ?? 0) as number,
+      necessidade_especial:  !!(ei.hosp_necessidade_especial),
+      descricao_necessidade: ei.hosp_descricao_necessidade ?? null,
+      cama_inferior:         !!(ei.hosp_cama_inferior),
+      possui_comorbidade:    !!(ei.hosp_possui_comorbidade),
+      descricao_comorbidade: ei.hosp_descricao_comorbidade ?? null,
+      grupo_hospedagem:      (aloc?.grupo_hospedagem ?? ei.grupo_hospedagem) ?? null,
+      tipo_cama:             (aloc?.tipo_cama       ?? null) as string | null,
+      numero_cama:           (aloc?.numero_cama     ?? null) as string | null,
+      observacoes:           (aloc?.observacoes     ?? ei.hosp_observacoes) ?? null,
+      alocacao_automatica:   !!(aloc ? aloc.alocacao_automatica : true),
+      checkin_at:            (aloc?.checkin_at         ?? null) as string | null,
+      checkout_at:           (aloc?.checkout_at        ?? null) as string | null,
+      checkin_operador:      (aloc?.checkin_operador   ?? null) as string | null,
+      checkout_operador:     (aloc?.checkout_operador  ?? null) as string | null,
+      // Dados da inscrição
+      nome_inscrito:     insc.nome_inscrito,
+      cpf:               insc.cpf               ?? null,
+      sexo:              insc.sexo              ?? null,
+      data_nascimento:   insc.data_nascimento   ?? null,
+      supervisao_id:     insc.supervisao_id     ?? null,
+      campo_id:          insc.campo_id          ?? null,
+      tipo_inscricao:    insc.tipo_inscricao    ?? null,
+      status_pagamento:  insc.status_pagamento  ?? null,
+      // Alojamento
       alojamento_nome:   aloj?.nome             ?? null,
     };
   });
+
   return NextResponse.json({ hospedagens });
 }
 
@@ -87,7 +112,7 @@ export async function POST(
   const body = await request.json();
   const { inscricao_id, alojamento_id, tipo_cama, status, prioridade,
           necessidade_especial, descricao_necessidade, cama_inferior,
-          numero_cama, observacoes } = body;
+          numero_cama, observacoes, grupo_hospedagem } = body;
 
   if (!inscricao_id) {
     return NextResponse.json({ error: 'inscricao_id obrigatório' }, { status: 400 });
@@ -106,6 +131,7 @@ export async function POST(
     tipo_cama:            tipo_cama     || null,
     numero_cama:          numero_cama   || null,
     observacoes:          observacoes   || null,
+    grupo_hospedagem:     (grupo_hospedagem as string)?.trim() || null,
     alocacao_automatica:  false, // Manual
   });
 

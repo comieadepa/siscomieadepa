@@ -17,6 +17,19 @@ interface TipoInscricao {
   cortesia?: boolean; limite_vagas?: number | null; ordem: number;
 }
 
+interface MinistroInfo {
+  nome: string;
+  matricula: string | null;
+  cargoMinisterial: string | null;
+  isPastorPresidente: boolean;
+  isPastorAuxiliar: boolean;
+  isJubilado: boolean;
+  status: string | null;
+  supervisao_id: string | null;
+  campo_id: string | null;
+  isCampoMissionario: boolean;
+}
+
 interface Evento {
   id: string; nome: string; slug: string; descricao: string | null;
   departamento: string; data_inicio: string; data_fim: string;
@@ -53,6 +66,9 @@ interface FormData {
   hosp_descricao_necessidade: string;
   hosp_cama_inferior: boolean;
   hosp_observacoes: string;
+  hosp_possui_comorbidade: boolean;
+  hosp_descricao_comorbidade: string;
+  grupo_hospedagem: string;
 }
 
 // Participante adicional (lote)
@@ -70,6 +86,9 @@ const FORM_VAZIO: FormData = {
   hosp_descricao_necessidade: '',
   hosp_cama_inferior: false,
   hosp_observacoes: '',
+  hosp_possui_comorbidade: false,
+  hosp_descricao_comorbidade: '',
+  grupo_hospedagem: '',
 };
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -130,6 +149,11 @@ export default function InscricaoPublicaPage() {
   const [cupomDesconto,   setCupomDesconto]   = useState(0);
   const [cupomMensagem,   setCupomMensagem]   = useState('');
   const [descontoCampoMissionario, setDescontoCampoMissionario] = useState(false);
+
+  // Dados ministeriais (AGO — preenchidos após consulta de CPF)
+  const [ministroInfo, setMinistroInfo] = useState<MinistroInfo | null>(null);
+  // Hospedagem AGO: solicitada pelo usuário mesmo quando tipo não inclui automaticamente
+  const [solicitaHospedagem, setSolicitaHospedagem] = useState(false);
 
   // Termos/LGPD
   const [modalTermosAberto, setModalTermosAberto] = useState(false);
@@ -257,6 +281,11 @@ export default function InscricaoPublicaPage() {
       campo_id?: string | null;
       congregacao_id?: string | null;
       matricula?: string | null;
+      cargo_ministerial?: string | null;
+      pastor_presidente?: boolean;
+      pastor_auxiliar?: boolean;
+      jubilado?: boolean;
+      status?: string | null;
     };
 
     setBuscandoCPF(false);
@@ -279,6 +308,19 @@ export default function InscricaoPublicaPage() {
         const campoMissionario = cam?.is_campo_missionario ?? false;
         setDescontoCampoMissionario(descontoHabilitado && campoMissionario);
 
+        setMinistroInfo({
+          nome,
+          matricula: payload.matricula ?? null,
+          cargoMinisterial: payload.cargo_ministerial ?? null,
+          isPastorPresidente: !!payload.pastor_presidente,
+          isPastorAuxiliar: !!payload.pastor_auxiliar,
+          isJubilado: !!payload.jubilado,
+          status: payload.status ?? null,
+          supervisao_id: payload.supervisao_id ?? null,
+          campo_id: payload.campo_id ?? null,
+          isCampoMissionario: campoMissionario,
+        });
+
         setForm(f => ({
           ...f,
           nome_inscrito: nome                          || f.nome_inscrito,
@@ -288,6 +330,19 @@ export default function InscricaoPublicaPage() {
           ...(isAGO && payload.data_nascimento  ? { data_nascimento: payload.data_nascimento } : {}),
         }));
       } else {
+        setMinistroInfo({
+          nome,
+          matricula: payload.matricula ?? null,
+          cargoMinisterial: payload.cargo_ministerial ?? null,
+          isPastorPresidente: !!payload.pastor_presidente,
+          isPastorAuxiliar: !!payload.pastor_auxiliar,
+          isJubilado: !!payload.jubilado,
+          status: payload.status ?? null,
+          supervisao_id: payload.supervisao_id ?? null,
+          campo_id: payload.campo_id ?? null,
+          isCampoMissionario: false,
+        });
+
         setForm(f => ({
           ...f,
           nome_inscrito: nome || f.nome_inscrito,
@@ -297,6 +352,7 @@ export default function InscricaoPublicaPage() {
       }
     } else {
       setCpfStatus('nao_encontrado');
+      setMinistroInfo(null);
     }
   }
 
@@ -372,6 +428,64 @@ export default function InscricaoPublicaPage() {
   const qtdTotal   = modoLote ? 1 + participantesExtra.length : 1;
   const totalLote  = valorFinal * qtdTotal;
 
+  // ── Filtragem de categorias AGO ──────────────────────────────────────────────
+  // Ordem: 1.CPF/status  2.Cargo ministerial  3.Sexo  4.Idade  5.Campo Missionário (aplicado ao valor, não à categoria)
+  const ministroAtivo = cpfStatus === 'encontrado' && ministroInfo !== null &&
+    ['active', 'ativo'].includes((ministroInfo.status ?? '').toLowerCase());
+  const ministroInativo = cpfStatus === 'encontrado' && ministroInfo !== null && !ministroAtivo;
+
+  // Calcula idade a partir da data de nascimento informada no formulário
+  const idadeCalculada: number | null = form.data_nascimento ? (() => {
+    const hoje = new Date();
+    const nasc = new Date(form.data_nascimento);
+    let id = hoje.getFullYear() - nasc.getFullYear();
+    const m = hoje.getMonth() - nasc.getMonth();
+    if (m < 0 || (m === 0 && hoje.getDate() < nasc.getDate())) id--;
+    return id;
+  })() : null;
+
+  const tiposParaExibir: TipoInscricao[] = (() => {
+    if (!evento || evento.departamento !== 'AGO') return tipos;
+    // "Campo Missionário" nunca aparece como categoria pública — valor especial aplicado automaticamente ao preço
+    const pool = tipos.filter(t => !/campo\s*mission/i.test(t.nome));
+
+    return pool.filter(t => {
+      // Esposa/Viúva verificadas PRIMEIRO para evitar falso-positivo ministerial
+      // (ex: "Esposa de Pastor Presidente" contém "pastor presidente" mas NÃO é categoria ministerial)
+      const ehEsposa    = /esposa/i.test(t.nome);
+      const ehViuva     = /vi[uú]va/i.test(t.nome);
+      const ehJuventude = /juventude/i.test(t.nome);
+
+      // Ministerial só quando o nome NÃO contém esposa/viúva
+      const ehPP          = !ehEsposa && !ehViuva && /pastor\s*presidente/i.test(t.nome);
+      const ehPA          = !ehEsposa && !ehViuva && /pastor\s*auxiliar/i.test(t.nome);
+      const ehJub         = !ehEsposa && !ehViuva && /pastor\s*jubilado/i.test(t.nome);
+      const ehMinisterial = ehPP || ehPA || ehJub;
+
+      // === 1. Categorias ministeriais: ministro ativo + cargo específico + sexo M ===
+      if (ehMinisterial) {
+        if (form.sexo === 'F') return false;      // feminino não acessa categorias pastorais
+        if (!ministroAtivo)   return false;        // requer CPF encontrado e status ativo
+        if (ehPP)  return !!(ministroInfo?.isPastorPresidente);
+        if (ehPA)  return !!(ministroInfo?.isPastorAuxiliar);
+        if (ehJub) return !!(ministroInfo?.isJubilado);
+        return false;
+      }
+
+      // === 2. Esposa / Viúva: exclusivo para sexo feminino; disponível mesmo sem CPF ===
+      if (ehEsposa || ehViuva) return form.sexo === 'F';
+
+      // === 3. Juventude: requer data de nascimento informada e idade ≤ 29 ===
+      if (ehJuventude) {
+        if (idadeCalculada === null) return false;
+        return idadeCalculada <= 29;
+      }
+
+      // === 4. Visitante e demais não-ministeriais: sempre disponíveis ===
+      return true;
+    });
+  })();
+
   function termosSuporteTexto() {
     if (!evento?.suporte_whatsapp) return 'Canal de suporte: secretaria do evento.';
     const tel = evento.suporte_whatsapp.replace(/\D/g, '');
@@ -436,7 +550,7 @@ export default function InscricaoPublicaPage() {
         data_nascimento: form.data_nascimento || null,
         supervisao_id:   form.supervisao_id || null,
         campo_id:        form.campo_id || null,
-        hospedagem:      tipoSelecionado?.inclui_hospedagem ?? form.hospedagem,
+        hospedagem:      tipoSelecionado?.inclui_hospedagem ?? solicitaHospedagem ?? form.hospedagem,
         alimentacao:     tipoSelecionado?.inclui_alimentacao ?? form.alimentacao,
         brinde:          form.brinde,
         qr_code:         qr,
@@ -447,6 +561,9 @@ export default function InscricaoPublicaPage() {
         hosp_descricao_necessidade: form.hosp_descricao_necessidade.trim() || null,
         hosp_cama_inferior:         form.hosp_cama_inferior,
         hosp_observacoes:           form.hosp_observacoes.trim() || null,
+        hosp_possui_comorbidade:    form.hosp_possui_comorbidade,
+        hosp_descricao_comorbidade: form.hosp_descricao_comorbidade.trim() || null,
+        grupo_hospedagem:           form.grupo_hospedagem || null,
         lgpd_aceito:                true,
       });
 
@@ -784,13 +901,96 @@ export default function InscricaoPublicaPage() {
                   </span>
                 )}
               </div>
-              {cpfStatus === 'encontrado' && (
-                <p className="mt-1 text-xs text-emerald-600 font-semibold">✅ Ministro localizado — dados preenchidos automaticamente</p>
+              {cpfStatus === 'encontrado' && ministroAtivo && (
+                <p className="mt-1 text-xs text-emerald-600 font-semibold">✅ Ministro ativo localizado — dados preenchidos automaticamente</p>
+              )}
+              {cpfStatus === 'encontrado' && ministroInativo && (
+                <p className="mt-1 text-xs text-orange-600 font-semibold">⚠️ Registro ministerial localizado, mas não está ativo.</p>
               )}
               {cpfStatus === 'nao_encontrado' && (
                 <p className="mt-1 text-xs text-yellow-600">⚠️ CPF não localizado. Você pode continuar preenchendo manualmente.</p>
               )}
             </div>
+
+            {/* Card do ministro — AGO: exibe dados ministeriais após CPF encontrado */}
+            {evento.departamento === 'AGO' && cpfStatus === 'encontrado' && ministroInfo && (
+              <div className={`mb-5 p-4 rounded-xl border ${ministroAtivo ? 'bg-blue-50 border-blue-200' : 'bg-orange-50 border-orange-200'}`}>
+                <div className="flex items-center justify-between mb-3">
+                  <p className={`text-xs font-bold uppercase tracking-wide ${ministroAtivo ? 'text-blue-700' : 'text-orange-700'}`}>
+                    {ministroAtivo ? '✅ Ministro COMIEADEPA localizado' : '⚠️ Registro ministerial encontrado'}
+                  </p>
+                  {!ministroAtivo && (
+                    <span className="bg-orange-100 text-orange-700 border border-orange-300 px-2 py-0.5 rounded-full text-xs font-bold">
+                      Não ativo
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                  <div className="col-span-2">
+                    <span className="text-gray-500">Nome: </span>
+                    <strong className="text-gray-800">{ministroInfo.nome}</strong>
+                  </div>
+                  {ministroInfo.matricula && (
+                    <div>
+                      <span className="text-gray-500">Matrícula: </span>
+                      <strong className="text-gray-800">{ministroInfo.matricula}</strong>
+                    </div>
+                  )}
+                  {ministroInfo.cargoMinisterial && (
+                    <div>
+                      <span className="text-gray-500">Cargo: </span>
+                      <strong className="text-gray-800">{ministroInfo.cargoMinisterial}</strong>
+                    </div>
+                  )}
+                  {form.campo_id && campos.find(c => c.id === form.campo_id) && (
+                    <div>
+                      <span className="text-gray-500">Campo: </span>
+                      <strong className="text-gray-800">{campos.find(c => c.id === form.campo_id)?.nome}</strong>
+                    </div>
+                  )}
+                  {form.supervisao_id && supervisoes.find(s => s.id === form.supervisao_id) && (
+                    <div>
+                      <span className="text-gray-500">Supervisão: </span>
+                      <strong className="text-gray-800">{supervisoes.find(s => s.id === form.supervisao_id)?.nome}</strong>
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {ministroInfo.isPastorPresidente && (
+                    <span className="bg-amber-100 text-amber-700 border border-amber-300 px-2 py-0.5 rounded-full text-xs font-bold">
+                      ⭐ Pastor Presidente
+                    </span>
+                  )}
+                  {ministroInfo.isPastorAuxiliar && (
+                    <span className="bg-blue-100 text-blue-700 border border-blue-300 px-2 py-0.5 rounded-full text-xs font-bold">
+                      Pastor Auxiliar
+                    </span>
+                  )}
+                  {ministroInfo.isJubilado && (
+                    <span className="bg-purple-100 text-purple-700 border border-purple-300 px-2 py-0.5 rounded-full text-xs font-bold">
+                      🏅 Jubilado
+                    </span>
+                  )}
+                  {ministroInfo.isCampoMissionario && (
+                    <span className="bg-green-100 text-green-700 border border-green-300 px-2 py-0.5 rounded-full text-xs font-bold">
+                      🌿 Campo Missionário
+                    </span>
+                  )}
+                </div>
+                {!ministroAtivo && (
+                  <div className="mt-3 p-2 bg-orange-100 border border-orange-300 rounded-lg text-xs text-orange-800">
+                    Este registro ministerial não está ativo. As categorias ministeriais (Pastor Presidente, Auxiliar, Jubilado) não estão disponíveis. Continue selecionando uma categoria não ministerial abaixo.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Aviso AGO quando CPF não localizado */}
+            {evento.departamento === 'AGO' && cpfStatus === 'nao_encontrado' && (
+              <div className="mb-5 p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-sm text-yellow-800">
+                ⚠️ CPF não localizado no cadastro ministerial. Continue normalmente selecionando a categoria correspondente ao seu vínculo com o evento.
+              </div>
+            )}
 
             {/* Nome */}
             <div className="mb-5">
@@ -853,40 +1053,115 @@ export default function InscricaoPublicaPage() {
             </div>
 
             {/* Tipos de inscrição */}
-            {evento.usar_tipos_inscricao && tipos.length > 0 && (
-              <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                <p className="text-sm font-semibold text-[#123b63] mb-3">
-                  {evento.departamento === 'AGO' ? '🏛️ Categoria de Inscrição' : '📋 Modalidade de Inscrição'}
-                </p>
-                <div className="space-y-2">
-                  {tipos.map(t => (
-                    <label key={t.id} className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${tipoSelecionado?.id === t.id ? 'border-[#123b63] bg-white' : 'border-gray-200 bg-white hover:border-[#123b63]/50'}`}>
-                      <div className="flex items-center gap-3">
-                        <input type="radio" name="tipo_inscricao" value={t.id}
-                          checked={tipoSelecionado?.id === t.id}
-                          onChange={() => { setTipoSelecionado(t); setCupomStatus('idle'); setCupomDesconto(0); }}
-                          className="accent-[#123b63]" />
-                        <div>
-                          <p className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-                            {t.nome}
-                            {t.cortesia && (
-                              <span className="text-xs font-bold bg-green-100 text-green-700 border border-green-300 px-1.5 py-0.5 rounded-full">
-                                🎁 Cortesia
-                              </span>
-                            )}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {[t.inclui_alimentacao && '🍽️ Alimentação', t.inclui_hospedagem && '🛏️ Hospedagem'].filter(Boolean).join(' + ') || 'Apenas plenárias'}
-                          </p>
-                        </div>
+            {evento.usar_tipos_inscricao && (
+              evento.departamento === 'AGO' ? (
+                <div className="mb-6">
+                  {/* Orientação: preencher sexo quando ainda não informado */}
+                  {form.sexo === '' && (
+                    <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-600">
+                      ℹ️ Selecione o <strong>sexo</strong> para ver as categorias de inscrição disponíveis.
+                    </div>
+                  )}
+                  {/* CPF não encontrado — continue com categorias não ministeriais */}
+                  {cpfStatus === 'nao_encontrado' && (
+                    <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-xs text-yellow-800">
+                      ⚠️ CPF não localizado no cadastro ministerial. Continue normalmente — selecione a categoria correspondente abaixo.
+                    </div>
+                  )}
+                  {/* Dica: informar CPF para categorias ministeriais (sexo M, CPF ainda não verificado) */}
+                  {form.sexo === 'M' && cpfStatus === 'idle' && (
+                    <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-700">
+                      🔍 Para categorias ministeriais (Pastor Presidente, Auxiliar, Jubilado), informe o CPF acima.
+                    </div>
+                  )}
+                  {/* Dica: data de nascimento para Juventude (só quando sexo já preenchido) */}
+                  {form.sexo !== '' && !form.data_nascimento && tipos.some(t => /juventude/i.test(t.nome)) && (
+                    <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-600">
+                      ℹ️ Informe a <strong>data de nascimento</strong> para verificar disponibilidade da categoria Juventude COMIEADEPA (até 29 anos).
+                    </div>
+                  )}
+                  {/* Aviso ministro inativo */}
+                  {ministroInativo && (
+                    <div className="mb-3 p-3 bg-orange-50 border border-orange-200 rounded-xl text-xs text-orange-800">
+                      ⚠️ Registro ministerial localizado, porém não está ativo. Categorias ministeriais indisponíveis. Continue com uma categoria não ministerial abaixo.
+                    </div>
+                  )}
+                  {/* Nenhuma categoria disponível (só exibe se sexo foi selecionado) */}
+                  {tiposParaExibir.length === 0 && form.sexo !== '' && (
+                    <div className="p-4 bg-orange-50 border border-orange-200 rounded-xl text-sm text-orange-700">
+                      ⚠️ Nenhuma categoria disponível para o perfil identificado. Verifique os dados informados ou entre em contato com a secretaria do evento.
+                    </div>
+                  )}
+                  {/* Lista de categorias filtradas */}
+                  {tiposParaExibir.length > 0 && (
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                      <p className="text-sm font-semibold text-[#123b63] mb-3">🏛️ Categoria de Inscrição</p>
+                      <div className="space-y-2">
+                        {tiposParaExibir.map(t => (
+                          <label key={t.id} className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${tipoSelecionado?.id === t.id ? 'border-[#123b63] bg-white' : 'border-gray-200 bg-white hover:border-[#123b63]/50'}`}>
+                            <div className="flex items-center gap-3">
+                              <input type="radio" name="tipo_inscricao" value={t.id}
+                                checked={tipoSelecionado?.id === t.id}
+                                onChange={() => { setTipoSelecionado(t); setCupomStatus('idle'); setCupomDesconto(0); }}
+                                className="accent-[#123b63]" />
+                              <div>
+                                <p className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                  {t.nome}
+                                  {t.cortesia && (
+                                    <span className="text-xs font-bold bg-green-100 text-green-700 border border-green-300 px-1.5 py-0.5 rounded-full">
+                                      🎁 Cortesia
+                                    </span>
+                                  )}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {[t.inclui_alimentacao && '🍽️ Alimentação', t.inclui_hospedagem && '🛏️ Hospedagem'].filter(Boolean).join(' + ') || 'Apenas plenárias'}
+                                </p>
+                              </div>
+                            </div>
+                            <span className="text-sm font-bold text-[#123b63] sm:whitespace-nowrap">
+                              {t.valor === 0 ? (t.cortesia ? 'Gratuito (Cortesia)' : 'Gratuito') : fmtMoeda(t.valor)}
+                            </span>
+                          </label>
+                        ))}
                       </div>
-                      <span className="text-sm font-bold text-[#123b63] sm:whitespace-nowrap">
-                        {t.valor === 0 ? (t.cortesia ? 'Gratuito (Cortesia)' : 'Gratuito') : fmtMoeda(t.valor)}
-                      </span>
-                    </label>
-                  ))}
+                    </div>
+                  )}
                 </div>
-              </div>
+              ) : (
+                tipos.length > 0 && (
+                  <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                    <p className="text-sm font-semibold text-[#123b63] mb-3">📋 Modalidade de Inscrição</p>
+                    <div className="space-y-2">
+                      {tipos.map(t => (
+                        <label key={t.id} className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${tipoSelecionado?.id === t.id ? 'border-[#123b63] bg-white' : 'border-gray-200 bg-white hover:border-[#123b63]/50'}`}>
+                          <div className="flex items-center gap-3">
+                            <input type="radio" name="tipo_inscricao" value={t.id}
+                              checked={tipoSelecionado?.id === t.id}
+                              onChange={() => { setTipoSelecionado(t); setCupomStatus('idle'); setCupomDesconto(0); }}
+                              className="accent-[#123b63]" />
+                            <div>
+                              <p className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                {t.nome}
+                                {t.cortesia && (
+                                  <span className="text-xs font-bold bg-green-100 text-green-700 border border-green-300 px-1.5 py-0.5 rounded-full">
+                                    🎁 Cortesia
+                                  </span>
+                                )}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {[t.inclui_alimentacao && '🍽️ Alimentação', t.inclui_hospedagem && '🛏️ Hospedagem'].filter(Boolean).join(' + ') || 'Apenas participação'}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-sm font-bold text-[#123b63] sm:whitespace-nowrap">
+                            {t.valor === 0 ? (t.cortesia ? 'Gratuito (Cortesia)' : 'Gratuito') : fmtMoeda(t.valor)}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )
+              )
             )}
 
             {/* Serviços opcionais (apenas se não houver tipos configurados) */}
@@ -913,62 +1188,122 @@ export default function InscricaoPublicaPage() {
             )}
 
             {/* Campos de hospedagem AGO */}
-            {evento.departamento === 'AGO' && evento.permite_hospedagem &&
-              (form.hospedagem || tipoSelecionado?.inclui_hospedagem) && (
-              <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                <p className="text-sm font-bold text-amber-800 mb-3">🏨 Informações de Hospedagem (AGO)</p>
-
-                {/* Observações configuradas pelo organizador */}
-                {evento.configuracoes_ago?.observacoes && (
-                  <div className="mb-3 p-3 bg-amber-100 border border-amber-300 rounded-lg text-xs text-amber-900 whitespace-pre-wrap">
-                    {evento.configuracoes_ago.observacoes}
+            {evento.departamento === 'AGO' && evento.permite_hospedagem && (
+              <div className="mb-6">
+                {/* Quando o tipo já inclui hospedagem, não precisa do checkbox de solicitação */}
+                {tipoSelecionado && !tipoSelecionado.inclui_hospedagem && (
+                  <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input type="checkbox" id="solicita_hospedagem"
+                        checked={solicitaHospedagem}
+                        onChange={e => setSolicitaHospedagem(e.target.checked)}
+                        className="accent-[#123b63]" />
+                      <div>
+                        <span className="text-sm font-semibold text-gray-700">🛏️ Desejo solicitar hospedagem</span>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          A solicitação não garante alocação. A organização fará a distribuição conforme disponibilidade.
+                          {vagasHospedagem !== null && ` (${vagasHospedagem} vagas restantes)`}
+                        </p>
+                      </div>
+                    </label>
                   </div>
                 )}
 
-                <div className="flex items-start gap-3 mb-3">
-                  <input type="checkbox" id="hosp_necessidade_especial"
-                    name="hosp_necessidade_especial" checked={form.hosp_necessidade_especial}
-                    onChange={handleCheck}
-                    className="mt-0.5 accent-amber-600" />
-                  <label htmlFor="hosp_necessidade_especial" className="text-sm text-gray-700 cursor-pointer">
-                    Possuo <strong>necessidade especial</strong> de acessibilidade
-                    <span className="block text-xs text-gray-500 mt-0.5">
-                      (mobilidade reduzida, deficiência visual, problema de coluna, cirurgia recente, etc.)
-                    </span>
-                  </label>
-                </div>
+                {/* Detalhes de hospedagem: aparece quando tipo inclui hospedagem OU usuário solicitou */}
+                {(tipoSelecionado?.inclui_hospedagem || solicitaHospedagem) && (
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                    <p className="text-sm font-bold text-amber-800 mb-3">🏨 Informações de Hospedagem (AGO)</p>
 
-                {form.hosp_necessidade_especial && (
-                  <div className="mb-3">
-                    <label className={LBL}>Descreva a necessidade *</label>
-                    <input name="hosp_descricao_necessidade"
-                      value={form.hosp_descricao_necessidade}
-                      onChange={handleText}
-                      placeholder="Ex: mobilidade reduzida, usa cadeira de rodas..."
-                      className={INP}
-                      required />
+                    {/* Observações configuradas pelo organizador */}
+                    {evento.configuracoes_ago?.observacoes && (
+                      <div className="mb-3 p-3 bg-amber-100 border border-amber-300 rounded-lg text-xs text-amber-900 whitespace-pre-wrap">
+                        {evento.configuracoes_ago.observacoes}
+                      </div>
+                    )}
+
+                    <div className="flex items-start gap-3 mb-3">
+                      <input type="checkbox" id="hosp_necessidade_especial"
+                        name="hosp_necessidade_especial" checked={form.hosp_necessidade_especial}
+                        onChange={handleCheck}
+                        className="mt-0.5 accent-amber-600" />
+                      <label htmlFor="hosp_necessidade_especial" className="text-sm text-gray-700 cursor-pointer">
+                        Possuo <strong>necessidade especial</strong> de acessibilidade
+                        <span className="block text-xs text-gray-500 mt-0.5">
+                          (mobilidade reduzida, deficiência visual, problema de coluna, cirurgia recente, etc.)
+                        </span>
+                      </label>
+                    </div>
+
+                    {form.hosp_necessidade_especial && (
+                      <div className="mb-3">
+                        <label className={LBL}>Descreva a necessidade *</label>
+                        <input name="hosp_descricao_necessidade"
+                          value={form.hosp_descricao_necessidade}
+                          onChange={handleText}
+                          placeholder="Ex: mobilidade reduzida, usa cadeira de rodas..."
+                          className={INP}
+                          required />
+                      </div>
+                    )}
+
+                    <div className="flex items-start gap-3 mb-3">
+                      <input type="checkbox" id="hosp_possui_comorbidade"
+                        name="hosp_possui_comorbidade" checked={form.hosp_possui_comorbidade}
+                        onChange={handleCheck}
+                        className="mt-0.5 accent-amber-600" />
+                      <label htmlFor="hosp_possui_comorbidade" className="text-sm text-gray-700 cursor-pointer">
+                        Possuo <strong>comorbidade</strong> relevante
+                        <span className="block text-xs text-gray-500 mt-0.5">
+                          (diabetes, hipertensão, cardíaco, renal, imunossuprimido, etc.)
+                        </span>
+                      </label>
+                    </div>
+
+                    {form.hosp_possui_comorbidade && (
+                      <div className="mb-3">
+                        <label className={LBL}>Descreva a comorbidade *</label>
+                        <input name="hosp_descricao_comorbidade"
+                          value={form.hosp_descricao_comorbidade}
+                          onChange={handleText}
+                          placeholder="Ex: diabético tipo 2, hipertenso controlado..."
+                          className={INP}
+                          required />
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-3 mb-3">
+                      <input type="checkbox" id="hosp_cama_inferior"
+                        name="hosp_cama_inferior" checked={form.hosp_cama_inferior}
+                        onChange={handleCheck}
+                        className="accent-amber-600" />
+                      <label htmlFor="hosp_cama_inferior" className="text-sm text-gray-700 cursor-pointer">
+                        Preciso de <strong>cama inferior</strong> (beliche de baixo)
+                      </label>
+                    </div>
+
+                    {Array.isArray(evento.configuracoes_ago?.grupos) && evento.configuracoes_ago!.grupos!.length > 0 && (
+                      <div className="mb-3">
+                        <label className={LBL}>Grupo de hospedagem</label>
+                        <select name="grupo_hospedagem" value={form.grupo_hospedagem} onChange={handleText} className={INP}>
+                          <option value="">Selecione o grupo...</option>
+                          {evento.configuracoes_ago!.grupos!.map((g: string) => (
+                            <option key={g} value={g}>{g}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    <div>
+                      <label className={LBL}>Observações de hospedagem (opcional)</label>
+                      <textarea name="hosp_observacoes"
+                        value={form.hosp_observacoes}
+                        onChange={handleText}
+                        rows={2}
+                        placeholder="Alguma informação relevante para a equipe de hospedagem..."
+                        className={INP + ' resize-none'} />
+                    </div>
                   </div>
                 )}
-
-                <div className="flex items-center gap-3 mb-3">
-                  <input type="checkbox" id="hosp_cama_inferior"
-                    name="hosp_cama_inferior" checked={form.hosp_cama_inferior}
-                    onChange={handleCheck}
-                    className="accent-amber-600" />
-                  <label htmlFor="hosp_cama_inferior" className="text-sm text-gray-700 cursor-pointer">
-                    Preciso de <strong>cama inferior</strong> (beliche de baixo)
-                  </label>
-                </div>
-
-                <div>
-                  <label className={LBL}>Observações de hospedagem (opcional)</label>
-                  <textarea name="hosp_observacoes"
-                    value={form.hosp_observacoes}
-                    onChange={handleText}
-                    rows={2}
-                    placeholder="Alguma informação relevante para a equipe de hospedagem..."
-                    className={INP + ' resize-none'} />
-                </div>
               </div>
             )}
 

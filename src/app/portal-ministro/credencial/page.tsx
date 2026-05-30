@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { IdCard, CheckCircle2, AlertCircle, Clock, ExternalLink } from 'lucide-react';
+import { IdCard, CheckCircle2, AlertCircle, Clock, ExternalLink, QrCode } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface CredencialData {
   statusCredencial: 'ativa' | 'vencida' | 'pendente';
@@ -21,13 +22,22 @@ const fmtDate = (v: string | null) => {
 export default function CredencialPage() {
   const [data, setData] = useState<CredencialData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [qrToken, setQrToken] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/portal-ministro/credencial')
       .then((r) => r.json())
       .then((d) => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));
+
+    fetch('/api/portal-ministro/credencial/qr-token')
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.token) setQrToken(d.token); })
+      .catch(() => {});
   }, []);
+
+  const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
+  const qrUrl = qrToken ? `${appUrl}/validar-credencial/${qrToken}` : '';
 
   if (loading) return <div className="text-gray-500 p-6">Carregando...</div>;
 
@@ -92,6 +102,25 @@ export default function CredencialPage() {
           </div>
         )}
       </div>
+
+      {/* QR Code de validação */}
+      {qrToken && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <QrCode size={20} className="text-[#0D2B4E]" />
+            <h2 className="font-semibold text-gray-800">QR Code de Validação</h2>
+          </div>
+          <p className="text-sm text-gray-500 mb-5">
+            Apresente este QR Code para que qualquer pessoa possa validar sua credencial.
+          </p>
+          <div className="flex justify-center">
+            <div className="p-4 bg-white border border-gray-200 rounded-xl shadow-sm inline-block">
+              <QRCodeSVG value={qrUrl} size={180} level="M" includeMargin />
+            </div>
+          </div>
+          <p className="text-center text-xs text-gray-400 mt-3 break-all">{qrUrl}</p>
+        </div>
+      )}
 
       {/* Solicitar impressão */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">

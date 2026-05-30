@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from('members')
-    .select('name,sexo,data_nascimento,supervisao_id,campo_id,congregacao_id,matricula')
+    .select('name,sexo,data_nascimento,supervisao_id,campo_id,congregacao_id,matricula,cargo_ministerial,pastor_presidente,pastor_auxiliar,jubilado,status')
     .eq('cpf', cpf)
     .limit(1);
 
@@ -67,6 +67,11 @@ export async function GET(request: NextRequest) {
     campo_id?: string | null;
     congregacao_id?: string | null;
     matricula?: string | null;
+    cargo_ministerial?: string | null;
+    pastor_presidente?: boolean | null;
+    pastor_auxiliar?: boolean | null;
+    jubilado?: boolean | null;
+    status?: string | null;
   };
 
   return NextResponse.json({
@@ -78,5 +83,10 @@ export async function GET(request: NextRequest) {
     campo_id: row.campo_id || null,
     congregacao_id: row.congregacao_id || null,
     ...(includeMatricula ? { matricula: row.matricula || null } : {}),
+    cargo_ministerial: row.cargo_ministerial || null,
+    pastor_presidente: !!row.pastor_presidente,
+    pastor_auxiliar: !!row.pastor_auxiliar,
+    jubilado: !!row.jubilado,
+    status: row.status || null,
   });
 }

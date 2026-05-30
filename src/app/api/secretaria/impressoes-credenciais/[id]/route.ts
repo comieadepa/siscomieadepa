@@ -11,7 +11,8 @@ import { logDB } from '@/lib/audit';
 const ALLOWED_ROLES = ['super', 'administrador', 'cgadb'] as const;
 
 const TRANSITIONS: Record<string, string[]> = {
-  pago_pendente_impressao: ['impresso', 'cancelado'],
+  pago_pendente_impressao: ['em_impressao', 'cancelado'],
+  em_impressao: ['impresso', 'cancelado'],
   impresso: ['entregue'],
   entregue: [],
   cancelado: [],
@@ -60,6 +61,7 @@ export async function PATCH(
     updated_at: new Date().toISOString(),
   };
 
+  if (novoStatus === 'em_impressao') updateData.em_impressao_em = new Date().toISOString();
   if (novoStatus === 'impresso') updateData.impresso_em = new Date().toISOString();
   if (novoStatus === 'entregue') updateData.entregue_em = new Date().toISOString();
   if (novoStatus === 'cancelado') updateData.cancelado_em = new Date().toISOString();

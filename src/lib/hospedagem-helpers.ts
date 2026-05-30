@@ -14,6 +14,7 @@ export interface InscricaoParaHospedagem {
   hosp_descricao_necessidade: string | null;
   hosp_cama_inferior: boolean;
   hosp_observacoes: string | null;
+  grupo_hospedagem?: string | null;
 }
 
 export interface Alojamento {
@@ -102,6 +103,37 @@ export function detectarPerfilAGO(inscricao: InscricaoParaHospedagem): PerfilAGO
  * Sugere o melhor alojamento para uma inscrição.
  * Retorna null no alojamento_id se não houver vaga disponível.
  */
+/**
+ * Verifica se o grupo de hospedagem da inscrição é compatível com o público do alojamento.
+ * Retorna true quando não há grupo definido (sem preferência = aceita qualquer setor ativo).
+ */
+export function grupoMatchesAlojamento(
+  grupoHospedagem: string | null | undefined,
+  alojamento: { publico: string; nome: string },
+): boolean {
+  if (!grupoHospedagem) return true;
+  if (alojamento.publico === 'misto') return true;
+
+  const norm = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  const g = norm(grupoHospedagem);
+  const p = alojamento.publico.toLowerCase();
+  const n = norm(alojamento.nome);
+
+  if (p === 'presidentes' && (g.includes('presidente') || g.includes('jubilad'))) return true;
+  if (p === 'jubilados'   && (g.includes('jubilad') || g.includes('presidente'))) return true;
+  if (p === 'feminino'    && (g.includes('feminino') || g.includes('mulher') || g === 'f')) return true;
+  if (p === 'masculino_geral' && (
+    g.includes('masculino') || g.includes('auxiliar') || g.includes('juventude') || g === 'm'
+  )) return true;
+
+  // Fallback: correspondência pelo nome do alojamento
+  if (n.includes(g) || g.includes(n)) return true;
+
+  return false;
+}
+
 export function sugerirAlojamento(
   inscricao: InscricaoParaHospedagem,
   alojamentos: Alojamento[],

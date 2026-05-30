@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import PageLayout from '@/components/PageLayout';
 import { authenticatedFetch } from '@/lib/api-client';
-import { Printer, Eye, RefreshCw, Truck } from 'lucide-react';
+import { Printer, Eye, RefreshCw, Truck, Package } from 'lucide-react';
 
 interface ImpressaoItem {
   id: string;
@@ -26,6 +26,7 @@ interface ImpressaoItem {
 const STATUS_COLOR: Record<string, string> = {
   aguardando_pagamento: 'bg-yellow-100 text-yellow-800',
   pago_pendente_impressao: 'bg-blue-100 text-blue-800',
+  em_impressao: 'bg-indigo-100 text-indigo-800',
   impresso: 'bg-purple-100 text-purple-800',
   entregue: 'bg-green-100 text-green-800',
   cancelado: 'bg-gray-100 text-gray-600',
@@ -37,7 +38,7 @@ const fmtDate = (v: string | null) => {
 };
 
 const STATUS_TABS = [
-  { key: 'pago_pendente_impressao,impresso', label: 'Pendentes' },
+  { key: 'pago_pendente_impressao,em_impressao,impresso', label: 'Pendentes' },
   { key: 'entregue', label: 'Entregues' },
   { key: 'cancelado', label: 'Cancelados' },
   { key: '', label: 'Todos' },
@@ -46,7 +47,7 @@ const STATUS_TABS = [
 export default function ImpressoesCredenciaisPage() {
   const [items, setItems] = useState<ImpressaoItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusTab, setStatusTab] = useState('pago_pendente_impressao,impresso');
+  const [statusTab, setStatusTab] = useState('pago_pendente_impressao,em_impressao,impresso');
   const [atualizando, setAtualizando] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -185,6 +186,17 @@ export default function ImpressoesCredenciaisPage() {
                           </a>
                         )}
                         {item.status === 'pago_pendente_impressao' && (
+                          <button
+                            onClick={() => atualizarStatus(item.id, 'em_impressao')}
+                            disabled={atualizando === item.id}
+                            title="Iniciar impressão"
+                            className="inline-flex items-center gap-1 text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors disabled:opacity-60"
+                          >
+                            <Package size={13} />
+                            Em Impressão
+                          </button>
+                        )}
+                        {item.status === 'em_impressao' && (
                           <button
                             onClick={() => atualizarStatus(item.id, 'impresso')}
                             disabled={atualizando === item.id}

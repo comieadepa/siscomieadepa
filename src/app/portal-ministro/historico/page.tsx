@@ -62,35 +62,56 @@ export default function HistoricoPage() {
         </div>
       )}
 
-      {!loading && itens.length > 0 && (
-        <div className="relative">
-          {/* Linha vertical */}
-          <div className="absolute left-5 top-0 bottom-0 w-0.5 bg-gray-200" />
+      {!loading && itens.length > 0 && (() => {
+        const byYear: Record<number, HistoricoItem[]> = {};
+        itens.forEach((item) => {
+          const year = new Date(item.ocorrencia).getFullYear();
+          if (!byYear[year]) byYear[year] = [];
+          byYear[year].push(item);
+        });
+        const years = Object.keys(byYear).map(Number).sort((a, b) => b - a);
 
-          <div className="space-y-4">
-            {itens.map((item) => {
-              const dotColor = TIPO_COLOR[item.tipo] || 'bg-gray-400';
-              return (
-                <div key={item.id} className="flex gap-4 pl-12 relative">
-                  <div
-                    className={`absolute left-3.5 top-3 w-3 h-3 rounded-full ${dotColor} border-2 border-white shadow`}
-                  />
-                  <div className="flex-1 bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-4">
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full text-white ${dotColor}`}>
-                        {item.tipoLabel}
-                      </span>
-                      <span className="text-xs text-gray-400">{fmtDate(item.ocorrencia)}</span>
-                    </div>
-                    {item.titulo && <p className="font-semibold text-gray-800 text-sm">{item.titulo}</p>}
-                    <p className="text-sm text-gray-600 mt-0.5">{item.descricao}</p>
+        return (
+          <div className="space-y-8">
+            {years.map((year) => (
+              <div key={year}>
+                {/* Cabeçalho do ano */}
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-2xl font-bold text-[#0D2B4E]">{year}</span>
+                  <div className="flex-1 h-px bg-gray-200" />
+                </div>
+
+                {/* Itens do ano */}
+                <div className="relative">
+                  <div className="absolute left-5 top-0 bottom-0 w-0.5 bg-gray-200" />
+                  <div className="space-y-4">
+                    {byYear[year].map((item) => {
+                      const dotColor = TIPO_COLOR[item.tipo] || 'bg-gray-400';
+                      return (
+                        <div key={item.id} className="flex gap-4 pl-12 relative">
+                          <div
+                            className={`absolute left-3.5 top-3 w-3 h-3 rounded-full ${dotColor} border-2 border-white shadow`}
+                          />
+                          <div className="flex-1 bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-4">
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full text-white ${dotColor}`}>
+                                {item.tipoLabel}
+                              </span>
+                              <span className="text-xs text-gray-400">{fmtDate(item.ocorrencia)}</span>
+                            </div>
+                            {item.titulo && <p className="font-semibold text-gray-800 text-sm">{item.titulo}</p>}
+                            <p className="text-sm text-gray-600 mt-0.5">{item.descricao}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

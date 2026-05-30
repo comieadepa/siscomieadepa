@@ -38,18 +38,25 @@ interface Alojamento {
 }
 
 interface Hospedagem {
-  id: string;
+  id: string | null;
   inscricao_id: string;
   alojamento_id: string | null;
-  status: 'solicitada' | 'confirmada' | 'lista_espera' | 'recusada';
+  status: string;
   prioridade: number;
   necessidade_especial: boolean;
   descricao_necessidade: string | null;
   cama_inferior: boolean;
+  possui_comorbidade: boolean;
+  descricao_comorbidade: string | null;
+  grupo_hospedagem: string | null;
   tipo_cama: 'inferior' | 'superior' | null;
   numero_cama: string | null;
   observacoes: string | null;
   alocacao_automatica: boolean;
+  checkin_at: string | null;
+  checkout_at: string | null;
+  checkin_operador: string | null;
+  checkout_operador: string | null;
   // joins
   nome_inscrito?: string;
   cpf?: string | null;
@@ -57,15 +64,21 @@ interface Hospedagem {
   supervisao_id?: string | null;
   campo_id?: string | null;
   data_nascimento?: string | null;
+  tipo_inscricao?: string | null;
+  status_pagamento?: string | null;
   alojamento_nome?: string | null;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 const STATUS_HOSP_CFG: Record<string, { label: string; cls: string }> = {
-  solicitada:   { label: 'Solicitada',   cls: 'bg-yellow-100 text-yellow-700' },
-  confirmada:   { label: 'Confirmada',   cls: 'bg-emerald-100 text-emerald-700' },
-  lista_espera: { label: 'Lista Espera', cls: 'bg-orange-100 text-orange-700' },
-  recusada:     { label: 'Recusada',     cls: 'bg-red-100 text-red-700' },
+  solicitada:        { label: 'Solicitada',       cls: 'bg-yellow-100 text-yellow-700' },
+  alocada:           { label: 'Alocada',          cls: 'bg-blue-100 text-blue-700' },
+  confirmada:        { label: 'Confirmada',       cls: 'bg-emerald-100 text-emerald-700' },
+  checkin_realizado: { label: 'Check-in ✔',      cls: 'bg-teal-100 text-teal-700' },
+  checkout_realizado:{ label: 'Check-out ✔',     cls: 'bg-gray-100 text-gray-600' },
+  lista_espera:      { label: 'Lista Espera',     cls: 'bg-orange-100 text-orange-700' },
+  cancelada:         { label: 'Cancelada',        cls: 'bg-red-100 text-red-700' },
+  recusada:          { label: 'Recusada',         cls: 'bg-red-100 text-red-700' },
 };
 
 
@@ -84,7 +97,7 @@ const thCls = 'text-left text-xs font-semibold text-gray-500 uppercase tracking-
 const tdCls = 'py-2.5 px-3 text-sm text-gray-700 border-t border-gray-50 whitespace-nowrap';
 
 // ─── Sub-aba ────────────────────────────────────────────────────────────────
-type SubAba = 'hospedagens' | 'alojamentos' | 'relatorios' | 'painel_ago';
+type SubAba = 'hospedagens' | 'alojamentos' | 'relatorios' | 'setores' | 'chegadas' | 'ausentes' | 'painel_ago';
 
 // ════════════════════════════════════════════════════════════════════════════
 // COMPONENTE PRINCIPAL
@@ -113,7 +126,7 @@ export default function TabHospedagem({
   const [loadingAloj,     setLoadingAloj]     = useState(true);
   const [loadingHosp,     setLoadingHosp]     = useState(true);
   const [autoalocando,    setAutoalocando]    = useState(false);
-  const [autoalocResult,  setAutoalocResult]  = useState<{ alocadas: number; listaEspera: number; erros: number } | null>(null);
+  const [autoalocResult,  setAutoalocResult]  = useState<{ alocadas: number; listaEspera: number; erros: number; leitos: number } | null>(null);
 
   // Filtros hospedagens
   const [filtroStatus,  setFiltroStatus]  = useState('');
@@ -121,6 +134,8 @@ export default function TabHospedagem({
   const [filtroSexo,    setFiltroSexo]    = useState('');
   const [filtroSup,     setFiltroSup]     = useState('');
   const [filtroNecEsp,  setFiltroNecEsp]  = useState('');
+  const [filtroGrupo,   setFiltroGrupo]   = useState('');
+  const [busca,         setBusca]         = useState('');
 
   // Modal edição
   const [editando, setEditando] = useState<Hospedagem | null>(null);
@@ -135,6 +150,23 @@ export default function TabHospedagem({
   const [erroEdit,    setErroEdit]    = useState<string | null>(null);
   const [quickErro,   setQuickErro]   = useState<string | null>(null);
   const [salvandoId,  setSalvandoId]  = useState<string | null>(null);
+
+  // Modal ocorrência
+  const [modalOcorr,      setModalOcorr]      = useState<Hospedagem | null>(null);
+  const [ocorrTipo,       setOcorrTipo]       = useState('observacao_geral');
+  const [ocorrDesc,       setOcorrDesc]       = useState('');
+  const [ocorrOp,         setOcorrOp]         = useState('');
+  const [salvandoOcorr,   setSalvandoOcorr]   = useState(false);
+  const [erroOcorr,       setErroOcorr]       = useState<string | null>(null);
+
+  // Modal realocação
+  const [modalRealocar,   setModalRealocar]   = useState<Hospedagem | null>(null);
+  const [realAlojId,      setRealAlojId]      = useState('');
+  const [realTipoCama,    setRealTipoCama]    = useState('');
+  const [realMotivo,      setRealMotivo]      = useState('');
+  const [realOp,          setRealOp]          = useState('');
+  const [salvandoReal,    setSalvandoReal]    = useState(false);
+  const [erroReal,        setErroReal]        = useState<string | null>(null);
 
   // ── Fetch ──────────────────────────────────────────────────
   const fetchAlojamentos = useCallback(async () => {
@@ -166,16 +198,24 @@ export default function TabHospedagem({
     try {
       const res = await fetch(`/api/eventos/${eventoId}/hospedagens/alocar`, { method: 'POST' });
       const json = await res.json();
-      setAutoalocResult({ alocadas: json.confirmados ?? 0, listaEspera: json.lista_espera ?? 0, erros: 0 });
+      setAutoalocResult({ alocadas: json.confirmados ?? 0, listaEspera: json.lista_espera ?? 0, erros: 0, leitos: json.leitos_atribuidos ?? 0 });
       fetchHospedagens();
     } catch {
-      setAutoalocResult({ alocadas: 0, listaEspera: 0, erros: 1 });
+      setAutoalocResult({ alocadas: 0, listaEspera: 0, erros: 1, leitos: 0 });
     } finally {
       setAutoalocando(false);
     }
   }
 
   // ── Filtros hospedagens ────────────────────────────────────
+  const gruposDisponiveis = useMemo(() => {
+    const s = new Set<string>();
+    hospedagens.forEach(h => { if (h.grupo_hospedagem) s.add(h.grupo_hospedagem); });
+    const cfgGrupos = (evento.configuracoes_ago?.grupos as string[] | undefined) ?? [];
+    cfgGrupos.forEach(g => s.add(g));
+    return Array.from(s).sort();
+  }, [hospedagens, evento.configuracoes_ago]);
+
   const hospFiltradas = useMemo(() => {
     let list = hospedagens;
     if (filtroStatus)  list = list.filter(h => h.status === filtroStatus);
@@ -184,8 +224,16 @@ export default function TabHospedagem({
     if (filtroSup)     list = list.filter(h => h.supervisao_id === filtroSup);
     if (filtroNecEsp === '1') list = list.filter(h => h.necessidade_especial);
     if (filtroNecEsp === '0') list = list.filter(h => !h.necessidade_especial);
+    if (filtroGrupo)   list = list.filter(h => h.grupo_hospedagem === filtroGrupo);
+    if (busca.trim()) {
+      const q = busca.trim().toLowerCase();
+      list = list.filter(h =>
+        (h.nome_inscrito?.toLowerCase().includes(q)) ||
+        (h.cpf?.replace(/\D/g, '').includes(q.replace(/\D/g, '')))
+      );
+    }
     return list;
-  }, [hospedagens, filtroStatus, filtroAloj, filtroSexo, filtroSup, filtroNecEsp]);
+  }, [hospedagens, filtroStatus, filtroAloj, filtroSexo, filtroSup, filtroNecEsp, filtroGrupo, busca]);
 
   // ── Stats ──────────────────────────────────────────────────
   const stats = useMemo(() => ({
@@ -197,6 +245,30 @@ export default function TabHospedagem({
     camaInf:     hospedagens.filter(h => h.cama_inferior).length,
     vagasDisp:   alojamentos.filter(a => a.ativo).reduce((sum, a) => sum + (a.vagas_livres ?? 0), 0),
   }), [hospedagens, alojamentos]);
+
+  // ── Stats de capacidade (Fase 6) ───────────────────────────
+  const statsCapacidade = useMemo(() => {
+    const capacidadeTotal = alojamentos.filter(a => a.ativo).reduce((s, a) => s + a.total_vagas, 0);
+    const inferioresTotal = alojamentos.filter(a => a.ativo).reduce((s, a) => s + a.camas_inferiores, 0);
+    const confirmadas     = hospedagens.filter(h => h.status === 'confirmada').length;
+    const infOcupados     = hospedagens.filter(h => h.status === 'confirmada' && h.tipo_cama === 'inferior').length;
+    const checkins        = hospedagens.filter(h => h.status === 'checkin_realizado').length;
+    const checkouts       = hospedagens.filter(h => h.status === 'checkout_realizado').length;
+    const ausentes        = hospedagens.filter(h =>
+      (h.status === 'confirmada' || h.status === 'alocada') && !h.checkin_at,
+    ).length;
+    return {
+      capacidadeTotal,
+      ocupados:         confirmadas,
+      livres:           Math.max(0, capacidadeTotal - confirmadas - checkins),
+      taxaOcupacao:     capacidadeTotal > 0 ? Math.round((confirmadas + checkins) / capacidadeTotal * 100) : 0,
+      inferioresLivres: Math.max(0, inferioresTotal - infOcupados),
+      necEspPend:       hospedagens.filter(h => h.necessidade_especial && h.status === 'solicitada').length,
+      checkins,
+      checkouts,
+      ausentes,
+    };
+  }, [hospedagens, alojamentos]);
 
   // ── Abrir modal edição ─────────────────────────────────────
   function abrirEdicao(h: Hospedagem) {
@@ -216,19 +288,42 @@ export default function TabHospedagem({
     setSalvandoEdit(true);
     setErroEdit(null);
     try {
-      const res = await fetch(`/api/eventos/${eventoId}/hospedagens`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id:                  editando.id,
-          alojamento_id:       editForm.alojamento_id || null,
-          tipo_cama:           editForm.tipo_cama     || null,
-          numero_cama:         editForm.numero_cama   || null,
-          status:              editForm.status,
-          observacoes:         editForm.observacoes   || null,
-          alocacao_automatica: false,
-        }),
-      });
+      let res: Response;
+      if (editando.id) {
+        res = await fetch(`/api/eventos/${eventoId}/hospedagens`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id:                  editando.id,
+            alojamento_id:       editForm.alojamento_id || null,
+            tipo_cama:           editForm.tipo_cama     || null,
+            numero_cama:         editForm.numero_cama   || null,
+            status:              editForm.status,
+            observacoes:         editForm.observacoes   || null,
+            alocacao_automatica: false,
+          }),
+        });
+      } else {
+        // Cria registro ao alocar manualmente pela primeira vez
+        res = await fetch(`/api/eventos/${eventoId}/hospedagens`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            inscricao_id:          editando.inscricao_id,
+            alojamento_id:         editForm.alojamento_id || null,
+            tipo_cama:             editForm.tipo_cama     || null,
+            numero_cama:           editForm.numero_cama   || null,
+            status:                editForm.status,
+            observacoes:           editForm.observacoes   || null,
+            prioridade:            editando.prioridade,
+            necessidade_especial:  editando.necessidade_especial,
+            descricao_necessidade: editando.descricao_necessidade,
+            cama_inferior:         editando.cama_inferior,
+            grupo_hospedagem:      editando.grupo_hospedagem,
+            alocacao_automatica:   false,
+          }),
+        });
+      }
       if (!res.ok) { const j = await res.json(); throw new Error(j.error ?? 'Erro'); }
       setEditando(null);
       fetchHospedagens();
@@ -241,19 +336,39 @@ export default function TabHospedagem({
   // ── Ações rápidas ───────────────────────────────────────────
   async function acaoRapida(h: Hospedagem, novoStatus: string) {
     if (novoStatus === 'confirmada' && !h.alojamento_id) {
-      setQuickErro('Defina um alojamento antes de confirmar (use ✏️ Editar).');
+      setQuickErro('Defina um alojamento antes de confirmar (use ✏️ Alocar).');
       return;
     }
-    setSalvandoId(h.id);
+    setSalvandoId(h.inscricao_id);
     setQuickErro(null);
     try {
-      const res = await fetch(`/api/eventos/${eventoId}/hospedagens`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: h.id, status: novoStatus }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? 'Erro');
+      if (h.id) {
+        const res = await fetch(`/api/eventos/${eventoId}/hospedagens`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: h.id, status: novoStatus }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? 'Erro');
+      } else {
+        // Cria registro de alocação ao primeiro acesso do administrador
+        const res = await fetch(`/api/eventos/${eventoId}/hospedagens`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            inscricao_id:          h.inscricao_id,
+            status:                novoStatus,
+            prioridade:            h.prioridade,
+            necessidade_especial:  h.necessidade_especial,
+            descricao_necessidade: h.descricao_necessidade,
+            cama_inferior:         h.cama_inferior,
+            observacoes:           h.observacoes,
+            grupo_hospedagem:      h.grupo_hospedagem,
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? 'Erro');
+      }
       fetchHospedagens();
     } catch (err) {
       setQuickErro(err instanceof Error ? err.message : 'Erro ao atualizar');
@@ -263,8 +378,12 @@ export default function TabHospedagem({
   }
 
   async function removerHospedagem(h: Hospedagem) {
+    if (!h.id) {
+      setQuickErro('Esta solicitação ainda não possui registro de alocação. Use ✏️ Alocar para criar.');
+      return;
+    }
     if (!confirm(`Remover hospedagem de "${h.nome_inscrito ?? 'participante'}"? Esta ação não pode ser desfeita.`)) return;
-    setSalvandoId(h.id);
+    setSalvandoId(h.inscricao_id);
     setQuickErro(null);
     try {
       const res = await fetch(`/api/eventos/${eventoId}/hospedagens?id=${h.id}`, { method: 'DELETE' });
@@ -277,20 +396,116 @@ export default function TabHospedagem({
       setSalvandoId(null);
     }
   }
+  // ── Check-in / Checkout rápido ─────────────────────────────
+  async function acaoCheckin(h: Hospedagem, acao: 'checkin' | 'checkout') {
+    if (!h.id) return;
+    setSalvandoId(h.inscricao_id);
+    setQuickErro(null);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/hospedagens/checkin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inscricao_id: h.inscricao_id, acao }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Erro');
+      fetchHospedagens();
+    } catch (err) {
+      setQuickErro(err instanceof Error ? err.message : 'Erro ao registrar');
+    } finally {
+      setSalvandoId(null);
+    }
+  }
+
+  // ── Ocorrência ──────────────────────────────────────────────
+  function abrirOcorrencia(h: Hospedagem) {
+    setModalOcorr(h);
+    setOcorrTipo('observacao_geral');
+    setOcorrDesc('');
+    setOcorrOp('');
+    setErroOcorr(null);
+  }
+
+  async function salvarOcorrencia() {
+    if (!modalOcorr?.id) return;
+    setSalvandoOcorr(true);
+    setErroOcorr(null);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/hospedagens/ocorrencia`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hospedagem_id: modalOcorr.id,
+          inscricao_id:  modalOcorr.inscricao_id,
+          tipo:          ocorrTipo,
+          descricao:     ocorrDesc,
+          operador:      ocorrOp,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Erro');
+      setModalOcorr(null);
+    } catch (err) {
+      setErroOcorr(err instanceof Error ? err.message : 'Erro ao salvar');
+    } finally {
+      setSalvandoOcorr(false);
+    }
+  }
+
+  // ── Realocação ──────────────────────────────────────────────
+  function abrirRealocar(h: Hospedagem) {
+    setModalRealocar(h);
+    setRealAlojId(h.alojamento_id ?? '');
+    setRealTipoCama(h.tipo_cama ?? '');
+    setRealMotivo('');
+    setRealOp('');
+    setErroReal(null);
+  }
+
+  async function salvarRealocacao() {
+    if (!modalRealocar?.id || !realAlojId) return;
+    setSalvandoReal(true);
+    setErroReal(null);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/hospedagens/realocar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hospedagem_id:       modalRealocar.id,
+          novo_alojamento_id:  realAlojId,
+          novo_tipo_cama:      realTipoCama || null,
+          motivo:              realMotivo,
+          operador:            realOp,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Erro');
+      setModalRealocar(null);
+      fetchHospedagens();
+    } catch (err) {
+      setErroReal(err instanceof Error ? err.message : 'Erro ao realocar');
+    } finally {
+      setSalvandoReal(false);
+    }
+  }
+
   // ── Exportar CSV ───────────────────────────────────────────
-  function exportarCSV(lista: Hospedagem[], nome: string) {
-    baixarCSV(`hospedagem_${nome}_${eventoId}.csv`,
-      ['Nome', 'CPF', 'Sexo', 'Supervisão', 'Campo', 'Alojamento', 'Nº Leito', 'Tipo Cama', 'Status', 'Prioridade', 'Nec. Especial', 'Cama Inferior', 'Observações'],
+  function exportarCSV(lista: Hospedagem[], nome: string) {    baixarCSV(`hospedagem_${nome}_${eventoId}.csv`,
+      ['Nome', 'CPF', 'Categoria', 'Sexo', 'Data Nasc.', 'Supervisão', 'Campo', 'Grupo', 'Alojamento', 'Nº Leito', 'Tipo Cama', 'Status', 'Prioridade', 'Nec. Especial', 'Desc. Necessidade', 'Comorbidade', 'Desc. Comorbidade', 'Cama Inferior', 'Observações'],
       lista.map(h => [
-        h.nome_inscrito, h.cpf, h.sexo,
+        h.nome_inscrito, h.cpf, h.tipo_inscricao, h.sexo, h.data_nascimento,
         nomeSup(h.supervisao_id ?? null),
         nomeCampo(h.campo_id ?? null),
+        h.grupo_hospedagem,
         h.alojamento_nome,
         h.numero_cama,
         h.tipo_cama,
         h.status,
         h.prioridade,
         h.necessidade_especial ? 'Sim' : 'Não',
+        h.descricao_necessidade,
+        h.possui_comorbidade ? 'Sim' : 'Não',
+        h.descricao_comorbidade,
         h.cama_inferior ? 'Sim' : 'Não',
         h.observacoes,
       ])
@@ -306,7 +521,12 @@ export default function TabHospedagem({
           { id: 'hospedagens', label: '🛏️ Alocações' },
           { id: 'alojamentos', label: '🏠 Alojamentos' },
           { id: 'relatorios',  label: '📊 Relatórios' },
-          ...(evento.departamento === 'AGO' ? [{ id: 'painel_ago' as SubAba, label: '🎯 Painel AGO' }] : []),
+          ...(evento.departamento === 'AGO' ? [
+            { id: 'chegadas'   as SubAba, label: '📋 Chegadas' },
+            { id: 'ausentes'   as SubAba, label: '⚠️ Ausentes' },
+            { id: 'setores'    as SubAba, label: '🏗️ Setores' },
+            { id: 'painel_ago' as SubAba, label: '🎯 Painel AGO' },
+          ] : []),
         ] as { id: SubAba; label: string }[]).map(t => (
           <button key={t.id} onClick={() => setSubAba(t.id)}
             className={`px-4 py-2 rounded-lg text-xs font-semibold transition whitespace-nowrap flex-shrink-0 ${
@@ -317,15 +537,15 @@ export default function TabHospedagem({
         ))}
       </div>
 
-      {/* ── Cards de resumo ───────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+      {/* ── Cards de capacidade ──────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {[
-          { label: 'Total',        value: stats.total,       cor: 'text-[#123b63]' },
-          { label: 'Solicitadas',  value: stats.solicitadas, cor: 'text-yellow-600' },
-          { label: 'Confirmadas',  value: stats.confirmadas, cor: 'text-emerald-600' },
-          { label: 'Lista Espera', value: stats.listaEspera, cor: 'text-orange-600' },
-          { label: 'Nec. Especial',value: stats.necEsp,      cor: 'text-purple-600' },
-          { label: 'Vagas Livres', value: stats.vagasDisp,   cor: 'text-teal-600' },
+          { label: 'Cap. Total',    value: statsCapacidade.capacidadeTotal,  cor: 'text-[#123b63]' },
+          { label: 'Check-in ✓',   value: statsCapacidade.checkins,         cor: 'text-teal-600' },
+          { label: 'Check-out ✓',  value: statsCapacidade.checkouts,        cor: 'text-gray-500' },
+          { label: 'Ausentes',      value: statsCapacidade.ausentes,         cor: 'text-amber-600' },
+          { label: 'Livres',        value: statsCapacidade.livres,           cor: 'text-emerald-600' },
+          { label: 'NE Pendentes',  value: statsCapacidade.necEspPend,       cor: 'text-purple-600' },
         ].map(s => (
           <div key={s.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 text-center">
             <p className={`text-xl font-black ${s.cor}`}>{s.value}</p>
@@ -339,7 +559,7 @@ export default function TabHospedagem({
         <div className={`rounded-xl px-5 py-3 flex items-center gap-3 border text-sm font-semibold ${
           autoalocResult.erros > 0 ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
         }`}>
-          ✅ Autoalocação concluída: {autoalocResult.alocadas} alocadas · {autoalocResult.listaEspera} lista espera · {autoalocResult.erros} erros
+          ✅ Autoalocação concluída: {autoalocResult.alocadas} confirmadas · {autoalocResult.leitos} leitos · {autoalocResult.listaEspera} lista espera
           <button onClick={() => setAutoalocResult(null)} className="ml-auto text-gray-400 hover:text-gray-600">✕</button>
         </div>
       )}
@@ -364,13 +584,26 @@ export default function TabHospedagem({
               {autoalocando ? '⏳ Alocando...' : '🤖 Autoalocar'}
             </button>
 
+            <a
+              href={`/eventos/${eventoId}/hospedagem/checkin`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full sm:w-auto flex items-center gap-2 bg-teal-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-teal-700 transition"
+            >
+              📱 Tela Check-in
+            </a>
+
             <div className="flex flex-wrap gap-2 flex-1 min-w-0">
               <select value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}
                 className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
                 <option value="">Todos os status</option>
                 <option value="solicitada">Solicitada</option>
+                <option value="alocada">Alocada</option>
                 <option value="confirmada">Confirmada</option>
+                <option value="checkin_realizado">Check-in Realizado</option>
+                <option value="checkout_realizado">Check-out Realizado</option>
                 <option value="lista_espera">Lista Espera</option>
+                <option value="cancelada">Cancelada</option>
                 <option value="recusada">Recusada</option>
               </select>
 
@@ -399,6 +632,22 @@ export default function TabHospedagem({
                 <option value="1">Sim</option>
                 <option value="0">Não</option>
               </select>
+
+              {gruposDisponiveis.length > 0 && (
+                <select value={filtroGrupo} onChange={e => setFiltroGrupo(e.target.value)}
+                  className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+                  <option value="">Todos os grupos</option>
+                  {gruposDisponiveis.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+              )}
+
+              <input
+                type="text"
+                value={busca}
+                onChange={e => setBusca(e.target.value)}
+                placeholder="Buscar nome ou CPF..."
+                className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] min-w-[160px]"
+              />
             </div>
 
             <button onClick={() => exportarCSV(hospFiltradas, 'geral')}
@@ -413,52 +662,71 @@ export default function TabHospedagem({
           ) : hospFiltradas.length === 0 ? (
             <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
               <span className="text-4xl mb-3 block">🛏️</span>
-              <p className="text-gray-500 font-medium">Nenhuma hospedagem encontrada</p>
-              <p className="text-xs text-gray-400 mt-1">Ajuste os filtros ou aguarde inscrições com hospedagem.</p>
+              <p className="text-gray-500 font-medium">Nenhuma solicitação de hospedagem encontrada</p>
+              <p className="text-xs text-gray-400 mt-1">
+                {hospedagens.length === 0
+                  ? 'Nenhuma inscrição com hospedagem=true ainda. Realize uma inscrição AGO com hospedagem para que apareça aqui.'
+                  : 'Ajuste os filtros para ver as solicitações.'
+                }
+              </p>
             </div>
           ) : (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
-              <table className="w-full min-w-[980px] text-sm">
+              <table className="w-full min-w-[1260px] text-sm">
                 <thead>
                   <tr>
                     <th className={thCls}>Nome</th>
+                    <th className={thCls}>Categoria</th>
+                    <th className={thCls}>Sx / Idade</th>
+                    <th className={thCls}>Campo</th>
                     <th className={thCls}>Supervisão</th>
+                    <th className={thCls}>Grupo</th>
                     <th className={thCls}>Alojamento</th>
-                    <th className={thCls}>Leito</th>
-                    <th className={thCls}>Tipo Cama</th>
                     <th className={thCls}>Status</th>
-                    <th className={thCls + ' text-right'}>Prior.</th>
                     <th className={thCls + ' text-center'}>🦽</th>
+                    <th className={thCls + ' text-center'}>🩺</th>
+                    <th className={thCls + ' text-center'}>⬇</th>
                     <th className={thCls}>Ações</th>
                   </tr>
                 </thead>
                 <tbody>
                   {hospFiltradas.map(h => {
                     const stCfg = STATUS_HOSP_CFG[h.status] ?? STATUS_HOSP_CFG.solicitada;
-                    const carregando = salvandoId === h.id;
+                    const carregando = salvandoId === h.inscricao_id;
+                    const idade = h.data_nascimento
+                      ? (() => {
+                          const hoje = new Date();
+                          const nasc = new Date(h.data_nascimento);
+                          let i = hoje.getFullYear() - nasc.getFullYear();
+                          const m = hoje.getMonth() - nasc.getMonth();
+                          if (m < 0 || (m === 0 && hoje.getDate() < nasc.getDate())) i--;
+                          return i;
+                        })()
+                      : null;
                     return (
-                      <tr key={h.id} className={`border-t border-gray-50 hover:bg-gray-50 transition ${carregando ? 'opacity-60' : ''}`}>
-                        <td className={tdCls + ' font-medium text-gray-900'}>{h.nome_inscrito ?? '-'}</td>
+                      <tr key={h.inscricao_id} className={`border-t border-gray-50 hover:bg-gray-50 transition ${carregando ? 'opacity-60' : ''}`}>
+                        <td className={tdCls + ' font-medium text-gray-900 max-w-[160px] truncate'} title={h.nome_inscrito}>{h.nome_inscrito ?? '-'}</td>
+                        <td className={tdCls + ' text-xs text-gray-500 max-w-[120px] truncate'} title={h.tipo_inscricao ?? ''}>{h.tipo_inscricao ?? <span className="text-gray-300">—</span>}</td>
+                        <td className={tdCls + ' text-xs'}>{h.sexo ?? '—'}{idade !== null ? ` / ${idade}a` : ''}</td>
+                        <td className={tdCls + ' text-xs text-gray-500'}>{nomeCampo(h.campo_id ?? null)}</td>
                         <td className={tdCls + ' text-xs text-gray-500'}>{nomeSup(h.supervisao_id ?? null)}</td>
-                        <td className={tdCls}>{h.alojamento_nome ?? <span className="text-gray-400 italic">Não alocado</span>}</td>
-                        <td className={tdCls + ' font-mono text-xs font-semibold'}>{h.numero_cama ?? <span className="text-gray-300">—</span>}</td>
-                        <td className={tdCls}>
-                          {h.tipo_cama ? (
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
-                              h.tipo_cama === 'inferior' ? 'bg-sky-100 text-sky-700' : 'bg-gray-100 text-gray-600'
-                            }`}>
-                              {h.tipo_cama === 'inferior' ? '⬇ Inf.' : '⬆ Sup.'}
-                            </span>
-                          ) : <span className="text-gray-300">—</span>}
-                        </td>
+                        <td className={tdCls + ' text-xs'}>{h.grupo_hospedagem ?? <span className="text-gray-300">—</span>}</td>
+                        <td className={tdCls}>{h.alojamento_nome ?? <span className="text-gray-400 italic text-xs">Não alocado</span>}</td>
                         <td className={tdCls}>
                           <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${stCfg.cls}`}>{stCfg.label}</span>
                         </td>
-                        <td className={tdCls + ' text-right font-mono text-xs'}>{h.prioridade}</td>
                         <td className={tdCls + ' text-center'}>
                           {h.necessidade_especial ? (
                             <span title={h.descricao_necessidade ?? ''} className="cursor-help">🦽</span>
                           ) : '—'}
+                        </td>
+                        <td className={tdCls + ' text-center'}>
+                          {h.possui_comorbidade ? (
+                            <span title={h.descricao_comorbidade ?? ''} className="cursor-help">🩺</span>
+                          ) : '—'}
+                        </td>
+                        <td className={tdCls + ' text-center'}>
+                          {h.cama_inferior ? '↓' : '—'}
                         </td>
                         <td className={tdCls}>
                           <div className="flex gap-1 items-center">
@@ -483,17 +751,54 @@ export default function TabHospedagem({
                             <button
                               onClick={() => abrirEdicao(h)}
                               disabled={carregando}
-                              title="Editar leito e dados"
+                              title="Alocar / Editar leito"
                               className="text-xs px-2 py-1 rounded-lg bg-[#123b63] text-white hover:bg-[#0f2a45] transition disabled:opacity-40">
                               ✏️
                             </button>
-                            <button
-                              onClick={() => removerHospedagem(h)}
-                              disabled={carregando}
-                              title="Remover hospedagem"
-                              className="text-xs px-2 py-1 rounded-lg bg-red-500 text-white hover:bg-red-600 transition disabled:opacity-40">
-                              🗑️
-                            </button>
+                            {h.id && (
+                              <button
+                                onClick={() => removerHospedagem(h)}
+                                disabled={carregando}
+                                title="Remover alocação"
+                                className="text-xs px-2 py-1 rounded-lg bg-red-500 text-white hover:bg-red-600 transition disabled:opacity-40">
+                                🗑️
+                              </button>
+                            )}
+                            {/* Check-in / Checkout rápido */}
+                            {(h.status === 'confirmada' || h.status === 'alocada') && (
+                              <button
+                                onClick={() => acaoCheckin(h, 'checkin')}
+                                disabled={salvandoId === h.inscricao_id}
+                                title="Registrar check-in"
+                                className="text-xs px-2 py-1 rounded-lg bg-teal-600 text-white hover:bg-teal-700 transition disabled:opacity-40">
+                                🏠
+                              </button>
+                            )}
+                            {h.status === 'checkin_realizado' && (
+                              <button
+                                onClick={() => acaoCheckin(h, 'checkout')}
+                                disabled={salvandoId === h.inscricao_id}
+                                title="Registrar checkout"
+                                className="text-xs px-2 py-1 rounded-lg bg-gray-500 text-white hover:bg-gray-600 transition disabled:opacity-40">
+                                🚪
+                              </button>
+                            )}
+                            {h.id && (
+                              <button
+                                onClick={() => abrirOcorrencia(h)}
+                                title="Registrar ocorrência"
+                                className="text-xs px-2 py-1 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition">
+                                📝
+                              </button>
+                            )}
+                            {h.id && (
+                              <button
+                                onClick={() => abrirRealocar(h)}
+                                title="Realocar participante"
+                                className="text-xs px-2 py-1 rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition">
+                                🔄
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -525,6 +830,42 @@ export default function TabHospedagem({
           nomeCampo={nomeCampo}
           eventoId={eventoId}
           exportarCSV={exportarCSV}
+        />
+      )}
+
+      {/* ════════════ SUB-ABA: CHEGADAS ═════════════════════════ */}
+      {subAba === 'chegadas' && (
+        <SecaoChegadas
+          hospedagens={hospedagens}
+          alojamentos={alojamentos}
+          nomeSup={nomeSup}
+          nomeCampo={nomeCampo}
+          exportarCSV={exportarCSV}
+          onCheckin={(h) => acaoCheckin(h, 'checkin')}
+          onCheckout={(h) => acaoCheckin(h, 'checkout')}
+          salvandoId={salvandoId}
+        />
+      )}
+
+      {/* ════════════ SUB-ABA: AUSENTES ═════════════════════════ */}
+      {subAba === 'ausentes' && (
+        <SecaoAusentes
+          hospedagens={hospedagens}
+          alojamentos={alojamentos}
+          nomeSup={nomeSup}
+          nomeCampo={nomeCampo}
+          exportarCSV={exportarCSV}
+          onCheckin={(h) => acaoCheckin(h, 'checkin')}
+          salvandoId={salvandoId}
+        />
+      )}
+
+      {/* ════════════ SUB-ABA: SETORES ══════════════════════════ */}
+      {subAba === 'setores' && (
+        <SecaoSetores
+          hospedagens={hospedagens}
+          alojamentos={alojamentos}
+          configuracoes={evento.configuracoes_ago ?? null}
         />
       )}
 
@@ -604,8 +945,12 @@ export default function TabHospedagem({
                   className={inputCls}
                 >
                   <option value="solicitada">Solicitada</option>
+                  <option value="alocada">Alocada</option>
                   <option value="confirmada">Confirmada</option>
+                  <option value="checkin_realizado">Check-in Realizado</option>
+                  <option value="checkout_realizado">Check-out Realizado</option>
                   <option value="lista_espera">Lista de Espera</option>
+                  <option value="cancelada">Cancelada</option>
                   <option value="recusada">Recusada</option>
                 </select>
               </div>
@@ -646,6 +991,268 @@ export default function TabHospedagem({
           </div>
         </div>
       )}
+
+      {/* ════════════ MODAL OCORRÊNCIA ══════════════════════════ */}
+      {modalOcorr && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <h2 className="text-base font-black text-[#0D2B4E] mb-1">📝 Registrar Ocorrência</h2>
+            <p className="text-xs text-gray-500 mb-4">{modalOcorr.nome_inscrito}</p>
+
+            {erroOcorr && (
+              <div className="mb-3 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{erroOcorr}</div>
+            )}
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Tipo</label>
+                <select value={ocorrTipo} onChange={e => setOcorrTipo(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+                  <option value="observacao_geral">Observação geral</option>
+                  <option value="mudanca_leito">Mudança de leito</option>
+                  <option value="mudanca_alojamento">Mudança de alojamento</option>
+                  <option value="atendimento_medico">Atendimento médico</option>
+                  <option value="dano_patrimonio">Dano ao patrimônio</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Descrição</label>
+                <textarea value={ocorrDesc} onChange={e => setOcorrDesc(e.target.value)}
+                  rows={3} placeholder="Descreva o ocorrido..."
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] resize-y" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Operador</label>
+                <input type="text" value={ocorrOp} onChange={e => setOcorrOp(e.target.value)}
+                  placeholder="Nome do responsável"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]" />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button onClick={() => setModalOcorr(null)}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition">
+                Cancelar
+              </button>
+              <button onClick={salvarOcorrencia} disabled={salvandoOcorr}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 transition disabled:opacity-50">
+                {salvandoOcorr ? 'Salvando...' : '📝 Registrar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════════════ MODAL REALOCAÇÃO ══════════════════════════ */}
+      {modalRealocar && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <h2 className="text-base font-black text-[#0D2B4E] mb-1">🔄 Realocar Participante</h2>
+            <p className="text-xs text-gray-500 mb-4">{modalRealocar.nome_inscrito}</p>
+
+            {erroReal && (
+              <div className="mb-3 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{erroReal}</div>
+            )}
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Novo alojamento *</label>
+                <select value={realAlojId} onChange={e => setRealAlojId(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+                  <option value="">Selecione...</option>
+                  {alojamentos.filter(a => a.ativo).map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.nome} — {(a.vagas_livres ?? 0)}/{a.total_vagas} livres
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Tipo de cama</label>
+                <select value={realTipoCama} onChange={e => setRealTipoCama(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+                  <option value="">Não definido</option>
+                  <option value="inferior">Inferior</option>
+                  <option value="superior">Superior</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Motivo</label>
+                <input type="text" value={realMotivo} onChange={e => setRealMotivo(e.target.value)}
+                  placeholder="Motivo da realocação (opcional)"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Operador</label>
+                <input type="text" value={realOp} onChange={e => setRealOp(e.target.value)}
+                  placeholder="Nome do responsável"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]" />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button onClick={() => setModalRealocar(null)}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition">
+                Cancelar
+              </button>
+              <button onClick={salvarRealocacao} disabled={salvandoReal || !realAlojId}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold hover:bg-violet-700 transition disabled:opacity-50">
+                {salvandoReal ? 'Realocando...' : '🔄 Realocar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SEÇÃO: CHEGADAS (check-in realizado)
+// ════════════════════════════════════════════════════════════════════════════
+function SecaoChegadas({
+  hospedagens,
+  alojamentos: _alojamentos,
+  nomeSup: _nomeSup,
+  nomeCampo: _nomeCampo,
+  exportarCSV,
+  onCheckin: _onCheckin,
+  onCheckout,
+  salvandoId,
+}: {
+  hospedagens: Hospedagem[];
+  alojamentos: Alojamento[];
+  nomeSup: (id: string | null) => string;
+  nomeCampo: (id: string | null) => string;
+  exportarCSV: (lista: Hospedagem[], nome: string) => void;
+  onCheckin: (h: Hospedagem) => void;
+  onCheckout: (h: Hospedagem) => void;
+  salvandoId: string | null;
+}) {
+  const chegadas = hospedagens.filter(h => h.status === 'checkin_realizado' || h.status === 'checkout_realizado');
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="font-black text-[#0D2B4E] text-sm">
+          📋 Chegadas — {chegadas.length} participante(s)
+        </h3>
+        <button onClick={() => exportarCSV(chegadas, 'chegadas')}
+          className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition font-semibold">
+          ⬇ CSV
+        </button>
+      </div>
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <table className="w-full text-xs">
+          <thead className="bg-gray-50 border-b border-gray-100">
+            <tr>
+              {['Nome', 'Alojamento', 'Leito', 'Status', 'Check-in', 'Ações'].map(h => (
+                <th key={h} className="px-3 py-2 text-left text-[10px] font-bold text-gray-500 uppercase">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {chegadas.length === 0 ? (
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Nenhuma chegada registrada ainda.</td></tr>
+            ) : chegadas.map(h => (
+              <tr key={h.inscricao_id} className="border-t border-gray-50 hover:bg-gray-50/50">
+                <td className="px-3 py-2 font-semibold text-gray-800">{h.nome_inscrito}</td>
+                <td className="px-3 py-2 text-gray-600">{h.alojamento_nome ?? '—'}</td>
+                <td className="px-3 py-2 text-gray-600">{h.numero_cama ?? '—'}</td>
+                <td className="px-3 py-2">
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    h.status === 'checkin_realizado' ? 'bg-teal-100 text-teal-700' : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {h.status === 'checkin_realizado' ? 'Check-in ✓' : 'Check-out ✓'}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-gray-500">
+                  {h.checkin_at ? new Date(h.checkin_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                </td>
+                <td className="px-3 py-2">
+                  {h.status === 'checkin_realizado' && (
+                    <button onClick={() => onCheckout(h)} disabled={salvandoId === h.inscricao_id}
+                      className="text-xs px-2 py-1 rounded-lg bg-gray-500 text-white hover:bg-gray-600 transition disabled:opacity-40">
+                      🚪 Checkout
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SEÇÃO: AUSENTES (confirmados/alocados sem check-in)
+// ════════════════════════════════════════════════════════════════════════════
+function SecaoAusentes({
+  hospedagens,
+  alojamentos: _alojamentos,
+  nomeSup,
+  nomeCampo: _nomeCampo,
+  exportarCSV,
+  onCheckin,
+  salvandoId,
+}: {
+  hospedagens: Hospedagem[];
+  alojamentos: Alojamento[];
+  nomeSup: (id: string | null) => string;
+  nomeCampo: (id: string | null) => string;
+  exportarCSV: (lista: Hospedagem[], nome: string) => void;
+  onCheckin: (h: Hospedagem) => void;
+  salvandoId: string | null;
+}) {
+  const ausentes = hospedagens.filter(
+    h => (h.status === 'confirmada' || h.status === 'alocada') && !h.checkin_at,
+  );
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="font-black text-[#0D2B4E] text-sm">
+          ⚠️ Ausentes — {ausentes.length} participante(s) confirmados sem check-in
+        </h3>
+        <button onClick={() => exportarCSV(ausentes, 'ausentes')}
+          className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition font-semibold">
+          ⬇ CSV
+        </button>
+      </div>
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <table className="w-full text-xs">
+          <thead className="bg-gray-50 border-b border-gray-100">
+            <tr>
+              {['Nome', 'Supervisão', 'Alojamento', 'Leito', 'Status', 'Ação'].map(h => (
+                <th key={h} className="px-3 py-2 text-left text-[10px] font-bold text-gray-500 uppercase">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {ausentes.length === 0 ? (
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Nenhum ausente — todos realizaram check-in! 🎉</td></tr>
+            ) : ausentes.map(h => (
+              <tr key={h.inscricao_id} className="border-t border-gray-50 hover:bg-gray-50/50">
+                <td className="px-3 py-2 font-semibold text-gray-800">{h.nome_inscrito}</td>
+                <td className="px-3 py-2 text-gray-500">{nomeSup(h.supervisao_id ?? null)}</td>
+                <td className="px-3 py-2 text-gray-600">{h.alojamento_nome ?? '—'}</td>
+                <td className="px-3 py-2 text-gray-600">{h.numero_cama ?? '—'}</td>
+                <td className="px-3 py-2">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
+                    Aguardando
+                  </span>
+                </td>
+                <td className="px-3 py-2">
+                  <button onClick={() => onCheckin(h)} disabled={salvandoId === h.inscricao_id}
+                    className="text-xs px-2 py-1 rounded-lg bg-teal-600 text-white hover:bg-teal-700 transition disabled:opacity-40">
+                    🏠 Check-in
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -1035,6 +1642,152 @@ const TIPO_LEITO_LABEL: Record<string, string> = {
   rede:       '🌿 Rede',
 };
 
+// ════════════════════════════════════════════════════════════════════════════
+// SEÇÃO: SETORES — OCUPAÇÃO POR ALOJAMENTO
+// ════════════════════════════════════════════════════════════════════════════
+function SecaoSetores({
+  hospedagens,
+  alojamentos,
+  configuracoes,
+}: {
+  hospedagens: Hospedagem[];
+  alojamentos: Alojamento[];
+  configuracoes: Record<string, unknown> | null;
+}) {
+  const setoresConfig = useMemo(
+    () => (configuracoes?.setores as SetorAgo[] | undefined) ?? [],
+    [configuracoes],
+  );
+
+  const statsAloj = useMemo(() => {
+    return alojamentos.map(a => {
+      const todos       = hospedagens.filter(h => h.alojamento_id === a.id);
+      const confirmados = todos.filter(h => h.status === 'confirmada').length;
+      const solicitados = todos.filter(h => h.status === 'solicitada').length;
+      const taxa        = a.total_vagas > 0 ? Math.round(confirmados / a.total_vagas * 100) : 0;
+      const livres      = Math.max(0, a.total_vagas - confirmados);
+      return { ...a, confirmados, solicitados, taxa, livres };
+    }).sort((a, b) => b.confirmados - a.confirmados);
+  }, [hospedagens, alojamentos]);
+
+  const totalCapacidade = alojamentos.filter(a => a.ativo).reduce((s, a) => s + a.total_vagas, 0);
+  const totalOcupados   = hospedagens.filter(h => h.status === 'confirmada').length;
+  const taxaGlobal      = totalCapacidade > 0 ? Math.round(totalOcupados / totalCapacidade * 100) : 0;
+
+  const thS = 'text-left text-xs font-semibold text-gray-500 uppercase tracking-wide py-2.5 px-3 bg-gray-50 whitespace-nowrap';
+  const tdS = 'py-2.5 px-3 text-sm text-gray-700 border-t border-gray-50 whitespace-nowrap';
+  const tdSn = `${tdS} text-right tabular-nums`;
+
+  return (
+    <div className="space-y-5">
+
+      {/* Resumo geral */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: 'Setores Ativos',   value: alojamentos.filter(a => a.ativo).length, cor: 'text-[#123b63]' },
+          { label: 'Cap. Total',       value: totalCapacidade,                          cor: 'text-[#123b63]' },
+          { label: 'Ocupados',         value: totalOcupados,                            cor: 'text-rose-600' },
+          { label: `Taxa ${taxaGlobal}%`, value: `${taxaGlobal}%`,                     cor: taxaGlobal >= 90 ? 'text-red-600' : taxaGlobal >= 70 ? 'text-yellow-600' : 'text-teal-600' },
+        ].map(s => (
+          <div key={s.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-center">
+            <p className={`text-2xl font-black ${s.cor}`}>{s.value}</p>
+            <p className="text-[10px] text-gray-400 mt-1">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabela de alojamentos */}
+      {alojamentos.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+          <span className="text-4xl mb-3 block">🏗️</span>
+          <p className="text-gray-500 font-medium">Nenhum setor/alojamento cadastrado</p>
+          <p className="text-xs text-gray-400 mt-1">
+            Crie alojamentos na aba &quot;Alojamentos&quot; para visualizar a ocupação por setor.
+          </p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+          <table className="w-full min-w-[720px]">
+            <thead>
+              <tr>
+                <th className={thS}>Setor / Alojamento</th>
+                <th className={thS}>Grupo</th>
+                <th className={thS + ' text-right'}>Capacidade</th>
+                <th className={thS + ' text-right'}>Ocupados</th>
+                <th className={thS + ' text-right'}>Livres</th>
+                <th className={thS + ' text-right'}>Pendentes</th>
+                <th className={thS}>Ocupação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {statsAloj.map(a => {
+                const corBar  = a.taxa >= 90 ? 'bg-red-500' : a.taxa >= 70 ? 'bg-yellow-500' : 'bg-emerald-500';
+                const corText = a.taxa >= 90 ? 'text-red-600' : a.taxa >= 70 ? 'text-yellow-600' : 'text-emerald-600';
+                return (
+                  <tr key={a.id} className={`border-t border-gray-50 hover:bg-gray-50 transition ${!a.ativo ? 'opacity-50' : ''}`}>
+                    <td className={tdS + ' font-medium text-gray-900'}>
+                      {a.nome}
+                      {!a.ativo && (
+                        <span className="ml-2 text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">Inativo</span>
+                      )}
+                    </td>
+                    <td className={tdS + ' text-xs text-gray-500'}>{PUBLICO_LABEL[a.publico] ?? a.publico}</td>
+                    <td className={tdSn}>{a.total_vagas}</td>
+                    <td className={tdSn + ' text-rose-700 font-semibold'}>{a.confirmados}</td>
+                    <td className={tdSn + (a.livres === 0 ? ' text-gray-400' : ' text-emerald-700 font-semibold')}>{a.livres}</td>
+                    <td className={tdSn + ' text-yellow-700'}>{a.solicitados}</td>
+                    <td className={tdS}>
+                      <div className="flex items-center gap-2 min-w-[130px]">
+                        <div className="flex-1 bg-gray-100 rounded-full h-2">
+                          <div
+                            className={`h-2 rounded-full transition-all ${corBar}`}
+                            style={{ width: `${Math.min(100, a.taxa)}%` }}
+                          />
+                        </div>
+                        <span className={`text-xs font-bold tabular-nums ${corText}`}>{a.taxa}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Setores planejados (configuração AGO) */}
+      {setoresConfig.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+          <h3 className="font-bold text-[#123b63] text-sm mb-3">
+            📋 Setores Planejados
+            <span className="ml-2 text-xs text-gray-400 font-normal">
+              (configuração AGO · {setoresConfig.filter(s => s.ativo).length} ativo(s))
+            </span>
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {setoresConfig.map(s => (
+              <div key={s.id} className={`bg-gray-50 rounded-lg p-3 ${!s.ativo ? 'opacity-50' : ''}`}>
+                <div className="flex items-center justify-between mb-1">
+                  <h4 className="font-semibold text-sm text-gray-900">{s.nome}</h4>
+                  <span className="text-xs text-gray-500 tabular-nums">{s.quantidade_leitos} leitos</span>
+                </div>
+                <p className="text-xs text-gray-500">{s.grupo} · ⬇ {s.quantidade_leitos_inferiores} inf.</p>
+                <div className="flex gap-1 mt-1.5 flex-wrap">
+                  {s.tipos_leito.map(t => (
+                    <span key={t} className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
+                      {TIPO_LEITO_LABEL[t] ?? t}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SecaoPainelAgo({
   hospedagens,
   alojamentos,
@@ -1108,6 +1861,32 @@ function SecaoPainelAgo({
     semAloj:     hospedagens.filter(h => !h.alojamento_id).length,
   }), [hospedagens]);
 
+  // Estatísticas por categoria de inscrição (Fase 6)
+  const statsPorCategoria = useMemo(() => {
+    const cats: Record<string, { hospedados: number; confirmados: number }> = {
+      'Pastor Presidente': { hospedados: 0, confirmados: 0 },
+      'Pastor Jubilado':   { hospedados: 0, confirmados: 0 },
+      'Pastor Auxiliar':   { hospedados: 0, confirmados: 0 },
+      'Feminino':          { hospedados: 0, confirmados: 0 },
+      'Outros':            { hospedados: 0, confirmados: 0 },
+    };
+    const catFn = (h: Hospedagem): string => {
+      const t = (h.tipo_inscricao ?? '').toLowerCase();
+      const isEspViu = /esposa|vi[uú]va/i.test(t);
+      if (/pastor[- .]?pres/i.test(t) && !isEspViu) return 'Pastor Presidente';
+      if (/jubilad/i.test(t))                        return 'Pastor Jubilado';
+      if (/auxiliar/i.test(t) && !isEspViu)          return 'Pastor Auxiliar';
+      if (h.sexo === 'F')                             return 'Feminino';
+      return 'Outros';
+    };
+    hospedagens.forEach(h => {
+      const cat = catFn(h);
+      cats[cat].hospedados++;
+      if (h.status === 'confirmada') cats[cat].confirmados++;
+    });
+    return cats;
+  }, [hospedagens]);
+
   // Total de vagas por setor (capacity planejada)
   const totalVagasSetores = setores.filter(s => s.ativo).reduce((sum, s) => sum + s.quantidade_leitos, 0);
 
@@ -1146,6 +1925,20 @@ function SecaoPainelAgo({
             <p className="text-[10px] text-gray-500 mt-1 leading-tight">{s.label}</p>
           </div>
         ))}
+      </div>
+
+      {/* ── Por Categoria de Inscrição ─────────────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h3 className="font-bold text-[#123b63] text-sm mb-3">📊 Hospedados por Categoria</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {Object.entries(statsPorCategoria).map(([cat, s]) => (
+            <div key={cat} className="text-center p-3 bg-gray-50 rounded-xl">
+              <p className="text-xl font-black text-[#123b63]">{s.confirmados}</p>
+              <p className="text-[10px] text-gray-600 font-semibold mt-0.5 leading-tight">{cat}</p>
+              <p className="text-[9px] text-gray-400">{s.hospedados} solicit.</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* ── Resumo por Grupo de Alocação ────────────────────────── */}

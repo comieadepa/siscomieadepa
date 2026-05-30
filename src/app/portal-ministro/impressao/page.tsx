@@ -27,6 +27,7 @@ interface SolicitarResult {
 const STATUS_COLOR: Record<string, string> = {
   aguardando_pagamento: 'bg-yellow-100 text-yellow-800',
   pago_pendente_impressao: 'bg-blue-100 text-blue-800',
+  em_impressao: 'bg-indigo-100 text-indigo-800',
   impresso: 'bg-purple-100 text-purple-800',
   entregue: 'bg-green-100 text-green-800',
   cancelado: 'bg-gray-100 text-gray-600',
@@ -87,7 +88,7 @@ export default function ImpressaoPage() {
   };
 
   const temPendente = solicitacoes.some((s) =>
-    ['aguardando_pagamento', 'pago_pendente_impressao'].includes(s.status)
+    ['aguardando_pagamento', 'pago_pendente_impressao', 'em_impressao'].includes(s.status)
   );
 
   return (
