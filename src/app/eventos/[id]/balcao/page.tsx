@@ -12,7 +12,7 @@ import { authenticatedFetch } from '@/lib/api-client';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
-interface Campo      { id: string; nome: string; supervisao_id: string; }
+interface Campo      { id: string; nome: string; supervisao_id: string; is_campo_missionario?: boolean; }
 
 interface Evento {
   id: string; nome: string; slug: string; departamento: string;
@@ -22,11 +22,25 @@ interface Evento {
   limite_vagas: number | null; limite_hospedagem: number | null; limite_brindes: number | null;
   inscricoes_abertas: boolean; status: string; usar_tipos_inscricao: boolean;
   gerar_certificado: boolean;
+  configuracoes_ago?: { habilitar_desconto_campo_missionario?: boolean; valor_pastor_presidente_campo_missionario?: number | string; } | null;
 }
 
 interface TipoInscricao {
   id: string; nome: string; valor: number;
   inclui_alimentacao: boolean; inclui_hospedagem: boolean;
+}
+
+interface MinistroInfo {
+  nome: string;
+  matricula: string | null;
+  cargoMinisterial: string | null;
+  isPastorPresidente: boolean;
+  isPastorAuxiliar: boolean;
+  isJubilado: boolean;
+  status: string | null;
+  supervisao_id: string | null;
+  campo_id: string | null;
+  isCampoMissionario: boolean;
 }
 
 interface InscricaoSalva {
@@ -70,6 +84,7 @@ interface EditFormBalcao {
 interface FormState {
   nome: string; cpf: string; email: string;
   whatsapp: string; sexo: string;
+  data_nascimento: string;
   supervisao_id: string; campo_id: string;
   hospedagem: boolean; alimentacao: boolean; brinde: boolean;
   tipo_id: string;
@@ -87,6 +102,7 @@ type BalcaoTab = 'nova' | 'inscritos';
 
 const FORM_VAZIO: FormState = {
   nome: '', cpf: '', email: '', whatsapp: '', sexo: '',
+  data_nascimento: '',
   supervisao_id: '', campo_id: '',
   hospedagem: false, alimentacao: false, brinde: false,
   tipo_id: '', cupom: '', forma_pagamento: 'dinheiro', observacoes: '',
@@ -160,6 +176,9 @@ export default function BalcaoPage() {
   const [nomeMinistro, setNomeMinistro] = useState('');
   // Alerta de CPF já inscrito neste evento
   const [inscricaoDuplicada, setInscricaoDuplicada] = useState<{ id: string; nome: string } | null>(null);
+  const [ministroInfo,             setMinistroInfo]             = useState<MinistroInfo | null>(null);
+  const [cpfStatus,                setCpfStatus]                = useState<'idle' | 'encontrado' | 'nao_encontrado'>('idle');
+  const [descontoCampoMissionario, setDescontoCampoMissionario] = useState(false);
 
   // ── Estado do cupom ───────────────────────────────────────
   const [cupomStatus,   setCupomStatus]   = useState<'idle' | 'validando' | 'ok' | 'erro'>('idle');
@@ -170,10 +189,18 @@ export default function BalcaoPage() {
   const valorBase = useMemo(() => {
     if (form.tipo_id && tipos.length > 0) {
       const t = tipos.find(t => t.id === form.tipo_id);
-      return t ? t.valor : (evento?.valor_inscricao ?? 0);
+      if (t) {
+        const isPP = /pastor\s*presidente/i.test(t.nome) && !/esposa/i.test(t.nome);
+        if (descontoCampoMissionario && isPP && evento?.configuracoes_ago) {
+          const valorM = parseFloat(String(evento.configuracoes_ago.valor_pastor_presidente_campo_missionario ?? '0')) || 0;
+          if (valorM > 0) return valorM;
+        }
+        return t.valor;
+      }
+      return evento?.valor_inscricao ?? 0;
     }
     return evento?.valor_inscricao ?? 0;
-  }, [form.tipo_id, tipos, evento]);
+  }, [form.tipo_id, tipos, evento, descontoCampoMissionario]);
 
   const valorFinal = Math.max(0, valorBase - cupomDesconto);
 
@@ -182,6 +209,53 @@ export default function BalcaoPage() {
     () => tipos.find(t => t.id === form.tipo_id) ?? null,
     [form.tipo_id, tipos]
   );
+
+  // ── Perfil ministerial AGO + filtragem de categorias ─────
+  const { ministroAtivo, ministroInativo, tiposParaExibir } = useMemo(() => {
+    const ativo = cpfStatus === 'encontrado' && ministroInfo !== null &&
+      ['active', 'ativo'].includes((ministroInfo.status ?? '').toLowerCase());
+    const inativo = cpfStatus === 'encontrado' && ministroInfo !== null && !ativo;
+
+    const idadeCalc: number | null = form.data_nascimento ? (() => {
+      const hoje = new Date();
+      const nasc = new Date(form.data_nascimento);
+      let id = hoje.getFullYear() - nasc.getFullYear();
+      const m = hoje.getMonth() - nasc.getMonth();
+      if (m < 0 || (m === 0 && hoje.getDate() < nasc.getDate())) id--;
+      return id;
+    })() : null;
+
+    if (!evento || evento.departamento !== 'AGO') {
+      return { ministroAtivo: ativo, ministroInativo: inativo, tiposParaExibir: tipos };
+    }
+
+    const pool = tipos.filter(t => !/campo\s*mission/i.test(t.nome));
+    const filtered = pool.filter(t => {
+      const ehEsposa    = /esposa/i.test(t.nome);
+      const ehViuva     = /vi[uú]va/i.test(t.nome);
+      const ehJuventude = /juventude/i.test(t.nome);
+      const ehPP        = !ehEsposa && !ehViuva && /pastor\s*presidente/i.test(t.nome);
+      const ehPA        = !ehEsposa && !ehViuva && /pastor\s*auxiliar/i.test(t.nome);
+      const ehJub       = !ehEsposa && !ehViuva && /pastor\s*jubilado/i.test(t.nome);
+      const ehMinisterial = ehPP || ehPA || ehJub;
+      if (ehMinisterial) {
+        if (form.sexo === 'F') return false;
+        if (!ativo) return false;
+        if (ehPP)  return !!ministroInfo?.isPastorPresidente;
+        if (ehPA)  return !!ministroInfo?.isPastorAuxiliar;
+        if (ehJub) return !!ministroInfo?.isJubilado;
+        return false;
+      }
+      if (ehEsposa || ehViuva) return form.sexo === 'F';
+      if (ehJuventude) {
+        if (idadeCalc === null) return false;
+        return idadeCalc <= 29;
+      }
+      return true;
+    });
+
+    return { ministroAtivo: ativo, ministroInativo: inativo, tiposParaExibir: filtered };
+  }, [cpfStatus, ministroInfo, form.sexo, form.data_nascimento, tipos, evento]);
 
   // ── Estado pós-inscrição ──────────────────────────────────
   const [salvando,      setSalvando]      = useState(false);
@@ -221,7 +295,7 @@ export default function BalcaoPage() {
           { data: tps },
         ] = await Promise.all([
           supabase.from('eventos').select(
-            'id,nome,slug,departamento,data_inicio,data_fim,local,cidade,banner_url,valor_inscricao,permite_hospedagem,permite_alimentacao,permite_brinde,limite_vagas,limite_hospedagem,limite_brindes,inscricoes_abertas,status,usar_tipos_inscricao,gerar_certificado'
+            'id,nome,slug,departamento,data_inicio,data_fim,local,cidade,banner_url,valor_inscricao,permite_hospedagem,permite_alimentacao,permite_brinde,limite_vagas,limite_hospedagem,limite_brindes,inscricoes_abertas,status,usar_tipos_inscricao,gerar_certificado,configuracoes_ago'
           ).eq('id', id).single(),
           authenticatedFetch('/api/v1/estrutura'),
           supabase.from('evento_tipos_inscricao').select('id,nome,valor,inclui_alimentacao,inclui_hospedagem').eq('evento_id', id).eq('ativo', true).order('ordem'),
@@ -296,6 +370,9 @@ export default function BalcaoPage() {
     setCupomMsg('');
     setErroSave(null);
     setInscricaoDuplicada(null);
+    setMinistroInfo(null);
+    setCpfStatus('idle');
+    setDescontoCampoMissionario(false);
     setInscricaoSalva(null);
     setAsaasData(null);
     // Se há só um tipo, pré-selecionar (somente quando evento usa tipos)
@@ -309,16 +386,24 @@ export default function BalcaoPage() {
   // Busca CPF
   // ─────────────────────────────────────────────────────────
   async function buscarCPF() {
-    if (!cpfBusca.trim()) return;
+    if (!cpfBusca.trim() || !evento) return;
     setBuscando(true);
     setMinistroEncontrado(false);
     setNomeMinistro('');
     setInscricaoDuplicada(null);
+    setCpfStatus('idle');
+    setMinistroInfo(null);
+    setDescontoCampoMissionario(false);
     const cpfLimpo = cpfBusca.replace(/\D/g, '');
+    const isAGO = evento.departamento === 'AGO';
 
-    // Busca membro E verifica duplicidade em paralelo
+    // Para AGO com CPF (11 dígitos): endpoint público com dados ministeriais completos
+    const usePublicEndpoint = isAGO && cpfLimpo.length === 11;
+
     const [lookupRes, dupRes] = await Promise.all([
-      authenticatedFetch(`/api/v1/members/lookup?search=${encodeURIComponent(cpfLimpo || cpfBusca)}&limit=1`),
+      usePublicEndpoint
+        ? fetch(`/api/public/members/lookup?cpf=${cpfLimpo}&includeMatricula=true`)
+        : authenticatedFetch(`/api/v1/members/lookup?search=${encodeURIComponent(cpfLimpo || cpfBusca)}&limit=1`),
       cpfLimpo
         ? supabase
             .from('evento_inscricoes')
@@ -329,45 +414,119 @@ export default function BalcaoPage() {
         : Promise.resolve({ data: [] as { id: string; nome_inscrito: string }[] }),
     ]);
     const lookupJson = lookupRes.ok ? await lookupRes.json().catch(() => null as any) : null;
-    const data = (lookupJson?.data ?? []) as { id: string; nome?: string | null; name?: string | null; cpf?: string | null; celular?: string | null; phone?: string | null; whatsapp?: string | null; email?: string | null; supervisao?: string | null; campo?: string | null; supervisao_id?: string | null; campo_id?: string | null }[];
     const dupData = (dupRes as { data?: { id: string; nome_inscrito: string }[] }).data ?? [];
     setBuscando(false);
 
-    // Alerta de duplicidade (exibe antes de preencher o form)
     if (dupData && Array.isArray(dupData) && dupData.length > 0) {
-      setInscricaoDuplicada({ id: (dupData[0] as { id: string; nome_inscrito: string }).id, nome: (dupData[0] as { id: string; nome_inscrito: string }).nome_inscrito });
+      setInscricaoDuplicada({ id: dupData[0].id, nome: dupData[0].nome_inscrito });
     }
 
-    if (data && data.length > 0) {
-      const m = data[0];
-      const nome = (m.nome ?? m.name ?? '') as string;
-      const celular = (m.celular ?? m.phone ?? '') as string;
-      const sup   = supervisoes.find(s => s.id === m.supervisao_id || s.nome === m.supervisao);
-      const campo = campos.find(c => c.id === m.campo_id || c.nome === m.campo);
-      setMinistroEncontrado(true);
-      setNomeMinistro(nome || '');
-      setForm(f => ({
-        ...f,
-        nome:         nome || f.nome,
-        cpf:          m.cpf  || cpfBusca,
-        whatsapp:     m.whatsapp || celular || f.whatsapp,
-        email:        m.email   || f.email,
-        supervisao_id: sup?.id  || f.supervisao_id,
-        campo_id:     campo?.id || f.campo_id,
-      }));
-      setTimeout(() => supRef.current?.focus(), 50);
+    if (usePublicEndpoint) {
+      // Resposta: { encontrado, nome, sexo, data_nascimento, supervisao_id, campo_id, matricula, cargo_ministerial, pastor_presidente, pastor_auxiliar, jubilado, status }
+      const payload = (lookupJson ?? {}) as {
+        encontrado?: boolean;
+        nome?: string | null;
+        sexo?: string | null;
+        data_nascimento?: string | null;
+        supervisao_id?: string | null;
+        campo_id?: string | null;
+        matricula?: string | null;
+        cargo_ministerial?: string | null;
+        pastor_presidente?: boolean;
+        pastor_auxiliar?: boolean;
+        jubilado?: boolean;
+        status?: string | null;
+      };
+
+      if (payload.encontrado) {
+        const nome = payload.nome ?? '';
+        setCpfStatus('encontrado');
+        setMinistroEncontrado(true);
+        setNomeMinistro(nome);
+
+        const sup = supervisoes.find(s => s.id === payload.supervisao_id);
+        let campoEncontrado: Campo | undefined;
+
+        if (sup?.id) {
+          const camposRes = await fetch(`/api/public/estrutura?supervisao_id=${encodeURIComponent(sup.id)}&includeCamposInactive=true`);
+          const camposJson = camposRes.ok ? await camposRes.json().catch(() => null) : null;
+          const camposDaSup: Campo[] = (camposJson?.campos as Campo[]) || [];
+          setCampos(prev => {
+            const map = new Map(prev.map(c => [c.id, c]));
+            camposDaSup.forEach(c => map.set(c.id, c));
+            return Array.from(map.values());
+          });
+          campoEncontrado = camposDaSup.find(c => c.id === payload.campo_id);
+        }
+
+        const campoMissionario = campoEncontrado?.is_campo_missionario ?? false;
+        const confAgo = evento.configuracoes_ago;
+        setDescontoCampoMissionario(!!(confAgo?.habilitar_desconto_campo_missionario) && campoMissionario);
+
+        setMinistroInfo({
+          nome,
+          matricula: payload.matricula ?? null,
+          cargoMinisterial: payload.cargo_ministerial ?? null,
+          isPastorPresidente: !!payload.pastor_presidente,
+          isPastorAuxiliar: !!payload.pastor_auxiliar,
+          isJubilado: !!payload.jubilado,
+          status: payload.status ?? null,
+          supervisao_id: payload.supervisao_id ?? null,
+          campo_id: payload.campo_id ?? null,
+          isCampoMissionario: campoMissionario,
+        });
+
+        setForm(f => ({
+          ...f,
+          nome:            nome || f.nome,
+          cpf:             cpfBusca,
+          sexo:            payload.sexo || f.sexo,
+          data_nascimento: payload.data_nascimento || f.data_nascimento,
+          supervisao_id:   sup?.id || f.supervisao_id,
+          campo_id:        campoEncontrado?.id || f.campo_id,
+        }));
+      } else {
+        setCpfStatus('nao_encontrado');
+        setForm(f => ({
+          ...f,
+          cpf: cpfBusca,
+          nome: '', email: '', whatsapp: '', sexo: '',
+          data_nascimento: '', supervisao_id: '', campo_id: '',
+        }));
+        setTimeout(() => nomeRef.current?.focus(), 50);
+      }
     } else {
-      setForm(f => ({
-        ...f,
-        cpf:          cpfBusca,
-        nome:         '',
-        email:        '',
-        whatsapp:     '',
-        sexo:         '',
-        supervisao_id: '',
-        campo_id:     '',
-      }));
-      setTimeout(() => nomeRef.current?.focus(), 50);
+      // Endpoint v1 (não-AGO ou busca por nome/RG)
+      const data = (lookupJson?.data ?? []) as { id: string; nome?: string | null; name?: string | null; cpf?: string | null; celular?: string | null; phone?: string | null; whatsapp?: string | null; email?: string | null; supervisao?: string | null; campo?: string | null; supervisao_id?: string | null; campo_id?: string | null; sexo?: string | null; data_nascimento?: string | null }[];
+      if (data && data.length > 0) {
+        const m = data[0];
+        const nome = (m.nome ?? m.name ?? '') as string;
+        const celular = (m.celular ?? m.phone ?? '') as string;
+        const sup   = supervisoes.find(s => s.id === m.supervisao_id || s.nome === m.supervisao);
+        const campo = campos.find(c => c.id === m.campo_id || c.nome === m.campo);
+        setCpfStatus('encontrado');
+        setMinistroEncontrado(true);
+        setNomeMinistro(nome || '');
+        setForm(f => ({
+          ...f,
+          nome:         nome || f.nome,
+          cpf:          m.cpf || cpfBusca,
+          whatsapp:     m.whatsapp || celular || f.whatsapp,
+          email:        m.email   || f.email,
+          supervisao_id: sup?.id  || f.supervisao_id,
+          campo_id:     campo?.id || f.campo_id,
+        }));
+        setTimeout(() => supRef.current?.focus(), 50);
+      } else {
+        setCpfStatus('nao_encontrado');
+        setForm(f => ({
+          ...f,
+          cpf: cpfBusca,
+          nome: '', email: '', whatsapp: '', sexo: '',
+          data_nascimento: '', supervisao_id: '', campo_id: '',
+        }));
+        setTimeout(() => nomeRef.current?.focus(), 50);
+      }
     }
   }
 
@@ -449,6 +608,7 @@ export default function BalcaoPage() {
           email:         form.email.trim() || undefined,
           whatsapp:      form.whatsapp.trim() || undefined,
           sexo:          form.sexo || undefined,
+          data_nascimento: form.data_nascimento || undefined,
           supervisao_id: form.supervisao_id,
           campo_id:      form.campo_id || undefined,
           hospedagem,
@@ -509,6 +669,7 @@ export default function BalcaoPage() {
         email:            form.email.trim() || null,
         whatsapp:         form.whatsapp.trim() || null,
         sexo:             form.sexo || null,
+        data_nascimento:  form.data_nascimento || null,
         supervisao_id:    form.supervisao_id,
         campo_id:         form.campo_id || null,
         hospedagem,
@@ -678,6 +839,13 @@ export default function BalcaoPage() {
   useEffect(() => () => {
     if (listaMsgTimeoutRef.current) window.clearTimeout(listaMsgTimeoutRef.current);
   }, []);
+
+  // Auto-seleciona categoria quando só há uma opção válida (AGO)
+  useEffect(() => {
+    if (!evento || evento.departamento !== 'AGO') return;
+    if (tiposParaExibir.length !== 1) return;
+    setField('tipo_id', tiposParaExibir[0].id);
+  }, [tiposParaExibir]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─────────────────────────────────────────────────────────
   // Helpers de nomes
@@ -1021,7 +1189,7 @@ export default function BalcaoPage() {
   // ─────────────────────────────────────────────────────────
   // Formulário principal
   // ─────────────────────────────────────────────────────────
-  const temTipos = (evento?.usar_tipos_inscricao ?? false) && tipos.length > 0;
+  const temTipos = (evento?.usar_tipos_inscricao ?? false) && tiposParaExibir.length > 0;
 
   return (
     <div className="min-h-screen bg-[#0D2B4E] flex flex-col">
@@ -1173,12 +1341,53 @@ export default function BalcaoPage() {
               </div>
               <div>
                 <label className={labelCls}>Sexo</label>
-                <select name="sexo" value={form.sexo} onChange={handleText} className={inputCls}>
-                  <option value="">-</option>
-                  <option value="M">Masculino</option>
-                  <option value="F">Feminino</option>
-                </select>
+                {evento.departamento === 'AGO' && ministroInfo ? (
+                  <div className={inputCls + ' cursor-default opacity-70'}>
+                    {form.sexo === 'M' ? 'Masculino' : form.sexo === 'F' ? 'Feminino' : '-'}
+                  </div>
+                ) : (
+                  <select name="sexo" value={form.sexo} onChange={handleText} className={inputCls}>
+                    <option value="">-</option>
+                    <option value="M">Masculino</option>
+                    <option value="F">Feminino</option>
+                  </select>
+                )}
               </div>
+              {/* Card ministerial AGO */}
+              {evento.departamento === 'AGO' && cpfStatus === 'encontrado' && ministroInfo && (
+                <div className={`col-span-1 sm:col-span-2 lg:col-span-3 p-4 rounded-xl border ${ministroAtivo ? 'bg-emerald-900/30 border-emerald-500/40' : 'bg-amber-900/30 border-amber-500/40'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className={`text-xs font-bold uppercase tracking-wide ${ministroAtivo ? 'text-emerald-300' : 'text-amber-300'}`}>
+                      {ministroAtivo ? '✅ Ministro COMIEADEPA identificado' : '⚠️ Registro ministerial (inativo)'}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                    {ministroInfo.matricula && (
+                      <div><span className="text-white/50">Matrícula: </span><strong className="text-white">{ministroInfo.matricula}</strong></div>
+                    )}
+                    {ministroInfo.cargoMinisterial && (
+                      <div><span className="text-white/50">Cargo: </span><strong className="text-white">{ministroInfo.cargoMinisterial}</strong></div>
+                    )}
+                    {form.supervisao_id && (
+                      <div><span className="text-white/50">Supervisão: </span><strong className="text-white">{supervisoes.find(s => s.id === form.supervisao_id)?.nome ?? '-'}</strong></div>
+                    )}
+                    {form.campo_id && (
+                      <div><span className="text-white/50">Campo: </span><strong className="text-white">{campos.find(c => c.id === form.campo_id)?.nome ?? '-'}</strong></div>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {ministroInfo.isPastorPresidente && <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full text-xs font-bold">⭐ Pastor Presidente</span>}
+                    {ministroInfo.isPastorAuxiliar && <span className="bg-blue-500/20 text-blue-300 border border-blue-500/40 px-2 py-0.5 rounded-full text-xs font-bold">Pastor Auxiliar</span>}
+                    {ministroInfo.isJubilado && <span className="bg-purple-500/20 text-purple-300 border border-purple-500/40 px-2 py-0.5 rounded-full text-xs font-bold">🏅 Jubilado</span>}
+                    {ministroInfo.isCampoMissionario && <span className="bg-green-500/20 text-green-300 border border-green-500/40 px-2 py-0.5 rounded-full text-xs font-bold">🌿 Campo Missionário</span>}
+                  </div>
+                  {ministroInativo && (
+                    <div className="mt-2 p-2 bg-amber-900/30 border border-amber-500/30 rounded-lg text-xs text-amber-200">
+                      Registro não ativo. Categorias ministeriais (Presidente, Auxiliar, Jubilado) não disponíveis.
+                    </div>
+                  )}
+                </div>
+              )}
               <div>
                 <label className={labelCls}>WhatsApp</label>
                 <input name="whatsapp" value={form.whatsapp} onChange={handleText} className={inputCls} placeholder="(00) 00000-0000" />
@@ -1187,26 +1396,38 @@ export default function BalcaoPage() {
                 <label className={labelCls}>E-mail</label>
                 <input name="email" type="email" value={form.email} onChange={handleText} className={inputCls} placeholder="email@exemplo.com" />
               </div>
-              <div />
+              {!(evento.departamento === 'AGO' && ministroInfo) && <div />}
               <div>
                 <label className={labelCls}>Supervisão *</label>
-                <select
-                  ref={supRef}
-                  name="supervisao_id"
-                  value={form.supervisao_id}
-                  onChange={e => { handleText(e); setForm(f => ({ ...f, campo_id: '' })); }}
-                  className={inputCls}
-                >
-                  <option value="">Selecione...</option>
-                  {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
-                </select>
+                {evento.departamento === 'AGO' && ministroInfo ? (
+                  <div className={inputCls + ' cursor-default opacity-70'}>
+                    {supervisoes.find(s => s.id === form.supervisao_id)?.nome ?? '-'}
+                  </div>
+                ) : (
+                  <select
+                    ref={supRef}
+                    name="supervisao_id"
+                    value={form.supervisao_id}
+                    onChange={e => { handleText(e); setForm(f => ({ ...f, campo_id: '' })); }}
+                    className={inputCls}
+                  >
+                    <option value="">Selecione...</option>
+                    {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                  </select>
+                )}
               </div>
               <div>
                 <label className={labelCls}>Campo</label>
-                <select name="campo_id" value={form.campo_id} onChange={handleText} className={inputCls}>
-                  <option value="">Selecione...</option>
-                  {camposFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                </select>
+                {evento.departamento === 'AGO' && ministroInfo ? (
+                  <div className={inputCls + ' cursor-default opacity-70'}>
+                    {campos.find(c => c.id === form.campo_id)?.nome ?? '-'}
+                  </div>
+                ) : (
+                  <select name="campo_id" value={form.campo_id} onChange={handleText} className={inputCls}>
+                    <option value="">Selecione...</option>
+                    {camposFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                  </select>
+                )}
               </div>
             </div>
           </section>
@@ -1223,7 +1444,7 @@ export default function BalcaoPage() {
               <div className="mb-4">
                 <label className={labelCls}>Tipo de inscrição</label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {tipos.map(t => (
+                  {tiposParaExibir.map(t => (
                     <button
                       key={t.id}
                       type="button"
