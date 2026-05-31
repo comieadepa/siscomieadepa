@@ -1328,6 +1328,12 @@ export default function BalcaoPage() {
                 <span>Ministro encontrado: <strong>{nomeMinistro}</strong></span>
               </div>
             )}
+            {cpfStatus === 'nao_encontrado' && (
+              <div className="mt-2 bg-amber-900/50 border border-amber-500/40 rounded-lg px-4 py-2.5 text-sm text-amber-200 flex items-center gap-2">
+                <span>⚠️</span>
+                <span>CPF não localizado no cadastro ministerial. A inscrição continuará como visitante.</span>
+              </div>
+            )}
             {/* Alerta de CPF já inscrito neste evento */}
             {inscricaoDuplicada && (
               <div className="mt-3 bg-amber-900/70 border-2 border-amber-500/60 rounded-xl px-4 py-3 flex items-start gap-3">
@@ -1535,6 +1541,19 @@ export default function BalcaoPage() {
                   onClick={() => setField('brinde', !form.brinde)}
                 />
               </div>
+            )}
+
+            {/* AGO: checkbox explícito de hospedagem quando tipo está selecionado */}
+            {evento.departamento === 'AGO' && evento.permite_hospedagem && temTipos && !!tipoSel && (
+              <label className="flex items-center gap-2.5 cursor-pointer select-none mt-3">
+                <input
+                  type="checkbox"
+                  checked={form.hospedagem}
+                  onChange={e => setField('hospedagem', e.target.checked)}
+                  className="accent-amber-400 w-4 h-4"
+                />
+                <span className="text-sm text-white/80">🏨 Desejo solicitar hospedagem</span>
+              </label>
             )}
 
             {/* Campos AGO — aparecem quando AGO + hospedagem selecionada */}
