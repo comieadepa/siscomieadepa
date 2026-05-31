@@ -257,6 +257,12 @@ export default function BalcaoPage() {
     }
 
     const pool = tipos.filter(t => !/campo\s*mission/i.test(t.nome));
+
+    // Regra COMIEADEPA: cargo "Pastor" (sem PP nem Jubilado) → elegível como Pastor Auxiliar
+    const cargoEhPastor = (ministroInfo?.cargoMinisterial ?? '').trim().toLowerCase() === 'pastor';
+    const isPAEfetivo = !!ministroInfo?.isPastorAuxiliar
+      || (cargoEhPastor && !ministroInfo?.isPastorPresidente && !ministroInfo?.isJubilado);
+
     const filtered = pool.filter(t => {
       const ehEsposa    = /esposa/i.test(t.nome);
       const ehViuva     = /vi[uú]va/i.test(t.nome);
@@ -269,7 +275,7 @@ export default function BalcaoPage() {
         if (form.sexo === 'F') return false;
         if (!ativo) return false;
         if (ehPP)  return !!ministroInfo?.isPastorPresidente;
-        if (ehPA)  return !!ministroInfo?.isPastorAuxiliar;
+        if (ehPA)  return isPAEfetivo;
         if (ehJub) return !!ministroInfo?.isJubilado;
         return false;
       }
