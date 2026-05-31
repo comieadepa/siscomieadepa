@@ -452,7 +452,7 @@ export default function BalcaoPage() {
     }
 
     if (usePublicEndpoint) {
-      // Resposta: { encontrado, nome, sexo, data_nascimento, supervisao_id, campo_id, matricula, cargo_ministerial, pastor_presidente, pastor_auxiliar, jubilado, status }
+      // Resposta: { encontrado, nome, sexo, data_nascimento, supervisao_id, campo_id, campo_nome, matricula, ... }
       const payload = (lookupJson ?? {}) as {
         encontrado?: boolean;
         nome?: string | null;
@@ -460,6 +460,7 @@ export default function BalcaoPage() {
         data_nascimento?: string | null;
         supervisao_id?: string | null;
         campo_id?: string | null;
+        campo_nome?: string | null;
         matricula?: string | null;
         cargo_ministerial?: string | null;
         pastor_presidente?: boolean;
@@ -489,7 +490,12 @@ export default function BalcaoPage() {
             camposDaSup.forEach(c => map.set(c.id, c));
             return Array.from(map.values());
           });
-          campoEncontrado = camposDaSup.find(c => c.id === payload.campo_id);
+          // Tenta achar o campo primeiro por ID (FK via congregação), depois por nome (custom_fields)
+          const normNome = (s: string) => s.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+          campoEncontrado = camposDaSup.find(c => c.id === payload.campo_id)
+            ?? (payload.campo_nome
+                ? camposDaSup.find(c => normNome(c.nome) === normNome(payload.campo_nome!))
+                : undefined);
         }
 
         const campoMissionario = campoEncontrado?.is_campo_missionario ?? false;
@@ -510,7 +516,7 @@ export default function BalcaoPage() {
           isJubilado: !!payload.jubilado,
           status: statusMinistro,
           supervisao_id: payload.supervisao_id ?? null,
-          campo_id: payload.campo_id ?? null,
+          campo_id: campoEncontrado?.id ?? payload.campo_id ?? null,
           isCampoMissionario: campoMissionario,
         });
 
@@ -534,7 +540,7 @@ export default function BalcaoPage() {
           sexo:            payload.sexo || f.sexo,
           data_nascimento: payload.data_nascimento || f.data_nascimento,
           supervisao_id:   sup?.id || f.supervisao_id,
-          campo_id:        campoEncontrado?.id || f.campo_id,
+          campo_id:        campoEncontrado?.id || payload.campo_id || f.campo_id,
         }));
       } else {
         setCpfStatus('nao_encontrado');
@@ -1456,12 +1462,12 @@ export default function BalcaoPage() {
               </div>
               <div>
                 <label className={labelCls}>Campo</label>
-                {evento.departamento === 'AGO' && ministroInfo ? (
+                {evento.departamento === 'AGO' && ministroInfo && form.campo_id ? (
                   <div className={inputCls + ' cursor-default opacity-70'}>
                     {campos.find(c => c.id === form.campo_id)?.nome ?? '-'}
                   </div>
                 ) : (
-                  <select name="campo_id" value={form.campo_id} onChange={handleText} className={inputCls}>
+                  <select name="campo_id" value={form.campo_id ?? ''} onChange={handleText} className={inputCls}>
                     <option value="">Selecione...</option>
                     {camposFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
                   </select>
@@ -1556,9 +1562,8 @@ export default function BalcaoPage() {
               </label>
             )}
 
-            {/* Campos AGO — aparecem quando AGO + hospedagem selecionada */}
-            {evento.departamento === 'AGO' && evento.permite_hospedagem &&
-              (form.hospedagem || tipoSel?.inclui_hospedagem) && (
+            {/* Campos AGO — aparecem SOMENTE quando AGO + checkbox hospedagem marcado */}
+            {evento.departamento === 'AGO' && evento.permite_hospedagem && form.hospedagem && (
               <div className="mt-4 border border-amber-500/40 bg-amber-500/10 rounded-xl p-4 space-y-3">
                 <p className="text-amber-300 text-xs font-bold uppercase tracking-wider">🏨 Hospedagem AGO</p>
 
