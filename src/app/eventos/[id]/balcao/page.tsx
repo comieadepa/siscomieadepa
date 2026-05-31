@@ -735,10 +735,16 @@ export default function BalcaoPage() {
         pagamento?: { invoiceUrl?: string; pixCopiaECola?: string; valor?: number } | null;
         asaasError?: string;
         error?: string;
+        stage?: string;
+        details?: string;
+        code?: string;
       };
 
       if (!res.ok || json.error) {
-        setErroSave(json.error || 'Erro ao processar inscrição.');
+        const msg = json.details
+          ? `${json.error} [${json.stage ?? 'erro'}]: ${json.details}${json.code ? ` (${json.code})` : ''}`
+          : (json.error || 'Erro ao processar inscrição.');
+        setErroSave(msg);
         return;
       }
 

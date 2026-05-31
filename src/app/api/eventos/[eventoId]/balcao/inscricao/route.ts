@@ -336,7 +336,13 @@ export async function POST(
 
     if (insErr || !inscricao) {
       console.error('[BALCAO] Erro ao inserir inscrição:', insErr);
-      return NextResponse.json({ error: 'Erro ao salvar inscrição.' }, { status: 500 });
+      return NextResponse.json({
+        error: 'Erro ao salvar inscrição.',
+        stage: 'insert_evento_inscricoes',
+        details: insErr?.message ?? 'sem detalhes',
+        code: insErr?.code ?? null,
+        hint: insErr?.hint ?? null,
+      }, { status: 500 });
     }
 
     const inscricaoId = (inscricao as any).id as string;
