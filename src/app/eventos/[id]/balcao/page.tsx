@@ -238,7 +238,7 @@ export default function BalcaoPage() {
   );
 
   // ── Perfil ministerial AGO + filtragem de categorias ─────
-  const { ministroAtivo, ministroInativo, tiposParaExibir } = useMemo(() => {
+  const { ministroAtivo, ministroInativo, tiposParaExibir, ministroSemPerfil } = useMemo(() => {
     const ativo = cpfStatus === 'encontrado' && ministroInfo !== null &&
       ['active', 'ativo'].includes((ministroInfo.status ?? '').toLowerCase());
     const inativo = cpfStatus === 'encontrado' && ministroInfo !== null && !ativo;
@@ -278,10 +278,13 @@ export default function BalcaoPage() {
         if (idadeCalc === null) return false;
         return idadeCalc <= 29;
       }
-      return true;
+      // Tipos genéricos (ex: VISITANTE) — só exibir quando ministro NÃO está ativo
+      return !ativo;
     });
 
-    return { ministroAtivo: ativo, ministroInativo: inativo, tiposParaExibir: filtered };
+    // Ministro ativo mas sem nenhum tipo ministerial compatível → perfil indefinido
+    const semPerfil = ativo && filtered.length === 0;
+    return { ministroAtivo: ativo, ministroInativo: inativo, tiposParaExibir: filtered, ministroSemPerfil: semPerfil };
   }, [cpfStatus, ministroInfo, form.sexo, form.data_nascimento, tipos, evento]);
 
   // ── Estado pós-inscrição ──────────────────────────────────
@@ -641,6 +644,10 @@ export default function BalcaoPage() {
     }
     if (!form.supervisao_id) {
       setErroSave('Supervisão é obrigatória.');
+      return;
+    }
+    if (ministroSemPerfil) {
+      setErroSave('Ministro localizado, mas o perfil ministerial não está definido para esta AGO. Verifique o cargo/cadastro do ministro e selecione uma categoria autorizada.');
       return;
     }
     if (evento.usar_tipos_inscricao && !tipoSel) {
@@ -1482,6 +1489,17 @@ export default function BalcaoPage() {
               <span className="w-6 h-6 bg-[#F39C12] text-[#0D2B4E] rounded-full flex items-center justify-center text-xs font-black">3</span>
               Inscrição
             </h2>
+
+            {/* Alerta: ministro ativo sem perfil ministerial definido */}
+            {ministroSemPerfil && (
+              <div className="mb-4 bg-amber-500/15 border border-amber-500/50 rounded-xl px-4 py-3 flex items-start gap-3">
+                <span className="text-xl flex-shrink-0">⚠️</span>
+                <div className="text-sm">
+                  <p className="font-bold text-amber-300">Perfil ministerial não definido para esta AGO</p>
+                  <p className="text-amber-200/80 mt-0.5">Ministro localizado, mas nenhuma das flags <strong>Pastor Presidente</strong>, <strong>Pastor Auxiliar</strong> ou <strong>Jubilado</strong> está ativa no cadastro. Verifique o perfil do ministro antes de salvar.</p>
+                </div>
+              </div>
+            )}
 
             {/* Tipos de inscrição */}
             {temTipos && (
