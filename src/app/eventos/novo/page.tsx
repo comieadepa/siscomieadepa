@@ -51,6 +51,12 @@ interface TipoDraft {
   ativo: boolean;
 }
 
+interface CupomInicialDraft {
+  habilitado: boolean;
+  codigo: string;
+  valor_final: string;
+}
+
 // ─── Tipos AGO ───────────────────────────────────────────────
 interface AgoCategoriaDraft {
   key: string;
@@ -237,6 +243,11 @@ export default function NovoEventoPage() {
   const [camposFiltrados, setCamposFiltrados] = useState<Campo[]>([]);
   const [salvando, setSalvando]       = useState(false);
   const [erro, setErro]               = useState<string | null>(null);
+  const [cupomInicial, setCupomInicial] = useState<CupomInicialDraft>({
+    habilitado: false,
+    codigo: '',
+    valor_final: '',
+  });
   const [bannerPreview, setBannerPreview] = useState('');
   const [bannerUploading, setBannerUploading] = useState(false);
   const [bannerUploadErro, setBannerUploadErro] = useState<string | null>(null);
@@ -385,6 +396,23 @@ export default function NovoEventoPage() {
     if (perfil.isDeptAdmin && perfil.departamentoUsuario && form.departamento !== perfil.departamentoUsuario)
       return setErro(`Você só pode criar eventos para o departamento ${perfil.departamentoUsuario}.`);
 
+    const valorBaseCupom = parseFloat(form.valor_inscricao) || 0;
+    const valorFinalCupom = parseFloat(cupomInicial.valor_final) || 0;
+    if (cupomInicial.habilitado) {
+      if (isAGO || form.usar_tipos_inscricao) {
+        return setErro('Cupom inicial com valor final só está disponível para evento com valor único de inscrição.');
+      }
+      if (valorBaseCupom <= 0) {
+        return setErro('Defina um valor de inscrição maior que zero para usar cupom inicial.');
+      }
+      if (!cupomInicial.codigo.trim()) {
+        return setErro('Informe o código do cupom inicial.');
+      }
+      if (valorFinalCupom < 0 || valorFinalCupom >= valorBaseCupom) {
+        return setErro('O valor com cupom deve ser menor que o valor da inscrição e não pode ser negativo.');
+      }
+    }
+
     setSalvando(true);
     try {
       const payload = normalizePayloadUppercase({
@@ -469,6 +497,29 @@ export default function NovoEventoPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tipos: tiposPayload }),
         });
+      }
+
+      // Salva cupom inicial (valor final informado -> desconto em R$ fixo)
+      if (novoEvento && cupomInicial.habilitado) {
+        const valorBase = parseFloat(form.valor_inscricao) || 0;
+        const valorFinal = parseFloat(cupomInicial.valor_final) || 0;
+        const desconto = Math.max(0, Math.round((valorBase - valorFinal) * 100) / 100);
+
+        const cupomRes = await fetch(`/api/eventos/${novoEvento.id}/cupons`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            codigo: cupomInicial.codigo.trim().toUpperCase(),
+            tipo: 'valor_fixo',
+            valor: desconto,
+            ativo: true,
+          }),
+        });
+
+        if (!cupomRes.ok) {
+          const cupomJson = await cupomRes.json().catch(() => null as any);
+          throw new Error(cupomJson?.error || 'Evento criado, mas não foi possível salvar o cupom inicial.');
+        }
       }
 
       router.push('/eventos');
@@ -894,6 +945,54 @@ export default function NovoEventoPage() {
                       value={form.valor_inscricao} onChange={handleText}
                       className={inputClass}
                     />
+                  </div>
+                )}
+
+                {!isAGO && !form.usar_tipos_inscricao && (
+                  <div className="md:col-span-2 border border-gray-200 rounded-xl p-4 bg-gray-50">
+                    <label className="flex items-center gap-2 mb-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={cupomInicial.habilitado}
+                        onChange={e => setCupomInicial(prev => ({
+                          ...prev,
+                          habilitado: e.target.checked,
+                          codigo: e.target.checked ? prev.codigo : '',
+                          valor_final: e.target.checked ? prev.valor_final : '',
+                        }))}
+                        className="w-4 h-4 accent-[#123b63]"
+                      />
+                      <span className="text-sm font-semibold text-gray-700">Configurar cupom inicial para inscrição pública</span>
+                    </label>
+
+                    {cupomInicial.habilitado && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className={labelClass}>Código do cupom</label>
+                          <input
+                            value={cupomInicial.codigo}
+                            onChange={e => setCupomInicial(prev => ({ ...prev, codigo: e.target.value.toUpperCase() }))}
+                            placeholder="EX: ABERTURA2026"
+                            className={inputClass + ' uppercase'}
+                          />
+                        </div>
+                        <div>
+                          <label className={labelClass}>Valor da inscrição com cupom (R$)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={cupomInicial.valor_final}
+                            onChange={e => setCupomInicial(prev => ({ ...prev, valor_final: e.target.value }))}
+                            placeholder="Ex: 120.00"
+                            className={inputClass}
+                          />
+                        </div>
+                        <p className="md:col-span-2 text-xs text-gray-500">
+                          Se não configurar este cupom inicial, o card de cupom não será exibido na página pública do evento.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
 

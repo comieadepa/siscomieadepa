@@ -27,6 +27,13 @@ export async function GET(request: NextRequest) {
     .eq('ativo', true)
     .order('ordem');
 
+  const { data: cuponsAtivos } = await supabase
+    .from('evento_cupons')
+    .select('id')
+    .eq('evento_id', evento.id)
+    .eq('ativo', true)
+    .limit(1);
+
   let totalInscritos: number | null = null;
   if (evento.limite_vagas) {
     const { count } = await supabase
@@ -52,5 +59,6 @@ export async function GET(request: NextRequest) {
     tipos: tipos ?? [],
     totalInscritos,
     vagasHospedagem,
+    possuiCupomAtivo: (cuponsAtivos ?? []).length > 0,
   });
 }

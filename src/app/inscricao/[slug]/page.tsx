@@ -52,6 +52,7 @@ interface Evento {
   suporte_nome: string | null;
   suporte_whatsapp: string | null;
   configuracoes_ago?: { enabled?: boolean; grupos?: string[]; leitos_inferiores_preferenciais?: boolean; preferencia_60_mais?: boolean; preferencia_necessidade_especial?: boolean; observacoes?: string; habilitar_desconto_campo_missionario?: boolean; valor_pastor_presidente_campo_missionario?: number | string; campo_missionario?: { enabled?: boolean; valor_pastor_presidente?: number | string; valor_esposa?: number | string; } | null; } | null;
+  possuiCupomAtivo?: boolean;
 }
 
 interface FormData {
@@ -1274,19 +1275,6 @@ export default function InscricaoPublicaPage() {
               )
             )}
 
-            {evento.permite_alimentacao && (
-              <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                <p className="text-sm font-semibold text-amber-800 mb-1">🍽️ Alimentação da inscrição</p>
-                <p className="text-xs text-amber-700">
-                  {tipoSelecionado
-                    ? (tipoSelecionado.inclui_alimentacao
-                      ? 'Esta categoria inclui alimentação automaticamente.'
-                      : 'Esta categoria não inclui alimentação.')
-                    : 'A alimentação é definida automaticamente pela categoria selecionada.'}
-                </p>
-              </div>
-            )}
-
             {/* Serviços opcionais (apenas se não houver tipos configurados) */}
             {!evento.usar_tipos_inscricao && (evento.permite_hospedagem || evento.permite_brinde) && (
               <div className="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
@@ -1551,7 +1539,7 @@ export default function InscricaoPublicaPage() {
             )}
 
             {/* Cupom de desconto */}
-            {(evento.usar_tipos_inscricao || evento.valor_inscricao > 0) && (
+            {evento.possuiCupomAtivo && (evento.usar_tipos_inscricao || evento.valor_inscricao > 0) && (
               <div className="mb-6">
                 <p className="text-sm font-semibold text-gray-700 mb-2">🏷️ Cupom de desconto</p>
                 <div className="flex flex-col sm:flex-row gap-2">
