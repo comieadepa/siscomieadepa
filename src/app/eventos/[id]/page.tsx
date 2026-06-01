@@ -958,6 +958,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   const [carregandoEventos, setCarregandoEventos] = useState(false);
   const [salvandoEdit,  setSalvandoEdit]  = useState(false);
   const [erroEdit,      setErroEdit]      = useState<string | null>(null);
+  const [confirmExcluir, setConfirmExcluir] = useState<Inscricao | null>(null);
   const timeoutsRef = useRef<number[]>([]);
   const POR_PAG = 20;
 
@@ -999,11 +1000,16 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
 
   async function excluir(id: string) {
     if (!podeRemover) return;
-    if (!confirm('Excluir esta inscrição?')) return;
     setSalvando(id);
     await supabase.from('evento_inscricoes').delete().eq('id', id);
     setSalvando(null);
     onRefresh();
+    setConfirmExcluir(null);
+  }
+
+  function solicitarExclusao(inscricao: Inscricao) {
+    if (!podeRemover) return;
+    setConfirmExcluir(inscricao);
   }
 
   async function enviarCertificado(ins: Inscricao, reenviar = false) {
@@ -1644,7 +1650,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                             </button>
                           )}
                           {podeRemover && (
-                            <button title="Excluir inscrição" onClick={() => excluir(ins.id)} disabled={isSalvando}
+                            <button title="Excluir inscrição" onClick={() => solicitarExclusao(ins)} disabled={isSalvando}
                               className="text-xs px-2 py-1 bg-red-100 text-red-600 rounded font-semibold hover:bg-red-200 transition disabled:opacity-50">
                               🗑️
                             </button>
@@ -1679,6 +1685,50 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
             </div>
           )}
         </>
+      )}
+
+      {confirmExcluir && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setConfirmExcluir(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <h3 className="text-base font-bold text-[#123b63]">Excluir inscrição</h3>
+                <p className="text-xs text-gray-500 mt-1">Essa ação remove o inscrito definitivamente deste evento.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmExcluir(null)}
+                className="text-gray-400 hover:text-gray-700 text-xl font-bold leading-none"
+                aria-label="Fechar"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-3 mb-5">
+              <p className="text-sm font-semibold text-red-700">{confirmExcluir.nome_inscrito}</p>
+              <p className="text-xs text-red-600 mt-1">CPF: {confirmExcluir.cpf || 'Não informado'}</p>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmExcluir(null)}
+                className="flex-1 px-4 py-2 text-sm rounded-lg border border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => excluir(confirmExcluir.id)}
+                disabled={salvando === confirmExcluir.id}
+                className="flex-1 px-4 py-2 text-sm rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition disabled:opacity-50"
+              >
+                {salvando === confirmExcluir.id ? 'Excluindo...' : 'Confirmar exclusão'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {editando && editForm && (
