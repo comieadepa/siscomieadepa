@@ -5,7 +5,7 @@
  * - nivelSistema: nível global do usuário (super, admin, inscricao, …)
  * - isGlobal: true para super/admin — vê todos os eventos sem restrição
  * - permissaoEvento: para nível 'inscricao', a permissão máxima do usuário
- *   ('admin_evento' | 'operador' | 'checkin' | null)
+ *   ('admin_evento' | 'operador' | 'checkin' | 'checkin_refeitorio' | null)
  * - eventoIds: lista de IDs de eventos acessíveis (null = sem restrição)
  * - permissoesPorEvento: mapa eventoId → permissao para verificação granular
  * - podeNovoEvento: se pode criar novos eventos
@@ -60,6 +60,7 @@ export interface EventosPerfil {
   podeRemoverInscricao: boolean;
   podeMoverInscricao: boolean;
   somenteCheckin: boolean;
+  somenteRefeitorio: boolean;
   tabsPermitidas: TabEventoId[];
   tabsPermitidasParaEvento: (eventoId: string) => TabEventoId[];
   /** Verifica se o usuário tem acesso a um evento específico */
@@ -198,6 +199,7 @@ export function useEventosPerfil(): EventosPerfil {
     if (perms.includes('operador'))     return 'operador';
     if (perms.includes('hospedagem'))   return 'hospedagem';
     if (perms.includes('checkin_hospedagem')) return 'checkin_hospedagem';
+    if (perms.includes('checkin_refeitorio')) return 'checkin_refeitorio';
     if (perms.includes('checkin'))      return 'checkin';
     return null;
   }, [isGlobal, isDeptAdmin, permissoesPorEvento]);
@@ -257,6 +259,7 @@ export function useEventosPerfil(): EventosPerfil {
     podeRemoverInscricao: perms.podeRemoverInscricao,
     podeMoverInscricao: perms.podeMoverInscricao,
     somenteCheckin: perms.somenteCheckin,
+    somenteRefeitorio: perms.somenteRefeitorio,
     tabsPermitidas,
     tabsPermitidasParaEvento,
     podeAcessarEvento,

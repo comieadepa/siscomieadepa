@@ -6,6 +6,7 @@ type EventoRow = {
   id: string;
   status: 'programado' | 'realizado' | 'cancelado';
   checkin_ativo: boolean | null;
+  valor_inscricao: number | null;
 };
 
 type InscricaoRow = {
@@ -19,8 +20,13 @@ type InscricaoRow = {
   checkin_realizado: boolean;
   checkin_at: string | null;
   qr_code: string | null;
-  refeicoes_total: number;
-  refeicoes_utilizadas: number;
+  tipo_inscricao: string | null;
+  alimentacao: boolean | null;
+  refeicoes_total: number | null;
+  refeicoes_utilizadas: number | null;
+  quantidade_refeicoes_total: number | null;
+  quantidade_refeicoes_usadas: number | null;
+  quantidade_refeicoes_saldo: number | null;
 };
 
 type TipoCheckin = 'credenciamento' | 'plenaria' | 'refeitorio';
@@ -29,7 +35,9 @@ const SELECT_INSC = [
   'id', 'evento_id', 'nome_inscrito', 'cpf',
   'supervisao_id', 'campo_id', 'status_pagamento',
   'checkin_realizado', 'checkin_at', 'qr_code',
+  'tipo_inscricao', 'alimentacao',
   'refeicoes_total', 'refeicoes_utilizadas',
+  'quantidade_refeicoes_total', 'quantidade_refeicoes_usadas', 'quantidade_refeicoes_saldo',
 ].join(',');
 
 export async function POST(
@@ -41,8 +49,10 @@ export async function POST(
     qr?: string;
     equipe_id?: string;
     tipo_checkin?: TipoCheckin;
+    modo?: TipoCheckin;
     data_plenaria?: string;
     checkin_user?: string;
+    sessao?: string;
   };
   try {
     body = await request.json();
@@ -51,23 +61,26 @@ export async function POST(
   }
 
   const qrToken      = String(body.qr || '').trim();
-  const tipoCheckin: TipoCheckin = (['credenciamento', 'plenaria', 'refeitorio'].includes(body.tipo_checkin as string)
-    ? body.tipo_checkin as TipoCheckin
+  const modoRaw = String(body.tipo_checkin || body.modo || '').trim();
+  const tipoCheckin: TipoCheckin = (['credenciamento', 'plenaria', 'refeitorio'].includes(modoRaw)
+    ? (modoRaw as TipoCheckin)
     : 'credenciamento');
   const dataPlenaria = body.data_plenaria ?? new Date().toISOString().slice(0, 10);
   const checkinUser  = body.checkin_user ?? null;
+  const sessaoPlenaria = body.sessao ? String(body.sessao) : null;
 
   if (!qrToken) return NextResponse.json({ error: 'QR obrigatorio.' }, { status: 400 });
 
   const supabase = createServerClient();
 
-  const guard = await requireEventoPermission(request, eventoId, 'checkin');
+  const areaGuard = tipoCheckin === 'refeitorio' ? 'refeitorio' : 'checkin';
+  const guard = await requireEventoPermission(request, eventoId, areaGuard);
   if (!guard.ok) return guard.response;
 
   // ── Valida evento ────────────────────────────────────────
   const { data: evento } = await supabase
     .from('eventos')
-    .select('id,status,checkin_ativo')
+    .select('id,status,checkin_ativo,valor_inscricao')
     .eq('id', eventoId)
     .single();
   if (!evento) return NextResponse.json({ error: 'Evento nao encontrado.' }, { status: 404 });
@@ -123,6 +136,7 @@ export async function POST(
       .eq('inscricao_id', ins.id)
       .eq('tipo_checkin', 'plenaria')
       .eq('data_plenaria', dataPlenaria)
+      .eq('sessao', sessaoPlenaria)
       .maybeSingle();
 
     if (jaPresente) {
@@ -132,7 +146,9 @@ export async function POST(
     const { error: insErr } = await supabase.from('evento_checkins').insert([{
       evento_id: eventoId, inscricao_id: ins.id,
       metodo: 'qrcode', tipo_checkin: 'plenaria',
-      data_plenaria: dataPlenaria, checkin_user: checkinUser,
+      data_plenaria: dataPlenaria,
+      sessao: sessaoPlenaria,
+      checkin_user: checkinUser,
     }]);
     if (insErr) return NextResponse.json({ error: 'Erro ao registrar presenca.' }, { status: 500 });
     return NextResponse.json({ status: 'success', inscricao: ins, data_plenaria: dataPlenaria });
@@ -140,37 +156,75 @@ export async function POST(
 
   // ── MODO REFEITORIO ──────────────────────────────────────
   if (tipoCheckin === 'refeitorio') {
-    const total      = ins.refeicoes_total ?? 0;
-    const utilizadas = ins.refeicoes_utilizadas ?? 0;
-
-    // total = 0 -> nao configurado -> permite sem debitar saldo
-    if (total === 0) {
-      await supabase.from('evento_checkins').insert([{
-        evento_id: eventoId, inscricao_id: ins.id,
-        metodo: 'qrcode', tipo_checkin: 'refeitorio',
-        saldo_antes: null, saldo_depois: null,
-        observacao: 'Refeicoes nao configuradas',
-        checkin_user: checkinUser,
-      }]);
-      return NextResponse.json({ status: 'success', inscricao: ins, saldo_antes: null, saldo_depois: null, nao_configurado: true });
+    const eventoExigePagamento = (evRow.valor_inscricao ?? 0) > 0;
+    const statusPagamento = String(ins.status_pagamento || '').toLowerCase();
+    if (eventoExigePagamento && !['pago', 'isento'].includes(statusPagamento)) {
+      return NextResponse.json({ status: 'pagamento_pendente', inscricao: ins }, { status: 200 });
     }
 
-    const saldoAtual = total - utilizadas;
+    if (!ins.alimentacao) {
+      return NextResponse.json({ status: 'sem_alimentacao', inscricao: ins }, { status: 200 });
+    }
+
+    const total = ins.quantidade_refeicoes_total ?? ins.refeicoes_total ?? 0;
+    const usadas = ins.quantidade_refeicoes_usadas ?? ins.refeicoes_utilizadas ?? 0;
+    const saldoAtual = ins.quantidade_refeicoes_saldo ?? Math.max(0, total - usadas);
+
     if (saldoAtual <= 0) {
       return NextResponse.json({ status: 'sem_saldo', inscricao: ins, saldo_antes: 0, saldo_depois: 0 }, { status: 200 });
     }
 
+    const { data: consumoRecente } = await supabase
+      .from('evento_refeicoes_consumo')
+      .select('id,data_hora,saldo_antes,saldo_depois')
+      .eq('evento_id', eventoId)
+      .eq('inscricao_id', ins.id)
+      .eq('origem', 'refeitorio')
+      .order('data_hora', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (consumoRecente) {
+      const deltaMs = Date.now() - new Date(consumoRecente.data_hora).getTime();
+      if (deltaMs >= 0 && deltaMs <= 20_000) {
+        return NextResponse.json({
+          status: 'duplicate_rapida',
+          inscricao: ins,
+          saldo_antes: consumoRecente.saldo_antes,
+          saldo_depois: consumoRecente.saldo_depois,
+          ultima_leitura_em: consumoRecente.data_hora,
+        }, { status: 200 });
+      }
+    }
+
+    const saldoDepois = saldoAtual - 1;
+
     const { data: updatedInsc, error: updErr } = await supabase
       .from('evento_inscricoes')
-      .update({ refeicoes_utilizadas: utilizadas + 1 })
+      .update({
+        quantidade_refeicoes_total: total,
+        quantidade_refeicoes_usadas: usadas + 1,
+        quantidade_refeicoes_saldo: saldoDepois,
+        refeicoes_total: total,
+        refeicoes_utilizadas: usadas + 1,
+      })
       .eq('id', ins.id)
-      .select('id,refeicoes_total,refeicoes_utilizadas')
+      .select('id,quantidade_refeicoes_total,quantidade_refeicoes_usadas,quantidade_refeicoes_saldo,refeicoes_total,refeicoes_utilizadas')
       .single();
 
     if (updErr || !updatedInsc)
       return NextResponse.json({ error: 'Erro ao debitar refeicao.' }, { status: 500 });
 
-    const saldoDepois = (updatedInsc.refeicoes_total ?? total) - (updatedInsc.refeicoes_utilizadas ?? utilizadas + 1);
+    await supabase.from('evento_refeicoes_consumo').insert([{
+      evento_id: eventoId,
+      inscricao_id: ins.id,
+      qr_code: qrToken,
+      tipo_consumo: 'refeicao',
+      operador_id: guard.ctx.user?.id ?? null,
+      origem: 'refeitorio',
+      saldo_antes: saldoAtual,
+      saldo_depois: saldoDepois,
+    }]);
 
     await supabase.from('evento_checkins').insert([{
       evento_id: eventoId, inscricao_id: ins.id,
@@ -181,7 +235,14 @@ export async function POST(
 
     return NextResponse.json({
       status: 'success',
-      inscricao: { ...ins, refeicoes_utilizadas: utilizadas + 1 },
+      inscricao: {
+        ...ins,
+        quantidade_refeicoes_total: total,
+        quantidade_refeicoes_usadas: usadas + 1,
+        quantidade_refeicoes_saldo: saldoDepois,
+        refeicoes_total: total,
+        refeicoes_utilizadas: usadas + 1,
+      },
       saldo_antes: saldoAtual,
       saldo_depois: saldoDepois,
     });

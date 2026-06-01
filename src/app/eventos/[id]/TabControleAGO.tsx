@@ -29,6 +29,24 @@ interface CampoRow{ id: string; nome: string; supervisao_nome: string; inscritos
 interface HospStat{ capacidade_total: number; solicitados: number; confirmados: number; checkin_realizado: number; checkout_realizado: number; ausentes: number; lista_espera: number; }
 interface PlenariaRow { data: string; label: string; presentes: number; total: number; }
 interface RefeitorioRow { data: string; total: number; }
+interface AlimentacaoIndicadores { total_inscritos_com_alimentacao: number; refeicoes_previstas: number; refeicoes_consumidas: number; saldo_restante: number; }
+interface ConsumoCategoriaRow { categoria: string; consumidas: number; }
+interface AlimentacaoTabelaRow {
+  inscricao_id: string;
+  nome: string;
+  categoria: string;
+  inclui_alimentacao: boolean;
+  total_refeicoes: number;
+  consumidas: number;
+  saldo: number;
+  ultimo_consumo: string | null;
+}
+interface RelatorioAlimentacao {
+  indicadores: AlimentacaoIndicadores;
+  consumo_por_dia: RefeitorioRow[];
+  consumo_por_categoria: ConsumoCategoriaRow[];
+  tabela: AlimentacaoTabelaRow[];
+}
 interface AdvertStat   { total: number; rascunho: number; enviadas: number; canceladas: number; }
 interface AdvertEleg   { id: string; nome: string; categoria: string | null; supervisao_nome: string | null; campo_nome: string | null; presencas: number; total_plenarias: number; percentual: number; }
 interface CampoMiss    { total: number; subsidiados: number; economia_total: number; }
@@ -47,6 +65,7 @@ interface DashData {
   advertencias: AdvertStat;
   advertencias_elegiveis: AdvertEleg[];
   campo_missionario: CampoMiss;
+  relatorio_alimentacao: RelatorioAlimentacao;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -184,7 +203,8 @@ export default function TabControleAGO({
 
   const { cards, integridade, por_categoria, por_supervisao, por_campo,
           hospedagem, refeitorio_por_dia, frequencia_por_plenaria,
-          advertencias: advStats, advertencias_elegiveis, campo_missionario } = data;
+      advertencias: advStats, advertencias_elegiveis, campo_missionario,
+      relatorio_alimentacao } = data;
 
   // ── render ──────────────────────────────────────────────────────────────────
   return (
@@ -470,6 +490,105 @@ export default function TabControleAGO({
                 <span className="font-semibold">{fmtNum(refeitorio_por_dia.reduce((s, r) => s + r.total, 0))}</span>
               </div>
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── 8.1 RELATÓRIO DE ALIMENTAÇÃO ──────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+        <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+          <SecaoTitle icon="🥗" title="Relatório de Alimentação" count={relatorio_alimentacao.tabela.length} />
+          <button
+            onClick={() => {
+              const h = ['Nome', 'Categoria', 'Inclui alimentação', 'Previstas', 'Consumidas', 'Saldo', 'Último consumo'];
+              const linhas = relatorio_alimentacao.tabela.map(r => [
+                r.nome,
+                r.categoria,
+                r.inclui_alimentacao ? 'Sim' : 'Não',
+                String(r.total_refeicoes),
+                String(r.consumidas),
+                String(r.saldo),
+                r.ultimo_consumo ? fmtDT(r.ultimo_consumo) : '',
+              ]);
+              exportCSV([h, ...linhas], `relatorio-alimentacao-${eventoId.slice(0, 8)}`);
+            }}
+            className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200"
+          >⬇ CSV Alimentação</button>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          {[
+            { label: 'Com alimentação', valor: relatorio_alimentacao.indicadores.total_inscritos_com_alimentacao, cor: 'text-[#0D2B4E]' },
+            { label: 'Previstas', valor: relatorio_alimentacao.indicadores.refeicoes_previstas, cor: 'text-blue-700' },
+            { label: 'Consumidas', valor: relatorio_alimentacao.indicadores.refeicoes_consumidas, cor: 'text-amber-700' },
+            { label: 'Saldo', valor: relatorio_alimentacao.indicadores.saldo_restante, cor: 'text-emerald-700' },
+          ].map(item => (
+            <div key={item.label} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+              <p className={`text-lg font-black ${item.cor}`}>{fmtNum(item.valor)}</p>
+              <p className="text-[10px] text-gray-400">{item.label}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="rounded-xl border border-gray-100 p-3">
+            <p className="text-xs font-semibold text-gray-600 mb-2">Consumo por Categoria</p>
+            {relatorio_alimentacao.consumo_por_categoria.length === 0 ? (
+              <p className="text-xs text-gray-400">Sem consumo registrado.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {relatorio_alimentacao.consumo_por_categoria.slice(0, 8).map(row => (
+                  <div key={row.categoria} className="flex items-center justify-between text-xs">
+                    <span className="text-gray-600 truncate pr-2">{row.categoria}</span>
+                    <span className="font-bold text-amber-700">{fmtNum(row.consumidas)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-gray-100 p-3">
+            <p className="text-xs font-semibold text-gray-600 mb-2">Consumo por Dia</p>
+            {relatorio_alimentacao.consumo_por_dia.length === 0 ? (
+              <p className="text-xs text-gray-400">Sem consumo registrado.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {relatorio_alimentacao.consumo_por_dia.map(row => (
+                  <div key={row.data} className="flex items-center justify-between text-xs">
+                    <span className="text-gray-600">{fmtDate(row.data)}</span>
+                    <span className="font-bold text-amber-700">{fmtNum(row.total)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto mt-4">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 border-b border-gray-100">
+              <tr>
+                {['Nome', 'Categoria', 'Alimentação', 'Previstas', 'Consumidas', 'Saldo', 'Último consumo'].map(h => (
+                  <th key={h} className="px-2 py-2 text-left text-[10px] font-bold text-gray-500 uppercase whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {relatorio_alimentacao.tabela.slice(0, 100).map(r => (
+                <tr key={r.inscricao_id} className="border-t border-gray-50 hover:bg-gray-50/50">
+                  <td className="px-2 py-1.5 font-semibold text-gray-800 max-w-[180px] truncate">{r.nome}</td>
+                  <td className="px-2 py-1.5 text-gray-500">{r.categoria}</td>
+                  <td className="px-2 py-1.5 text-center">{r.inclui_alimentacao ? 'Sim' : 'Não'}</td>
+                  <td className="px-2 py-1.5 text-center text-blue-700 font-semibold">{fmtNum(r.total_refeicoes)}</td>
+                  <td className="px-2 py-1.5 text-center text-amber-700 font-semibold">{fmtNum(r.consumidas)}</td>
+                  <td className="px-2 py-1.5 text-center text-emerald-700 font-semibold">{fmtNum(r.saldo)}</td>
+                  <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap">{r.ultimo_consumo ? fmtDT(r.ultimo_consumo) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {relatorio_alimentacao.tabela.length > 100 && (
+            <p className="text-xs text-gray-400 text-center mt-2">Mostrando 100 de {fmtNum(relatorio_alimentacao.tabela.length)} registros.</p>
           )}
         </div>
       </div>

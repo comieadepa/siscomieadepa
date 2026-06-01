@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
+import { isEventoInscricaoPublicaDisponivel } from '@/lib/eventos/evento-listing';
 import {
   createOrFindAsaasCustomer,
   createEventoPayment,
@@ -86,7 +87,6 @@ export async function POST(request: NextRequest) {
       supervisao_id,
       campo_id,
       hospedagem,
-      alimentacao,
       brinde,
       qr_code,
       // Novos campos
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Evento não encontrado' }, { status: 404 });
     }
 
-    if (!evento.inscricoes_abertas || evento.status !== 'programado') {
+    if (!isEventoInscricaoPublicaDisponivel(evento)) {
       return NextResponse.json({ error: 'Inscrições encerradas' }, { status: 409 });
     }
 
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
     // ── Busca tipo de inscrição (se informado) ────────────────────────
     let valorBase  = evento.valor_inscricao ?? 0;
     let tipoNome   = usaTipos ? ((tipo_inscricao as string | null) ?? null) : null;
-    let tipoInclui = { alimentacao: !!alimentacao, hospedagem: !!hospedagem };
+    let tipoInclui = { alimentacao: false, hospedagem: !!hospedagem };
     let tipoRefeicoes = 0;
 
     if (tipo_inscricao && usaTipos) {
@@ -287,11 +287,16 @@ export async function POST(request: NextRequest) {
       // Busca tipo "Esposa de Pastor Presidente*" para nome e inclui_alimentacao
       const { data: tipoEsposa } = await supabase
         .from('evento_tipos_inscricao')
-        .select('nome, inclui_alimentacao, inclui_hospedagem')
+        .select('nome, inclui_alimentacao, inclui_hospedagem, quantidade_refeicoes')
         .eq('evento_id', evento.id)
         .ilike('nome', 'Esposa de Pastor Presidente%')
         .eq('ativo', true)
         .maybeSingle();
+
+      const refeicoesPastor = tipoInclui.alimentacao ? tipoRefeicoes : 0;
+      const refeicoesEsposa = tipoEsposa?.inclui_alimentacao
+        ? Math.max(0, Number(tipoEsposa?.quantidade_refeicoes ?? 0))
+        : 0;
 
       const valorTotal2 = valorFinal + valorEsposaBase;
       const codigoLote2 = gerarCodigoLote();
@@ -340,6 +345,11 @@ export async function POST(request: NextRequest) {
         valor_pago:       valorFinal,
         status_pagamento: isGratuito2 ? 'isento' : 'pendente',
         qr_code:          qr_code || null,
+        refeicoes_total:  refeicoesPastor,
+        refeicoes_utilizadas: 0,
+        quantidade_refeicoes_total: refeicoesPastor,
+        quantidade_refeicoes_usadas: 0,
+        quantidade_refeicoes_saldo: refeicoesPastor,
         ministro_snapshot: ministroSnapshot,
         hosp_necessidade_especial:  !!hosp_necessidade_especial,
         hosp_descricao_necessidade: hosp_descricao_necessidade?.trim() || null,
@@ -374,6 +384,11 @@ export async function POST(request: NextRequest) {
         valor_pago:       valorEsposaBase,
         status_pagamento: isGratuito2 ? 'isento' : 'pendente',
         qr_code:          esposaData.qr_code || null,
+        refeicoes_total:  refeicoesEsposa,
+        refeicoes_utilizadas: 0,
+        quantidade_refeicoes_total: refeicoesEsposa,
+        quantidade_refeicoes_usadas: 0,
+        quantidade_refeicoes_saldo: refeicoesEsposa,
         hosp_necessidade_especial:  !!esposaData.hosp_necessidade_especial,
         hosp_descricao_necessidade: String(esposaData.hosp_descricao_necessidade ?? '').trim() || null,
         hosp_cama_inferior:         !!esposaData.hosp_cama_inferior,
@@ -471,7 +486,7 @@ export async function POST(request: NextRequest) {
         supervisao_id:    p.supervisao_id || supervisao_id,
         campo_id:         p.campo_id || campo_id || null,
         hospedagem:       !!p.hospedagem,
-        alimentacao:      !!p.alimentacao,
+        alimentacao:      tipoInclui.alimentacao,
         brinde:           !!p.brinde,
         tipo_inscricao:   tipoNome,
         valor_original:   valorBase,
@@ -481,6 +496,11 @@ export async function POST(request: NextRequest) {
         valor_pago:       valorFinal,
         status_pagamento: isGratuito ? 'isento' : 'pendente',
         qr_code:          p.qr_code || null,
+        refeicoes_total:  tipoInclui.alimentacao ? tipoRefeicoes : 0,
+        refeicoes_utilizadas: 0,
+        quantidade_refeicoes_total: tipoInclui.alimentacao ? tipoRefeicoes : 0,
+        quantidade_refeicoes_usadas: 0,
+        quantidade_refeicoes_saldo: tipoInclui.alimentacao ? tipoRefeicoes : 0,
         lgpd_aceito:      true,
         lgpd_aceito_em:   new Date().toISOString(),
       }));
@@ -545,6 +565,10 @@ export async function POST(request: NextRequest) {
       forma_pagamento:  isGratuito ? null : 'pix',
       qr_code:          qr_code || null,
       refeicoes_total:  tipoInclui.alimentacao ? tipoRefeicoes : 0,
+      refeicoes_utilizadas: 0,
+      quantidade_refeicoes_total: tipoInclui.alimentacao ? tipoRefeicoes : 0,
+      quantidade_refeicoes_usadas: 0,
+      quantidade_refeicoes_saldo: tipoInclui.alimentacao ? tipoRefeicoes : 0,
       ministro_snapshot: ministroSnapshot,
       // Campos hospedagem AGO
       hosp_necessidade_especial:  !!hosp_necessidade_especial,

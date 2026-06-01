@@ -6,7 +6,7 @@ import { requireEventoPermission } from '@/lib/evento-guard';
 import { logDB } from '@/lib/audit';
 import { enviarEmailAcessoEquipe, getRequestOrigin } from '@/lib/evento-equipe-email';
 
-type FuncaoEquipe = 'operador' | 'checkin' | 'hospedagem' | 'checkin_hospedagem';
+type FuncaoEquipe = 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem';
 
 type EquipeRow = {
   id: string;
@@ -23,6 +23,7 @@ function normalizarFuncao(raw?: string | null): FuncaoEquipe {
   if (raw === 'operador') return 'operador';
   if (raw === 'hospedagem') return 'hospedagem';
   if (raw === 'checkin_hospedagem') return 'checkin_hospedagem';
+  if (raw === 'checkin_refeitorio') return 'checkin_refeitorio';
   return 'checkin';
 }
 
@@ -31,7 +32,7 @@ function exigeSenha(funcao: FuncaoEquipe): boolean {
 }
 
 function isFuncaoCheckinSemSenha(funcao: FuncaoEquipe): boolean {
-  return funcao === 'checkin' || funcao === 'checkin_hospedagem';
+  return funcao === 'checkin' || funcao === 'checkin_refeitorio' || funcao === 'checkin_hospedagem';
 }
 
 function endOfDayUtc(dateStr: string): Date {
@@ -53,7 +54,7 @@ async function gerarCodigoEquipe(supabase: any, eventoId: string): Promise<strin
       .from('evento_equipe')
       .select('id')
       .eq('evento_id', eventoId)
-      .in('tipo', ['checkin', 'checkin_hospedagem'])
+      .in('tipo', ['checkin', 'checkin_refeitorio', 'checkin_hospedagem'])
       .eq('convite_token', codigo)
       .maybeSingle();
     if (!data) return codigo;

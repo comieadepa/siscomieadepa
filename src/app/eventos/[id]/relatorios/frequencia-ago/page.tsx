@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
+import PrintLetterhead from '@/components/print/PrintLetterhead';
 
 // ─── Tipos ───────────────────────────────────────────────────
 interface InscritoFrequencia {
@@ -20,6 +21,11 @@ interface InscritoFrequencia {
 
 interface FrequenciaData {
   evento_id: string;
+  evento_nome?: string;
+  evento_data_inicio?: string;
+  evento_data_fim?: string;
+  evento_cidade?: string | null;
+  evento_local?: string | null;
   plenarias_datas: string[];
   total_inscritos: number;
   inscritos: InscritoFrequencia[];
@@ -134,7 +140,7 @@ export default function FrequenciaAgoPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-[#123b63] text-white px-6 py-4 flex items-center justify-between">
+      <div className="print:hidden bg-[#123b63] text-white px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button onClick={() => router.back()} className="text-white/70 hover:text-white text-xl leading-none">‹</button>
           <div>
@@ -162,10 +168,21 @@ export default function FrequenciaAgoPage() {
         </div>
       </div>
 
-      <div className="p-6 max-w-7xl mx-auto">
+      <div className="print-page p-6 max-w-7xl mx-auto">
+        <div className="hidden print:block mb-4">
+          <PrintLetterhead
+            reportTitle="Relatório de Frequência AGO"
+            eventName={data?.evento_nome ?? null}
+            periodText={data?.evento_data_inicio ? `${new Date(data.evento_data_inicio + 'T00:00:00').toLocaleDateString('pt-BR')} a ${new Date((data.evento_data_fim ?? data.evento_data_inicio) + 'T00:00:00').toLocaleDateString('pt-BR')}` : null}
+            locationText={data?.evento_local || data?.evento_cidade ? [data?.evento_local, data?.evento_cidade].filter(Boolean).join(' - ') : null}
+            issuedAtText={new Date().toLocaleDateString('pt-BR')}
+            totalRecords={inscritos.length}
+          />
+        </div>
+
         {/* Datas das plenárias */}
         {data?.plenarias_datas && data.plenarias_datas.length > 0 && (
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-5 flex flex-wrap gap-2 items-center">
+          <div className="print:mb-3 bg-blue-50 border border-blue-200 rounded-xl p-4 mb-5 flex flex-wrap gap-2 items-center">
             <span className="text-xs font-semibold text-blue-700 mr-1">Plenárias:</span>
             {data.plenarias_datas.map(d => (
               <span key={d} className="text-xs bg-blue-100 text-blue-700 border border-blue-300 px-2 py-0.5 rounded-full">
@@ -176,7 +193,7 @@ export default function FrequenciaAgoPage() {
         )}
 
         {/* Filtros */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-5 flex flex-wrap gap-3">
+        <div className="print:hidden bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-5 flex flex-wrap gap-3">
           <select
             value={filtroSupervisao}
             onChange={e => setFiltroSupervisao(e.target.value)}
@@ -223,7 +240,7 @@ export default function FrequenciaAgoPage() {
         </div>
 
         {/* Tabela */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden print:shadow-none print:rounded-none print:border-gray-300">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs font-semibold text-gray-500 uppercase">
@@ -281,6 +298,36 @@ export default function FrequenciaAgoPage() {
           </div>
         </div>
       </div>
+
+      <style jsx global>{`
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 10mm;
+          }
+          body {
+            background: white !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .print-page {
+            width: 210mm;
+            min-height: 297mm;
+            max-width: none;
+            margin: 0 auto;
+            padding: 12mm;
+            background: white;
+          }
+          .print-page table,
+          .print-page tr,
+          .print-page td,
+          .print-page th,
+          .print-page .rounded-xl {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+        }
+      `}</style>
     </div>
   );
 }

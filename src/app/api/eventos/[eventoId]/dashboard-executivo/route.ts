@@ -13,10 +13,15 @@ type InscricaoRow = {
   id: string; nome_inscrito: string; cpf: string | null;
   tipo_inscricao: string | null; supervisao_id: string | null; campo_id: string | null;
   status_pagamento: string | null; checkin_realizado: boolean | null;
+  alimentacao: boolean | null;
   refeicoes_utilizadas: number | null; refeicoes_total: number | null;
+  quantidade_refeicoes_total: number | null;
+  quantidade_refeicoes_usadas: number | null;
+  quantidade_refeicoes_saldo: number | null;
   ministro_snapshot: Record<string, unknown> | null; hospedagem: boolean | null;
 };
 type CheckinRow    = { id: string; inscricao_id: string | null; tipo_checkin: string | null; data_plenaria: string | null; created_at: string; };
+type RefeicaoConsumoRow = { inscricao_id: string | null; data_hora: string; saldo_antes: number | null; saldo_depois: number | null; };
 type HospRow       = { id: string; inscricao_id: string | null; status: string | null; tipo_cama: string | null; numero_cama: number | null; checkin_at: string | null; };
 type AdvertRow     = { id: string; inscricao_id: string | null; status: string | null; };
 type SupervisaoRow = { id: string; nome: string; };
@@ -43,6 +48,7 @@ export async function GET(
     eventoRes,
     inscricoesRes,
     checkinsRes,
+    consumoRefeicoesRes,
     hospRes,
     advertRes,
     supRes,
@@ -61,7 +67,8 @@ export async function GET(
       .from('evento_inscricoes')
       .select(
         'id, nome_inscrito, cpf, tipo_inscricao, supervisao_id, campo_id, ' +
-        'status_pagamento, checkin_realizado, refeicoes_utilizadas, refeicoes_total, ' +
+        'status_pagamento, checkin_realizado, alimentacao, refeicoes_utilizadas, refeicoes_total, ' +
+        'quantidade_refeicoes_total, quantidade_refeicoes_usadas, quantidade_refeicoes_saldo, ' +
         'ministro_snapshot, hospedagem',
       )
       .eq('evento_id', eventoId)
@@ -70,6 +77,11 @@ export async function GET(
     supabase
       .from('evento_checkins')
       .select('id, inscricao_id, tipo_checkin, data_plenaria, created_at')
+      .eq('evento_id', eventoId),
+
+    supabase
+      .from('evento_refeicoes_consumo')
+      .select('inscricao_id,data_hora,saldo_antes,saldo_depois')
       .eq('evento_id', eventoId),
 
     supabase
@@ -123,7 +135,9 @@ export async function GET(
   const evento      = eventoRes.data as unknown as EventoRow;
   const inscricoes  = (inscricoesRes.data  ?? []) as unknown as InscricaoRow[];
   const checkins    = (checkinsRes.data    ?? []) as unknown as CheckinRow[];
+  const consumosRefeicoes = (consumoRefeicoesRes.data ?? []) as unknown as RefeicaoConsumoRow[];
   const hospedagens = (hospRes.data        ?? []) as unknown as HospRow[];
+  const inscricaoById = new Map(inscricoes.map(i => [i.id, i]));
   const advertencias= (advertRes.data      ?? []) as unknown as AdvertRow[];
   const supervisoes = (supRes.data         ?? []) as unknown as SupervisaoRow[];
   const campos      = (camposRes.data      ?? []) as unknown as CampoRow[];
@@ -141,7 +155,6 @@ export async function GET(
 
   // ── Categorizar checkins ──────────────────────────────────────────────
   const plenCheckins = checkins.filter(c => c.tipo_checkin === 'plenaria');
-  const refCheckins  = checkins.filter(c => c.tipo_checkin === 'refeitorio');
 
   // Presenças por inscrição
   const presencaMap = new Map<string, Set<string>>();
@@ -180,8 +193,10 @@ export async function GET(
   let refeicoesConsumidas = 0, refeicoesTotal = 0;
   let somaFreq = 0;
   for (const i of inscricoes) {
-    refeicoesConsumidas += (i.refeicoes_utilizadas as number) ?? 0;
-    refeicoesTotal      += (i.refeicoes_total       as number) ?? 0;
+    const totalInsc = i.quantidade_refeicoes_total ?? i.refeicoes_total ?? 0;
+    const usadasInsc = i.quantidade_refeicoes_usadas ?? i.refeicoes_utilizadas ?? 0;
+    refeicoesConsumidas += usadasInsc;
+    refeicoesTotal += totalInsc;
     const presencas = presencaMap.get(i.id)?.size ?? 0;
     somaFreq += totalPlenarias > 0 ? (presencas / totalPlenarias) * 100 : 0;
   }
@@ -237,8 +252,8 @@ export async function GET(
       status_pagamento: i.status_pagamento,
       credenciado:      !!(i.checkin_realizado),
       hospedagem_status: hosp?.status ?? (i.hospedagem ? 'solicitada' : 'nao'),
-      refeicoes_utilizadas: (i.refeicoes_utilizadas as number) ?? 0,
-      refeicoes_total:      (i.refeicoes_total       as number) ?? 0,
+      refeicoes_utilizadas: i.quantidade_refeicoes_usadas ?? i.refeicoes_utilizadas ?? 0,
+      refeicoes_total: i.quantidade_refeicoes_total ?? i.refeicoes_total ?? 0,
       presencas_plenaria:   presencas,
       total_plenarias:      totalPlenarias,
       percentual_frequencia: perc,
@@ -342,13 +357,73 @@ export async function GET(
 
   // ── REFEITÓRIO POR DIA ───────────────────────────────────────────────
   const refiDiaMap = new Map<string, number>();
-  for (const c of refCheckins) {
-    const dia = (c.created_at as string).slice(0, 10);
+  for (const c of consumosRefeicoes) {
+    const dia = (c.data_hora as string).slice(0, 10);
     refiDiaMap.set(dia, (refiDiaMap.get(dia) ?? 0) + 1);
   }
   const refeitorio_por_dia = [...refiDiaMap.entries()]
     .map(([data, total]) => ({ data, total }))
     .sort((a, b) => a.data.localeCompare(b.data));
+
+  // ── RELATÓRIO DE ALIMENTAÇÃO ─────────────────────────────────────────
+  const ultimoConsumoMap = new Map<string, string>();
+  for (const consumo of consumosRefeicoes) {
+    if (!consumo.inscricao_id) continue;
+    const atual = ultimoConsumoMap.get(consumo.inscricao_id);
+    if (!atual || consumo.data_hora > atual) {
+      ultimoConsumoMap.set(consumo.inscricao_id, consumo.data_hora);
+    }
+  }
+
+  const consumoCategoriaMap = new Map<string, number>();
+  for (const consumo of consumosRefeicoes) {
+    if (!consumo.inscricao_id) continue;
+    const ins = inscricaoById.get(consumo.inscricao_id);
+    if (!ins) continue;
+    const categoria = ins.tipo_inscricao || '(sem categoria)';
+    consumoCategoriaMap.set(categoria, (consumoCategoriaMap.get(categoria) ?? 0) + 1);
+  }
+
+  let totalComAlimentacao = 0;
+  let refeicoesPrevistas = 0;
+  let refeicoesUsadas = 0;
+  let refeicoesSaldo = 0;
+  const tabelaAlimentacao = inscricoes.map(i => {
+    const total = i.quantidade_refeicoes_total ?? i.refeicoes_total ?? 0;
+    const usadas = i.quantidade_refeicoes_usadas ?? i.refeicoes_utilizadas ?? 0;
+    const saldo = i.quantidade_refeicoes_saldo ?? Math.max(0, total - usadas);
+    const inclui = !!i.alimentacao;
+    if (inclui) totalComAlimentacao += 1;
+    refeicoesPrevistas += total;
+    refeicoesUsadas += usadas;
+    refeicoesSaldo += saldo;
+    return {
+      inscricao_id: i.id,
+      nome: i.nome_inscrito,
+      categoria: i.tipo_inscricao || '(sem categoria)',
+      inclui_alimentacao: inclui,
+      total_refeicoes: total,
+      consumidas: usadas,
+      saldo,
+      ultimo_consumo: ultimoConsumoMap.get(i.id) ?? null,
+    };
+  });
+
+  const consumoPorCategoria = [...consumoCategoriaMap.entries()]
+    .map(([categoria, consumidas]) => ({ categoria, consumidas }))
+    .sort((a, b) => b.consumidas - a.consumidas);
+
+  const relatorio_alimentacao = {
+    indicadores: {
+      total_inscritos_com_alimentacao: totalComAlimentacao,
+      refeicoes_previstas: refeicoesPrevistas,
+      refeicoes_consumidas: refeicoesUsadas,
+      saldo_restante: refeicoesSaldo,
+    },
+    consumo_por_dia: refeitorio_por_dia,
+    consumo_por_categoria: consumoPorCategoria,
+    tabela: tabelaAlimentacao,
+  };
 
   // ── FREQUÊNCIA POR PLENÁRIA ──────────────────────────────────────────
   const plenDiaMap = new Map<string, Set<string>>();
@@ -443,5 +518,6 @@ export async function GET(
     advertencias: advertencias_stats,
     advertencias_elegiveis,
     campo_missionario,
+    relatorio_alimentacao,
   });
 }

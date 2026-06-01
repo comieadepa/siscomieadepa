@@ -4,6 +4,7 @@ import { Playfair_Display, Sora } from 'next/font/google';
 import PublicAssistenteWidget from '@/components/PublicAssistenteWidget';
 import { APP_URL, PUBLIC_URL } from '@/lib/urls';
 import { fetchOpenEvents, getDepartamentoBySlug, type DepartamentoKey } from '@/lib/public-portal';
+import { isEventoInscricaoPublicaDisponivel } from '@/lib/eventos/evento-listing';
 
 export const dynamic = 'force-dynamic';
 
@@ -136,7 +137,9 @@ export default async function EventosPorDepartamentoPage({ params }: PageProps) 
           </div>
         ) : (
           <div className="grid justify-center gap-6 [grid-template-columns:repeat(auto-fit,minmax(280px,360px))]">
-            {eventos.map(ev => (
+            {eventos.map(ev => {
+              const inscricaoDisponivel = isEventoInscricaoPublicaDisponivel(ev);
+              return (
               <div key={ev.id} className="flex h-full flex-col rounded-3xl border border-slate-200 bg-white/90 p-6 shadow">
                 <div className="flex items-start justify-between gap-4">
                   <div>
@@ -144,7 +147,7 @@ export default async function EventosPorDepartamentoPage({ params }: PageProps) 
                     <h3 className="mt-2 text-xl font-semibold text-slate-900">{ev.nome}</h3>
                   </div>
                   <span className={`rounded-full px-3 py-1 text-xs font-semibold text-white ${BADGE_CLASSES[dep.key]}`}>
-                    Inscricoes abertas
+                    {inscricaoDisponivel ? 'Inscricoes abertas' : 'Evento realizado'}
                   </span>
                 </div>
                 <div className="mt-4 text-sm text-slate-600">
@@ -160,15 +163,22 @@ export default async function EventosPorDepartamentoPage({ params }: PageProps) 
                   ) : null}
                 </div>
                 <div className="mt-auto pt-6">
-                  <Link
-                    href={`/inscricao/${ev.slug}`}
-                    className={`inline-flex w-full items-center justify-center rounded-full px-5 py-3 text-sm font-semibold text-white shadow transition ${CTA_CLASSES[dep.key]}`}
-                  >
-                    Fazer inscricao
-                  </Link>
+                  {inscricaoDisponivel ? (
+                    <Link
+                      href={`/inscricao/${ev.slug}`}
+                      className={`inline-flex w-full items-center justify-center rounded-full px-5 py-3 text-sm font-semibold text-white shadow transition ${CTA_CLASSES[dep.key]}`}
+                    >
+                      Fazer inscricao
+                    </Link>
+                  ) : (
+                    <div className="inline-flex w-full items-center justify-center rounded-full bg-slate-200 px-5 py-3 text-sm font-semibold text-slate-600">
+                      Evento realizado
+                    </div>
+                  )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>

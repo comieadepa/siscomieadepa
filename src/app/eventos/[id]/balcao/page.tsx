@@ -98,7 +98,7 @@ interface FormState {
   whatsapp: string; sexo: string;
   data_nascimento: string;
   supervisao_id: string; campo_id: string;
-  hospedagem: boolean; alimentacao: boolean; brinde: boolean;
+  hospedagem: boolean; brinde: boolean;
   tipo_id: string;
   cupom: string;
   forma_pagamento: string; // 'dinheiro' | 'pix_manual' | 'cartao' | 'isento' | 'asaas'
@@ -116,7 +116,7 @@ const FORM_VAZIO: FormState = {
   nome: '', cpf: '', email: '', whatsapp: '', sexo: '',
   data_nascimento: '',
   supervisao_id: '', campo_id: '',
-  hospedagem: false, alimentacao: false, brinde: false,
+  hospedagem: false, brinde: false,
   tipo_id: '', cupom: '', forma_pagamento: 'dinheiro', observacoes: '',
   hosp_necessidade_especial: false,
   hosp_descricao_necessidade: '',
@@ -667,7 +667,7 @@ export default function BalcaoPage() {
       const isGratuito = valorFinal <= 0 || form.forma_pagamento === 'isento';
       // Regra 8: AGO — hospedagem é sempre opt-in (nunca automática pelo tipo)
       const hospedagem = evento.departamento === 'AGO' ? form.hospedagem : (tipoSel ? tipoSel.inclui_hospedagem : form.hospedagem);
-      const alimentacao = tipoSel ? tipoSel.inclui_alimentacao : form.alimentacao;
+      const alimentacao = !!tipoSel?.inclui_alimentacao;
       const cupomCodigo = form.cupom && cupomStatus === 'ok'
         ? form.cupom.trim().toUpperCase()
         : undefined;
@@ -1551,13 +1551,6 @@ export default function BalcaoPage() {
                     onClick={() => setField('hospedagem', !form.hospedagem)}
                   />
                 )}
-                {evento.permite_alimentacao && (
-                  <ToggleService
-                    label="🍽️ Alimentação"
-                    active={form.alimentacao}
-                    onClick={() => setField('alimentacao', !form.alimentacao)}
-                  />
-                )}
                 {evento.permite_brinde && (
                   <ToggleService
                     label="🎁 Brinde"
@@ -1565,6 +1558,19 @@ export default function BalcaoPage() {
                     onClick={() => setField('brinde', !form.brinde)}
                   />
                 )}
+              </div>
+            )}
+
+            {evento.permite_alimentacao && (
+              <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+                <p className="text-xs font-semibold text-amber-300 uppercase tracking-wide">Alimentação</p>
+                <p className="text-sm text-amber-100 mt-1">
+                  {tipoSel
+                    ? (tipoSel.inclui_alimentacao
+                      ? 'Incluída automaticamente pela categoria selecionada.'
+                      : 'Não incluída para a categoria selecionada.')
+                    : 'Definida automaticamente pela categoria de inscrição.'}
+                </p>
               </div>
             )}
 

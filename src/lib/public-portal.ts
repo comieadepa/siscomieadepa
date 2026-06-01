@@ -1,4 +1,8 @@
 import { createServerClient } from '@/lib/supabase-server';
+import {
+  compareEventosPorPrioridade,
+  isEventoInscricaoPublicaDisponivel,
+} from '@/lib/eventos/evento-listing';
 
 export type DepartamentoKey = 'AGO' | 'UMADESPA' | 'COADESPA' | 'SEIADEPA' | 'AVULSO';
 
@@ -101,6 +105,8 @@ export type EventoPublico = {
   departamento: string;
   data_inicio: string;
   data_fim: string | null;
+  status: string;
+  inscricoes_abertas: boolean;
   local: string | null;
   cidade: string | null;
   banner_url: string | null;
@@ -111,23 +117,12 @@ export type EventoPublico = {
   total_inscritos: number | null;
 };
 
-function fimDoDia(dateStr: string): Date {
-  return new Date(`${dateStr}T23:59:59`);
-}
-
-function isEventoDentroDaData(dataFim: string | null, hoje: Date): boolean {
-  if (!dataFim) return true;
-  return fimDoDia(dataFim).getTime() >= hoje.getTime();
-}
-
 export async function fetchOpenEvents(options?: { departamento?: string }) {
   const supabase = createServerClient();
-  const hoje = new Date();
 
   let query = supabase
     .from('eventos')
     .select('id,nome,slug,departamento,data_inicio,data_fim,local,cidade,banner_url,valor_inscricao,usar_tipos_inscricao,limite_vagas,inscricoes_abertas,status')
-    .eq('status', 'programado')
     .eq('inscricoes_abertas', true);
 
   if (options?.departamento) {
@@ -137,9 +132,9 @@ export async function fetchOpenEvents(options?: { departamento?: string }) {
   const { data } = await query.order('data_inicio', { ascending: true });
   const base = (data ?? []) as Array<Omit<EventoPublico, 'vagas_disponiveis' | 'total_inscritos'>>;
 
-  const dentroData = base.filter(e => isEventoDentroDaData(e.data_fim, hoje));
+  const disponiveis = base.filter(e => isEventoInscricaoPublicaDisponivel(e));
 
-  const tipoEventoIds = dentroData.filter(e => e.usar_tipos_inscricao).map(e => e.id);
+  const tipoEventoIds = disponiveis.filter(e => e.usar_tipos_inscricao).map(e => e.id);
   const tipoMinMap = new Map<string, number>();
   if (tipoEventoIds.length > 0) {
     const { data: tipos } = await supabase
@@ -161,7 +156,7 @@ export async function fetchOpenEvents(options?: { departamento?: string }) {
   }
 
   const contagens = await Promise.all(
-    dentroData.map(async e => {
+    disponiveis.map(async e => {
       if (!e.limite_vagas) {
         return { id: e.id, total: null };
       }
@@ -176,7 +171,7 @@ export async function fetchOpenEvents(options?: { departamento?: string }) {
   const countMap = new Map(contagens.map(c => [c.id, c.total]));
 
   const result: EventoPublico[] = [];
-  for (const ev of dentroData) {
+  for (const ev of disponiveis) {
     const total = countMap.get(ev.id) ?? null;
     const vagas = ev.limite_vagas ? Math.max(0, ev.limite_vagas - (total ?? 0)) : null;
     if (ev.limite_vagas && (total ?? 0) >= ev.limite_vagas) {
@@ -194,5 +189,5 @@ export async function fetchOpenEvents(options?: { departamento?: string }) {
     });
   }
 
-  return result;
+  return result.sort((a, b) => compareEventosPorPrioridade(a, b));
 }

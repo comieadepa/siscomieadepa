@@ -3,8 +3,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
-import { buildUrl, getAppBaseUrl } from '@/lib/urls';
 import { authenticatedFetch } from '@/lib/api-client';
+import PrintLetterhead from '@/components/print/PrintLetterhead';
 
 // ─── Tipos locais ─────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -35,21 +35,6 @@ const fmtDT = (d: string | null) => {
 
 const STATUS_LABEL: Record<string, string> = {
   pago: 'Pago', pendente: 'Pendente', isento: 'Isento', cancelado: 'Cancelado',
-};
-
-const DEPT_LOGOS: Record<string, string> = {
-  AGO: '/img/logo_ago.png',
-  COADESPA: '/img/logo_comieadepa.png',
-  UMADESPA: '/img/logo_comieadepa.png',
-  SEIADEPA: '/img/logo_comieadepa.png',
-  AVULSO: '/img/logo_comieadepa.png',
-  CONEC: '/img/logo_conec.png',
-  CGADB: '/img/logo_cgadb.png',
-};
-
-const getDeptLogo = (dept?: string | null) => {
-  if (!dept) return '/img/logo_comieadepa.png';
-  return DEPT_LOGOS[dept] ?? '/img/logo_comieadepa.png';
 };
 
 // ─── Estilos de tabela ────────────────────────────────────────
@@ -214,42 +199,20 @@ export default function RelatoriosPrintPage() {
       </div>
 
       {/* ── Conteúdo do relatório ─────────────────────────────── */}
-      <div style={{ padding: '80px 32px 32px', fontFamily: 'Arial, sans-serif', maxWidth: '1100px', margin: '0 auto' }}
-        className="print:p-0 print:max-w-none">
-        {/* Cabeçalho com timbre */}
-        <div style={{ marginBottom: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-            <img src={buildUrl(getAppBaseUrl(), '/img/logo_comieadepa.png')} alt="COMIEADEPA" style={{ width: '58px', height: 'auto' }} />
-            <div style={{ maxWidth: '640px', textAlign: 'center' }}>
-              <div style={{ fontSize: '16px', fontWeight: 800 }}>COMIEADEPA</div>
-              <div style={{ fontSize: '10px', color: '#333', marginTop: '2px' }}>
-                Rodovia Mario Covas, 2500 - do km 3.123 ao km 6.001 - lado impar lado par pertence a(o) Ananindeua - Coqueiro, Belem - PA, 66650-000
-              </div>
-              <div style={{ fontSize: '10px', color: '#333', marginTop: '2px' }}>
-                CNPJ: 04.760.047/0001-04 | Tel: (91) 99223-4022 | contato@comieadepa.org
-              </div>
-            </div>
-            <img src={buildUrl(getAppBaseUrl(), getDeptLogo(evento?.departamento))} alt={evento?.departamento ?? 'Departamento'} style={{ width: '58px', height: 'auto' }} />
-          </div>
-          <div style={{ borderBottom: '2px solid #14b8a6', marginTop: '8px' }} />
-        </div>
-
-        <div style={{ textAlign: 'center', fontSize: '14px', fontWeight: 700, margin: '8px 0 6px' }}>{TITULOS[tipo]}</div>
-        <div style={{ fontSize: '11px', color: '#6B7280', textAlign: 'center', marginBottom: '6px' }}>
-          {evento?.nome}{evento?.cidade ? ` — ${evento.cidade}` : ''}
-          {evento?.data_inicio ? ` • ${fmtData(evento.data_inicio)} a ${fmtData(evento.data_fim)}` : ''}
-        </div>
-        {filtrosAplicados && (
-          <div style={{ fontSize: '10px', color: '#9CA3AF', textAlign: 'center', marginBottom: '6px' }}>Filtros: {filtrosAplicados}</div>
-        )}
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginBottom: '12px' }}>
-          <div>Total de registros: {filtradas.length}</div>
-          <div>Data: {new Date().toLocaleDateString('pt-BR')}</div>
-        </div>
+      <div className="report-page print-page">
+        <PrintLetterhead
+          reportTitle={TITULOS[tipo]}
+          eventName={evento?.nome ?? null}
+          periodText={evento?.data_inicio ? `${fmtData(evento.data_inicio)} a ${fmtData(evento.data_fim)}` : null}
+          locationText={evento?.cidade ? evento.cidade : null}
+          issuedAtText={new Date().toLocaleDateString('pt-BR')}
+          totalRecords={filtradas.length}
+          filtersText={filtrosAplicados || null}
+        />
 
         {/* ── RESUMO ─────────────────────────────────────────── */}
         {tipo === 'resumo' && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px' }}>
+          <div className="print-grid">
             {[
               { label: 'Total Inscritos',    value: resumo.total },
               { label: 'Pagos',              value: resumo.pagos },
@@ -263,9 +226,9 @@ export default function RelatoriosPrintPage() {
               { label: 'Brindes',            value: resumo.brindes },
               ...(podeFinanc ? [{ label: 'Valor Arrecadado', value: fmtMoeda(resumo.valor) }] : []),
             ].map(({ label, value }) => (
-              <div key={label} style={{ border: '1px solid #E5E7EB', borderRadius: '10px', padding: '14px', backgroundColor: '#F9FAFB' }}>
-                <p style={{ fontSize: '22px', fontWeight: 900, color: '#0D2B4E', margin: 0 }}>{value}</p>
-                <p style={{ fontSize: '11px', color: '#6B7280', margin: '4px 0 0' }}>{label}</p>
+              <div key={label} className="print-card">
+                <p style={{ fontSize: '18px', fontWeight: 900, color: '#0D2B4E', margin: 0 }}>{value}</p>
+                <p style={{ fontSize: '10px', color: '#6B7280', margin: '4px 0 0' }}>{label}</p>
               </div>
             ))}
           </div>
@@ -468,9 +431,65 @@ export default function RelatoriosPrintPage() {
 
       {/* ── Estilos de impressão ──────────────────────────────── */}
       <style jsx global>{`
+        .report-page {
+          padding: 80px 24px 24px;
+          font-family: Arial, sans-serif;
+          max-width: 1024px;
+          margin: 0 auto;
+          overflow-x: hidden;
+        }
+        .print-grid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 8px;
+        }
+        .print-card {
+          break-inside: avoid;
+          page-break-inside: avoid;
+          padding: 10px;
+          border: 1px solid #ddd;
+          border-radius: 6px;
+          background: #fff;
+          min-height: 62px;
+        }
+        table,
+        tr,
+        td,
+        th {
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
+        @media (max-width: 1024px) {
+          .print-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+        }
+        @media (max-width: 700px) {
+          .report-page {
+            padding: 80px 12px 16px;
+          }
+          .print-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
         @media print {
-          @page { size: A4 landscape; margin: 1cm; }
+          @page {
+            size: A4 portrait;
+            margin: 10mm;
+          }
           body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          .report-page {
+            width: 210mm;
+            min-height: 297mm;
+            max-width: none;
+            margin: 0 auto;
+            padding: 12mm;
+            background: white;
+          }
+          .print-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+          }
         }
       `}</style>
     </>

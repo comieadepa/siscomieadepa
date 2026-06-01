@@ -120,7 +120,7 @@ interface Equipe {
   evento_id: string;
   nome: string | null;
   email: string;
-  tipo: 'operador' | 'checkin' | 'hospedagem' | 'checkin_hospedagem';
+  tipo: 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem';
   ativo: boolean;
   created_at: string;
   ultimo_acesso_em: string | null;
@@ -413,7 +413,7 @@ export default function GerenciarEventoPage() {
       // Sessão de equipe válida — permite continuar
     }
 
-    if (!perfil.isGlobal && (permissaoNesseEvento === 'checkin' || permissaoNesseEvento === 'checkin_hospedagem')) {
+    if (!perfil.isGlobal && (permissaoNesseEvento === 'checkin' || permissaoNesseEvento === 'checkin_refeitorio' || permissaoNesseEvento === 'checkin_hospedagem')) {
       setAcessoNegado(true);
       setLoadingEvento(false);
       return;
@@ -436,8 +436,8 @@ export default function GerenciarEventoPage() {
 
     Promise.all([
       fetchEvento(),
-      (permissaoNesseEvento === 'hospedagem' || permissaoNesseEvento === 'checkin_hospedagem') ? Promise.resolve() : fetchInscricoes(),
-      (permissaoNesseEvento === 'hospedagem' || permissaoNesseEvento === 'checkin_hospedagem') ? Promise.resolve() : fetchEquipe(),
+      (permissaoNesseEvento === 'hospedagem' || permissaoNesseEvento === 'checkin_refeitorio' || permissaoNesseEvento === 'checkin_hospedagem') ? Promise.resolve() : fetchInscricoes(),
+      (permissaoNesseEvento === 'hospedagem' || permissaoNesseEvento === 'checkin_refeitorio' || permissaoNesseEvento === 'checkin_hospedagem') ? Promise.resolve() : fetchEquipe(),
       authenticatedFetch('/api/v1/estrutura').then(async (res) => {
         if (!res.ok) return;
         const estrutura = await res.json().catch(() => null as any);
@@ -3496,7 +3496,7 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
 }) {
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
-  const [funcao, setFuncao] = useState<'operador' | 'checkin' | 'hospedagem' | 'checkin_hospedagem'>('checkin');
+  const [funcao, setFuncao] = useState<'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem'>('checkin');
   const [senha, setSenha] = useState('');
   const [confirmarSenha, setConfirmarSenha] = useState('');
   const [salvando, setSalvando] = useState(false);
@@ -3508,13 +3508,13 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
   const [editando, setEditando] = useState<Equipe | null>(null);
   const [editNome, setEditNome] = useState('');
   const [editEmail, setEditEmail] = useState('');
-  const [editFuncao, setEditFuncao] = useState<'operador' | 'checkin' | 'hospedagem' | 'checkin_hospedagem'>('checkin');
+  const [editFuncao, setEditFuncao] = useState<'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem'>('checkin');
   const [editSenha, setEditSenha] = useState('');
   const [editConfirmarSenha, setEditConfirmarSenha] = useState('');
   const [resetando, setResetando] = useState<Equipe | null>(null);
   const [novaSenha, setNovaSenha] = useState('');
   const [confirmarNovaSenha, setConfirmarNovaSenha] = useState('');
-  const [linkCopiado, setLinkCopiado] = useState<'operador' | 'checkin' | 'hospedagem' | 'checkin_hospedagem' | null>(null);
+  const [linkCopiado, setLinkCopiado] = useState<'operador' | 'checkin_credenciamento' | 'checkin_plenaria' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem' | null>(null);
   const [reenviandoId, setReenviandoId] = useState<string | null>(null);
   const timeoutsRef = useRef<number[]>([]);
 
@@ -3542,11 +3542,13 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
 
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const operadorUrl = origin ? `${origin}/eventos/${eventoId}/operador` : `/eventos/${eventoId}/operador`;
-  const checkinUrl = origin ? `${origin}/eventos/${eventoId}/checkin` : `/eventos/${eventoId}/checkin`;
+  const checkinCredenciamentoUrl = origin ? `${origin}/eventos/${eventoId}/checkin/credenciamento` : `/eventos/${eventoId}/checkin/credenciamento`;
+  const checkinPlenariaUrl = origin ? `${origin}/eventos/${eventoId}/checkin/plenaria` : `/eventos/${eventoId}/checkin/plenaria`;
+  const checkinRefeitorioUrl = origin ? `${origin}/eventos/${eventoId}/checkin/refeitorio` : `/eventos/${eventoId}/checkin/refeitorio`;
   const hospedagemUrl = origin ? `${origin}/eventos/${eventoId}/hospedagem` : `/eventos/${eventoId}/hospedagem`;
   const checkinHospedagemUrl = origin ? `${origin}/eventos/${eventoId}/hospedagem/checkin` : `/eventos/${eventoId}/hospedagem/checkin`;
 
-  async function registrarCopiaLink(funcaoEquipe: 'operador' | 'checkin' | 'hospedagem' | 'checkin_hospedagem', url: string) {
+  async function registrarCopiaLink(funcaoEquipe: 'operador' | 'checkin_credenciamento' | 'checkin_plenaria' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem', url: string) {
     try {
       await fetch('/api/v1/audit-logs', {
         method: 'POST',
@@ -3566,7 +3568,7 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
     }
   }
 
-  async function copiarAcesso(funcaoEquipe: 'operador' | 'checkin' | 'hospedagem' | 'checkin_hospedagem', url: string) {
+  async function copiarAcesso(funcaoEquipe: 'operador' | 'checkin_credenciamento' | 'checkin_plenaria' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem', url: string) {
     try {
       await navigator.clipboard.writeText(url);
       setLinkCopiado(funcaoEquipe);
@@ -3807,7 +3809,9 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
         <div className="grid gap-3">
           {([
             { key: 'operador' as const, titulo: 'Operador', url: operadorUrl, desc: 'Entra com e-mail e senha definidos pelo administrador.' },
-            { key: 'checkin' as const, titulo: 'Check-in', url: checkinUrl, desc: 'Acessa com o e-mail cadastrado para check-in geral.' },
+            { key: 'checkin_credenciamento' as const, titulo: 'Credenciamento', url: checkinCredenciamentoUrl, desc: 'Leitura de QR Code para credenciamento.' },
+            { key: 'checkin_plenaria' as const, titulo: 'Plenária', url: checkinPlenariaUrl, desc: 'Leitura de QR Code para presença em plenária.' },
+            { key: 'checkin_refeitorio' as const, titulo: 'Refeitório', url: checkinRefeitorioUrl, desc: 'Leitura de QR Code para débito de refeições.' },
             { key: 'hospedagem' as const, titulo: 'Hospedagem', url: hospedagemUrl, desc: 'Entra com e-mail e senha para operar somente a area de hospedagem.' },
             { key: 'checkin_hospedagem' as const, titulo: 'Check-in de Hospedagem', url: checkinHospedagemUrl, desc: 'Acessa com e-mail cadastrado para check-in/check-out de hospedagem.' },
           ]).map(item => (
@@ -3870,9 +3874,10 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
           </div>
           <div>
             <label className={labelCls}>Funcao</label>
-            <select value={funcao} onChange={e => setFuncao(e.target.value as 'operador' | 'checkin' | 'hospedagem' | 'checkin_hospedagem')}
+            <select value={funcao} onChange={e => setFuncao(e.target.value as 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem')}
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white w-full">
               <option value="checkin">Check-in</option>
+              <option value="checkin_refeitorio">Refeitório</option>
               <option value="checkin_hospedagem">Check-in de Hospedagem</option>
               <option value="hospedagem">Hospedagem</option>
               <option value="operador">Operador</option>
@@ -3928,6 +3933,8 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${eq.tipo === 'operador' || eq.tipo === 'hospedagem' ? 'bg-[#123b63]/10 text-[#123b63]' : 'bg-gray-100 text-gray-600'}`}>
                       {eq.tipo === 'operador'
                         ? 'Operador'
+                        : eq.tipo === 'checkin_refeitorio'
+                          ? 'Refeitório'
                         : eq.tipo === 'hospedagem'
                           ? 'Hospedagem'
                           : eq.tipo === 'checkin_hospedagem'
@@ -4067,10 +4074,11 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
                 <label className={labelCls}>Funcao</label>
                 <select
                   value={editFuncao}
-                  onChange={e => setEditFuncao(e.target.value as 'operador' | 'checkin' | 'hospedagem' | 'checkin_hospedagem')}
+                  onChange={e => setEditFuncao(e.target.value as 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem')}
                   className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white w-full"
                 >
                   <option value="checkin">Check-in</option>
+                  <option value="checkin_refeitorio">Refeitório</option>
                   <option value="checkin_hospedagem">Check-in de Hospedagem</option>
                   <option value="hospedagem">Hospedagem</option>
                   <option value="operador">Operador</option>

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { sendEmail } from '@/services/email';
 
-export type FuncaoEquipeEvento = 'operador' | 'checkin' | 'hospedagem' | 'checkin_hospedagem';
+export type FuncaoEquipeEvento = 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem';
 
 export type EmailAcessoEquipeParams = {
   para: string;
@@ -34,7 +34,9 @@ export function getEquipeAccessUrl(origin: string, eventoId: string, funcao: Fun
     funcao === 'operador'
       ? `/eventos/${eventoId}/operador`
       : funcao === 'checkin'
-        ? `/eventos/${eventoId}/checkin`
+        ? `/eventos/${eventoId}/checkin/credenciamento`
+        : funcao === 'checkin_refeitorio'
+          ? `/eventos/${eventoId}/checkin/refeitorio`
         : funcao === 'hospedagem'
           ? `/eventos/${eventoId}?tab=hospedagem`
           : `/eventos/${eventoId}/hospedagem/checkin`;
@@ -50,6 +52,8 @@ export async function enviarEmailAcessoEquipe(params: EmailAcessoEquipeParams) {
         ? 'Hospedagem'
         : params.funcao === 'checkin_hospedagem'
           ? 'Check-in de Hospedagem'
+          : params.funcao === 'checkin_refeitorio'
+            ? 'Refeitório'
           : 'Check-in';
   const titulo = params.redefinicao
     ? `Acesso atualizado - ${params.eventoNome}`
@@ -75,7 +79,11 @@ export async function enviarEmailAcessoEquipe(params: EmailAcessoEquipeParams) {
     linhas.push('Instruções: acesse o link acima, informe seu e-mail e senha para abrir sua área do evento.');
   } else {
     linhas.push('');
-    linhas.push('Instruções: acesse o link acima e informe apenas o e-mail cadastrado para liberar o acesso.');
+    if (params.funcao === 'checkin_refeitorio') {
+      linhas.push('Instruções: acesse o link acima e informe o código de 4 dígitos enviado para sua equipe.');
+    } else {
+      linhas.push('Instruções: acesse o link acima e informe o código de 4 dígitos enviado para sua equipe.');
+    }
   }
 
   linhas.push('');

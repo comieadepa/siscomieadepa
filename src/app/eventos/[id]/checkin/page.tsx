@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo, useCallback, type FormEvent } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, usePathname, useSearchParams } from 'next/navigation';
 import { useEventosPerfil } from '@/hooks/useEventosPerfil';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { createClient } from '@/lib/supabase-client';
@@ -36,6 +36,9 @@ type EstadoScan =
   | 'already'
   | 'invalid'
   | 'wrong_event'
+  | 'sem_alimentacao'
+  | 'pagamento_pendente'
+  | 'duplicate_rapida'
   | 'sem_saldo'
   | 'already_plenaria';
 
@@ -126,6 +129,8 @@ export default function CheckinMobilePage() {
   const { user, loading: authLoading } = useRequireSupabaseAuth({ allowEquipeSession: { eventoId: id }, allowAnonymous: true });
   const perfil = useEventosPerfil();
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
 
   const [equipeSessao, setEquipeSessao] = useState<EquipeSession | null>(null);
@@ -147,6 +152,19 @@ export default function CheckinMobilePage() {
 
   // Modo de check-in
   const [modoCheckin, setModoCheckin] = useState<'credenciamento' | 'plenaria' | 'refeitorio'>('credenciamento');
+
+  const modoForcado = useMemo<'credenciamento' | 'plenaria' | 'refeitorio' | null>(() => {
+    if (pathname?.endsWith('/checkin/credenciamento')) return 'credenciamento';
+    if (pathname?.endsWith('/checkin/plenaria')) return 'plenaria';
+    if (pathname?.endsWith('/checkin/refeitorio')) return 'refeitorio';
+    const modoParam = searchParams?.get('modo');
+    if (modoParam === 'credenciamento' || modoParam === 'plenaria' || modoParam === 'refeitorio') return modoParam;
+    return null;
+  }, [pathname, searchParams]);
+
+  useEffect(() => {
+    if (modoForcado) setModoCheckin(modoForcado);
+  }, [modoForcado]);
 
   // Estado do scanner
   const [scannerAtivo,  setScannerAtivo]  = useState(false);
@@ -200,7 +218,7 @@ export default function CheckinMobilePage() {
       const res = await fetch(`/api/eventos/${id}/checkin/validar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ equipe_id: equipeSessao.equipeId }),
+        body: JSON.stringify({ equipe_id: equipeSessao.equipeId, area: modoCheckin === 'refeitorio' ? 'refeitorio' : 'checkin' }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.ok) {
@@ -229,7 +247,7 @@ export default function CheckinMobilePage() {
       setLoadingEvento(false);
       return null;
     }
-  }, [equipeSessao, id]);
+  }, [equipeSessao, id, modoCheckin]);
 
   // ── Carrega evento e dados base ───────────────────────────
   useEffect(() => {
@@ -310,7 +328,10 @@ export default function CheckinMobilePage() {
       const res = await fetch(`/api/eventos/${id}/checkin/solicitar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codigo }),
+        body: JSON.stringify({
+          codigo,
+          funcao: modoCheckin === 'refeitorio' ? 'checkin_refeitorio' : 'checkin',
+        }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -500,6 +521,30 @@ export default function CheckinMobilePage() {
         emitirSom('erro');
         vibrar('erro');
         setTimeout(() => voltarParaScan(), 3000);
+        return;
+      }
+
+      if (status === 'sem_alimentacao') {
+        setResultado({ estado: 'sem_alimentacao', inscricao, nomeSup, nomeCampo });
+        emitirSom('erro');
+        vibrar('erro');
+        setTimeout(() => voltarParaScan(), 3200);
+        return;
+      }
+
+      if (status === 'pagamento_pendente') {
+        setResultado({ estado: 'pagamento_pendente', inscricao, nomeSup, nomeCampo });
+        emitirSom('erro');
+        vibrar('erro');
+        setTimeout(() => voltarParaScan(), 3200);
+        return;
+      }
+
+      if (status === 'duplicate_rapida') {
+        setResultado({ estado: 'duplicate_rapida', inscricao, nomeSup, nomeCampo, saldoRestante: (json?.saldo_depois as number | null | undefined) ?? null });
+        emitirSom('erro');
+        vibrar('erro');
+        setTimeout(() => voltarParaScan(), 2200);
         return;
       }
 
@@ -751,6 +796,24 @@ export default function CheckinMobilePage() {
         titulo: 'SEM REFEIÇÕES DISPONÍVEIS',
         tituloCls: 'text-white text-2xl font-black tracking-wide',
       },
+      sem_alimentacao: {
+        bg: 'bg-red-900',
+        icon: '⛔',
+        titulo: 'INSCRIÇÃO SEM ALIMENTAÇÃO',
+        tituloCls: 'text-white text-2xl font-black tracking-wide',
+      },
+      pagamento_pendente: {
+        bg: 'bg-orange-800',
+        icon: '💳',
+        titulo: 'PAGAMENTO NÃO CONFIRMADO',
+        tituloCls: 'text-white text-2xl font-black tracking-wide',
+      },
+      duplicate_rapida: {
+        bg: 'bg-slate-800',
+        icon: '⏱️',
+        titulo: 'LEITURA REPETIDA',
+        tituloCls: 'text-white text-2xl font-black tracking-wide',
+      },
       already_plenaria: {
         bg: 'bg-orange-700',
         icon: '📋',
@@ -776,7 +839,7 @@ export default function CheckinMobilePage() {
           </div>
         )}
 
-        {inscricao && (estado === 'success' || estado === 'already' || estado === 'wrong_event' || estado === 'sem_saldo' || estado === 'already_plenaria') && (
+        {inscricao && (estado === 'success' || estado === 'already' || estado === 'wrong_event' || estado === 'sem_saldo' || estado === 'sem_alimentacao' || estado === 'pagamento_pendente' || estado === 'duplicate_rapida' || estado === 'already_plenaria') && (
           <div className="bg-white/20 rounded-2xl p-6 text-white text-center max-w-sm w-full">
             <p className="text-2xl font-bold mb-1">{inscricao.nome_inscrito}</p>
             {ns && <p className="text-sm opacity-80">{ns}</p>}
@@ -794,6 +857,21 @@ export default function CheckinMobilePage() {
             {estado === 'sem_saldo' && (
               <p className="mt-3 text-sm bg-white/20 rounded-lg px-3 py-2">
                 Todas as refeições já foram utilizadas.
+              </p>
+            )}
+            {estado === 'sem_alimentacao' && (
+              <p className="mt-3 text-sm bg-white/20 rounded-lg px-3 py-2">
+                Esta inscrição não inclui alimentação.
+              </p>
+            )}
+            {estado === 'pagamento_pendente' && (
+              <p className="mt-3 text-sm bg-white/20 rounded-lg px-3 py-2">
+                Pagamento pendente para liberar refeição.
+              </p>
+            )}
+            {estado === 'duplicate_rapida' && (
+              <p className="mt-3 text-sm bg-white/20 rounded-lg px-3 py-2">
+                Leitura repetida em sequência. Aguarde alguns segundos.
               </p>
             )}
             {estado === 'already_plenaria' && resultado?.dataPlenaria && (
@@ -841,8 +919,9 @@ export default function CheckinMobilePage() {
         {(['credenciamento', 'plenaria', 'refeitorio'] as const).map(m => (
           <button
             key={m}
-            onClick={() => setModoCheckin(m)}
-            className={`flex-1 py-2 text-xs font-bold uppercase transition ${modoCheckin === m ? 'text-emerald-400 border-b-2 border-emerald-400' : 'text-white/50'}`}
+            onClick={() => { if (!modoForcado) setModoCheckin(m); }}
+            disabled={!!modoForcado}
+            className={`flex-1 py-2 text-xs font-bold uppercase transition ${modoCheckin === m ? 'text-emerald-400 border-b-2 border-emerald-400' : 'text-white/50'} ${modoForcado ? 'opacity-90 cursor-default' : ''}`}
           >
             {m === 'credenciamento' ? '🎫 Entrada' : m === 'plenaria' ? '🏛️ Plenária' : '🍽️ Refeitório'}
           </button>

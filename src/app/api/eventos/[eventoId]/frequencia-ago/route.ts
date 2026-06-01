@@ -16,7 +16,7 @@ export async function GET(
   // Busca configuracoes do evento (plenarias_datas vem em configuracoes_ago)
   const { data: evento } = await supabase
     .from('eventos')
-    .select('id, nome, departamento, configuracoes_ago')
+    .select('id, nome, departamento, data_inicio, data_fim, cidade, local, configuracoes_ago')
     .eq('id', eventoId)
     .single();
 
@@ -93,6 +93,11 @@ export async function GET(
 
   return NextResponse.json({
     evento_id:      eventoId,
+    evento_nome: evento.nome,
+    evento_data_inicio: evento.data_inicio,
+    evento_data_fim: evento.data_fim,
+    evento_cidade: evento.cidade,
+    evento_local: evento.local,
     plenarias_datas,
     total_inscritos: inscritos.length,
     inscritos,

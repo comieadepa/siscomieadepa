@@ -61,7 +61,6 @@ export async function POST(
       supervisao_id,
       campo_id,
       hospedagem,
-      alimentacao,
       brinde,
       tipo_inscricao,
       cupom_codigo,
@@ -93,6 +92,24 @@ export async function POST(
 
     if (!evento) {
       return NextResponse.json({ error: 'Evento não encontrado.' }, { status: 404 });
+    }
+
+    let tipoNome = tipo_inscricao ? String(tipo_inscricao).trim() : null;
+    let incluiAlimentacao = false;
+    let quantidadeRefeicoes = 0;
+    if (tipoNome) {
+      const { data: tipo } = await supabase
+        .from('evento_tipos_inscricao')
+        .select('nome, inclui_alimentacao, quantidade_refeicoes')
+        .eq('evento_id', eventoId)
+        .ilike('nome', tipoNome)
+        .eq('ativo', true)
+        .maybeSingle();
+      if (tipo) {
+        tipoNome = tipo.nome;
+        incluiAlimentacao = !!tipo.inclui_alimentacao;
+        quantidadeRefeicoes = incluiAlimentacao ? Math.max(0, Number(tipo.quantidade_refeicoes ?? 0)) : 0;
+      }
     }
 
     // Determina forma e status de pagamento
@@ -174,11 +191,15 @@ export async function POST(
       // Consulta tipo "Esposa de Pastor Presidente*" para nome e alimentação
       const { data: tipoEsposa } = await supabase
         .from('evento_tipos_inscricao')
-        .select('nome, inclui_alimentacao')
+        .select('nome, inclui_alimentacao, quantidade_refeicoes')
         .eq('evento_id', eventoId)
         .ilike('nome', 'Esposa de Pastor Presidente%')
         .eq('ativo', true)
         .maybeSingle();
+
+      const refeicoesEsposa = tipoEsposa?.inclui_alimentacao
+        ? Math.max(0, Number(tipoEsposa?.quantidade_refeicoes ?? 0))
+        : 0;
 
       const esposaData = esposa as Record<string, unknown>;
       const valorTotal2 = vFinal + valorEsposaBase;
@@ -210,11 +231,16 @@ export async function POST(
         whatsapp: whatsapp ? String(whatsapp).trim() : null,
         sexo: sexo || null, data_nascimento: data_nascimento || null,
         supervisao_id: supervisao_id || null, campo_id: campo_id || null,
-        hospedagem: !!hospedagem, alimentacao: !!alimentacao, brinde: !!brinde,
-        tipo_inscricao: tipo_inscricao || null,
+        hospedagem: !!hospedagem, alimentacao: incluiAlimentacao, brinde: !!brinde,
+        tipo_inscricao: tipoNome,
         valor_original: vOriginal, cupom_codigo: cupomCodigo, desconto_valor: vDesconto,
         valor_final: vFinal, valor_pago: isGratuito2 ? 0 : isPresencial ? vFinal : 0,
         status_pagamento: statusPag, forma_pagamento: formaPagSalva,
+        refeicoes_total: quantidadeRefeicoes,
+        refeicoes_utilizadas: 0,
+        quantidade_refeicoes_total: quantidadeRefeicoes,
+        quantidade_refeicoes_usadas: 0,
+        quantidade_refeicoes_saldo: quantidadeRefeicoes,
         observacoes: observacoes ? String(observacoes).trim() : null,
         qr_code: qrFinal, operador_id: operadorId, ministro_snapshot: ministroSnapshot,
         hosp_necessidade_especial: !!hosp_necessidade_especial,
@@ -238,6 +264,11 @@ export async function POST(
         valor_final: valorEsposaBase, valor_pago: isGratuito2 ? 0 : isPresencial ? valorEsposaBase : 0,
         status_pagamento: statusPag, forma_pagamento: formaPagSalva,
         qr_code: esposaData.qr_code ? String(esposaData.qr_code) : generateQRCodeToken(),
+        refeicoes_total: refeicoesEsposa,
+        refeicoes_utilizadas: 0,
+        quantidade_refeicoes_total: refeicoesEsposa,
+        quantidade_refeicoes_usadas: 0,
+        quantidade_refeicoes_saldo: refeicoesEsposa,
         operador_id: operadorId,
         hosp_necessidade_especial: !!esposaData.hosp_necessidade_especial,
         hosp_descricao_necessidade: esposaData.hosp_descricao_necessidade ? String(esposaData.hosp_descricao_necessidade).trim() : null,
@@ -298,9 +329,9 @@ export async function POST(
       supervisao_id:    supervisao_id || null,
       campo_id:         campo_id || null,
       hospedagem:       !!hospedagem,
-      alimentacao:      !!alimentacao,
+      alimentacao:      incluiAlimentacao,
       brinde:           !!brinde,
-      tipo_inscricao:   tipo_inscricao || null,
+      tipo_inscricao:   tipoNome,
       valor_original:   vOriginal,
       cupom_codigo:     cupomCodigo,
       desconto_valor:   vDesconto,
@@ -308,6 +339,11 @@ export async function POST(
       valor_pago:       isGratuito ? 0 : isPresencial ? vFinal : 0,
       status_pagamento: statusPag,
       forma_pagamento:  formaPagSalva,
+      refeicoes_total: quantidadeRefeicoes,
+      refeicoes_utilizadas: 0,
+      quantidade_refeicoes_total: quantidadeRefeicoes,
+      quantidade_refeicoes_usadas: 0,
+      quantidade_refeicoes_saldo: quantidadeRefeicoes,
       observacoes:      observacoes ? String(observacoes).trim() : null,
       qr_code:          qrFinal,
       operador_id:      operadorId,
@@ -355,7 +391,7 @@ export async function POST(
         nome_inscrito:              String(nome_inscrito).trim(),
         sexo:                       sexo ? String(sexo) : null,
         data_nascimento:            data_nascimento ? String(data_nascimento) : null,
-        tipo_inscricao:             tipo_inscricao ? String(tipo_inscricao) : null,
+        tipo_inscricao:             tipoNome,
         hosp_necessidade_especial:  !!hosp_necessidade_especial,
         hosp_descricao_necessidade: hosp_descricao_necessidade
           ? String(hosp_descricao_necessidade).trim()
@@ -414,7 +450,7 @@ export async function POST(
           customerId,
           value:             vFinal,
           dueDate:           dueDateFromNow(),
-          description:       `Inscrição Balcão — ${(evento as any).nome}${tipo_inscricao ? ` (${tipo_inscricao})` : ''}`,
+          description:       `Inscrição Balcão — ${(evento as any).nome}${tipoNome ? ` (${tipoNome})` : ''}`,
           externalReference: inscricaoId,
         });
 

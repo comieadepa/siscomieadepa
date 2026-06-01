@@ -14,7 +14,7 @@ type EquipeRow = {
   id: string;
   evento_id: string;
   email: string;
-  tipo: 'operador' | 'checkin' | 'hospedagem' | 'checkin_hospedagem';
+  tipo: 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem';
   ativo: boolean;
   convite_token?: string | null;
   convite_expira_em?: string | null;
@@ -36,7 +36,7 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  let body: { email?: string; codigo?: string; funcao?: 'checkin' | 'checkin_hospedagem' };
+  let body: { email?: string; codigo?: string; funcao?: 'checkin' | 'checkin_refeitorio' | 'checkin_hospedagem' };
   try {
     body = await request.json();
   } catch {
@@ -45,7 +45,11 @@ export async function POST(
 
   const codigoRaw = (body.codigo || '').trim();
   const email = (body.email || '').trim().toLowerCase();
-  const funcao = body.funcao === 'checkin_hospedagem' ? 'checkin_hospedagem' : 'checkin';
+  const funcao = body.funcao === 'checkin_hospedagem'
+    ? 'checkin_hospedagem'
+    : body.funcao === 'checkin_refeitorio'
+      ? 'checkin_refeitorio'
+      : 'checkin';
   const codigo = codigoRaw.replace(/\s+/g, '');
   if (!codigo && !email) {
     return NextResponse.json({ error: 'Codigo obrigatorio.' }, { status: 400 });
@@ -86,7 +90,11 @@ export async function POST(
 
   if (!equipe || equipe.ativo !== true) {
     void logDB({
-      acao: funcao === 'checkin_hospedagem' ? 'acesso_checkin_hospedagem_negado' : 'acesso_checkin_negado',
+      acao: funcao === 'checkin_hospedagem'
+        ? 'acesso_checkin_hospedagem_negado'
+        : funcao === 'checkin_refeitorio'
+          ? 'acesso_checkin_refeitorio_negado'
+          : 'acesso_checkin_negado',
       modulo: 'eventos',
       entidade: 'evento_equipe',
       descricao: codigo ? 'Acesso negado por codigo invalido.' : 'Acesso negado por e-mail nao cadastrado.',
@@ -118,7 +126,11 @@ export async function POST(
   }
 
   void logDB({
-    acao: funcao === 'checkin_hospedagem' ? 'acesso_checkin_hospedagem_liberado' : 'acesso_checkin_liberado',
+    acao: funcao === 'checkin_hospedagem'
+      ? 'acesso_checkin_hospedagem_liberado'
+      : funcao === 'checkin_refeitorio'
+        ? 'acesso_checkin_refeitorio_liberado'
+        : 'acesso_checkin_liberado',
     modulo: 'eventos',
     entidade: 'evento_equipe',
     descricao: 'Acesso liberado por e-mail.',

@@ -49,15 +49,22 @@ export async function GET(
   // Refeições consumidas e restantes
   const { data: refeicoes } = await supabase
     .from('evento_inscricoes')
-    .select('refeicoes_total, refeicoes_utilizadas')
+    .select('alimentacao, refeicoes_total, refeicoes_utilizadas, quantidade_refeicoes_total, quantidade_refeicoes_usadas, quantidade_refeicoes_saldo')
     .eq('evento_id', eventoId)
     .neq('status_pagamento', 'cancelado');
 
   let refeicoesConsumidas = 0;
+  let refeicoesPrevistas  = 0;
   let refeicoesRestantes  = 0;
+  let totalComAlimentacao = 0;
   for (const r of refeicoes ?? []) {
-    refeicoesConsumidas += r.refeicoes_utilizadas ?? 0;
-    refeicoesRestantes  += Math.max(0, (r.refeicoes_total ?? 0) - (r.refeicoes_utilizadas ?? 0));
+    const previstas = r.quantidade_refeicoes_total ?? r.refeicoes_total ?? 0;
+    const consumidas = r.quantidade_refeicoes_usadas ?? r.refeicoes_utilizadas ?? 0;
+    const saldo = r.quantidade_refeicoes_saldo ?? Math.max(0, previstas - consumidas);
+    if (r.alimentacao === true) totalComAlimentacao++;
+    refeicoesPrevistas += previstas;
+    refeicoesConsumidas += consumidas;
+    refeicoesRestantes += saldo;
   }
 
   // Frequência média (se evento encerrado, usa tabela consolidada; caso contrário, calcula)
@@ -146,6 +153,8 @@ export async function GET(
     total_ausentes_plenaria: Math.max(0, (totalInscritos ?? 0) - inscricosComPresenca),
     frequencia_media:     frequenciaMedia,
     total_ausentes_consolidado: totalAusentesConsolidado,
+    total_inscritos_com_alimentacao: totalComAlimentacao,
+    refeicoes_previstas: refeicoesPrevistas,
     refeicoes_consumidas: refeicoesConsumidas,
     refeicoes_restantes:  refeicoesRestantes,
     total_campo_missionario: totalCampoMissionario,

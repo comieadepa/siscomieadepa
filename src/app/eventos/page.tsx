@@ -10,6 +10,12 @@ import { useUserRole } from '@/hooks/useUserRole';
 import { createClient } from '@/lib/supabase-client';
 import { buildUrl, getPublicBaseUrl } from '@/lib/urls';
 import { canAccessModule } from '@/lib/auth/roles';
+import {
+  compareEventosPorPrioridade,
+  isEventoInscricaoPublicaDisponivel,
+  resolveEventoStatusVisual,
+  type EventoStatusVisual,
+} from '@/lib/eventos/evento-listing';
 
 // ─── Tipos ───────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -59,6 +65,7 @@ type ImportCsvRow = {
 };
 
 interface EventoComStats extends Evento {
+  statusVisual: EventoStatusVisual;
   total_inscritos: number;
   total_pagos: number;
   valor_arrecadado: number;
@@ -326,6 +333,7 @@ export default function EventosPage() {
       const campo = campos.find(c => c.id === ev.campo_id);
       return {
         ...ev,
+        statusVisual: resolveEventoStatusVisual(ev),
         total_inscritos:  ins.length,
         total_pagos:      pagos.length,
         valor_arrecadado: pagos.reduce((acc, i) => acc + (i.valor_pago || 0), 0),
@@ -336,13 +344,13 @@ export default function EventosPage() {
   }, [eventos, inscricoes, supervisoes, campos]);
 
   const summary = useMemo(() => ({
-    programados: eventos.filter(e => e.status === 'programado').length,
-    realizados:  eventos.filter(e => e.status === 'realizado').length,
-    cancelados:  eventos.filter(e => e.status === 'cancelado').length,
+    programados: eventosComStats.filter(e => e.statusVisual === 'programado').length,
+    realizados:  eventosComStats.filter(e => e.statusVisual === 'realizado').length,
+    cancelados:  eventosComStats.filter(e => e.statusVisual === 'cancelado').length,
     pagas:       inscricoes.filter(i => i.status_pagamento === 'pago').length,
     pendentes:   inscricoes.filter(i => i.status_pagamento === 'pendente').length,
     valorTotal:  inscricoes.filter(i => i.status_pagamento === 'pago').reduce((a, i) => a + (i.valor_pago || 0), 0),
-  }), [eventos, inscricoes]);
+  }), [eventosComStats, inscricoes]);
 
   const anos = useMemo(() => {
     const set = new Set(eventos.map(e => e.data_inicio?.slice(0, 4)).filter(Boolean));
@@ -355,16 +363,22 @@ export default function EventosPage() {
   );
 
   const eventosFiltrados = useMemo(() => {
-    return eventosComStats.filter(ev => {
-      if (ev.status !== activeTab) return false;
+    return eventosComStats
+    .filter(ev => {
+      if (ev.statusVisual !== activeTab) return false;
       if (busca && !ev.nome.toLowerCase().includes(busca.toLowerCase())) return false;
       if (filtroDept && ev.departamento !== filtroDept) return false;
       if (filtroAno  && !ev.data_inicio.startsWith(filtroAno)) return false;
       if (filtroSup  && ev.supervisao_id !== filtroSup) return false;
       if (filtroCampo && ev.campo_id !== filtroCampo) return false;
       return true;
-    });
+    })
+    .sort((a, b) => compareEventosPorPrioridade(a, b));
   }, [eventosComStats, activeTab, busca, filtroDept, filtroAno, filtroSup, filtroCampo]);
+
+  const eventosCheckinOrdenados = useMemo(() => {
+    return [...eventos].sort((a, b) => compareEventosPorPrioridade(a, b));
+  }, [eventos]);
 
   const abrirModalRemocao = (ev: EventoComStats) => {
     setModalEvento(ev);
@@ -577,7 +591,7 @@ export default function EventosPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {eventos.map(ev => (
+            {eventosCheckinOrdenados.map(ev => (
               <div key={ev.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
@@ -937,7 +951,8 @@ function EventoCard({ evento, podeVerFinanceiro, onGerenciar, podeImportar, onIm
   podeRemover: boolean;
   onRemover: () => void;
 }) {
-  const cfg = STATUS_CONFIG[evento.status] ?? STATUS_CONFIG.programado;
+  const cfg = STATUS_CONFIG[evento.statusVisual] ?? STATUS_CONFIG.programado;
+  const inscricaoPublicaAtiva = isEventoInscricaoPublicaDisponivel(evento);
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
@@ -966,7 +981,7 @@ function EventoCard({ evento, podeVerFinanceiro, onGerenciar, podeImportar, onIm
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#123b63]/10 text-[#123b63]">
                   {evento.departamento}
                 </span>
-                {evento.inscricoes_abertas && (
+                {inscricaoPublicaAtiva && (
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
                     Inscrições abertas
                   </span>

@@ -7,6 +7,10 @@ import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { normalizePayloadUppercase } from '@/lib/text';
 import AssistenteWidget from '@/components/AssistenteWidget';
 import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
+import {
+  isEventoInscricaoPublicaDisponivel,
+  resolveEventoStatusVisual,
+} from '@/lib/eventos/evento-listing';
 
 // ─── Tipos ────────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -60,7 +64,6 @@ interface FormData {
   supervisao_id: string;
   campo_id: string;
   hospedagem: boolean;
-  alimentacao: boolean;
   brinde: boolean;
   // Campos hospedagem AGO
   hosp_necessidade_especial: boolean;
@@ -114,7 +117,7 @@ const FORM_VAZIO: FormData = {
   nome_inscrito: '', cpf: '', email: '', whatsapp: '',
   sexo: '', data_nascimento: '',
   supervisao_id: '', campo_id: '',
-  hospedagem: false, alimentacao: false, brinde: false,
+  hospedagem: false, brinde: false,
   hosp_necessidade_especial: false,
   hosp_descricao_necessidade: '',
   hosp_cama_inferior: false,
@@ -264,8 +267,9 @@ export default function InscricaoPublicaPage() {
     const vagasHosp = typeof evJson?.vagasHospedagem === 'number' ? evJson.vagasHospedagem : null;
     const tiposApi = (evJson?.tipos as TipoInscricao[]) || [];
 
-    if (ev.status !== 'programado') { setEstadoErro('encerrado'); setLoading(false); return; }
-    if (!ev.inscricoes_abertas)      { setEstadoErro('fechado');   setLoading(false); return; }
+    const statusVisual = resolveEventoStatusVisual(ev);
+    if (statusVisual !== 'programado') { setEstadoErro('encerrado'); setLoading(false); return; }
+    if (!isEventoInscricaoPublicaDisponivel(ev)) { setEstadoErro('fechado'); setLoading(false); return; }
 
     // Verifica vagas
     if (ev.limite_vagas && totalInscritos !== null) {
@@ -628,7 +632,7 @@ export default function InscricaoPublicaPage() {
         campo_id:        form.campo_id || null,
         // Regra 8: AGO — hospedagem é sempre opt-in (nunca automática pelo tipo)
         hospedagem:      evento.departamento === 'AGO' ? solicitaHospedagem : (tipoSelecionado?.inclui_hospedagem ?? form.hospedagem),
-        alimentacao:     tipoSelecionado?.inclui_alimentacao ?? form.alimentacao,
+        alimentacao:     !!tipoSelecionado?.inclui_alimentacao,
         brinde:          form.brinde,
         qr_code:         qr,
         tipo_inscricao:  tipoSelecionado?.nome ?? null,
@@ -1270,8 +1274,21 @@ export default function InscricaoPublicaPage() {
               )
             )}
 
+            {evento.permite_alimentacao && (
+              <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                <p className="text-sm font-semibold text-amber-800 mb-1">🍽️ Alimentação da inscrição</p>
+                <p className="text-xs text-amber-700">
+                  {tipoSelecionado
+                    ? (tipoSelecionado.inclui_alimentacao
+                      ? 'Esta categoria inclui alimentação automaticamente.'
+                      : 'Esta categoria não inclui alimentação.')
+                    : 'A alimentação é definida automaticamente pela categoria selecionada.'}
+                </p>
+              </div>
+            )}
+
             {/* Serviços opcionais (apenas se não houver tipos configurados) */}
-            {!evento.usar_tipos_inscricao && (evento.permite_hospedagem || evento.permite_alimentacao || evento.permite_brinde) && (
+            {!evento.usar_tipos_inscricao && (evento.permite_hospedagem || evento.permite_brinde) && (
               <div className="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
                 <p className="text-sm font-semibold text-gray-700 mb-3">Serviços adicionais</p>
                 <div className="flex flex-wrap gap-4">
@@ -1282,9 +1299,6 @@ export default function InscricaoPublicaPage() {
                         <p className="text-xs text-gray-500 mt-1 ml-6">{vagasHospedagem} vagas restantes</p>
                       )}
                     </div>
-                  )}
-                  {evento.permite_alimentacao && (
-                    <ChkPublico name="alimentacao" label="🍽️ Alimentação"  checked={form.alimentacao} onChange={handleCheck} />
                   )}
                   {evento.permite_brinde && (
                     <ChkPublico name="brinde"      label="🎁 Brinde"       checked={form.brinde}      onChange={handleCheck} />

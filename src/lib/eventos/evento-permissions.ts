@@ -2,12 +2,14 @@ export type EventoRole =
   | 'admin_evento'
   | 'operador'
   | 'checkin'
+  | 'checkin_refeitorio'
   | 'hospedagem'
   | 'checkin_hospedagem';
 
 export type EventoArea =
   | 'inscricoes'
   | 'checkin'
+  | 'refeitorio'
   | 'etiquetas'
   | 'hospedagem'
   | 'hospedagem_checkin'
@@ -41,6 +43,7 @@ export const EVENTO_PERMISSIONS: Record<EventoRole, Record<EventoArea, boolean>>
   admin_evento: {
     inscricoes: true,
     checkin: true,
+    refeitorio: true,
     etiquetas: true,
     hospedagem: true,
     hospedagem_checkin: true,
@@ -59,6 +62,7 @@ export const EVENTO_PERMISSIONS: Record<EventoRole, Record<EventoArea, boolean>>
   operador: {
     inscricoes: true,
     checkin: true,
+    refeitorio: true,
     etiquetas: true,
     hospedagem: false,
     hospedagem_checkin: false,
@@ -77,6 +81,26 @@ export const EVENTO_PERMISSIONS: Record<EventoRole, Record<EventoArea, boolean>>
   checkin: {
     inscricoes: false,
     checkin: true,
+    refeitorio: true,
+    etiquetas: false,
+    hospedagem: false,
+    hospedagem_checkin: false,
+    equipe: false,
+    configuracoes: false,
+    comunicacao: false,
+    financeiro: false,
+    backup: false,
+    certificados: false,
+    programacao: false,
+    relatorios: false,
+    relatorios_ago: false,
+    centro_controle: false,
+    dashboard_executivo: false,
+  },
+  checkin_refeitorio: {
+    inscricoes: false,
+    checkin: false,
+    refeitorio: true,
     etiquetas: false,
     hospedagem: false,
     hospedagem_checkin: false,
@@ -95,6 +119,7 @@ export const EVENTO_PERMISSIONS: Record<EventoRole, Record<EventoArea, boolean>>
   hospedagem: {
     inscricoes: false,
     checkin: false,
+    refeitorio: false,
     etiquetas: false,
     hospedagem: true,
     hospedagem_checkin: true,
@@ -113,6 +138,7 @@ export const EVENTO_PERMISSIONS: Record<EventoRole, Record<EventoArea, boolean>>
   checkin_hospedagem: {
     inscricoes: false,
     checkin: false,
+    refeitorio: false,
     etiquetas: false,
     hospedagem: false,
     hospedagem_checkin: true,
@@ -149,6 +175,7 @@ const DEFAULT_EVENTO_AREA: Record<EventoRole, EventoArea> = {
   admin_evento: 'inscricoes',
   operador: 'inscricoes',
   checkin: 'checkin',
+  checkin_refeitorio: 'refeitorio',
   hospedagem: 'hospedagem',
   checkin_hospedagem: 'hospedagem_checkin',
 };
@@ -169,10 +196,12 @@ export type EventoPermissoes = {
   podeHospedagemCheckin: boolean;
   podeProgramacao: boolean;
   podeCheckin: boolean;
+  podeRefeitorio: boolean;
   podeEditarInscricoes: boolean;
   podeRemoverInscricao: boolean;
   podeMoverInscricao: boolean;
   somenteCheckin: boolean;
+  somenteRefeitorio: boolean;
   somenteCheckinHospedagem: boolean;
 };
 
@@ -180,6 +209,7 @@ export function isEventoRole(value: string | null | undefined): value is EventoR
   return value === 'admin_evento'
     || value === 'operador'
     || value === 'checkin'
+    || value === 'checkin_refeitorio'
     || value === 'hospedagem'
     || value === 'checkin_hospedagem';
 }
@@ -189,6 +219,7 @@ export function normalizeEventoRole(value: string | null | undefined): EventoRol
   if (isEventoRole(value)) return value;
   if (value === 'admin') return 'admin_evento';
   if (value === 'hospedagem_checkin') return 'checkin_hospedagem';
+  if (value === 'refeitorio') return 'checkin_refeitorio';
   return null;
 }
 
@@ -217,6 +248,8 @@ export function getDefaultEventoPath(eventoId: string, role: EventoRole | null |
   switch (getDefaultEventoArea(role)) {
     case 'checkin':
       return `/eventos/${eventoId}/checkin`;
+    case 'refeitorio':
+      return `/eventos/${eventoId}/checkin/refeitorio`;
     case 'hospedagem':
       return `/eventos/${eventoId}?tab=hospedagem`;
     case 'hospedagem_checkin':
@@ -262,10 +295,12 @@ export function resolveEventoPermissoes(opts: {
     podeHospedagemCheckin: can('hospedagem_checkin'),
     podeProgramacao: can('programacao'),
     podeCheckin: can('checkin'),
+    podeRefeitorio: can('refeitorio'),
     podeEditarInscricoes: can('inscricoes'),
     podeRemoverInscricao: isAdmin,
     podeMoverInscricao: isAdmin,
     somenteCheckin: role === 'checkin',
+    somenteRefeitorio: role === 'checkin_refeitorio',
     somenteCheckinHospedagem: role === 'checkin_hospedagem',
   };
 }
