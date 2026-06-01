@@ -690,8 +690,15 @@ export default function InscricaoPublicaPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Erro ao realizar inscrição');
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        const base = json?.error || `Falha na inscrição (HTTP ${res.status})`;
+        const details = json?.details ? `Detalhes: ${String(json.details)}` : null;
+        const stage = json?.stage ? `Etapa: ${String(json.stage)}` : null;
+        const code = json?.code ? `Código: ${String(json.code)}` : null;
+        const msg = [base, details, stage, code].filter(Boolean).join(' | ');
+        throw new Error(msg || 'Erro ao realizar inscrição');
+      }
       setConfirmacao({
         qr_code:         qr,
         inscricaoId:     json.inscricaoId,

@@ -10,6 +10,14 @@ import { logDB } from '@/lib/audit';
 import { cleanCpf, isValidCpf } from '@/lib/cpf';
 import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
 
+type ErrorJson = {
+  error: string;
+  stage: string;
+  details?: string | null;
+  code?: string | null;
+  payloadResumo?: Record<string, unknown>;
+};
+
 const VENCIMENTO_DIAS = 3;
 
 function dueDateFromNow(dias = VENCIMENTO_DIAS): string {
@@ -20,6 +28,51 @@ function dueDateFromNow(dias = VENCIMENTO_DIAS): string {
 
 function gerarCodigoLote(): string {
   return 'LOTE-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 5).toUpperCase();
+}
+
+function buildErrorResponse(
+  status: number,
+  data: ErrorJson,
+) {
+  return NextResponse.json(data, { status });
+}
+
+function extractMissingColumn(msg: string | null | undefined): string | null {
+  if (!msg) return null;
+  const m = msg.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+of\s+relation\s+"?[a-zA-Z0-9_]+"?\s+does not exist/i)
+    || msg.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+does not exist/i);
+  return m?.[1] ?? null;
+}
+
+async function insertInscricaoComFallback(
+  supabase: ReturnType<typeof createServerClient>,
+  payload: Record<string, unknown>,
+) {
+  const candidate = { ...payload };
+  const colunasRemovidas: string[] = [];
+
+  for (let tentativa = 1; tentativa <= 8; tentativa++) {
+    const { data, error } = await supabase
+      .from('evento_inscricoes')
+      .insert([candidate])
+      .select('id')
+      .single();
+
+    if (!error && data) {
+      return { data, error: null as null, colunasRemovidas };
+    }
+
+    const missing = extractMissingColumn(error?.message);
+    if (!missing || !(missing in candidate)) {
+      return { data: null, error, colunasRemovidas };
+    }
+
+    delete candidate[missing];
+    colunasRemovidas.push(missing);
+    console.warn('[INSCRICAO][fallback_coluna_ausente]', { tentativa, missing });
+  }
+
+  return { data: null, error: { message: 'Falha ao inserir inscrição após fallback de colunas.', code: 'FALLBACK_MAX_RETRIES' }, colunasRemovidas };
 }
 
 // Valida e retorna desconto de cupom (sem incrementar usados ainda)
@@ -72,7 +125,10 @@ async function incrementarCupom(
 }
 
 export async function POST(request: NextRequest) {
+  let stage = 'init';
+  let payloadResumo: Record<string, unknown> = {};
   try {
+    stage = 'parse_payload';
     const body = await request.json();
 
     const {
@@ -104,31 +160,78 @@ export async function POST(request: NextRequest) {
       grupo_hospedagem,
     } = body;
 
+    payloadResumo = {
+      evento_slug: slug ?? null,
+      nome: nome_inscrito ?? null,
+      cpf: cpf ?? null,
+      tipo_inscricao: tipo_inscricao ?? null,
+      valor_final: null,
+      alimentacao: null,
+      hospedagem: hospedagem ?? null,
+    };
+
+    console.info('[INSCRICAO][payload_recebido]', {
+      stage,
+      slug,
+      nome_inscrito,
+      cpf: cpf ? String(cpf).replace(/\d(?=\d{4})/g, '*') : null,
+      tipo_inscricao,
+      incluir_esposa: !!incluir_esposa,
+      possui_lote: Array.isArray(participantes) && participantes.length > 0,
+    });
+
     if (!slug || !nome_inscrito?.trim() || !supervisao_id) {
-      return NextResponse.json({ error: 'Campos obrigatórios ausentes' }, { status: 400 });
+      return buildErrorResponse(400, {
+        error: 'Campos obrigatórios ausentes',
+        stage: 'validacao_campos_obrigatorios',
+        payloadResumo,
+      });
     }
 
     const supabase = createServerClient();
 
     // ── Busca evento ──────────────────────────────────────────
+    stage = 'buscar_evento';
     const { data: evento, error: evErr } = await supabase
       .from('eventos')
       .select('id, nome, valor_inscricao, usar_tipos_inscricao, inscricoes_abertas, limite_vagas, limite_hospedagem, limite_brindes, status, departamento, configuracoes_ago')
       .eq('slug', slug)
       .single();
 
+    console.info('[INSCRICAO][evento_encontrado]', {
+      stage,
+      ok: !!evento && !evErr,
+      evento_id: evento?.id ?? null,
+      departamento: evento?.departamento ?? null,
+      usar_tipos_inscricao: (evento as any)?.usar_tipos_inscricao ?? null,
+    });
+
     if (evErr || !evento) {
-      return NextResponse.json({ error: 'Evento não encontrado' }, { status: 404 });
+      return buildErrorResponse(404, {
+        error: 'Evento não encontrado',
+        stage,
+        details: evErr?.message ?? null,
+        code: (evErr as any)?.code ?? null,
+        payloadResumo,
+      });
     }
 
     if (!isEventoInscricaoPublicaDisponivel(evento)) {
-      return NextResponse.json({ error: 'Inscrições encerradas' }, { status: 409 });
+      return buildErrorResponse(409, {
+        error: 'Inscrições encerradas',
+        stage: 'validacao_evento_disponivel',
+        payloadResumo: { ...payloadResumo, evento_id: evento.id },
+      });
     }
 
     // ── Valida uso de tipos de inscrição ─────────────────────────────────
     const usaTipos = !!(evento as Record<string, unknown>).usar_tipos_inscricao;
     if (usaTipos && !tipo_inscricao) {
-      return NextResponse.json({ error: 'Selecione uma modalidade de inscrição.' }, { status: 400 });
+      return buildErrorResponse(400, {
+        error: 'Selecione uma modalidade de inscrição.',
+        stage: 'validacao_tipo_inscricao',
+        payloadResumo: { ...payloadResumo, evento_id: evento.id },
+      });
     }
 
     // ── Busca tipo de inscrição (se informado) ────────────────────────
@@ -137,29 +240,57 @@ export async function POST(request: NextRequest) {
     let tipoInclui = { alimentacao: false, hospedagem: !!hospedagem };
     let tipoRefeicoes = 0;
 
+    stage = 'buscar_tipo_inscricao';
     if (tipo_inscricao && usaTipos) {
-      const { data: tipo } = await supabase
+      const { data: tipo, error: tipoErr } = await supabase
         .from('evento_tipos_inscricao')
         .select('nome, valor, inclui_alimentacao, inclui_hospedagem, quantidade_refeicoes')
         .eq('evento_id', evento.id)
         .ilike('nome', String(tipo_inscricao).trim())
         .eq('ativo', true)
-        .single();
-      if (tipo) {
-        valorBase  = tipo.valor;
-        tipoNome   = tipo.nome;
-        tipoInclui = { alimentacao: tipo.inclui_alimentacao, hospedagem: tipo.inclui_hospedagem };
-        tipoRefeicoes = (tipo.inclui_alimentacao && tipo.quantidade_refeicoes > 0)
-          ? tipo.quantidade_refeicoes
-          : 0;
+        .maybeSingle();
+      if (tipoErr) {
+        return buildErrorResponse(500, {
+          error: 'Erro ao buscar categoria de inscrição.',
+          stage,
+          details: tipoErr.message,
+          code: (tipoErr as any)?.code ?? null,
+          payloadResumo: { ...payloadResumo, evento_id: evento.id },
+        });
       }
+      if (!tipo) {
+        return buildErrorResponse(400, {
+          error: 'Selecione uma categoria de inscrição válida.',
+          stage,
+          details: `Categoria não encontrada/inativa: ${String(tipo_inscricao).trim()}`,
+          code: 'TIPO_INSCRICAO_INVALIDO',
+          payloadResumo: { ...payloadResumo, evento_id: evento.id },
+        });
+      }
+
+      valorBase  = tipo.valor;
+      tipoNome   = tipo.nome;
+      tipoInclui = { alimentacao: tipo.inclui_alimentacao, hospedagem: tipo.inclui_hospedagem };
+      tipoRefeicoes = (tipo.inclui_alimentacao && tipo.quantidade_refeicoes > 0)
+        ? tipo.quantidade_refeicoes
+        : 0;
     }
+
+    console.info('[INSCRICAO][tipo_encontrado]', {
+      stage,
+      usaTipos,
+      tipo_inscricao: tipoNome,
+      inclui_alimentacao: tipoInclui.alimentacao,
+      inclui_hospedagem: tipoInclui.hospedagem,
+      quantidade_refeicoes: tipoRefeicoes,
+    });
 
     // ── Aplica cupom ──────────────────────────────────────────
     let desconto   = 0;
     let valorFinal = valorBase;
     let cupomUsado = null as string | null;
 
+    stage = 'calculo_valor';
     if (cupom_codigo) {
       const result = await calcularDesconto(supabase, evento.id, cupom_codigo, valorBase);
       if (result) {
@@ -168,6 +299,15 @@ export async function POST(request: NextRequest) {
         cupomUsado = String(cupom_codigo).trim().toUpperCase();
       }
     }
+
+    console.info('[INSCRICAO][calculo_valor]', {
+      stage,
+      evento_id: evento.id,
+      valor_base: valorBase,
+      desconto,
+      valor_final: valorFinal,
+      cupom: cupomUsado,
+    });
 
     // ── Verifica vagas gerais ─────────────────────────────────
     const ehLote   = Array.isArray(participantes) && participantes.length > 0;
@@ -179,12 +319,19 @@ export async function POST(request: NextRequest) {
         .select('id', { count: 'exact', head: true })
         .eq('evento_id', evento.id);
       if ((count ?? 0) + qtdTotal > evento.limite_vagas) {
-        return NextResponse.json({ error: 'Vagas insuficientes' }, { status: 409 });
+        return buildErrorResponse(409, {
+          error: 'Vagas insuficientes',
+          stage: 'validacao_vagas',
+          details: `Disponíveis: ${Math.max(0, evento.limite_vagas - (count ?? 0))}; solicitadas: ${qtdTotal}`,
+          code: 'VAGAS_INSUFICIENTES',
+          payloadResumo: { ...payloadResumo, evento_id: evento.id },
+        });
       }
     }
 
     // ── Verifica vagas de hospedagem ──────────────────────────
     // AGO: hospedagem sempre opt-in explícito; não herda automaticamente do tipo.
+    stage = 'calculo_hospedagem';
     const querHospedagem = evento.departamento === 'AGO'
       ? !!hospedagem
       : (tipoInclui.hospedagem || !!hospedagem);
@@ -195,6 +342,13 @@ export async function POST(request: NextRequest) {
           : 0)
       : (querHospedagem ? 1 : 0);
 
+    console.info('[INSCRICAO][calculo_hospedagem]', {
+      stage,
+      querHospedagem,
+      qtdComHospedagem,
+      ehLote,
+    });
+
     if (qtdComHospedagem > 0 && evento.limite_hospedagem) {
       const { count: hospCount } = await supabase
         .from('evento_inscricoes')
@@ -202,19 +356,26 @@ export async function POST(request: NextRequest) {
         .eq('evento_id', evento.id)
         .eq('hospedagem', true);
       if ((hospCount ?? 0) + qtdComHospedagem > evento.limite_hospedagem) {
-        return NextResponse.json({ error: 'Vagas de hospedagem insuficientes' }, { status: 409 });
+        return buildErrorResponse(409, {
+          error: 'Vagas de hospedagem insuficientes',
+          stage: 'validacao_vagas_hospedagem',
+          payloadResumo: { ...payloadResumo, evento_id: evento.id, hospedagem: querHospedagem },
+        });
       }
     }
 
     const isGratuito = valorFinal <= 0;
 
     if (!isGratuito && !isValidCpf(cpf)) {
-      return NextResponse.json({
+      return buildErrorResponse(400, {
         error: 'CPF invalido. Confira o CPF do responsavel para gerar o pagamento online.',
-      }, { status: 400 });
+        stage: 'validacao_cpf',
+        payloadResumo: { ...payloadResumo, evento_id: evento.id },
+      });
     }
 
     // ── Snapshot ministerial (AGO) — não bloqueia se não encontrar ──────
+    stage = 'snapshot_ministerial';
     const cpfLimpo = cpf?.replace(/\D/g, '') || null;
     let ministroSnapshot: Record<string, unknown> | null = null;
     if (cpfLimpo && evento.departamento === 'AGO') {
@@ -272,6 +433,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    console.info('[INSCRICAO][calculo_alimentacao]', {
+      stage: 'calculo_alimentacao',
+      evento_id: evento.id,
+      tipo_inscricao: tipoNome,
+      alimentacao: tipoInclui.alimentacao,
+      quantidade_refeicoes: tipoRefeicoes,
+    });
+
     // ════════════════════════════════════════════════════════════
     // FLUXO AGO CAMPO MISSIONÁRIO — ESPOSA (2 inscrições, 1 cobrança)
     // ════════════════════════════════════════════════════════════
@@ -320,7 +489,15 @@ export async function POST(request: NextRequest) {
         .select('id')
         .single();
 
-      if (loteErr2 || !lote2) return NextResponse.json({ error: 'Erro ao criar lote do casal' }, { status: 500 });
+      if (loteErr2 || !lote2) {
+        return buildErrorResponse(500, {
+          error: 'Erro ao criar lote do casal',
+          stage: 'insert_lote_casal',
+          details: loteErr2?.message ?? null,
+          code: (loteErr2 as any)?.code ?? null,
+          payloadResumo: { ...payloadResumo, evento_id: evento.id, valor_final: valorTotal2 },
+        });
+      }
 
       // Cria as 2 inscrições (pastor + esposa)
       const rowPastor = normalizePayloadUppercase({
@@ -406,7 +583,13 @@ export async function POST(request: NextRequest) {
         .select('id');
 
       if (insErr2 || !insRows || insRows.length < 2) {
-        return NextResponse.json({ error: 'Erro ao inserir inscrições do casal' }, { status: 500 });
+        return buildErrorResponse(500, {
+          error: 'Erro ao inserir inscrições do casal',
+          stage: 'insert_evento_inscricoes_casal',
+          details: insErr2?.message ?? null,
+          code: (insErr2 as any)?.code ?? null,
+          payloadResumo: { ...payloadResumo, evento_id: evento.id, valor_final: valorTotal2, alimentacao: tipoInclui.alimentacao, hospedagem: querHospedagem },
+        });
       }
 
       const [insPastor, insEsposa] = insRows;
@@ -431,6 +614,7 @@ export async function POST(request: NextRequest) {
       }
 
       try {
+        stage = 'criar_asaas_casal';
         const customerId2 = await createOrFindAsaasCustomer({ nome: nome_inscrito.trim(), email: email?.trim() || null, cpf: cleanCpf(cpf), whatsapp: whatsapp || null });
         const dueDate2 = dueDateFromNow();
         const pagamento2 = await createEventoPayment({ customerId: customerId2, value: valorTotal2, dueDate: dueDate2, description: `Inscrição Casal CM — ${evento.nome}`, externalReference: `lote:${lote2.id}` });
@@ -465,13 +649,22 @@ export async function POST(request: NextRequest) {
         desconto_valor:       desconto * todos.length,
       });
 
+      stage = 'insert_lote';
       const { data: lote, error: loteErr } = await supabase
         .from('evento_lotes_inscricao')
         .insert([lotePayload])
         .select('id')
         .single();
 
-      if (loteErr || !lote) return NextResponse.json({ error: 'Erro ao criar lote' }, { status: 500 });
+      if (loteErr || !lote) {
+        return buildErrorResponse(500, {
+          error: 'Erro ao criar lote',
+          stage,
+          details: loteErr?.message ?? null,
+          code: (loteErr as any)?.code ?? null,
+          payloadResumo: { ...payloadResumo, evento_id: evento.id, valor_final: valorTotalLote },
+        });
+      }
 
       const rows = todos.map(p => normalizePayloadUppercase({
         evento_id:        evento.id,
@@ -505,8 +698,17 @@ export async function POST(request: NextRequest) {
         lgpd_aceito_em:   new Date().toISOString(),
       }));
 
+      stage = 'insert_evento_inscricoes_lote';
       const { error: insRowsErr } = await supabase.from('evento_inscricoes').insert(rows);
-      if (insRowsErr) return NextResponse.json({ error: 'Erro ao inserir inscrições do lote' }, { status: 500 });
+      if (insRowsErr) {
+        return buildErrorResponse(500, {
+          error: 'Erro ao inserir inscrições do lote',
+          stage,
+          details: insRowsErr?.message ?? null,
+          code: (insRowsErr as any)?.code ?? null,
+          payloadResumo: { ...payloadResumo, evento_id: evento.id, valor_final: valorTotalLote, alimentacao: tipoInclui.alimentacao, hospedagem: querHospedagem },
+        });
+      }
 
       if (cupomUsado) await incrementarCupom(supabase, evento.id, cupomUsado, todos.length);
 
@@ -515,6 +717,7 @@ export async function POST(request: NextRequest) {
       }
 
       try {
+        stage = 'criar_asaas_lote';
         const customerId = await createOrFindAsaasCustomer({ nome: nome_inscrito.trim(), email: email?.trim() || null, cpf: cleanCpf(cpf), whatsapp: whatsapp || null });
         const dueDateLote = dueDateFromNow();
         const pagamento  = await createEventoPayment({ customerId, value: valorTotalLote, dueDate: dueDateLote, description: `Lote ${codigoLote} — ${evento.nome} (${todos.length} insc.)`, externalReference: `lote:${lote.id}` });
@@ -582,20 +785,39 @@ export async function POST(request: NextRequest) {
       lgpd_aceito_em:   new Date().toISOString(),
     });
 
-    const { data: inscricao, error: insErr } = await supabase
-      .from('evento_inscricoes')
-      .insert([inscricaoPayload])
-      .select('id')
-      .single();
+    payloadResumo = {
+      ...payloadResumo,
+      evento_id: evento.id,
+      tipo_inscricao: tipoNome,
+      valor_final: valorFinal,
+      alimentacao: tipoInclui.alimentacao,
+      hospedagem: querHospedagem,
+    };
+
+    stage = 'insert_evento_inscricoes';
+    const { data: inscricao, error: insErr, colunasRemovidas } = await insertInscricaoComFallback(
+      supabase,
+      inscricaoPayload as Record<string, unknown>,
+    );
 
     if (insErr || !inscricao) {
       console.error('[INSCRICAO] Erro ao inserir:', insErr);
-      return NextResponse.json({ error: 'Erro ao salvar inscrição' }, { status: 500 });
+      return buildErrorResponse(500, {
+        error: 'Erro ao salvar inscrição',
+        stage,
+        details: (insErr as any)?.message ?? null,
+        code: (insErr as any)?.code ?? null,
+        payloadResumo: {
+          ...payloadResumo,
+          colunas_removidas_fallback: colunasRemovidas,
+        },
+      });
     }
 
     if (cupomUsado) await incrementarCupom(supabase, evento.id, cupomUsado);
 
     // Cria registro de hospedagem AGO se evento AGO com hospedagem
+    stage = 'insert_evento_hospedagens';
     if (querHospedagem && evento.departamento === 'AGO') {
       const { calcularPrioridadeHospedagem } = await import('@/lib/hospedagem-helpers');
       const prioridade = calcularPrioridadeHospedagem({
@@ -621,10 +843,20 @@ export async function POST(request: NextRequest) {
         grupo_hospedagem:     (grupo_hospedagem as string)?.trim() || null,
         alocacao_automatica:  true,
       });
-      await supabase.from('evento_hospedagens').insert([hospedagemPayload]);
+      const { error: hospErr } = await supabase.from('evento_hospedagens').insert([hospedagemPayload]);
+      if (hospErr) {
+        return buildErrorResponse(500, {
+          error: 'Erro ao salvar hospedagem da inscrição',
+          stage,
+          details: hospErr.message,
+          code: (hospErr as any)?.code ?? null,
+          payloadResumo,
+        });
+      }
     }
 
     if (isGratuito) {
+      stage = 'auditoria_isento';
       void logDB({
         userEmail: email?.trim() ?? undefined,
         acao: 'criar',
@@ -639,6 +871,7 @@ export async function POST(request: NextRequest) {
 
     // Cria cobrança ASAAS
     try {
+      stage = 'criar_asaas_individual';
       const customerId = await createOrFindAsaasCustomer({
         nome:     nome_inscrito.trim(),
         email:    email?.trim() || null,
@@ -656,6 +889,7 @@ export async function POST(request: NextRequest) {
 
       // Salva dados ASAAS na inscrição
       const dueDate = dueDateFromNow();
+      stage = 'update_evento_inscricoes_asaas';
       await supabase
         .from('evento_inscricoes')
         .update({
@@ -668,6 +902,7 @@ export async function POST(request: NextRequest) {
         })
         .eq('id', inscricao.id);
 
+      stage = 'auditoria_pago';
       void logDB({
         userEmail: email?.trim() ?? undefined,
         acao: 'criar',
@@ -703,6 +938,12 @@ export async function POST(request: NextRequest) {
     }
   } catch (err: any) {
     console.error('[INSCRICAO] Erro inesperado:', err);
-    return NextResponse.json({ error: 'Erro interno' }, { status: 500 });
+    return buildErrorResponse(500, {
+      error: 'Erro interno',
+      stage,
+      details: err?.message ?? String(err),
+      code: err?.code ?? null,
+      payloadResumo,
+    });
   }
 }

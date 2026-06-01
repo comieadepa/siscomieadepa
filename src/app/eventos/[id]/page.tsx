@@ -736,6 +736,7 @@ export default function GerenciarEventoPage() {
       })()}
 
       {/* ── CONTEÚDO DAS ABAS ────────────────────────────────────── */}
+      <div className="mx-auto w-full max-w-[1400px]">
       {activeTab === 'inscritos' && (
         <TabInscritos
           inscricoes={inscricoes}
@@ -869,6 +870,7 @@ export default function GerenciarEventoPage() {
       {activeTab === 'controle-ago' && (
         <TabControleAGO eventoId={id} podeEditar={perfil.podeEditar} />
       )}
+      </div>
 
       {/* ── MODAL ENCERRAR AGO ─────────────────────────────── */}
       {showEncerrarModal && (
