@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ eventoId: string; inscricaoId: string }> }
 ) {
   const { eventoId, inscricaoId } = await params;
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'etiquetas');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeEditarInscricoes) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
 
   const supabase = guard.ctx.supabaseAdmin;
   const { data: ins, error } = await supabase

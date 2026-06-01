@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 import { normalizePayloadUppercase } from '@/lib/text';
 
 // GET /api/eventos/[eventoId]/alojamentos
@@ -8,11 +8,8 @@ export async function GET(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(_req, eventoId);
+  const guard = await requireEventoPermission(_req, eventoId, 'hospedagem');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeHospedagem) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
   const supabase = guard.ctx.supabaseAdmin;
   const { data, error } = await supabase
     .from('evento_alojamentos')
@@ -62,11 +59,8 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'hospedagem');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeHospedagem) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
   const body = await request.json();
   const { nome, publico, sexo, total_vagas, camas_inferiores, camas_superiores } = body;
 
@@ -101,11 +95,8 @@ export async function PATCH(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'hospedagem');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeHospedagem) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
   const body = await request.json();
   const { id, ...updates } = body;
   if (!id) return NextResponse.json({ error: 'id obrigatório' }, { status: 400 });
@@ -129,11 +120,8 @@ export async function DELETE(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'hospedagem');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeHospedagem) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
   if (!id) return NextResponse.json({ error: 'id obrigatório' }, { status: 400 });

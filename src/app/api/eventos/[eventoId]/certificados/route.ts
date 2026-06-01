@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 
 // GET /api/eventos/[eventoId]/certificados
 // Retorna inscrições elegíveis para certificado (pago/isento + checkin)
@@ -8,12 +8,8 @@ export async function GET(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  // ── Auth: somente usuários autenticados ──
-  const guard = await requireEventoAccess(_req, eventoId);
+  const guard = await requireEventoPermission(_req, eventoId, 'certificados');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeCertificados) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
 
   const supabase = guard.ctx.supabaseAdmin;
 

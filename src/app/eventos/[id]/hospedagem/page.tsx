@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
 import { setEquipeSession } from '@/lib/equipe-session';
+import { getDefaultEventoPath } from '@/lib/eventos/evento-permissions';
 import type { EquipeSession } from '@/lib/equipe-session';
 
 export default function HospedagemLoginPage() {
@@ -56,7 +57,7 @@ export default function HospedagemLoginPage() {
       }
 
       setEquipeSession(sessao);
-      router.replace(`/eventos/${eventoId}?tab=hospedagem`);
+      router.replace(getDefaultEventoPath(eventoId, 'hospedagem'));
     } catch {
       setErro('Erro ao acessar a área de hospedagem.');
     } finally {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 import { normalizePayloadUppercase } from '@/lib/text';
 
 // GET /api/eventos/[eventoId]/programacao — público (página de inscrição + assistente)
@@ -28,12 +28,8 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  // ── Auth ──
-  const guard = await requireEventoAccess(req, eventoId);
+  const guard = await requireEventoPermission(req, eventoId, 'programacao');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeProgramacao) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
 
   const body = await req.json();
   const { data: dataEvento, horario, titulo, descricao, palestrante, local, ordem } = body;

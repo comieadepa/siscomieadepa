@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 import { normalizePayloadUppercase } from '@/lib/text';
 import { logDB } from '@/lib/audit';
 import { calcularPrioridadeHospedagem } from '@/lib/hospedagem-helpers';
@@ -42,16 +42,12 @@ export async function POST(
 ) {
   const { eventoId } = await params;
 
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'inscricoes');
   if (!guard.ok) return guard.response;
 
-  if (guard.ctx.perms.somenteCheckin) {
-    return NextResponse.json({ error: 'Acesso negado. Permissão insuficiente.' }, { status: 403 });
-  }
-
   const supabase = guard.ctx.supabaseAdmin;
-  const operadorId = guard.ctx.user.id;
-  const operadorEmail = guard.ctx.user.email ?? undefined;
+  const operadorId = guard.ctx.user?.id;
+  const operadorEmail = guard.ctx.user?.email ?? undefined;
 
   try {
     const body = await request.json() as Record<string, unknown>;

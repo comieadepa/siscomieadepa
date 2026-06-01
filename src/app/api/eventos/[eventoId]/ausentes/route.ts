@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 import { logDB } from '@/lib/audit';
 
 // GET /api/eventos/[eventoId]/ausentes
@@ -10,7 +10,7 @@ export async function GET(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'centro_controle');
   if (!guard.ok) return guard.response;
 
   const supabase = guard.ctx.supabaseAdmin;
@@ -110,13 +110,11 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'centro_controle');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeEditarEvento)
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
 
   const supabase = guard.ctx.supabaseAdmin;
-  const userId   = guard.ctx.user.id;
+  const userId   = guard.ctx.user?.id;
 
   const body = (await request.json()) as { ids?: string[]; selecionado?: boolean };
   const { ids, selecionado } = body;

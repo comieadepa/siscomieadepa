@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 import { materializarSetoresHospedagemAGO } from '@/lib/materializar-setores';
 import {
   calcularPrioridadeHospedagem,
@@ -24,11 +24,8 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(_req, eventoId);
+  const guard = await requireEventoPermission(_req, eventoId, 'hospedagem');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeHospedagem) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
   const supabase = guard.ctx.supabaseAdmin;
 
   // ── 1. Alojamentos ativos ────────────────────────────────────

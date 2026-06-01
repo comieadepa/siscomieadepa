@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 import { logDB } from '@/lib/audit';
 
 // POST /api/eventos/[eventoId]/encerrar
@@ -9,13 +9,11 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'configuracoes');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeEditarEvento)
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
 
   const supabase = guard.ctx.supabaseAdmin;
-  const userId   = guard.ctx.user.id;
+  const userId   = guard.ctx.user?.id;
 
   // 1. Verifica pré-condições
   const { data: evento, error: evErr } = await supabase

@@ -184,10 +184,15 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Verifica vagas de hospedagem ──────────────────────────
-    const querHospedagem = tipoInclui.hospedagem || !!hospedagem;
+    // AGO: hospedagem sempre opt-in explícito; não herda automaticamente do tipo.
+    const querHospedagem = evento.departamento === 'AGO'
+      ? !!hospedagem
+      : (tipoInclui.hospedagem || !!hospedagem);
     // Para lote: conta todos os participantes que terão hospedagem
     const qtdComHospedagem = ehLote
-      ? (querHospedagem ? 1 : 0) + (Array.isArray(participantes) ? (participantes as { hospedagem?: boolean }[]).filter(p => tipoInclui.hospedagem || !!p.hospedagem).length : 0)
+      ? (querHospedagem ? 1 : 0) + (Array.isArray(participantes)
+          ? (participantes as { hospedagem?: boolean }[]).filter(p => evento.departamento === 'AGO' ? !!p.hospedagem : (tipoInclui.hospedagem || !!p.hospedagem)).length
+          : 0)
       : (querHospedagem ? 1 : 0);
 
     if (qtdComHospedagem > 0 && evento.limite_hospedagem) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 import { logDB } from '@/lib/audit';
 
 export async function POST(
@@ -8,11 +8,8 @@ export async function POST(
 ) {
   const { eventoId } = await params;
 
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'equipe');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeCriarEquipe) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
 
   let body: { equipe_id?: string };
   try {

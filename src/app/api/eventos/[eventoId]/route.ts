@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventAccess } from '@/lib/auth/require-auth';
+import { requireEventoPermission } from '@/lib/evento-guard';
 import { registrarAuditoria } from '@/lib/audit';
 
 export async function DELETE(
@@ -11,11 +11,8 @@ export async function DELETE(
     return NextResponse.json({ error: 'Evento invalido.' }, { status: 400 });
   }
 
-  const guard = await requireEventAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'configuracoes');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeEditarEvento) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
 
   const supabase = guard.ctx.supabaseAdmin;
 
@@ -36,7 +33,7 @@ export async function DELETE(
   }
 
   void registrarAuditoria(
-    { userId: guard.ctx.user.id, userEmail: guard.ctx.user.email ?? undefined, acao: 'deletar', modulo: 'eventos', entidadeId: eventoId, descricao: 'Evento excluído' },
+    { userId: guard.ctx.user?.id, userEmail: guard.ctx.user?.email ?? undefined, acao: 'deletar', modulo: 'eventos', entidadeId: eventoId, descricao: 'Evento excluído' },
     request,
   );
   return NextResponse.json({ success: true });
@@ -51,11 +48,8 @@ export async function PATCH(
     return NextResponse.json({ error: 'Evento invalido.' }, { status: 400 });
   }
 
-  const guard = await requireEventAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'configuracoes');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeEditarEvento) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
 
   const supabase = guard.ctx.supabaseAdmin;
 
@@ -76,7 +70,7 @@ export async function PATCH(
   }
 
   void registrarAuditoria(
-    { userId: guard.ctx.user.id, userEmail: guard.ctx.user.email ?? undefined, acao: 'editar', modulo: 'eventos', entidadeId: eventoId, descricao: 'Evento cancelado' },
+    { userId: guard.ctx.user?.id, userEmail: guard.ctx.user?.email ?? undefined, acao: 'editar', modulo: 'eventos', entidadeId: eventoId, descricao: 'Evento cancelado' },
     request,
   );
   return NextResponse.json({ success: true });

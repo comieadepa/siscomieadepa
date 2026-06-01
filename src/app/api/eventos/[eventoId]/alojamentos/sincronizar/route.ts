@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 import { materializarSetoresHospedagemAGO } from '@/lib/materializar-setores';
 
 /**
@@ -13,11 +13,8 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> },
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'hospedagem');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeHospedagem) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
 
   const resultado = await materializarSetoresHospedagemAGO(guard.ctx.supabaseAdmin, eventoId);
 

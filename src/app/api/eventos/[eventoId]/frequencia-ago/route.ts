@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 
 // GET /api/eventos/[eventoId]/frequencia-ago
 // Retorna relatorio de frequencia nas plenarias AGO
@@ -8,7 +8,7 @@ export async function GET(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'relatorios_ago');
   if (!guard.ok) return guard.response;
 
   const supabase = guard.ctx.supabaseAdmin;

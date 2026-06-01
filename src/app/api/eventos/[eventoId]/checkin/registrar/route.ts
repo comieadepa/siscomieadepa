@@ -1,19 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 
 type EventoRow = {
   id: string;
   status: 'programado' | 'realizado' | 'cancelado';
   checkin_ativo: boolean | null;
-};
-
-type EquipeRow = {
-  id: string;
-  evento_id: string;
-  tipo: 'operador' | 'checkin' | 'hospedagem' | 'checkin_hospedagem';
-  ativo: boolean;
-  convite_expira_em?: string | null;
 };
 
 type InscricaoRow = {
@@ -59,7 +51,6 @@ export async function POST(
   }
 
   const qrToken      = String(body.qr || '').trim();
-  const equipeId     = String(body.equipe_id || '').trim();
   const tipoCheckin: TipoCheckin = (['credenciamento', 'plenaria', 'refeitorio'].includes(body.tipo_checkin as string)
     ? body.tipo_checkin as TipoCheckin
     : 'credenciamento');
@@ -70,26 +61,8 @@ export async function POST(
 
   const supabase = createServerClient();
 
-  // ── Autoriza acesso ──────────────────────────────────────
-  if (!equipeId) {
-    const guard = await requireEventoAccess(request, eventoId);
-    if (!guard.ok) return guard.response;
-  } else {
-    const { data: equipe } = await supabase
-      .from('evento_equipe')
-      .select('id,evento_id,tipo,ativo,convite_expira_em')
-      .eq('id', equipeId)
-      .eq('evento_id', eventoId)
-      .single();
-    if (!equipe) return NextResponse.json({ error: 'Equipe nao encontrada.' }, { status: 404 });
-    const eq = equipe as EquipeRow;
-    if (!eq.ativo) return NextResponse.json({ error: 'Acesso encerrado.' }, { status: 403 });
-    if (eq.tipo !== 'checkin' && eq.tipo !== 'operador') {
-      return NextResponse.json({ error: 'Tipo nao autorizado.' }, { status: 403 });
-    }
-    if (eq.convite_expira_em && new Date(eq.convite_expira_em) < new Date())
-      return NextResponse.json({ error: 'Codigo expirado.' }, { status: 403 });
-  }
+  const guard = await requireEventoPermission(request, eventoId, 'checkin');
+  if (!guard.ok) return guard.response;
 
   // ── Valida evento ────────────────────────────────────────
   const { data: evento } = await supabase

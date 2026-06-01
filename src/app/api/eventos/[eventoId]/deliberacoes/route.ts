@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 import { logDB } from '@/lib/audit';
 import { normalizePayloadUppercase } from '@/lib/text';
 
@@ -18,7 +18,7 @@ export async function GET(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'centro_controle');
   if (!guard.ok) return guard.response;
 
   const supabase = guard.ctx.supabaseAdmin;
@@ -60,15 +60,13 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'centro_controle');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeEditarEvento)
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
 
   const supabase  = guard.ctx.supabaseAdmin;
-  const userId    = guard.ctx.user.id;
-  const userMeta  = guard.ctx.user.user_metadata as Record<string, unknown>;
-  const userName  = (userMeta?.nome as string | undefined) || (guard.ctx.user.email ?? 'Admin');
+  const userId    = guard.ctx.user?.id;
+  const userMeta  = (guard.ctx.user?.user_metadata ?? {}) as Record<string, unknown>;
+  const userName  = (userMeta?.nome as string | undefined) || (guard.ctx.user?.email ?? 'Admin');
 
   // Valida evento AGO
   const { data: evento } = await supabase

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { User } from '@supabase/supabase-js';
 import bcrypt from 'bcrypt';
 import { randomInt } from 'crypto';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 import { logDB } from '@/lib/audit';
 import { enviarEmailAcessoEquipe, getRequestOrigin } from '@/lib/evento-equipe-email';
 
@@ -79,11 +79,8 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'equipe');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeCriarEquipe) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
 
   let body: { nome?: string; email?: string; funcao?: string; senha?: string };
   try {
@@ -158,7 +155,7 @@ export async function POST(
         senha_hash: senhaHash,
         convite_token: codigoAcesso,
         convite_expira_em: conviteExpiraEm,
-        criado_por: guard.ctx.user.id,
+        criado_por: guard.ctx.user?.id ?? null,
         atualizado_em: now,
       },
     ])
@@ -240,11 +237,8 @@ export async function PATCH(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'equipe');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeCriarEquipe) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
 
   let body: { equipe_id?: string; nome?: string; email?: string; funcao?: string; ativo?: boolean; senha?: string };
   try {
@@ -449,11 +443,8 @@ export async function DELETE(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'equipe');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeCriarEquipe) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
 
   let body: { equipe_id?: string };
   try {

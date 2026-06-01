@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 
 /**
  * POST /api/eventos/[eventoId]/hospedagens/realocar
@@ -11,11 +11,8 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> },
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(req, eventoId);
+  const guard = await requireEventoPermission(req, eventoId, 'hospedagem');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeHospedagem) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
   const supabase = guard.ctx.supabaseAdmin;
 
   const body = await req.json().catch(() => ({}));

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 import { normalizeUppercase } from '@/lib/text';
 
 // GET /api/eventos/[eventoId]/tipos-inscricao
@@ -10,11 +9,8 @@ export async function GET(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(_req, eventoId);
+  const guard = await requireEventoPermission(_req, eventoId, 'configuracoes');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeEditarEvento) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
   const supabase = guard.ctx.supabaseAdmin;
   const { data, error } = await supabase
     .from('evento_tipos_inscricao')
@@ -34,6 +30,8 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
+  const guard = await requireEventoPermission(request, eventoId, 'configuracoes');
+  if (!guard.ok) return guard.response;
   const body  = await request.json();
   const tipos = body?.tipos as Array<{
     id?: string;
@@ -53,7 +51,7 @@ export async function POST(
     return NextResponse.json({ error: 'Nenhum tipo informado.' }, { status: 400 });
   }
 
-  const supabase = createServerClient();
+  const supabase = guard.ctx.supabaseAdmin;
 
   // Remove os tipos antigos e insere os novos (evita duplicados)
   // Valida quantidade_refeicoes quando inclui_alimentacao = true (exceto tipos administrativos)

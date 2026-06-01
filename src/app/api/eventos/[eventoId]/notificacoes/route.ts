@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 
 // GET /api/eventos/[eventoId]/notificacoes
 // Lista a fila de notificações de um evento (paginada, filtrada)
@@ -10,11 +10,8 @@ export async function GET(
   const { eventoId } = await params;
   const { searchParams } = new URL(request.url);
 
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'comunicacao');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeComunicacao) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
 
   const status     = searchParams.get('status');      // pendente|enviado|erro
   const tipo       = searchParams.get('tipo');         // email|whatsapp

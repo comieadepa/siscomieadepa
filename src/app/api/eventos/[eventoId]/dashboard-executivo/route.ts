@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +34,7 @@ export async function GET(
   { params }: { params: Promise<{ eventoId: string }> },
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(req, eventoId);
+  const guard = await requireEventoPermission(req, eventoId, 'dashboard_executivo');
   if (!guard.ok) return guard.response;
   const supabase = guard.ctx.supabaseAdmin;
 

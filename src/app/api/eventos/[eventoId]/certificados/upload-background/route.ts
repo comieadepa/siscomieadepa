@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 
 // POST /api/eventos/[eventoId]/certificados/upload-background
 // Faz upload da imagem de fundo do certificado para o Supabase Storage
@@ -10,11 +10,8 @@ export async function POST(
   const { eventoId } = await params;
 
   // Auth
-  const guard = await requireEventoAccess(req, eventoId);
+  const guard = await requireEventoPermission(req, eventoId, 'configuracoes');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeEditarEvento) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
 
   const formData = await req.formData();
   const file = formData.get('file') as File | null;

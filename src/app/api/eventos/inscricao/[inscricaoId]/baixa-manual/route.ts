@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient, createServerClientFromCookies } from '@/lib/supabase-server';
-import { resolveEventoPermissoes, type PermissaoEvento } from '@/lib/evento-permissions';
+import { normalizeEventoRole, resolveEventoPermissoes, type EventoRole } from '@/lib/evento-permissions';
 import { normalizeRole } from '@/lib/auth/roles';
 
 export async function POST(
@@ -44,7 +44,7 @@ export async function POST(
   const isGlobal = nivel === 'super' || nivel === 'administrador';
   const isDeptAdmin = nivel === 'inscricao' && !!departamento;
 
-  let permissao: PermissaoEvento | null = null;
+  let permissao: EventoRole | null = null;
 
   if (isGlobal || isDeptAdmin) {
     permissao = 'admin_evento';
@@ -55,7 +55,7 @@ export async function POST(
       .eq('user_id', user.id)
       .eq('evento_id', ins.evento_id)
       .maybeSingle();
-    permissao = (vinculo?.permissao as PermissaoEvento | undefined) ?? null;
+    permissao = normalizeEventoRole((vinculo as { permissao?: string | null } | null)?.permissao ?? null);
   }
 
   if (!permissao) {

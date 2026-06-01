@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 import { sendEmail } from '@/services/email';
 import { sendWhatsApp } from '@/services/whatsapp';
 
@@ -10,11 +10,8 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'comunicacao');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeComunicacao) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
 
   const body = await request.json();
   const ids: string[] = Array.isArray(body?.ids) ? body.ids.slice(0, 50) : [];

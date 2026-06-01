@@ -19,35 +19,18 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@/lib/supabase-client';
 import { getEquipeSession } from '@/lib/equipe-session';
-import { resolveEventoPermissoes, type PermissaoEvento } from '@/lib/evento-permissions';
+import {
+  getEventoTabsPermitidas,
+  normalizeEventoRole,
+  resolveEventoPermissoes,
+  type EventoRole,
+  type EventoTabId,
+} from '@/lib/eventos/evento-permissions';
 import { normalizeRole } from '@/lib/auth/roles';
 
-export type TabEventoId =
-  | 'inscritos'
-  | 'checkin'
-  | 'etiquetas'
-  | 'financeiro'
-  | 'relatorios'
-  | 'comunicacao'
-  | 'equipe'
-  | 'configuracoes'
-  | 'hospedagem'
-  | 'backup'
-  | 'programacao'
-  | 'certificados';
+export type TabEventoId = EventoTabId;
 
-// Quais abas cada permissão pode acessar
-const TABS_POR_PERMISSAO: Record<PermissaoEvento, TabEventoId[]> = {
-  admin_evento: ['inscritos', 'checkin', 'etiquetas', 'financeiro', 'relatorios', 'comunicacao', 'equipe', 'configuracoes', 'hospedagem', 'backup', 'programacao', 'certificados'],
-  operador:     ['inscritos', 'checkin', 'etiquetas', 'relatorios', 'comunicacao', 'hospedagem', 'programacao', 'certificados'],
-  checkin:      ['checkin'],
-  hospedagem:   ['hospedagem'],
-  checkin_hospedagem: ['hospedagem'],
-};
-
-const TABS_GLOBAL: TabEventoId[] = [
-  'inscritos', 'checkin', 'etiquetas', 'financeiro', 'relatorios', 'comunicacao', 'equipe', 'configuracoes', 'hospedagem', 'backup', 'programacao', 'certificados',
-];
+const TABS_GLOBAL: TabEventoId[] = getEventoTabsPermitidas('admin_evento');
 
 export interface EventosPerfil {
   loading: boolean;
@@ -58,14 +41,15 @@ export interface EventosPerfil {
   departamentoUsuario: string | null;
   /** true quando nivel=inscricao e tem departamento: administra todos os eventos do próprio dept */
   isDeptAdmin: boolean;
-  permissaoEvento: PermissaoEvento | null;
+  permissaoEvento: EventoRole | null;
   eventoIds: string[] | null;          // null = sem restrição
-  permissoesPorEvento: Record<string, PermissaoEvento>;
+  permissoesPorEvento: Record<string, EventoRole>;
   podeNovoEvento: boolean;
   podeEditar: boolean;
   podeVerFinanceiro: boolean;
   podeEditarEvento: boolean;
   podeCriarEquipe: boolean;
+  podeConfiguracoes: boolean;
   podeBackup: boolean;
   podeRelatorios: boolean;
   podeComunicacao: boolean;
@@ -81,7 +65,7 @@ export interface EventosPerfil {
   /** Verifica se o usuário tem acesso a um evento específico */
   podeAcessarEvento: (eventoId: string) => boolean;
   /** Retorna a permissão para um evento específico (ou a global) */
-  permissaoParaEvento: (eventoId: string) => PermissaoEvento | null;
+  permissaoParaEvento: (eventoId: string) => EventoRole | null;
 }
 
 export function useEventosPerfil(): EventosPerfil {
@@ -89,9 +73,9 @@ export function useEventosPerfil(): EventosPerfil {
   const [loading,              setLoading]              = useState(true);
   const [userId,               setUserId]               = useState<string | null>(null);
   const [nivelSistema,         setNivelSistema]         = useState<string | null>(null);
-  const [departamentoUsuario,  setDepartamentoUsuario]  = useState<string | null>(null);
-  const [permissoesPorEvento,  setPermissoesPorEvento]  = useState<Record<string, PermissaoEvento>>({});
-  const [eventoIds,            setEventoIds]            = useState<string[] | null>(null);
+    const [departamentoUsuario,  setDepartamentoUsuario]  = useState<string | null>(null);
+    const [permissoesPorEvento,  setPermissoesPorEvento]  = useState<Record<string, EventoRole>>({});
+    const [eventoIds,            setEventoIds]            = useState<string[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -103,14 +87,8 @@ export function useEventosPerfil(): EventosPerfil {
         if (!user || cancelled) {
           const sess = getEquipeSession();
           if (sess && !cancelled) {
-            const perm: PermissaoEvento =
-              sess.tipo === 'operador'
-                ? 'operador'
-                : sess.tipo === 'hospedagem'
-                  ? 'hospedagem'
-                  : sess.tipo === 'checkin_hospedagem'
-                    ? 'checkin_hospedagem'
-                    : 'checkin';
+            const perm = normalizeEventoRole(sess.tipo);
+            if (!perm) return;
             setPermissoesPorEvento({ [sess.eventoId]: perm });
             setEventoIds([sess.eventoId]);
           }
@@ -175,10 +153,12 @@ export function useEventosPerfil(): EventosPerfil {
 
         if (cancelled) return;
 
-        const map: Record<string, PermissaoEvento> = {};
+        const map: Record<string, EventoRole> = {};
         const ids: string[] = [];
         for (const v of (vinculos || [])) {
-          map[v.evento_id] = v.permissao as PermissaoEvento;
+          const perm = normalizeEventoRole(v.permissao as string | null | undefined);
+          if (!perm) continue;
+          map[v.evento_id] = perm;
           ids.push(v.evento_id);
         }
 
@@ -189,15 +169,8 @@ export function useEventosPerfil(): EventosPerfil {
         // Funciona mesmo quando o usuário está autenticado no Supabase
         const equipeSess = getEquipeSession();
         if (equipeSess && !cancelled) {
-          const sessPerm: PermissaoEvento =
-            equipeSess.tipo === 'operador'
-              ? 'operador'
-              : equipeSess.tipo === 'hospedagem'
-                ? 'hospedagem'
-                : equipeSess.tipo === 'checkin_hospedagem'
-                  ? 'checkin_hospedagem'
-                  : 'checkin';
-          if (!map[equipeSess.eventoId]) {
+          const sessPerm = normalizeEventoRole(equipeSess.tipo);
+          if (sessPerm && !map[equipeSess.eventoId]) {
             map[equipeSess.eventoId] = sessPerm;
             ids.push(equipeSess.eventoId);
             setPermissoesPorEvento({ ...map });
@@ -218,7 +191,7 @@ export function useEventosPerfil(): EventosPerfil {
   const isDeptAdmin = nivelSistema === 'inscricao' && !!departamentoUsuario;
 
   // Permissão mais ampla do usuário (para decidir tabs padrão)
-  const permissaoEvento = useMemo<PermissaoEvento | null>(() => {
+  const permissaoEvento = useMemo<EventoRole | null>(() => {
     if (isGlobal || isDeptAdmin) return 'admin_evento';
     const perms = Object.values(permissoesPorEvento);
     if (perms.includes('admin_evento')) return 'admin_evento';
@@ -238,7 +211,7 @@ export function useEventosPerfil(): EventosPerfil {
   const tabsPermitidas: TabEventoId[] = isGlobal || isDeptAdmin
     ? TABS_GLOBAL
     : permissaoEvento
-      ? TABS_POR_PERMISSAO[permissaoEvento]
+      ? getEventoTabsPermitidas(permissaoEvento)
       : [];
 
   function podeAcessarEvento(eventoId: string): boolean {
@@ -247,7 +220,7 @@ export function useEventosPerfil(): EventosPerfil {
     return eventoId in permissoesPorEvento;
   }
 
-  function permissaoParaEvento(eventoId: string): PermissaoEvento | null {
+  function permissaoParaEvento(eventoId: string): EventoRole | null {
     if (isGlobal || isDeptAdmin) return 'admin_evento';
     return permissoesPorEvento[eventoId] ?? null;
   }
@@ -255,7 +228,7 @@ export function useEventosPerfil(): EventosPerfil {
   function tabsPermitidasParaEvento(eventoId: string): TabEventoId[] {
     if (isGlobal || isDeptAdmin) return TABS_GLOBAL;
     const perm = permissaoParaEvento(eventoId);
-    return perm ? TABS_POR_PERMISSAO[perm] : [];
+    return perm ? getEventoTabsPermitidas(perm) : [];
   }
 
   return {
@@ -273,6 +246,7 @@ export function useEventosPerfil(): EventosPerfil {
     podeVerFinanceiro,
     podeEditarEvento,
     podeCriarEquipe: perms.podeCriarEquipe,
+    podeConfiguracoes: perms.podeConfiguracoes,
     podeBackup: perms.podeBackup,
     podeRelatorios: perms.podeRelatorios,
     podeComunicacao: perms.podeComunicacao,

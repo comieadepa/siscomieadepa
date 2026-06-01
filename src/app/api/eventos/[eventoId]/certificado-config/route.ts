@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 import { normalizePayloadUppercase } from '@/lib/text';
 
 // GET /api/eventos/[eventoId]/certificado-config
@@ -28,11 +28,8 @@ export async function POST(
 ) {
   const { eventoId } = await params;
   // ── Auth: somente usuários autenticados ──
-  const guard = await requireEventoAccess(req, eventoId);
+  const guard = await requireEventoPermission(req, eventoId, 'configuracoes');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeEditarEvento) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
 
   const body = await req.json();
   const {

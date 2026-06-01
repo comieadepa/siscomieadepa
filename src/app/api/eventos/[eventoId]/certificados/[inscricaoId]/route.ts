@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 
 // ── Helper de auth ──────────────────────────────────────────────
 async function requireAuth(request: NextRequest, eventoId: string) {
-  return requireEventoAccess(request, eventoId);
+  return requireEventoPermission(request, eventoId, 'certificados');
 }
 
 // PATCH /api/eventos/[eventoId]/certificados/[inscricaoId]
@@ -15,9 +15,6 @@ export async function PATCH(
   const { eventoId, inscricaoId } = await params;
   const guard = await requireAuth(_req, eventoId);
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeCertificados) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
 
   const supabase = guard.ctx.supabaseAdmin;
 
@@ -59,9 +56,6 @@ export async function DELETE(
   const { eventoId, inscricaoId } = await params;
   const guard = await requireAuth(_req, eventoId);
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeCertificados) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
 
   const supabase = guard.ctx.supabaseAdmin;
   const { error } = await supabase

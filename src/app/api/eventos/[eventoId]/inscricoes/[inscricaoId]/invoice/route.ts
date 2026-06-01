@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 import { createEventoPayment, createOrFindAsaasCustomer } from '@/lib/asaas';
 import { cleanCpf, isValidCpf } from '@/lib/cpf';
 
@@ -16,11 +16,8 @@ export async function GET(
   { params }: { params: Promise<{ eventoId: string; inscricaoId: string }> }
 ) {
   const { eventoId, inscricaoId } = await params;
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'inscricoes');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeEditarInscricoes && !guard.ctx.perms.podeComunicacao) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
 
   const supabase = guard.ctx.supabaseAdmin;
   const { data: ins, error } = await supabase
@@ -50,11 +47,8 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string; inscricaoId: string }> }
 ) {
   const { eventoId, inscricaoId } = await params;
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'inscricoes');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeEditarInscricoes && !guard.ctx.perms.podeComunicacao) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
 
   const supabase = guard.ctx.supabaseAdmin;
 

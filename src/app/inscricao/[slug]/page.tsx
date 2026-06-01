@@ -503,6 +503,9 @@ export default function InscricaoPublicaPage() {
   const ministroAtivo = cpfStatus === 'encontrado' && ministroInfo !== null &&
     ['active', 'ativo'].includes((ministroInfo.status ?? '').toLowerCase());
   const ministroInativo = cpfStatus === 'encontrado' && ministroInfo !== null && !ministroAtivo;
+  const cargoEhPastor = (ministroInfo?.cargoMinisterial ?? '').trim().toLowerCase() === 'pastor';
+  const isPAEfetivo = !!ministroInfo?.isPastorAuxiliar
+    || (cargoEhPastor && !ministroInfo?.isPastorPresidente && !ministroInfo?.isJubilado);
 
   // Calcula idade a partir da data de nascimento informada no formulário
   const idadeCalculada: number | null = form.data_nascimento ? (() => {
@@ -537,7 +540,7 @@ export default function InscricaoPublicaPage() {
         if (form.sexo === 'F') return false;      // feminino não acessa categorias pastorais
         if (!ministroAtivo)   return false;        // requer CPF encontrado e status ativo
         if (ehPP)  return !!(ministroInfo?.isPastorPresidente);
-        if (ehPA)  return !!(ministroInfo?.isPastorAuxiliar);
+        if (ehPA)  return isPAEfetivo;
         if (ehJub) return !!(ministroInfo?.isJubilado);
         return false;
       }
@@ -551,10 +554,11 @@ export default function InscricaoPublicaPage() {
         return idadeCalculada <= 29;
       }
 
-      // === 4. Visitante e demais não-ministeriais: sempre disponíveis ===
-      return true;
+      // === 4. Visitante e demais não-ministeriais: apenas quando ministro não está ativo ===
+      return !ministroAtivo;
     });
   })();
+  const ministroSemPerfil = ministroAtivo && tiposParaExibir.length === 0;
 
   function termosSuporteTexto() {
     if (!evento?.suporte_whatsapp) return 'Canal de suporte: secretaria do evento.';
@@ -594,6 +598,8 @@ export default function InscricaoPublicaPage() {
     if (!form.supervisao_id)           return setErroForm('Selecione a supervisão.');
     if (evento.usar_tipos_inscricao && !tipoSelecionado)
       return setErroForm(evento.departamento === 'AGO' ? 'Selecione a categoria de inscrição.' : 'Selecione a modalidade de inscrição.');
+    if (ministroSemPerfil)
+      return setErroForm('Ministro localizado, mas o perfil ministerial não está definido para esta AGO. Verifique o cargo/cadastro do ministro e selecione uma categoria autorizada.');
 
     // Valida participantes extras se modo lote
     if (modoLote) {
@@ -642,7 +648,7 @@ export default function InscricaoPublicaPage() {
         body.participantes = participantesExtra.map(p => normalizePayloadUppercase({
           ...p,
           cpf:           p.cpf.replace(/\D/g, ''),
-          hospedagem:    tipoSelecionado?.inclui_hospedagem ?? false,
+          hospedagem:    evento.departamento === 'AGO' ? false : (tipoSelecionado?.inclui_hospedagem ?? false),
           alimentacao:   tipoSelecionado?.inclui_alimentacao ?? false,
           brinde:        false,
           qr_code:       generateQRCodeToken(),
@@ -1181,6 +1187,11 @@ export default function InscricaoPublicaPage() {
                       ⚠️ Registro ministerial localizado, porém não está ativo. Categorias ministeriais indisponíveis. Continue com uma categoria não ministerial abaixo.
                     </div>
                   )}
+                  {ministroSemPerfil && (
+                    <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800">
+                      ⚠️ Ministro localizado, mas sem perfil ministerial compatível para esta AGO. Verifique o cadastro ministerial para liberar a categoria correta.
+                    </div>
+                  )}
                   {/* Nenhuma categoria disponível (só exibe se sexo foi selecionado) */}
                   {tiposParaExibir.length === 0 && form.sexo !== '' && (
                     <div className="p-4 bg-orange-50 border border-orange-200 rounded-xl text-sm text-orange-700">
@@ -1285,8 +1296,7 @@ export default function InscricaoPublicaPage() {
             {/* Campos de hospedagem AGO */}
             {evento.departamento === 'AGO' && evento.permite_hospedagem && (
               <div className="mb-6">
-                {/* Quando o tipo já inclui hospedagem, não precisa do checkbox de solicitação */}
-                {tipoSelecionado && !tipoSelecionado.inclui_hospedagem && (
+                {tipoSelecionado && (
                   <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
                     <label className="flex items-center gap-3 cursor-pointer">
                       <input type="checkbox" id="solicita_hospedagem"
@@ -1304,8 +1314,8 @@ export default function InscricaoPublicaPage() {
                   </div>
                 )}
 
-                {/* Detalhes de hospedagem: aparece quando tipo inclui hospedagem OU usuário solicitou */}
-                {(tipoSelecionado?.inclui_hospedagem || solicitaHospedagem) && (
+                {/* Detalhes de hospedagem: aparece somente quando o usuário solicitar */}
+                {solicitaHospedagem && (
                   <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
                     <p className="text-sm font-bold text-amber-800 mb-3">🏨 Informações de Hospedagem (AGO)</p>
 

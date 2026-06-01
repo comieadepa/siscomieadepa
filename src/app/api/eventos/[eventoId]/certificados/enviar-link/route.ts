@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 import { sendEmail } from '@/services/email';
 import { buildUrl, getPublicBaseUrl } from '@/lib/urls';
 
@@ -13,11 +13,8 @@ export async function POST(
   const { eventoId } = await params;
 
   // Auth
-  const guard = await requireEventoAccess(req, eventoId);
+  const guard = await requireEventoPermission(req, eventoId, 'certificados');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeCertificados) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
 
   let body: { inscricao_id: string; reenviar?: boolean };
   try {

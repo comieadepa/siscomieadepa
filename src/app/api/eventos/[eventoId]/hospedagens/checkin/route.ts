@@ -1,40 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
-
-async function autorizarCheckinHospedagem(req: NextRequest, eventoId: string, equipeId?: string | null) {
-  if (equipeId) {
-    const guard = await requireEventoAccess(req, eventoId);
-    if (!guard.ok) {
-      // fallback para equipe sem login Supabase
-      const supabase = (await import('@/lib/supabase-server')).createServerClient();
-      const { data: equipe } = await supabase
-        .from('evento_equipe')
-        .select('id,tipo,ativo,convite_expira_em')
-        .eq('id', equipeId)
-        .eq('evento_id', eventoId)
-        .maybeSingle();
-      if (!equipe || !equipe.ativo) return { ok: false as const, response: NextResponse.json({ error: 'Acesso negado.' }, { status: 403 }) };
-      if (!['checkin_hospedagem', 'hospedagem'].includes(equipe.tipo as string)) {
-        return { ok: false as const, response: NextResponse.json({ error: 'Acesso negado para esta funcao.' }, { status: 403 }) };
-      }
-      if (equipe.convite_expira_em && new Date(equipe.convite_expira_em) < new Date()) {
-        return { ok: false as const, response: NextResponse.json({ error: 'Acesso expirado.' }, { status: 403 }) };
-      }
-      return { ok: true as const, supabase };
-    }
-    if (!guard.ctx.perms.podeHospedagem || guard.ctx.permissao === 'operador' || guard.ctx.permissao === 'checkin') {
-      return { ok: false as const, response: NextResponse.json({ error: 'Acesso negado para esta funcao.' }, { status: 403 }) };
-    }
-    return { ok: true as const, supabase: guard.ctx.supabaseAdmin };
-  }
-
-  const guard = await requireEventoAccess(req, eventoId);
-  if (!guard.ok) return { ok: false as const, response: guard.response };
-  if (!guard.ctx.perms.podeHospedagem || guard.ctx.permissao === 'operador' || guard.ctx.permissao === 'checkin') {
-    return { ok: false as const, response: NextResponse.json({ error: 'Acesso negado para esta funcao.' }, { status: 403 }) };
-  }
-  return { ok: true as const, supabase: guard.ctx.supabaseAdmin };
-}
+import { requireEventoPermission } from '@/lib/evento-guard';
 
 /**
  * GET /api/eventos/[eventoId]/hospedagens/checkin?q=<inscricao_id_ou_cpf>
@@ -51,10 +16,9 @@ export async function GET(
   { params }: { params: Promise<{ eventoId: string }> },
 ) {
   const { eventoId } = await params;
-  const equipeId = req.nextUrl.searchParams.get('equipe_id');
-  const auth = await autorizarCheckinHospedagem(req, eventoId, equipeId);
-  if (!auth.ok) return auth.response;
-  const supabase = auth.supabase;
+  const guard = await requireEventoPermission(req, eventoId, 'hospedagem_checkin');
+  if (!guard.ok) return guard.response;
+  const supabase = guard.ctx.supabaseAdmin;
 
   const q = req.nextUrl.searchParams.get('q')?.trim() ?? '';
   if (!q) return NextResponse.json({ error: 'Parâmetro q obrigatório.' }, { status: 400 });
@@ -165,9 +129,9 @@ export async function POST(
     equipe_id?: string;
   };
 
-  const auth = await autorizarCheckinHospedagem(req, eventoId, body?.equipe_id ?? null);
-  if (!auth.ok) return auth.response;
-  const supabase = auth.supabase;
+  const guard = await requireEventoPermission(req, eventoId, 'hospedagem_checkin');
+  if (!guard.ok) return guard.response;
+  const supabase = guard.ctx.supabaseAdmin;
 
   if (!inscricao_id || !acao) {
     return NextResponse.json(

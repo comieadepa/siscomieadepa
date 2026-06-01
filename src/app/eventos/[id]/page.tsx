@@ -8,6 +8,11 @@ import { useEventosPerfil } from '@/hooks/useEventosPerfil';
 import { createClient } from '@/lib/supabase-client';
 import { getEquipeSession } from '@/lib/equipe-session';
 import type { EquipeSession } from '@/lib/equipe-session';
+import {
+  canAccessEventoArea,
+  getDefaultEventoArea,
+  type EventoArea,
+} from '@/lib/eventos/evento-permissions';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { normalizePayloadUppercase } from '@/lib/text';
 import { authenticatedFetch } from '@/lib/api-client';
@@ -130,6 +135,27 @@ interface Ministro {
 
 type TabId = 'inscritos' | 'inscricao-manual' | 'checkin' | 'etiquetas' | 'financeiro' | 'relatorios' | 'comunicacao' | 'equipe' | 'configuracoes' | 'hospedagem' | 'backup' | 'programacao' | 'certificados' | 'relatorios-ago' | 'ausentes' | 'homologacao' | 'deliberacoes' | 'controle-ago';
 // Nota: 'inscricao-manual' e 'configuracoes' mantidos no tipo para compatibilidade com ?tab= mas removidos da nav
+
+const AREA_POR_TAB: Record<TabId, EventoArea> = {
+  inscritos: 'inscricoes',
+  'inscricao-manual': 'inscricoes',
+  checkin: 'checkin',
+  etiquetas: 'etiquetas',
+  financeiro: 'financeiro',
+  relatorios: 'relatorios',
+  comunicacao: 'comunicacao',
+  equipe: 'equipe',
+  configuracoes: 'configuracoes',
+  hospedagem: 'hospedagem',
+  backup: 'backup',
+  programacao: 'programacao',
+  certificados: 'certificados',
+  'relatorios-ago': 'relatorios_ago',
+  ausentes: 'centro_controle',
+  homologacao: 'centro_controle',
+  deliberacoes: 'centro_controle',
+  'controle-ago': 'centro_controle',
+};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 const fmtData = (d: string | null) => {
@@ -264,15 +290,17 @@ export default function GerenciarEventoPage() {
   const tabsVisiveis = (() => {
     if (perfil.loading) return TODAS_TABS;
     if (perfil.isGlobal) return TODAS_TABS;
-    if (permissaoNesseEvento === 'hospedagem') {
-      return TODAS_TABS.filter(t => t.id === 'hospedagem');
-    }
-    if (permissaoNesseEvento === 'checkin_hospedagem') {
-      return [];
-    }
+    if (!permissaoNesseEvento) return [];
     return TODAS_TABS.filter(t => {
-      if (t.id === 'relatorios-ago' || t.id === 'ausentes' || t.id === 'homologacao' || t.id === 'deliberacoes' || t.id === 'controle-ago') return isAGO && perfil.podeEditar;
-      return tabsPermitidasEvento.includes(t.id as import('@/hooks/useEventosPerfil').TabEventoId);
+      const area = AREA_POR_TAB[t.id as TabId];
+      if ((t.id === 'relatorios-ago' || t.id === 'ausentes' || t.id === 'homologacao' || t.id === 'deliberacoes' || t.id === 'controle-ago') && !isAGO) {
+        return false;
+      }
+      if (t.id === 'configuracoes') {
+        return canAccessEventoArea(permissaoNesseEvento, area);
+      }
+      return tabsPermitidasEvento.includes(t.id as import('@/hooks/useEventosPerfil').TabEventoId)
+        && canAccessEventoArea(permissaoNesseEvento, area);
     });
   })();
 
@@ -372,17 +400,6 @@ export default function GerenciarEventoPage() {
   useEffect(() => {
     if (authLoading || perfil.loading) return;
 
-    if (equipeSessao && equipeSessao.eventoId === id) {
-      if (equipeSessao.tipo === 'checkin') {
-        router.replace(`/eventos/${id}/checkin`);
-        return;
-      }
-      if (equipeSessao.tipo === 'checkin_hospedagem') {
-        router.replace(`/eventos/${id}/hospedagem/checkin`);
-        return;
-      }
-    }
-
     // Gate de acesso: bloqueia acesso direto por URL
     if (!perfil.isGlobal && id && !perfil.podeAcessarEvento(id)) {
       // Fallback: lê sessão de equipe diretamente do localStorage para cobrir edge cases
@@ -396,22 +413,26 @@ export default function GerenciarEventoPage() {
       // Sessão de equipe válida — permite continuar
     }
 
-    // Perfis de equipe abrem direto em sua area
-    if (!perfil.isGlobal && permissaoNesseEvento === 'checkin') {
-      setActiveTab('checkin');
-    } else if (!perfil.isGlobal && permissaoNesseEvento === 'hospedagem') {
-      setActiveTab('hospedagem');
-    } else if (!perfil.isGlobal && permissaoNesseEvento === 'checkin_hospedagem') {
-      router.replace(`/eventos/${id}/hospedagem/checkin`);
+    if (!perfil.isGlobal && (permissaoNesseEvento === 'checkin' || permissaoNesseEvento === 'checkin_hospedagem')) {
+      setAcessoNegado(true);
+      setLoadingEvento(false);
       return;
-    } else {
-      // Aplica aba inicial via query param ?tab=X
-      const tabParam = searchParams?.get('tab') as TabId | null;
-      const TABS_VALIDAS: TabId[] = ['inscritos','inscricao-manual','checkin','etiquetas','financeiro','relatorios','comunicacao','equipe','configuracoes','hospedagem','backup','programacao','certificados','relatorios-ago','ausentes','homologacao','deliberacoes','controle-ago']; // inscricao-manual e configuracoes acessíveis via ?tab= mas não mostrados na nav
-      if (tabParam && TABS_VALIDAS.includes(tabParam)) {
-        setActiveTab(tabParam);
-      }
     }
+
+    const tabParam = searchParams?.get('tab') as TabId | null;
+    const TABS_VALIDAS: TabId[] = ['inscritos','inscricao-manual','checkin','etiquetas','financeiro','relatorios','comunicacao','equipe','configuracoes','hospedagem','backup','programacao','certificados','relatorios-ago','ausentes','homologacao','deliberacoes','controle-ago'];
+    const tabSolicitada = tabParam && TABS_VALIDAS.includes(tabParam) ? tabParam : null;
+    const areaPadrao = permissaoNesseEvento ? getDefaultEventoArea(permissaoNesseEvento) : null;
+    const abaPadrao = areaPadrao === 'hospedagem' ? 'hospedagem' : 'inscritos';
+    const proximaTab = tabSolicitada ?? abaPadrao;
+
+    if (permissaoNesseEvento && !canAccessEventoArea(permissaoNesseEvento, AREA_POR_TAB[proximaTab])) {
+      setAcessoNegado(true);
+      setLoadingEvento(false);
+      return;
+    }
+
+    setActiveTab(proximaTab);
 
     Promise.all([
       fetchEvento(),

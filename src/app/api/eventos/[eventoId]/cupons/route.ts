@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireEventoAccess } from '@/lib/evento-guard';
+import { requireEventoPermission } from '@/lib/evento-guard';
 import { normalizeUppercase } from '@/lib/text';
 
 // GET /api/eventos/[eventoId]/cupons  — lista cupons (admin)
@@ -8,11 +8,8 @@ export async function GET(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(_req, eventoId);
+  const guard = await requireEventoPermission(_req, eventoId, 'financeiro');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeEditarEvento) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
   const supabase = guard.ctx.supabaseAdmin;
   const { data, error } = await supabase
     .from('evento_cupons')
@@ -30,11 +27,8 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'financeiro');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeEditarEvento) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
   const body = await request.json();
   const { codigo, tipo, valor, limite_uso, validade, ativo } = body;
 
@@ -74,11 +68,8 @@ export async function PATCH(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoAccess(request, eventoId);
+  const guard = await requireEventoPermission(request, eventoId, 'financeiro');
   if (!guard.ok) return guard.response;
-  if (!guard.ctx.perms.podeEditarEvento) {
-    return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
-  }
   const { id, ativo } = await request.json();
   if (!id) return NextResponse.json({ error: 'ID não informado.' }, { status: 400 });
 
