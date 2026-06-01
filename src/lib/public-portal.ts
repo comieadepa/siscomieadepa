@@ -135,7 +135,7 @@ export async function fetchOpenEvents(options?: { departamento?: string }) {
   const disponiveis = base.filter(e => isEventoInscricaoPublicaDisponivel(e));
 
   const tipoEventoIds = disponiveis.filter(e => e.usar_tipos_inscricao).map(e => e.id);
-  const tipoMinMap = new Map<string, number>();
+  const tipoStatsMap = new Map<string, { minValor: number | null; minValorPago: number | null }>();
   if (tipoEventoIds.length > 0) {
     const { data: tipos } = await supabase
       .from('evento_tipos_inscricao')
@@ -148,10 +148,15 @@ export async function fetchOpenEvents(options?: { departamento?: string }) {
       const rawValor = (tipo as Record<string, unknown>).valor;
       const valor = typeof rawValor === 'number' ? rawValor : Number(rawValor);
       if (!eventoId || Number.isNaN(valor)) continue;
-      const atual = tipoMinMap.get(eventoId);
-      if (atual === undefined || valor < atual) {
-        tipoMinMap.set(eventoId, valor);
+
+      const stats = tipoStatsMap.get(eventoId) ?? { minValor: null, minValorPago: null };
+      if (stats.minValor === null || valor < stats.minValor) {
+        stats.minValor = valor;
       }
+      if (valor > 0 && (stats.minValorPago === null || valor < stats.minValorPago)) {
+        stats.minValorPago = valor;
+      }
+      tipoStatsMap.set(eventoId, stats);
     }
   }
 
@@ -177,9 +182,9 @@ export async function fetchOpenEvents(options?: { departamento?: string }) {
     if (ev.limite_vagas && (total ?? 0) >= ev.limite_vagas) {
       continue;
     }
-    const valorMinimo = ev.usar_tipos_inscricao ? tipoMinMap.get(ev.id) : null;
-    const valorInscricao = ev.usar_tipos_inscricao && typeof valorMinimo === 'number'
-      ? valorMinimo
+    const stats = ev.usar_tipos_inscricao ? tipoStatsMap.get(ev.id) : undefined;
+    const valorInscricao = ev.usar_tipos_inscricao
+      ? (stats?.minValorPago ?? stats?.minValor ?? ev.valor_inscricao)
       : ev.valor_inscricao;
     result.push({
       ...ev,

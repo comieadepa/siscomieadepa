@@ -324,6 +324,23 @@ async function responderConfirmarInscricao(
   const { data } = await query;
   const lista = (data ?? []) as Array<Record<string, unknown>>;
 
+  const hospedagemMap = new Map<string, string>();
+  const inscricaoIds = lista
+    .map(item => String(item.id || ''))
+    .filter(Boolean);
+  if (inscricaoIds.length > 0) {
+    const { data: hospRows } = await supabase
+      .from('evento_hospedagens')
+      .select('inscricao_id,status')
+      .in('inscricao_id', inscricaoIds);
+    for (const row of hospRows ?? []) {
+      const insId = String((row as Record<string, unknown>).inscricao_id || '');
+      const status = String((row as Record<string, unknown>).status || '');
+      if (!insId || !status) continue;
+      hospedagemMap.set(insId, status);
+    }
+  }
+
   if (lista.length === 0) {
     return {
       resposta: departamento
@@ -337,7 +354,8 @@ async function responderConfirmarInscricao(
     const nomeInscrito = String(insc.nome_inscrito || 'Inscrito');
     const nomeEvento = String(ev?.nome || 'Evento');
     const statusPag = String(insc.status_pagamento || '');
-    const temHospedagem = Boolean(insc.hospedagem);
+    const statusHospedagem = hospedagemMap.get(String(insc.id || '')) || null;
+    const temHospedagem = Boolean(insc.hospedagem) || (statusHospedagem !== null && statusHospedagem !== 'recusada');
     const temAlimentacao = Boolean(insc.alimentacao);
     const permiteHospedagem = Boolean(ev?.permite_hospedagem);
     const permiteAlimentacao = Boolean(ev?.permite_alimentacao);
@@ -402,27 +420,25 @@ async function responderHospedagemInscricao(inscricaoId: string): Promise<Assist
   const insc = data as Record<string, unknown>;
   const ev = insc.eventos as Record<string, unknown>;
   const nomeEvento = String(ev?.nome || 'Evento');
-  const temHospedagem = Boolean(insc.hospedagem);
+  const { data: hospData } = await supabase
+    .from('evento_hospedagens')
+    .select('status')
+    .eq('inscricao_id', inscricaoId)
+    .maybeSingle();
+  const statusHospedagem = hospData ? String((hospData as Record<string, unknown>).status || '') : '';
+  const temHospedagem = Boolean(insc.hospedagem) || (statusHospedagem !== '' && statusHospedagem !== 'recusada');
   const permiteHospedagem = Boolean(ev?.permite_hospedagem);
 
   if (temHospedagem) {
-    if (String(ev?.departamento) === 'AGO') {
-      const { data: hospData } = await supabase
-        .from('evento_hospedagens')
-        .select('status')
-        .eq('inscricao_id', inscricaoId)
-        .maybeSingle();
-      if (hospData) {
-        const status = String((hospData as Record<string, unknown>).status || '');
-        if (status === 'confirmada') {
-          return { resposta: `Sim! Sua inscricao em *${nomeEvento}* inclui hospedagem e ja esta confirmada ✅` };
-        }
-        if (status === 'solicitada') {
-          return { resposta: `Sua inscricao em *${nomeEvento}* inclui hospedagem. Aguardando alocacao de alojamento 🛏️` };
-        }
-        if (status === 'lista_espera') {
-          return { resposta: `Sua inscricao inclui hospedagem, porem voce esta na lista de espera por alojamento.` };
-        }
+    if (statusHospedagem) {
+      if (statusHospedagem === 'confirmada') {
+        return { resposta: `Sim! Sua inscricao em *${nomeEvento}* inclui hospedagem e ja esta confirmada ✅` };
+      }
+      if (statusHospedagem === 'solicitada') {
+        return { resposta: `Sua inscricao em *${nomeEvento}* inclui hospedagem. Aguardando alocacao de alojamento 🛏️` };
+      }
+      if (statusHospedagem === 'lista_espera') {
+        return { resposta: `Sua inscricao inclui hospedagem, porem voce esta na lista de espera por alojamento.` };
       }
     }
     return { resposta: `Sim! Sua inscricao em *${nomeEvento}* inclui hospedagem 🛏️` };

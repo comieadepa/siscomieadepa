@@ -47,8 +47,8 @@ function formatDate(dateStr: string | null) {
 
 function formatValor(valor: number, usarTipos: boolean) {
   const formatted = valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  if (usarTipos) return `Inscricao a partir de ${formatted}`;
   if (valor === 0) return 'Inscricao gratuita';
+  if (usarTipos) return `Inscricao a partir de ${formatted}`;
   return `Inscricao ${formatted}`;
 }
 
