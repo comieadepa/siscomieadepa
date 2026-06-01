@@ -13,10 +13,14 @@ type EquipeRow = {
   id: string;
   evento_id: string;
   email: string;
-  tipo: 'operador' | 'checkin';
+  tipo: 'operador' | 'checkin' | 'hospedagem' | 'checkin_hospedagem';
   ativo: boolean;
   senha_hash: string | null;
 };
+
+function acaoLoginPorTipo(tipo: EquipeRow['tipo']): 'login_operador_evento' | 'login_hospedagem_evento' {
+  return tipo === 'hospedagem' ? 'login_hospedagem_evento' : 'login_operador_evento';
+}
 
 function endOfDayUtc(dateStr: string): Date {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -35,7 +39,7 @@ export async function POST(
 ) {
   const { eventoId } = await params;
 
-  let body: { email?: string; senha?: string };
+  let body: { email?: string; senha?: string; funcao?: 'operador' | 'hospedagem' };
   try {
     body = await request.json();
   } catch {
@@ -44,6 +48,7 @@ export async function POST(
 
   const email = (body.email || '').trim().toLowerCase();
   const senha = (body.senha || '').trim();
+  const funcao = body.funcao === 'hospedagem' ? 'hospedagem' : 'operador';
 
   if (!email) return NextResponse.json({ error: 'E-mail obrigatorio.' }, { status: 400 });
   if (!senha) return NextResponse.json({ error: 'Senha obrigatoria.' }, { status: 400 });
@@ -69,43 +74,43 @@ export async function POST(
     .select('id,evento_id,email,tipo,ativo,senha_hash')
     .eq('evento_id', eventoId)
     .eq('email', email)
-    .eq('tipo', 'operador')
+    .eq('tipo', funcao)
     .maybeSingle();
 
   if (!equipe || (equipe as EquipeRow).ativo !== true) {
     void logDB({
-      acao: 'login_operador_evento',
+      acao: acaoLoginPorTipo(funcao),
       modulo: 'eventos',
       entidade: 'evento_equipe',
-      descricao: 'Tentativa de login com operador nao encontrado ou inativo.',
+      descricao: 'Tentativa de login com equipe nao encontrada ou inativa.',
       status: 'erro',
       detalhes: { eventoId, email },
       request,
     });
-    return NextResponse.json({ error: 'Operador nao encontrado ou inativo.' }, { status: 403 });
+    return NextResponse.json({ error: 'Membro da equipe nao encontrado ou inativo.' }, { status: 403 });
   }
 
   const row = equipe as EquipeRow;
   if (!row.senha_hash) {
     void logDB({
-      acao: 'login_operador_evento',
+      acao: acaoLoginPorTipo(row.tipo),
       modulo: 'eventos',
       entidade: 'evento_equipe',
-      descricao: 'Operador sem senha cadastrada.',
+      descricao: 'Equipe sem senha cadastrada.',
       status: 'erro',
       detalhes: { eventoId, email, equipeId: row.id },
       request,
     });
-    return NextResponse.json({ error: 'Senha nao cadastrada para este operador.' }, { status: 403 });
+    return NextResponse.json({ error: 'Senha nao cadastrada para esta funcao.' }, { status: 403 });
   }
 
   const ok = await bcrypt.compare(senha, row.senha_hash);
   if (!ok) {
     void logDB({
-      acao: 'login_operador_evento',
+      acao: acaoLoginPorTipo(row.tipo),
       modulo: 'eventos',
       entidade: 'evento_equipe',
-      descricao: 'Senha invalida para operador.',
+      descricao: 'Senha invalida para equipe.',
       status: 'erro',
       detalhes: { eventoId, email, equipeId: row.id },
       request,
@@ -120,10 +125,10 @@ export async function POST(
     .eq('id', row.id);
 
   void logDB({
-    acao: 'login_operador_evento',
+    acao: acaoLoginPorTipo(row.tipo),
     modulo: 'eventos',
     entidade: 'evento_equipe',
-    descricao: 'Login de operador autorizado.',
+    descricao: 'Login de equipe autorizado.',
     status: 'sucesso',
     detalhes: { eventoId, email, equipeId: row.id },
     request,

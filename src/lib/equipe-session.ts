@@ -1,7 +1,7 @@
 export type EquipeSession = {
   eventoId: string;
   equipeId: string;
-  tipo: 'operador' | 'checkin';
+  tipo: 'operador' | 'checkin' | 'hospedagem' | 'checkin_hospedagem';
   expiraEm: string;
 };
 
@@ -25,7 +25,7 @@ export function getEquipeSession(): EquipeSession | null {
       return null;
     }
 
-    if (parsed.tipo !== 'operador' && parsed.tipo !== 'checkin') {
+    if (!['operador', 'checkin', 'hospedagem', 'checkin_hospedagem'].includes(parsed.tipo)) {
       window.localStorage.removeItem(STORAGE_KEY);
       return null;
     }

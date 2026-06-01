@@ -15,7 +15,7 @@ type EventoRow = {
 type EquipeRow = {
   id: string;
   evento_id: string;
-  tipo: 'operador' | 'checkin';
+  tipo: 'operador' | 'checkin' | 'hospedagem' | 'checkin_hospedagem';
   ativo: boolean;
 };
 
@@ -36,7 +36,7 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  let body: { equipe_id?: string };
+  let body: { equipe_id?: string; area?: 'checkin' | 'hospedagem_checkin' };
   try {
     body = await request.json();
   } catch {
@@ -44,6 +44,7 @@ export async function POST(
   }
 
   const equipeId = (body.equipe_id || '').trim();
+  const area = body.area === 'hospedagem_checkin' ? 'hospedagem_checkin' : 'checkin';
   if (!equipeId) {
     return NextResponse.json({ error: 'Equipe obrigatoria.' }, { status: 400 });
   }
@@ -67,7 +68,11 @@ export async function POST(
     return NextResponse.json({ error: 'Acesso encerrado.' }, { status: 403 });
   }
 
-  if (equipeRow.tipo !== 'checkin') {
+  const tipoPermitido = area === 'hospedagem_checkin'
+    ? (equipeRow.tipo === 'checkin_hospedagem' || equipeRow.tipo === 'hospedagem' || equipeRow.tipo === 'operador')
+    : (equipeRow.tipo === 'checkin' || equipeRow.tipo === 'operador');
+
+  if (!tipoPermitido) {
     return NextResponse.json({ error: 'Tipo nao autorizado.' }, { status: 403 });
   }
 

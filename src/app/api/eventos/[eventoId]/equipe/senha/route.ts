@@ -40,8 +40,8 @@ export async function POST(
     return NextResponse.json({ error: 'Membro nao encontrado.' }, { status: 404 });
   }
 
-  if ((equipe as { tipo: string }).tipo !== 'operador') {
-    return NextResponse.json({ error: 'Apenas operadores possuem senha.' }, { status: 400 });
+  if (!['operador', 'hospedagem'].includes((equipe as { tipo: string }).tipo)) {
+    return NextResponse.json({ error: 'Apenas operador e hospedagem possuem senha.' }, { status: 400 });
   }
 
   const senhaHash = await bcrypt.hash(senha, 10);
@@ -80,17 +80,17 @@ export async function POST(
     nome: (equipe as { nome?: string | null }).nome || email,
     eventoNome: (evento as { nome?: string } | null)?.nome || 'evento',
     eventoId,
-    funcao: 'operador',
+    funcao: (equipe as { tipo: 'operador' | 'hospedagem' }).tipo,
     origin: getRequestOrigin(request),
     senha,
     redefinicao: true,
   });
 
   void logDB({
-    acao: 'editar_membro_equipe',
+    acao: 'redefinir_senha_equipe',
     modulo: 'eventos',
     entidade: 'evento_equipe',
-    descricao: 'Senha do operador redefinida.',
+    descricao: 'Senha de membro da equipe redefinida.',
     status: 'sucesso',
     detalhes: { eventoId, equipeId, email },
     request,
@@ -101,9 +101,9 @@ export async function POST(
     modulo: 'eventos',
     entidade: 'evento_equipe',
     entidadeId: equipeId,
-    descricao: emailResult.sucesso ? 'Acesso de operador enviado apos redefinicao de senha.' : 'Falha ao enviar acesso apos redefinicao de senha.',
+    descricao: emailResult.sucesso ? 'Acesso de equipe enviado apos redefinicao de senha.' : 'Falha ao enviar acesso apos redefinicao de senha.',
     status: emailResult.sucesso ? 'sucesso' : 'erro',
-    detalhes: { eventoId, equipeId, email, funcao: 'operador', provider: emailResult.provider, redefinicao: true },
+    detalhes: { eventoId, equipeId, email, funcao: (equipe as { tipo: string }).tipo, provider: emailResult.provider, redefinicao: true },
     mensagemErro: emailResult.erro,
     request,
   });

@@ -2,6 +2,10 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
+import { useEventosPerfil } from '@/hooks/useEventosPerfil';
+import { clearEquipeSession, getEquipeSession, setEquipeSession } from '@/lib/equipe-session';
+import type { EquipeSession } from '@/lib/equipe-session';
 
 // ─── Tipos ───────────────────────────────────────────────────
 interface CheckinData {
@@ -61,6 +65,8 @@ export default function HospedagemCheckinPage() {
   const params  = useParams<{ id: string }>();
   const router  = useRouter();
   const eventoId = params.id;
+  const { user, loading: authLoading } = useRequireSupabaseAuth({ allowEquipeSession: { eventoId }, allowAnonymous: true });
+  const perfil = useEventosPerfil();
 
   const inputRef  = useRef<HTMLInputElement>(null);
 
@@ -68,9 +74,59 @@ export default function HospedagemCheckinPage() {
   const [buscando,     setBuscando]     = useState(false);
   const [data,         setData]         = useState<CheckinData | null>(null);
   const [erro,         setErro]         = useState<string | null>(null);
+  const [equipeSessao, setEquipeSessaoState] = useState<EquipeSession | null>(null);
+  const [emailAcesso, setEmailAcesso] = useState('');
+  const [solicitandoAcesso, setSolicitandoAcesso] = useState(false);
   const [operador,     setOperador]     = useState('');
   const [confirmando,  setConfirmando]  = useState(false);
   const [sucessoMsg,   setSucessoMsg]   = useState<string | null>(null);
+
+  const semAcessoDireto = !authLoading && !perfil.loading && !perfil.isGlobal && !!eventoId && !perfil.podeAcessarEvento(eventoId);
+  const permissaoEvento = eventoId ? perfil.permissaoParaEvento(eventoId) : null;
+  const perfilBloqueado = !perfil.loading && !perfil.isGlobal && !equipeSessao && (permissaoEvento === 'operador' || permissaoEvento === 'checkin');
+  const precisaGate = !authLoading && !perfil.loading && !equipeSessao && (!user || semAcessoDireto);
+
+  useEffect(() => {
+    const sess = getEquipeSession();
+    if (sess && sess.eventoId === eventoId && (sess.tipo === 'checkin_hospedagem' || sess.tipo === 'hospedagem' || sess.tipo === 'operador')) {
+      setEquipeSessaoState(sess);
+    } else {
+      setEquipeSessaoState(null);
+    }
+  }, [eventoId]);
+
+  async function solicitarAcesso() {
+    if (!emailAcesso.trim()) {
+      setErro('Informe o e-mail cadastrado.');
+      return;
+    }
+    setSolicitandoAcesso(true);
+    setErro(null);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/checkin/solicitar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailAcesso.trim(), funcao: 'checkin_hospedagem' }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        setErro((json as { error?: string }).error || 'E-mail não autorizado para esta função.');
+        return;
+      }
+      const sessao: EquipeSession = {
+        eventoId,
+        equipeId: json.equipe_id as string,
+        tipo: 'checkin_hospedagem',
+        expiraEm: (json.expira_em as string) || new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
+      };
+      setEquipeSession(sessao);
+      setEquipeSessaoState(sessao);
+    } catch {
+      setErro('Erro ao validar acesso.');
+    } finally {
+      setSolicitandoAcesso(false);
+    }
+  }
 
   // Foca no input ao montar
   useEffect(() => { inputRef.current?.focus(); }, []);
@@ -96,7 +152,7 @@ export default function HospedagemCheckinPage() {
     setSucessoMsg(null);
     try {
       const res = await fetch(
-        `/api/eventos/${eventoId}/hospedagens/checkin?q=${encodeURIComponent(trimmed)}`,
+        `/api/eventos/${eventoId}/hospedagens/checkin?q=${encodeURIComponent(trimmed)}${equipeSessao ? `&equipe_id=${encodeURIComponent(equipeSessao.equipeId)}` : ''}`,
       );
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? 'Não encontrado.');
@@ -120,6 +176,7 @@ export default function HospedagemCheckinPage() {
           inscricao_id: data.inscricao.id,
           acao,
           operador: operador.trim() || null,
+          equipe_id: equipeSessao?.equipeId || null,
         }),
       });
       const json = await res.json();
@@ -139,6 +196,51 @@ export default function HospedagemCheckinPage() {
   const status  = data?.hospedagem?.status;
   const podeCheckin  = data?.hospedagem && !['checkin_realizado','checkout_realizado','lista_espera','cancelada'].includes(status ?? '');
   const podeCheckout = status === 'checkin_realizado';
+
+  if (precisaGate) {
+    return (
+      <div className="min-h-screen bg-[#0D2B4E] flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-lg w-full max-w-md p-6">
+          <h1 className="text-lg font-bold text-[#123b63] mb-2">Acesso ao Check-in de Hospedagem</h1>
+          <p className="text-sm text-gray-600 mb-4">Informe o e-mail cadastrado na equipe do evento.</p>
+          {erro && <div className="mb-3 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">{erro}</div>}
+          <div className="space-y-3">
+            <input
+              type="email"
+              value={emailAcesso}
+              onChange={(e) => setEmailAcesso(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              placeholder="email@exemplo.com"
+            />
+            <button
+              onClick={solicitarAcesso}
+              disabled={solicitandoAcesso}
+              className="w-full bg-[#123b63] text-white rounded-lg py-2 text-sm font-semibold hover:bg-[#0f2a45] disabled:opacity-50"
+            >
+              {solicitandoAcesso ? 'Validando...' : 'Entrar'}
+            </button>
+            <button
+              onClick={() => { clearEquipeSession(); router.push(`/eventos/${eventoId}`); }}
+              className="w-full border border-gray-300 rounded-lg py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              Voltar
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (perfilBloqueado) {
+    return (
+      <div className="min-h-screen bg-[#0D2B4E] flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-lg w-full max-w-md p-6 text-center">
+          <h1 className="text-lg font-bold text-[#123b63] mb-2">Acesso não autorizado para esta função.</h1>
+          <p className="text-sm text-gray-600">Use o acesso de Hospedagem ou Check-in de Hospedagem.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0D2B4E] flex flex-col">

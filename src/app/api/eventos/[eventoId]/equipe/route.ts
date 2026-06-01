@@ -6,7 +6,7 @@ import { requireEventoAccess } from '@/lib/evento-guard';
 import { logDB } from '@/lib/audit';
 import { enviarEmailAcessoEquipe, getRequestOrigin } from '@/lib/evento-equipe-email';
 
-type FuncaoEquipe = 'operador' | 'checkin';
+type FuncaoEquipe = 'operador' | 'checkin' | 'hospedagem' | 'checkin_hospedagem';
 
 type EquipeRow = {
   id: string;
@@ -16,10 +16,22 @@ type EquipeRow = {
   tipo: FuncaoEquipe;
   ativo: boolean;
   senha_hash: string | null;
+  convite_token?: string | null;
 };
 
 function normalizarFuncao(raw?: string | null): FuncaoEquipe {
-  return raw === 'operador' ? 'operador' : 'checkin';
+  if (raw === 'operador') return 'operador';
+  if (raw === 'hospedagem') return 'hospedagem';
+  if (raw === 'checkin_hospedagem') return 'checkin_hospedagem';
+  return 'checkin';
+}
+
+function exigeSenha(funcao: FuncaoEquipe): boolean {
+  return funcao === 'operador' || funcao === 'hospedagem';
+}
+
+function isFuncaoCheckinSemSenha(funcao: FuncaoEquipe): boolean {
+  return funcao === 'checkin' || funcao === 'checkin_hospedagem';
 }
 
 function endOfDayUtc(dateStr: string): Date {
@@ -41,7 +53,7 @@ async function gerarCodigoEquipe(supabase: any, eventoId: string): Promise<strin
       .from('evento_equipe')
       .select('id')
       .eq('evento_id', eventoId)
-      .eq('tipo', 'checkin')
+      .in('tipo', ['checkin', 'checkin_hospedagem'])
       .eq('convite_token', codigo)
       .maybeSingle();
     if (!data) return codigo;
@@ -87,7 +99,7 @@ export async function POST(
 
   if (!nome) return NextResponse.json({ error: 'Nome obrigatorio.' }, { status: 400 });
   if (!email) return NextResponse.json({ error: 'E-mail obrigatorio.' }, { status: 400 });
-  if (funcao === 'operador' && senha.length < 8) {
+  if (exigeSenha(funcao) && senha.length < 8) {
     return NextResponse.json({ error: 'Senha deve ter no minimo 8 caracteres.' }, { status: 400 });
   }
 
@@ -128,9 +140,9 @@ export async function POST(
   }
 
   const now = new Date().toISOString();
-  const senhaHash = funcao === 'operador' ? await bcrypt.hash(senha, 10) : null;
-  const codigoAcesso = funcao === 'checkin' ? await gerarCodigoEquipe(supabase, eventoId) : null;
-  const conviteExpiraEm = funcao === 'checkin'
+  const senhaHash = exigeSenha(funcao) ? await bcrypt.hash(senha, 10) : null;
+  const codigoAcesso = isFuncaoCheckinSemSenha(funcao) ? await gerarCodigoEquipe(supabase, eventoId) : null;
+  const conviteExpiraEm = isFuncaoCheckinSemSenha(funcao)
     ? calcExpiraEm((eventoInfo as { data_fim?: string | null } | null)?.data_fim ?? null)
     : null;
 
@@ -159,7 +171,7 @@ export async function POST(
     return NextResponse.json({ error: 'Erro ao cadastrar membro.', detail: msg }, { status: 500 });
   }
 
-  if (funcao === 'operador') {
+  if (exigeSenha(funcao)) {
     const user = await encontrarUsuarioPorEmail(supabase, email);
     if (!user) {
       const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
@@ -170,16 +182,18 @@ export async function POST(
       });
       if (createError || !newUser?.user) {
         await supabase.from('evento_equipe').delete().eq('id', novoRegistro.id);
-        return NextResponse.json({ error: 'Erro ao criar usuario do operador.' }, { status: 500 });
+        return NextResponse.json({ error: 'Erro ao criar usuario da equipe.' }, { status: 500 });
       }
       await supabase.from('usuario_eventos').upsert(
-        { user_id: newUser.user.id, evento_id: eventoId, permissao: 'operador' },
+        { user_id: newUser.user.id, evento_id: eventoId, permissao: funcao },
         { onConflict: 'user_id,evento_id' }
       );
     } else {
-      await supabase.auth.admin.updateUserById(user.id, { password: senha });
+      if (senha) {
+        await supabase.auth.admin.updateUserById(user.id, { password: senha });
+      }
       await supabase.from('usuario_eventos').upsert(
-        { user_id: user.id, evento_id: eventoId, permissao: 'operador' },
+        { user_id: user.id, evento_id: eventoId, permissao: funcao },
         { onConflict: 'user_id,evento_id' }
       );
     }
@@ -202,8 +216,8 @@ export async function POST(
     eventoId,
     funcao,
     origin: getRequestOrigin(request),
-    senha: funcao === 'operador' ? senha : undefined,
-    codigo: funcao === 'checkin' ? (codigoAcesso ?? undefined) : undefined,
+    senha: exigeSenha(funcao) ? senha : undefined,
+    codigo: isFuncaoCheckinSemSenha(funcao) ? (codigoAcesso ?? undefined) : undefined,
   });
 
   void logDB({
@@ -245,7 +259,7 @@ export async function PATCH(
   const supabase = guard.ctx.supabaseAdmin;
   const { data: existente } = await supabase
     .from('evento_equipe')
-    .select('id,evento_id,nome,email,tipo,ativo,senha_hash')
+    .select('id,evento_id,nome,email,tipo,ativo,senha_hash,convite_token')
     .eq('id', equipeId)
     .eq('evento_id', eventoId)
     .single();
@@ -289,19 +303,19 @@ export async function PATCH(
     }
   }
 
-  if (funcao === 'operador') {
+  if (exigeSenha(funcao)) {
     if (senha && senha.length < 8) {
       return NextResponse.json({ error: 'Senha deve ter no minimo 8 caracteres.' }, { status: 400 });
     }
     if (!senha && !row.senha_hash) {
-      return NextResponse.json({ error: 'Defina uma senha para operador.' }, { status: 400 });
+      return NextResponse.json({ error: 'Defina uma senha para esta funcao.' }, { status: 400 });
     }
   }
 
-  if (funcao === 'operador') {
+  if (exigeSenha(funcao)) {
     const user = await encontrarUsuarioPorEmail(supabase, email);
     if (!user && !senha) {
-      return NextResponse.json({ error: 'Senha obrigatoria para criar o usuario do operador.' }, { status: 400 });
+      return NextResponse.json({ error: 'Senha obrigatoria para criar o usuario desta funcao.' }, { status: 400 });
     }
     if (!user && senha) {
       const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
@@ -311,23 +325,25 @@ export async function PATCH(
         user_metadata: { nivel: 'inscricao' },
       });
       if (createError || !newUser?.user) {
-        return NextResponse.json({ error: 'Erro ao criar usuario do operador.' }, { status: 500 });
+        return NextResponse.json({ error: 'Erro ao criar usuario da equipe.' }, { status: 500 });
       }
       await supabase.from('usuario_eventos').upsert(
-        { user_id: newUser.user.id, evento_id: eventoId, permissao: 'operador' },
+        { user_id: newUser.user.id, evento_id: eventoId, permissao: funcao },
         { onConflict: 'user_id,evento_id' }
       );
     }
-    if (user && senha) {
-      await supabase.auth.admin.updateUserById(user.id, { password: senha });
+    if (user) {
+      if (senha) {
+        await supabase.auth.admin.updateUserById(user.id, { password: senha });
+      }
       await supabase.from('usuario_eventos').upsert(
-        { user_id: user.id, evento_id: eventoId, permissao: 'operador' },
+        { user_id: user.id, evento_id: eventoId, permissao: funcao },
         { onConflict: 'user_id,evento_id' }
       );
     }
   }
 
-  if (funcao === 'checkin' && row.tipo === 'operador') {
+  if (isFuncaoCheckinSemSenha(funcao) && (row.tipo === 'operador' || row.tipo === 'hospedagem')) {
     const user = await encontrarUsuarioPorEmail(supabase, email);
     if (user) {
       await supabase
@@ -340,6 +356,18 @@ export async function PATCH(
 
   const now = new Date().toISOString();
   const senhaHash = senha ? await bcrypt.hash(senha, 10) : row.senha_hash;
+  const { data: eventoInfoPatch } = await supabase
+    .from('eventos')
+    .select('data_fim')
+    .eq('id', eventoId)
+    .single();
+  const deveTerSenha = exigeSenha(funcao);
+  const codigoAcesso = isFuncaoCheckinSemSenha(funcao)
+    ? (row.tipo === funcao && row.convite_token ? row.convite_token : await gerarCodigoEquipe(supabase, eventoId))
+    : null;
+  const conviteExpiraEm = isFuncaoCheckinSemSenha(funcao)
+    ? calcExpiraEm((eventoInfoPatch as { data_fim?: string | null } | null)?.data_fim ?? null)
+    : null;
 
   const { error: updError } = await supabase
     .from('evento_equipe')
@@ -348,7 +376,9 @@ export async function PATCH(
       email,
       tipo: funcao,
       ativo,
-      senha_hash: funcao === 'operador' ? senhaHash : null,
+      senha_hash: deveTerSenha ? senhaHash : null,
+      convite_token: isFuncaoCheckinSemSenha(funcao) ? codigoAcesso : null,
+      convite_expira_em: isFuncaoCheckinSemSenha(funcao) ? conviteExpiraEm : null,
       atualizado_em: now,
     })
     .eq('id', equipeId)
@@ -358,7 +388,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Erro ao atualizar membro.' }, { status: 500 });
   }
 
-  if (funcao === 'operador' && senha) {
+  if (exigeSenha(funcao) && senha) {
     const { data: eventoEmail } = await supabase
       .from('eventos')
       .select('nome')
@@ -451,7 +481,7 @@ export async function DELETE(
 
   await supabase.from('evento_equipe').delete().eq('id', equipeId).eq('evento_id', eventoId);
 
-  if (row.tipo === 'operador') {
+  if (row.tipo === 'operador' || row.tipo === 'hospedagem') {
     const user = await encontrarUsuarioPorEmail(supabase, row.email);
     if (user) {
       await supabase

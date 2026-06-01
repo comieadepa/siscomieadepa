@@ -11,7 +11,7 @@ type EventoRow = {
 type EquipeRow = {
   id: string;
   evento_id: string;
-  tipo: 'operador' | 'checkin';
+  tipo: 'operador' | 'checkin' | 'hospedagem' | 'checkin_hospedagem';
   ativo: boolean;
   convite_expira_em?: string | null;
 };
@@ -84,7 +84,9 @@ export async function POST(
     if (!equipe) return NextResponse.json({ error: 'Equipe nao encontrada.' }, { status: 404 });
     const eq = equipe as EquipeRow;
     if (!eq.ativo) return NextResponse.json({ error: 'Acesso encerrado.' }, { status: 403 });
-    if (eq.tipo !== 'checkin') return NextResponse.json({ error: 'Tipo nao autorizado.' }, { status: 403 });
+    if (eq.tipo !== 'checkin' && eq.tipo !== 'operador') {
+      return NextResponse.json({ error: 'Tipo nao autorizado.' }, { status: 403 });
+    }
     if (eq.convite_expira_em && new Date(eq.convite_expira_em) < new Date())
       return NextResponse.json({ error: 'Codigo expirado.' }, { status: 403 });
   }

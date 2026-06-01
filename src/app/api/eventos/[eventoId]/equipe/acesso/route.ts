@@ -32,7 +32,7 @@ async function gerarCodigoEquipe(supabase: any, eventoId: string): Promise<strin
       .from('evento_equipe')
       .select('id')
       .eq('evento_id', eventoId)
-      .eq('tipo', 'checkin')
+      .in('tipo', ['checkin', 'checkin_hospedagem'])
       .eq('convite_token', codigo)
       .maybeSingle();
     if (!data) return codigo;
@@ -85,7 +85,7 @@ export async function POST(
     .single();
 
   let codigo = (row.convite_token || '').trim();
-  if (row.tipo === 'checkin' && !codigo) {
+  if ((row.tipo === 'checkin' || row.tipo === 'checkin_hospedagem') && !codigo) {
     codigo = await gerarCodigoEquipe(supabase, eventoId);
     const conviteExpiraEm = calcExpiraEm((evento as { data_fim?: string | null } | null)?.data_fim ?? null);
     await supabase
@@ -101,7 +101,7 @@ export async function POST(
     eventoId,
     funcao: row.tipo,
     origin: getRequestOrigin(request),
-    codigo: row.tipo === 'checkin' ? (codigo || undefined) : undefined,
+    codigo: (row.tipo === 'checkin' || row.tipo === 'checkin_hospedagem') ? (codigo || undefined) : undefined,
   });
 
   void logDB({

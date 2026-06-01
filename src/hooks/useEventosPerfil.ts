@@ -41,6 +41,8 @@ const TABS_POR_PERMISSAO: Record<PermissaoEvento, TabEventoId[]> = {
   admin_evento: ['inscritos', 'checkin', 'etiquetas', 'financeiro', 'relatorios', 'comunicacao', 'equipe', 'configuracoes', 'hospedagem', 'backup', 'programacao', 'certificados'],
   operador:     ['inscritos', 'checkin', 'etiquetas', 'relatorios', 'comunicacao', 'hospedagem', 'programacao', 'certificados'],
   checkin:      ['checkin'],
+  hospedagem:   ['hospedagem'],
+  checkin_hospedagem: ['hospedagem'],
 };
 
 const TABS_GLOBAL: TabEventoId[] = [
@@ -101,7 +103,14 @@ export function useEventosPerfil(): EventosPerfil {
         if (!user || cancelled) {
           const sess = getEquipeSession();
           if (sess && !cancelled) {
-            const perm: PermissaoEvento = sess.tipo === 'operador' ? 'operador' : 'checkin';
+            const perm: PermissaoEvento =
+              sess.tipo === 'operador'
+                ? 'operador'
+                : sess.tipo === 'hospedagem'
+                  ? 'hospedagem'
+                  : sess.tipo === 'checkin_hospedagem'
+                    ? 'checkin_hospedagem'
+                    : 'checkin';
             setPermissoesPorEvento({ [sess.eventoId]: perm });
             setEventoIds([sess.eventoId]);
           }
@@ -180,7 +189,14 @@ export function useEventosPerfil(): EventosPerfil {
         // Funciona mesmo quando o usuário está autenticado no Supabase
         const equipeSess = getEquipeSession();
         if (equipeSess && !cancelled) {
-          const sessPerm: PermissaoEvento = equipeSess.tipo === 'operador' ? 'operador' : 'checkin';
+          const sessPerm: PermissaoEvento =
+            equipeSess.tipo === 'operador'
+              ? 'operador'
+              : equipeSess.tipo === 'hospedagem'
+                ? 'hospedagem'
+                : equipeSess.tipo === 'checkin_hospedagem'
+                  ? 'checkin_hospedagem'
+                  : 'checkin';
           if (!map[equipeSess.eventoId]) {
             map[equipeSess.eventoId] = sessPerm;
             ids.push(equipeSess.eventoId);
@@ -207,6 +223,8 @@ export function useEventosPerfil(): EventosPerfil {
     const perms = Object.values(permissoesPorEvento);
     if (perms.includes('admin_evento')) return 'admin_evento';
     if (perms.includes('operador'))     return 'operador';
+    if (perms.includes('hospedagem'))   return 'hospedagem';
+    if (perms.includes('checkin_hospedagem')) return 'checkin_hospedagem';
     if (perms.includes('checkin'))      return 'checkin';
     return null;
   }, [isGlobal, isDeptAdmin, permissoesPorEvento]);

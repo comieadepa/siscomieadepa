@@ -14,7 +14,7 @@ type EquipeRow = {
   id: string;
   evento_id: string;
   email: string;
-  tipo: 'operador' | 'checkin';
+  tipo: 'operador' | 'checkin' | 'hospedagem' | 'checkin_hospedagem';
   ativo: boolean;
   convite_token?: string | null;
   convite_expira_em?: string | null;
@@ -36,7 +36,7 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  let body: { email?: string; codigo?: string };
+  let body: { email?: string; codigo?: string; funcao?: 'checkin' | 'checkin_hospedagem' };
   try {
     body = await request.json();
   } catch {
@@ -45,6 +45,7 @@ export async function POST(
 
   const codigoRaw = (body.codigo || '').trim();
   const email = (body.email || '').trim().toLowerCase();
+  const funcao = body.funcao === 'checkin_hospedagem' ? 'checkin_hospedagem' : 'checkin';
   const codigo = codigoRaw.replace(/\s+/g, '');
   if (!codigo && !email) {
     return NextResponse.json({ error: 'Codigo obrigatorio.' }, { status: 400 });
@@ -77,7 +78,7 @@ export async function POST(
     .from('evento_equipe')
     .select('id,evento_id,email,tipo,ativo,convite_token,convite_expira_em')
     .eq('evento_id', eventoId)
-    .eq('tipo', 'checkin');
+    .eq('tipo', funcao);
 
   const { data: equipe } = codigo
     ? await equipeQuery.eq('convite_token', codigo).maybeSingle()
@@ -85,15 +86,15 @@ export async function POST(
 
   if (!equipe || equipe.ativo !== true) {
     void logDB({
-      acao: 'acesso_checkin_negado',
+      acao: funcao === 'checkin_hospedagem' ? 'acesso_checkin_hospedagem_negado' : 'acesso_checkin_negado',
       modulo: 'eventos',
       entidade: 'evento_equipe',
-      descricao: codigo ? 'Acesso ao check-in negado por codigo invalido.' : 'Acesso ao check-in negado por e-mail nao cadastrado.',
+      descricao: codigo ? 'Acesso negado por codigo invalido.' : 'Acesso negado por e-mail nao cadastrado.',
       status: 'erro',
-      detalhes: { eventoId, email },
+      detalhes: { eventoId, email, funcao },
       request,
     });
-    return NextResponse.json({ error: codigo ? 'Codigo nao autorizado para check-in.' : 'E-mail nao autorizado para check-in.' }, { status: 403 });
+    return NextResponse.json({ error: codigo ? 'Codigo nao autorizado.' : 'E-mail nao autorizado.' }, { status: 403 });
   }
 
   const equipeRow = equipe as EquipeRow;
@@ -117,12 +118,12 @@ export async function POST(
   }
 
   void logDB({
-    acao: 'acesso_checkin_liberado',
+    acao: funcao === 'checkin_hospedagem' ? 'acesso_checkin_hospedagem_liberado' : 'acesso_checkin_liberado',
     modulo: 'eventos',
     entidade: 'evento_equipe',
-    descricao: 'Acesso ao check-in liberado por e-mail.',
+    descricao: 'Acesso liberado por e-mail.',
     status: 'sucesso',
-    detalhes: { eventoId, email, equipeId: (equipe as EquipeRow).id },
+    detalhes: { eventoId, email, equipeId: (equipe as EquipeRow).id, funcao },
     request,
   });
 
