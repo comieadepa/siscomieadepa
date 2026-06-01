@@ -1013,7 +1013,7 @@ export default function InscricaoPublicaPage() {
               {cpfStatus === 'encontrado' && ministroInativo && (
                 <p className="mt-1 text-xs text-orange-600 font-semibold">⚠️ Registro ministerial localizado, mas não está ativo.</p>
               )}
-              {cpfStatus === 'nao_encontrado' && (
+              {cpfStatus === 'nao_encontrado' && evento.departamento === 'AGO' && (
                 <p className="mt-1 text-xs text-yellow-600">⚠️ CPF não localizado. Você pode continuar preenchendo manualmente.</p>
               )}
             </div>
