@@ -2332,10 +2332,7 @@ export default function CongregacoesPage() {
   }
 
   function handlePrintSupervisoes(lista: typeof divisoes1) {
-    const filtros: string[] = [];
-    if (filterUfSups) filtros.push(`Estado: ${filterUfSups}`);
-    if (searchSups) filtros.push(`Busca: "${searchSups}"`);
-    const titulo = `LISTA DE SUPERVISÕES${filtros.length ? ' — ' + filtros.join(' | ') : ''} — QTD.: ${lista.length}`;
+    const titulo = 'LISTA DE SUPERVISÕES';
     const rows = lista.map(d => {
       const qtd = divisoes2.filter(c => c.supervisao_id === d.id).length;
       return `<tr>
