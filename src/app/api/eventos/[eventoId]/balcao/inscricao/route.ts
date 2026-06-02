@@ -108,7 +108,7 @@ export async function POST(
     if (tipoNome) {
       const { data: tipo } = await supabase
         .from('evento_tipos_inscricao')
-        .select('nome, inclui_alimentacao, quantidade_refeicoes')
+        .select('nome, valor, inclui_alimentacao, quantidade_refeicoes')
         .eq('evento_id', eventoId)
         .ilike('nome', tipoNome)
         .eq('ativo', true)
@@ -145,15 +145,18 @@ export async function POST(
     let isGratuito = vFinal <= 0 || formaStr === 'isento';
     let isAsaas = formaStr === 'asaas' && !isGratuito;
     let isPresencial = !isAsaas && !isGratuito;
-
-    const statusPag = isGratuito ? 'isento'
-      : isAsaas ? 'pendente'
-      : 'pago';
-
-    const formaPagSalva = isGratuito ? null
-      : formaStr === 'pix_manual' ? 'pix'
-      : formaStr === 'asaas' ? 'pix'   // sobrescrito após criação ASAAS
-      : formaStr;
+    let statusPag: 'isento' | 'pendente' | 'pago' = 'pendente';
+    let formaPagSalva: string | null = null;
+    const recalcularPagamento = () => {
+      statusPag = isGratuito ? 'isento'
+        : isAsaas ? 'pendente'
+        : 'pago';
+      formaPagSalva = isGratuito ? null
+        : formaStr === 'pix_manual' ? 'pix'
+        : formaStr === 'asaas' ? 'pix'
+        : formaStr;
+    };
+    recalcularPagamento();
 
     // CPF limpo
     const cpfLimpo = cpf ? String(cpf).replace(/\D/g, '') : null;
@@ -212,6 +215,28 @@ export async function POST(
       && !!ministroSnapshot?.is_pastor_presidente
       && !!ministroSnapshot?.is_campo_missionario;
 
+    if ((evento as any).departamento === 'AGO' && !!ministroSnapshot?.is_pastor_jubilado) {
+      const { data: tipoJubilado } = await supabase
+        .from('evento_tipos_inscricao')
+        .select('nome, valor, inclui_alimentacao, quantidade_refeicoes')
+        .eq('evento_id', eventoId)
+        .ilike('nome', 'Pastor Jubilado%')
+        .eq('ativo', true)
+        .maybeSingle();
+
+      if (tipoJubilado) {
+        tipoNome = tipoJubilado.nome;
+        incluiAlimentacao = !!tipoJubilado.inclui_alimentacao;
+        quantidadeRefeicoes = incluiAlimentacao ? Math.max(0, Number(tipoJubilado.quantidade_refeicoes ?? 0)) : 0;
+        vOriginal = Number(tipoJubilado.valor ?? vOriginal);
+        vFinal = Math.max(0, vOriginal - vDesconto);
+        isGratuito = vFinal <= 0 || formaStr === 'isento';
+        isAsaas = formaStr === 'asaas' && !isGratuito;
+        isPresencial = !isAsaas && !isGratuito;
+        recalcularPagamento();
+      }
+    }
+
     if (fluxoCampoMissionarioEspecial && Array.isArray(participantes) && participantes.length > 0) {
       return NextResponse.json(
         { error: 'Campo Missionário permite inscrição apenas do Pastor Presidente e, opcionalmente, sua esposa.' },
@@ -238,6 +263,7 @@ export async function POST(
       isGratuito = vFinal <= 0 || formaStr === 'isento';
       isAsaas = formaStr === 'asaas' && !isGratuito;
       isPresencial = !isAsaas && !isGratuito;
+      recalcularPagamento();
     }
 
     // QR code

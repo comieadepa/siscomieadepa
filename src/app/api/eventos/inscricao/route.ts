@@ -269,7 +269,19 @@ export async function POST(request: NextRequest) {
 
     // ── Valida uso de tipos de inscrição ─────────────────────────────────
     const usaTipos = !!(evento as Record<string, unknown>).usar_tipos_inscricao;
-    if (usaTipos && !tipo_inscricao) {
+
+    const cpfLimpoInput = cpf?.replace(/\D/g, '') || null;
+    let jubiladoAutomatico = false;
+    if (usaTipos && evento.departamento === 'AGO' && cpfLimpoInput) {
+      const { data: membroTipoAuto } = await supabase
+        .from('members')
+        .select('jubilado')
+        .eq('cpf', cpfLimpoInput)
+        .maybeSingle();
+      jubiladoAutomatico = !!(membroTipoAuto as any)?.jubilado;
+    }
+
+    if (usaTipos && !tipo_inscricao && !jubiladoAutomatico) {
       return buildErrorResponse(400, {
         error: 'Selecione uma modalidade de inscrição.',
         stage: 'validacao_tipo_inscricao',
@@ -342,6 +354,25 @@ export async function POST(request: NextRequest) {
       if (!alvo) return null;
       return tiposAtivos.find(t => norm(t.nome) === alvo) ?? null;
     };
+
+    if (usaTipos && jubiladoAutomatico) {
+      const tipoJubilado = tiposAtivos.find((t) => {
+        const n = norm(t.nome);
+        return n.includes('pastor jubilado') && !n.includes('esposa') && !n.includes('viuva');
+      }) ?? null;
+
+      if (tipoJubilado) {
+        tipoNome = tipoJubilado.nome;
+        valorBase = tipoJubilado.valor;
+        tipoInclui = {
+          alimentacao: !!tipoJubilado.inclui_alimentacao,
+          hospedagem: !!tipoJubilado.inclui_hospedagem,
+        };
+        tipoRefeicoes = tipoJubilado.inclui_alimentacao
+          ? Math.max(0, Number(tipoJubilado.quantidade_refeicoes ?? 0))
+          : 0;
+      }
+    }
     if (tipo_inscricao && usaTipos) {
       const { data: tipo, error: tipoErr } = await supabase
         .from('evento_tipos_inscricao')
@@ -514,7 +545,7 @@ export async function POST(request: NextRequest) {
 
     // ── Snapshot ministerial (AGO) — não bloqueia se não encontrar ──────
     stage = 'snapshot_ministerial';
-    const cpfLimpo = cpf?.replace(/\D/g, '') || null;
+    const cpfLimpo = cpfLimpoInput;
     let ministroSnapshot: Record<string, unknown> | null = null;
     let fluxoCampoMissionarioEspecial = false;
     if (cpfLimpo && evento.departamento === 'AGO') {

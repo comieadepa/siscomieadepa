@@ -9,6 +9,11 @@ import AssistenteWidget from '@/components/AssistenteWidget';
 import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
 import { resolveGrupoHospedagemAGO } from '@/lib/hospedagem-helpers';
 import {
+  filtrarTiposAgo,
+  findTipoPastorJubilado,
+  ehTipoPastorPresidente,
+} from '@/lib/ago-inscricao-regras';
+import {
   isEventoInscricaoPublicaDisponivel,
   resolveEventoStatusVisual,
 } from '@/lib/eventos/evento-listing';
@@ -206,12 +211,6 @@ function normalizarComparacao(v: string | null | undefined) {
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-function ehTipoPastorPresidenteNome(nome: string | null | undefined) {
-  const n = normalizarComparacao(nome);
-  const ehEsposaOuViuva = n.includes('esposa') || n.includes('viuva') || n.includes('viuva');
-  return n.includes('pastor presidente') && !ehEsposaOuViuva;
 }
 
 // ─── Componente principal ────────────────────────────────────
@@ -637,73 +636,24 @@ export default function InscricaoPublicaPage() {
     ['active', 'ativo'].includes((ministroInfo.status ?? '').toLowerCase());
   const ministroInativo = cpfStatus === 'encontrado' && ministroInfo !== null && !ministroAtivo;
   const dadosMinisteriaisBloqueados = evento?.departamento === 'AGO' && ministroAtivo;
-  const cargoEhPastor = (ministroInfo?.cargoMinisterial ?? '').trim().toLowerCase() === 'pastor';
-  const isPAEfetivo = !!ministroInfo?.isPastorAuxiliar
-    || (cargoEhPastor && !ministroInfo?.isPastorPresidente && !ministroInfo?.isJubilado);
 
-  // Calcula idade a partir da data de nascimento informada no formulário
-  const idadeCalculada: number | null = form.data_nascimento ? (() => {
-    const hoje = new Date();
-    const nasc = new Date(form.data_nascimento);
-    let id = hoje.getFullYear() - nasc.getFullYear();
-    const m = hoje.getMonth() - nasc.getMonth();
-    if (m < 0 || (m === 0 && hoje.getDate() < nasc.getDate())) id--;
-    return id;
-  })() : null;
+  const tipoJubiladoAutomatico = findTipoPastorJubilado(tipos);
+  const jubiladoAutomaticoAtivo = !!(evento?.departamento === 'AGO' && ministroInfo?.isJubilado);
 
   const tiposParaExibir: TipoInscricao[] = (() => {
     if (!evento || evento.departamento !== 'AGO') return tipos;
-    // "Campo Missionário" nunca aparece como categoria pública — valor especial aplicado automaticamente ao preço
-    const pool = tipos.filter(t => !/campo\s*mission/i.test(t.nome));
 
-    // Fluxo especial CM: só permite a categoria de Pastor Presidente.
-    if (fluxoCampoMissionarioEspecial) {
-      return pool.filter(t => {
-        const nome = normalizarComparacao(t.nome);
-        return nome.includes('pastor presidente') && !nome.includes('esposa') && !nome.includes('viuva');
-      });
+    if (jubiladoAutomaticoAtivo && tipoJubiladoAutomatico) {
+      return [tipoJubiladoAutomatico];
     }
 
-    return pool.filter(t => {
-      // Esposa/Viúva verificadas PRIMEIRO para evitar falso-positivo ministerial
-      // (ex: "Esposa de Pastor Presidente" contém "pastor presidente" mas NÃO é categoria ministerial)
-      const ehEsposa    = /esposa/i.test(t.nome);
-      const ehViuva     = /vi[uú]va/i.test(t.nome);
-      const ehJuventude = /juventude/i.test(t.nome);
-
-      // Ministerial só quando o nome NÃO contém esposa/viúva
-      const ehPP          = !ehEsposa && !ehViuva && /pastor\s*presidente/i.test(t.nome);
-      const ehPA          = !ehEsposa && !ehViuva && /pastor\s*auxiliar/i.test(t.nome);
-      const ehJub         = !ehEsposa && !ehViuva && /pastor\s*jubilado/i.test(t.nome);
-      const ehMinisterial = ehPP || ehPA || ehJub;
-
-      // === 1. Categorias ministeriais: ministro ativo + cargo específico + sexo M ===
-      if (ehMinisterial) {
-        if (form.sexo === 'F') return false;      // feminino não acessa categorias pastorais
-        if (!ministroAtivo)   return false;        // requer CPF encontrado e status ativo
-        if (ehPP)  return !!(ministroInfo?.isPastorPresidente);
-        if (ehPA)  return isPAEfetivo;
-        if (ehJub) return !!(ministroInfo?.isJubilado);
-        return false;
-      }
-
-      // === 2. Esposa / Viúva: exclusivo para sexo feminino; disponível mesmo sem CPF ===
-      if (ehEsposa || ehViuva) return form.sexo === 'F';
-
-      // === 3. Juventude: requer data de nascimento informada e idade ≤ 29 ===
-      if (ehJuventude) {
-        if (idadeCalculada === null) return false;
-        return idadeCalculada <= 29;
-      }
-
-      // === 4. Visitante e demais não-ministeriais: apenas quando ministro não está ativo ===
-      return !ministroAtivo;
+    return filtrarTiposAgo(tipos, {
+      sexo: form.sexo,
+      dataNascimento: form.data_nascimento,
+      permitirViuvaEEsposaJubilado: false,
+      permitirJubiladoManual: false,
+      somentePastorPresidente: fluxoCampoMissionarioEspecial,
     });
-  })();
-  const tiposParaExibirNoLote: TipoInscricao[] = (() => {
-    if (!evento || evento.departamento !== 'AGO') return tipos;
-    // No lote comum, os extras não devem herdar o filtro ministerial do titular.
-    return tipos.filter(t => !/campo\s*mission/i.test(t.nome));
   })();
 
   const ppPorCampoNoLote = (() => {
@@ -711,7 +661,7 @@ export default function InscricaoPublicaPage() {
     const incrementar = (campoId: string | null | undefined, tipoNome: string | null | undefined) => {
       const campoKey = String(campoId || '').trim();
       if (!campoKey) return;
-      if (!ehTipoPastorPresidenteNome(tipoNome)) return;
+      if (!ehTipoPastorPresidente(tipoNome)) return;
       mapa.set(campoKey, (mapa.get(campoKey) || 0) + 1);
     };
 
@@ -724,17 +674,35 @@ export default function InscricaoPublicaPage() {
 
   const tiposDisponiveisParticipanteLote = (idx: number): TipoInscricao[] => {
     const p = participantesExtra[idx];
-    if (!p) return tiposParaExibirNoLote;
+    if (!p) return tipos;
 
     const campoKey = String(p.campo_id || '').trim();
-    if (!campoKey) return tiposParaExibirNoLote;
+    if (!campoKey) {
+      return evento?.departamento === 'AGO'
+        ? filtrarTiposAgo(tipos, {
+          sexo: p.sexo,
+          dataNascimento: p.data_nascimento,
+          permitirViuvaEEsposaJubilado: false,
+          permitirJubiladoManual: false,
+        })
+        : tipos;
+    }
 
-    const participanteAtualEhPP = ehTipoPastorPresidenteNome(p.tipo_inscricao);
+    const participanteAtualEhPP = ehTipoPastorPresidente(p.tipo_inscricao);
     const qtdPPNoCampo = ppPorCampoNoLote.get(campoKey) || 0;
     const qtdPPNoCampoSemAtual = Math.max(0, qtdPPNoCampo - (participanteAtualEhPP ? 1 : 0));
 
-    return tiposParaExibirNoLote.filter((t) => {
-      if (!ehTipoPastorPresidenteNome(t.nome)) return true;
+    const tiposElegiveis = evento?.departamento === 'AGO'
+      ? filtrarTiposAgo(tipos, {
+        sexo: p.sexo,
+        dataNascimento: p.data_nascimento,
+        permitirViuvaEEsposaJubilado: false,
+        permitirJubiladoManual: false,
+      })
+      : tipos;
+
+    return tiposElegiveis.filter((t) => {
+      if (!ehTipoPastorPresidente(t.nome)) return true;
       return qtdPPNoCampoSemAtual < 1;
     });
   };
@@ -763,6 +731,20 @@ export default function InscricaoPublicaPage() {
     tipoSelecionado?.id,
     modoLote,
     participantesExtra.length,
+  ]);
+
+  useEffect(() => {
+    if (!jubiladoAutomaticoAtivo || !tipoJubiladoAutomatico) return;
+    if (tipoSelecionado?.id === tipoJubiladoAutomatico.id) return;
+
+    setTipoSelecionado(tipoJubiladoAutomatico);
+    setCupomStatus('idle');
+    setCupomDesconto(0);
+    setCupomMeta(null);
+  }, [
+    jubiladoAutomaticoAtivo,
+    tipoJubiladoAutomatico,
+    tipoSelecionado?.id,
   ]);
 
   const grupoHospedagemPrevisto = resolveGrupoHospedagemAGO({
@@ -830,7 +812,7 @@ export default function InscricaoPublicaPage() {
       const ppPorCampo = new Map<string, number>();
       const somaPP = (campoId: string | null | undefined, tipoNome: string | null | undefined) => {
         const campoKey = String(campoId || '').trim();
-        if (!campoKey || !ehTipoPastorPresidenteNome(tipoNome)) return;
+        if (!campoKey || !ehTipoPastorPresidente(tipoNome)) return;
         ppPorCampo.set(campoKey, (ppPorCampo.get(campoKey) || 0) + 1);
       };
 
@@ -1466,6 +1448,11 @@ export default function InscricaoPublicaPage() {
                       ⚠️ Ministro localizado, mas sem perfil ministerial compatível para esta AGO. Verifique o cadastro ministerial para liberar a categoria correta.
                     </div>
                   )}
+                  {jubiladoAutomaticoAtivo && tipoJubiladoAutomatico && (
+                    <div className="mb-3 p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-xs text-indigo-800">
+                      Categoria de Jubilado aplicada automaticamente pelo cadastro ministerial.
+                    </div>
+                  )}
                   {/* Nenhuma categoria disponível (só exibe se sexo foi selecionado) */}
                   {tiposParaExibir.length === 0 && form.sexo !== '' && (
                     <div className="p-4 bg-orange-50 border border-orange-200 rounded-xl text-sm text-orange-700">
@@ -1482,7 +1469,10 @@ export default function InscricaoPublicaPage() {
                             <div className="flex items-center gap-3">
                               <input type="radio" name="tipo_inscricao" value={t.id}
                                 checked={tipoSelecionado?.id === t.id}
-                                onChange={() => { setTipoSelecionado(t); setCupomStatus('idle'); setCupomDesconto(0); setCupomMeta(null); }}
+                                onChange={() => {
+                                  if (jubiladoAutomaticoAtivo && tipoJubiladoAutomatico && t.id !== tipoJubiladoAutomatico.id) return;
+                                  setTipoSelecionado(t); setCupomStatus('idle'); setCupomDesconto(0); setCupomMeta(null);
+                                }}
                                 className="accent-[#123b63]" />
                               <div>
                                 <p className="text-sm font-semibold text-gray-800 flex items-center gap-2">
@@ -1938,21 +1928,6 @@ export default function InscricaoPublicaPage() {
                           <p className="mt-1 text-xs text-amber-700">Sem tipos disponíveis para este campo com as seleções atuais.</p>
                         )}
                       </div>
-                      {(() => {
-                        const calc = calcularValorParticipanteLote(
-                          p.tipo_inscricao || null,
-                          p.campo_id || null,
-                          !!p.hospedagem,
-                        );
-                        return (
-                          <div className="sm:col-span-2 rounded-lg border border-[#123b63]/15 bg-[#123b63]/5 p-3 text-xs text-gray-700">
-                            <p className="font-semibold text-[#123b63] mb-1">Cálculo do participante</p>
-                            <p>Valor: {fmtMoeda(calc.valorFinalParticipante)}</p>
-                            <p>Alimentação: {calc.alimentacaoParticipante ? 'Sim' : 'Não'}</p>
-                            <p>Quantidade de refeições: {calc.refeicoesParticipante}</p>
-                          </div>
-                        );
-                      })()}
                       {evento.permite_hospedagem && (
                         <div className="sm:col-span-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
                           <label className="inline-flex items-center gap-2 text-sm font-semibold text-gray-700">

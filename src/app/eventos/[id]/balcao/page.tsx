@@ -11,6 +11,10 @@ import { EventBadge } from '@/components/EventBadge';
 import { authenticatedFetch } from '@/lib/api-client';
 import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
 import { resolveGrupoHospedagemAGO } from '@/lib/hospedagem-helpers';
+import {
+  filtrarTiposAgo,
+  findTipoPastorJubilado,
+} from '@/lib/ago-inscricao-regras';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -243,60 +247,44 @@ export default function BalcaoPage() {
   );
 
   // ── Perfil ministerial AGO + filtragem de categorias ─────
+  const tipoJubiladoAutomatico = useMemo(() => findTipoPastorJubilado(tipos), [tipos]);
+  const jubiladoAutomaticoAtivo = !!(evento?.departamento === 'AGO' && ministroInfo?.isJubilado);
+
   const { ministroAtivo, ministroInativo, tiposParaExibir, ministroSemPerfil } = useMemo(() => {
     const ativo = cpfStatus === 'encontrado' && ministroInfo !== null &&
       ['active', 'ativo'].includes((ministroInfo.status ?? '').toLowerCase());
     const inativo = cpfStatus === 'encontrado' && ministroInfo !== null && !ativo;
 
-    const idadeCalc: number | null = form.data_nascimento ? (() => {
-      const hoje = new Date();
-      const nasc = new Date(form.data_nascimento);
-      let id = hoje.getFullYear() - nasc.getFullYear();
-      const m = hoje.getMonth() - nasc.getMonth();
-      if (m < 0 || (m === 0 && hoje.getDate() < nasc.getDate())) id--;
-      return id;
-    })() : null;
-
     if (!evento || evento.departamento !== 'AGO') {
       return { ministroAtivo: ativo, ministroInativo: inativo, tiposParaExibir: tipos };
     }
 
-    const pool = tipos.filter(t => !/campo\s*mission/i.test(t.nome));
+    if (jubiladoAutomaticoAtivo && tipoJubiladoAutomatico) {
+      return {
+        ministroAtivo: ativo,
+        ministroInativo: inativo,
+        tiposParaExibir: [tipoJubiladoAutomatico],
+        ministroSemPerfil: false,
+      };
+    }
 
-    // Regra COMIEADEPA: cargo "Pastor" (sem PP nem Jubilado) → elegível como Pastor Auxiliar
-    const cargoEhPastor = (ministroInfo?.cargoMinisterial ?? '').trim().toLowerCase() === 'pastor';
-    const isPAEfetivo = !!ministroInfo?.isPastorAuxiliar
-      || (cargoEhPastor && !ministroInfo?.isPastorPresidente && !ministroInfo?.isJubilado);
-
-    const filtered = pool.filter(t => {
-      const ehEsposa    = /esposa/i.test(t.nome);
-      const ehViuva     = /vi[uú]va/i.test(t.nome);
-      const ehJuventude = /juventude/i.test(t.nome);
-      const ehPP        = !ehEsposa && !ehViuva && /pastor\s*presidente/i.test(t.nome);
-      const ehPA        = !ehEsposa && !ehViuva && /pastor\s*auxiliar/i.test(t.nome);
-      const ehJub       = !ehEsposa && !ehViuva && /pastor\s*jubilado/i.test(t.nome);
-      const ehMinisterial = ehPP || ehPA || ehJub;
-      if (ehMinisterial) {
-        if (form.sexo === 'F') return false;
-        if (!ativo) return false;
-        if (ehPP)  return !!ministroInfo?.isPastorPresidente;
-        if (ehPA)  return isPAEfetivo;
-        if (ehJub) return !!ministroInfo?.isJubilado;
-        return false;
-      }
-      if (ehEsposa || ehViuva) return form.sexo === 'F';
-      if (ehJuventude) {
-        if (idadeCalc === null) return false;
-        return idadeCalc <= 29;
-      }
-      // Tipos genéricos (ex: VISITANTE) — só exibir quando ministro NÃO está ativo
-      return !ativo;
+    const filtered = filtrarTiposAgo(tipos, {
+      sexo: form.sexo,
+      dataNascimento: form.data_nascimento,
+      permitirViuvaEEsposaJubilado: true,
+      permitirJubiladoManual: false,
     });
 
     // Ministro ativo mas sem nenhum tipo ministerial compatível → perfil indefinido
     const semPerfil = ativo && filtered.length === 0;
     return { ministroAtivo: ativo, ministroInativo: inativo, tiposParaExibir: filtered, ministroSemPerfil: semPerfil };
-  }, [cpfStatus, ministroInfo, form.sexo, form.data_nascimento, tipos, evento]);
+  }, [cpfStatus, ministroInfo, form.sexo, form.data_nascimento, tipos, evento, jubiladoAutomaticoAtivo, tipoJubiladoAutomatico]);
+
+  useEffect(() => {
+    if (!jubiladoAutomaticoAtivo || !tipoJubiladoAutomatico) return;
+    if (form.tipo_id === tipoJubiladoAutomatico.id) return;
+    setField('tipo_id', tipoJubiladoAutomatico.id);
+  }, [jubiladoAutomaticoAtivo, tipoJubiladoAutomatico, form.tipo_id]);
 
   const grupoHospedagemPrevisto = resolveGrupoHospedagemAGO({
     sexo: form.sexo || null,
@@ -571,6 +559,13 @@ export default function BalcaoPage() {
           supervisao_id:   sup?.id || f.supervisao_id,
           campo_id:        campoEncontrado?.id || payload.campo_id || f.campo_id,
         }));
+
+        if (payload.jubilado) {
+          const tipoJub = findTipoPastorJubilado(tipos);
+          if (tipoJub) {
+            setForm(f => ({ ...f, tipo_id: tipoJub.id }));
+          }
+        }
       } else {
         setCpfStatus('nao_encontrado');
         setForm(f => ({
@@ -1529,6 +1524,12 @@ export default function BalcaoPage() {
                   <p className="font-bold text-amber-300">Perfil ministerial não definido para esta AGO</p>
                   <p className="text-amber-200/80 mt-0.5">Ministro localizado, mas nenhuma das flags <strong>Pastor Presidente</strong>, <strong>Pastor Auxiliar</strong> ou <strong>Jubilado</strong> está ativa no cadastro. Verifique o perfil do ministro antes de salvar.</p>
                 </div>
+              </div>
+            )}
+
+            {jubiladoAutomaticoAtivo && tipoJubiladoAutomatico && (
+              <div className="mb-4 bg-indigo-500/15 border border-indigo-400/50 rounded-xl px-4 py-3 text-sm text-indigo-100">
+                Categoria Jubilado aplicada automaticamente pelo cadastro ministerial.
               </div>
             )}
 
