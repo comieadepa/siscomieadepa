@@ -900,6 +900,17 @@ export default function InscricaoPublicaPage() {
     evento?.departamento,
   ]);
 
+  const erroNomeTitular = erroForm === 'Nome completo é obrigatório.';
+  const erroCpfTitular = erroForm === 'CPF é obrigatório.';
+  const erroSupervisaoTitular = erroForm === 'Selecione a supervisão.';
+  const erroTipoTitular = erroForm === 'Selecione a categoria de inscrição.' || erroForm === 'Selecione a modalidade de inscrição.';
+  const erroNomeExtra = (idx: number) => erroForm === `Nome do participante ${idx + 2} é obrigatório.`;
+  const erroSupervisaoExtra = (idx: number) => erroForm === `Supervisão do participante ${idx + 2} é obrigatória.`;
+  const erroTipoExtra = (idx: number) => erroForm === `Tipo de inscrição do participante ${idx + 2} é obrigatório.`;
+  const classeCampoObrigatorio = (temErro: boolean, classeBase = INP) => (
+    temErro ? `${classeBase} border-red-500 ring-1 ring-red-200 bg-red-50` : classeBase
+  );
+
   const grupoHospedagemPrevisto = resolveGrupoHospedagemAGO({
     sexo: form.sexo || null,
     data_nascimento: form.data_nascimento || null,
@@ -1365,12 +1376,6 @@ export default function InscricaoPublicaPage() {
           </h2>
           <p className="text-sm text-gray-500 mb-6">Preencha os dados abaixo para realizar sua inscrição.</p>
 
-          {erroForm && (
-            <div className="mb-5 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
-              {erroForm}
-            </div>
-          )}
-
           <form onSubmit={handleSubmit} noValidate>
 
             {/* CPF — primeiro campo */}
@@ -1379,7 +1384,7 @@ export default function InscricaoPublicaPage() {
               <div className="relative">
                 <input name="cpf" value={form.cpf} onChange={handleText}
                   placeholder="000.000.000-00" maxLength={14}
-                  className={INP + (cpfStatus === 'encontrado' ? ' border-emerald-400 bg-emerald-50' : '')}
+                  className={classeCampoObrigatorio(erroCpfTitular, INP + (cpfStatus === 'encontrado' ? ' border-emerald-400 bg-emerald-50' : ''))}
                   required />
                 {buscandoCPF && (
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 animate-pulse">
@@ -1507,7 +1512,7 @@ export default function InscricaoPublicaPage() {
               <label className={LBL}>Nome completo *</label>
               <input name="nome_inscrito" value={form.nome_inscrito} onChange={handleText}
                 placeholder="Seu nome completo"
-                className={INP + (dadosMinisteriaisBloqueados ? ' bg-gray-50 text-gray-600' : '')} readOnly={dadosMinisteriaisBloqueados} required />
+                className={classeCampoObrigatorio(erroNomeTitular, INP + (dadosMinisteriaisBloqueados ? ' bg-gray-50 text-gray-600' : ''))} readOnly={dadosMinisteriaisBloqueados} required />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
@@ -1544,7 +1549,7 @@ export default function InscricaoPublicaPage() {
             <div className="mb-4">
               <label className={LBL}>Supervisão *</label>
               <select name="supervisao_id" value={form.supervisao_id} onChange={handleText}
-                className={INP} required>
+                className={classeCampoObrigatorio(erroSupervisaoTitular)} required>
                 <option value="">Selecione a supervisão...</option>
                 {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
               </select>
@@ -1565,7 +1570,7 @@ export default function InscricaoPublicaPage() {
             {/* Tipos de inscrição */}
             {evento.usar_tipos_inscricao && (
               evento.departamento === 'AGO' ? (
-                <div className="mb-6">
+                <div className={erroTipoTitular ? 'mb-6 p-3 border border-red-300 bg-red-50 rounded-xl' : 'mb-6'}>
                   {/* Orientação: preencher sexo quando ainda não informado */}
                   {form.sexo === '' && (
                     <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-600">
@@ -1652,7 +1657,7 @@ export default function InscricaoPublicaPage() {
                 </div>
               ) : (
                 tipos.length > 0 && (
-                  <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                  <div className={erroTipoTitular ? 'mb-6 p-4 bg-red-50 border border-red-300 rounded-xl' : 'mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl'}>
                     <p className="text-sm font-semibold text-[#123b63] mb-3">📋 Modalidade de Inscrição</p>
                     <div className="space-y-2">
                       {tipos.map(t => (
@@ -2032,7 +2037,7 @@ export default function InscricaoPublicaPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="sm:col-span-2">
                         <label className={LBL}>Nome completo *</label>
-                        <input value={p.nome_inscrito} onChange={e => atualizarParticipante(idx, 'nome_inscrito', e.target.value)} className={INP} placeholder="Nome completo" required />
+                        <input value={p.nome_inscrito} onChange={e => atualizarParticipante(idx, 'nome_inscrito', e.target.value)} className={classeCampoObrigatorio(erroNomeExtra(idx))} placeholder="Nome completo" required />
                       </div>
                       <div>
                         <label className={LBL}>CPF</label>
@@ -2071,7 +2076,7 @@ export default function InscricaoPublicaPage() {
                       </div>
                       <div>
                         <label className={LBL}>Supervisão *</label>
-                        <select value={p.supervisao_id} onChange={e => atualizarParticipante(idx, 'supervisao_id', e.target.value)} className={INP} required>
+                        <select value={p.supervisao_id} onChange={e => atualizarParticipante(idx, 'supervisao_id', e.target.value)} className={classeCampoObrigatorio(erroSupervisaoExtra(idx))} required>
                           <option value="">Selecione...</option>
                           {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
                         </select>
@@ -2088,7 +2093,7 @@ export default function InscricaoPublicaPage() {
                         <select
                           value={p.tipo_inscricao}
                           onChange={e => atualizarParticipante(idx, 'tipo_inscricao', e.target.value)}
-                          className={INP}
+                          className={classeCampoObrigatorio(erroTipoExtra(idx))}
                           disabled={!String(p.sexo || '').trim()}
                           required
                         >
@@ -2173,6 +2178,12 @@ export default function InscricaoPublicaPage() {
                   className="w-full py-2.5 border-2 border-dashed border-[#123b63]/40 text-[#123b63] text-sm font-semibold rounded-xl hover:border-[#123b63] hover:bg-[#123b63]/5 transition">
                   ➕ Adicionar participante
                 </button>
+              </div>
+            )}
+
+            {erroForm && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm" role="alert" aria-live="assertive">
+                {erroForm}
               </div>
             )}
 
