@@ -93,7 +93,13 @@ export function resolveCamaInferiorAutomatica(input: HospedagemAGOInput): boolea
 }
 
 export function resolveGrupoHospedagemAGO(input: HospedagemAGOInput): string {
-  const tipo = (input.tipo_inscricao ?? '').toLowerCase();
+  const norm = (v: string | null | undefined) =>
+    (v ?? '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+  const tipo = norm(input.tipo_inscricao);
   const sexo = (input.sexo ?? '').toUpperCase();
 
   const ehEsposaOuViuva = tipo.includes('esposa') || tipo.includes('viuva') || tipo.includes('viúva');
@@ -103,7 +109,17 @@ export function resolveGrupoHospedagemAGO(input: HospedagemAGOInput): string {
     return 'Pastor Presidente / Pastor Jubilado';
   }
 
-  if (tipo.includes('auxiliar') || tipo.includes('juventude') || sexo === 'M') {
+  // Categorias masculinas de juventude devem sempre cair neste grupo,
+  // independentemente de pagamento ou status operacional.
+  const ehJuventudeMasculina =
+    sexo === 'M' && (
+      tipo.includes('juventude')
+      || tipo.includes('jovem')
+      || tipo.includes('jovens')
+      || tipo.includes('umadepa')
+    );
+
+  if (ehJuventudeMasculina || tipo.includes('auxiliar') || tipo.includes('juventude') || sexo === 'M') {
     return 'Pastor Auxiliar / Juventude';
   }
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireEventoPermission } from '@/lib/evento-guard';
 import { normalizePayloadUppercase } from '@/lib/text';
 import { logDB } from '@/lib/audit';
-import { grupoMatchesAlojamento } from '@/lib/hospedagem-helpers';
+import { grupoMatchesAlojamento, resolveGrupoHospedagemAGO } from '@/lib/hospedagem-helpers';
 import {
   isElegivelAutoalocacao,
   isPagamentoElegivel,
@@ -64,6 +64,16 @@ export async function GET(
     const ei = insc as unknown as InscRow;
     const aloc = alocMap.get(insc.id);
     const aloj = aloc ? (aloc.evento_alojamentos as AlocRow | null) : null;
+    const grupoFallback =
+      (aloc?.grupo_hospedagem ?? ei.grupo_hospedagem) ||
+      resolveGrupoHospedagemAGO({
+        sexo: (insc.sexo as string | null) ?? null,
+        data_nascimento: (insc.data_nascimento as string | null) ?? null,
+        tipo_inscricao: (insc.tipo_inscricao as string | null) ?? null,
+        hosp_necessidade_especial: !!(ei.hosp_necessidade_especial),
+        hosp_possui_comorbidade: !!(ei.hosp_possui_comorbidade),
+      });
+
     const statusOperacional = resolveStatusOperacionalHospedagem({
       status: (aloc?.status ?? 'solicitada') as string,
       status_pagamento: insc.status_pagamento ?? null,
@@ -83,15 +93,15 @@ export async function GET(
     const pendencias: string[] = [];
     const statusPagamento = String(insc.status_pagamento ?? '').toLowerCase();
     const alocacaoIncompleta = !!(aloc?.alojamento_id) && (!aloc?.tipo_cama || !aloc?.numero_cama);
-    const grupoIncompativel = !!(aloj && (aloc?.grupo_hospedagem ?? ei.grupo_hospedagem) && !grupoMatchesAlojamento(
-      (aloc?.grupo_hospedagem ?? ei.grupo_hospedagem) as string,
+    const grupoIncompativel = !!(aloj && grupoFallback && !grupoMatchesAlojamento(
+      grupoFallback as string,
       { publico: String((aloj as AlocRow).publico ?? ''), nome: String((aloj as AlocRow).nome ?? '') },
     ));
 
     if (isPagamentoElegivel(statusPagamento) && !aloc?.alojamento_id) pendencias.push('pagou_mas_nao_alocado');
     if (!isPagamentoElegivel(statusPagamento)) pendencias.push('solicitou_sem_pagamento');
     if (!!(ei.hosp_cama_inferior) && aloc?.tipo_cama && aloc.tipo_cama !== 'inferior') pendencias.push('prioridade_sem_leito_inferior');
-    if (!(aloc?.grupo_hospedagem ?? ei.grupo_hospedagem)) pendencias.push('sem_grupo_calculado');
+    if (!grupoFallback) pendencias.push('sem_grupo_calculado');
     if (grupoIncompativel) pendencias.push('grupo_incompativel_alojamento');
     if (alocacaoIncompleta) pendencias.push('sem_numero_leito');
 
@@ -106,7 +116,7 @@ export async function GET(
       cama_inferior:         !!(ei.hosp_cama_inferior),
       possui_comorbidade:    !!(ei.hosp_possui_comorbidade),
       descricao_comorbidade: ei.hosp_descricao_comorbidade ?? null,
-      grupo_hospedagem:      (aloc?.grupo_hospedagem ?? ei.grupo_hospedagem) ?? null,
+      grupo_hospedagem:      grupoFallback ?? null,
       tipo_cama:             (aloc?.tipo_cama       ?? null) as string | null,
       numero_cama:           (aloc?.numero_cama     ?? null) as string | null,
       observacoes:           (aloc?.observacoes     ?? ei.hosp_observacoes) ?? null,

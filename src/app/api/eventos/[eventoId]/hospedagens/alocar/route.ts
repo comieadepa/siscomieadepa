@@ -4,6 +4,7 @@ import { materializarSetoresHospedagemAGO } from '@/lib/materializar-setores';
 import { logDB } from '@/lib/audit';
 import {
   calcularPrioridadeHospedagem,
+  resolveGrupoHospedagemAGO,
   sugerirAlojamento,
   grupoMatchesAlojamento,
   type Alojamento,
@@ -113,10 +114,40 @@ export async function POST(
 
   const pendentesPagamento: string[] = [];
   const atualizacoesPendencia: Array<PromiseLike<unknown>> = [];
+  const atualizacoesGrupo: Array<PromiseLike<unknown>> = [];
 
   for (const hosp of hospedagensRaw ?? []) {
     const insc = hosp.evento_inscricoes as unknown as Record<string, unknown> | null;
     const statusPagamento = (insc?.status_pagamento as string | null) ?? null;
+    const grupoAtual = (hosp.grupo_hospedagem as string | null) ?? (insc?.grupo_hospedagem as string | null) ?? null;
+    if (!grupoAtual && insc) {
+      const grupoCalculado = resolveGrupoHospedagemAGO({
+        sexo: (insc.sexo as string | null) ?? null,
+        data_nascimento: (insc.data_nascimento as string | null) ?? null,
+        tipo_inscricao: (insc.tipo_inscricao as string | null) ?? null,
+        hosp_necessidade_especial: Boolean(insc.hosp_necessidade_especial),
+        hosp_possui_comorbidade: Boolean(insc.hosp_possui_comorbidade),
+      });
+      if (grupoCalculado) {
+        atualizacoesGrupo.push(
+          supabase
+            .from('evento_inscricoes')
+            .update({ grupo_hospedagem: grupoCalculado })
+            .eq('id', hosp.inscricao_id as string)
+            .eq('evento_id', eventoId),
+        );
+        atualizacoesGrupo.push(
+          supabase
+            .from('evento_hospedagens')
+            .update({ grupo_hospedagem: grupoCalculado })
+            .eq('id', hosp.id)
+            .eq('evento_id', eventoId),
+        );
+        hosp.grupo_hospedagem = grupoCalculado;
+        if (insc) insc.grupo_hospedagem = grupoCalculado;
+      }
+    }
+
     const oper = resolveStatusOperacionalHospedagem({
       status: hosp.status as string | null,
       status_pagamento: statusPagamento,
@@ -154,6 +185,10 @@ export async function POST(
 
   if (atualizacoesPendencia.length > 0) {
     await Promise.allSettled(atualizacoesPendencia);
+  }
+
+  if (atualizacoesGrupo.length > 0) {
+    await Promise.allSettled(atualizacoesGrupo);
   }
 
   if (pendentesPagamento.length > 0) {
