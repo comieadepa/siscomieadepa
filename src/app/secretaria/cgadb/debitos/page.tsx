@@ -62,17 +62,49 @@ function formatValor(v: number | null): string {
 // Detecta automaticamente se o valor usa ponto decimal (inglês: 144.00)
 // ou vírgula decimal (BR: 144,00 / 1.234,56) e converte corretamente
 function parseValor(raw: string): number | null {
-  const s = raw.trim();
+  const s = String(raw || '')
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(/[^\d,.-]/g, '');
   if (!s) return null;
-  // Tem vírgula → formato BR: remover pontos de milhar, trocar vírgula por ponto
-  if (s.includes(',')) return parseFloat(s.replace(/\./g, '').replace(',', '.')) || null;
-  // Tem ponto: verificar se é decimal (≤2 dígitos após último ponto) ou milhar (≥3 dígitos)
-  if (s.includes('.')) {
-    const afterDot = s.slice(s.lastIndexOf('.') + 1);
-    if (afterDot.length <= 2) return parseFloat(s) || null; // decimal inglês: 144.00
-    return parseFloat(s.replace(/\./g, '')) || null; // milhar BR: 1.000
+
+  const comma = s.lastIndexOf(',');
+  const dot = s.lastIndexOf('.');
+
+  // Quando há os dois separadores, o último tende a ser o decimal.
+  if (comma !== -1 && dot !== -1) {
+    const normalized = comma > dot
+      ? s.replace(/\./g, '').replace(',', '.')
+      : s.replace(/,/g, '');
+    const n = parseFloat(normalized);
+    return Number.isFinite(n) ? n : null;
   }
-  return parseFloat(s) || null;
+
+  // Só vírgula: assume vírgula como decimal.
+  if (comma !== -1) {
+    const normalized = s.replace(/\./g, '').replace(',', '.');
+    const n = parseFloat(normalized);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  // Só ponto: pode ser decimal (144.00) ou milhar (1.000 / 1.008.00).
+  if (dot !== -1) {
+    const parts = s.split('.');
+    if (parts.length > 2) {
+      const dec = parts[parts.length - 1];
+      const ints = parts.slice(0, -1).join('');
+      const normalized = `${ints}.${dec}`;
+      const n = parseFloat(normalized);
+      return Number.isFinite(n) ? n : null;
+    }
+    const afterDot = s.slice(dot + 1);
+    const normalized = afterDot.length <= 2 ? s : s.replace(/\./g, '');
+    const n = parseFloat(normalized);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : null;
 }
 
 // Parse CSV flexível (vírgula ou ponto-e-vírgula, com ou sem aspas)
@@ -983,6 +1015,8 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
       const idxValor = (() => {
         const i = headers.findIndex(h => h.includes('total'));
         if (i !== -1) return i;
+        const j = headers.findIndex(h => h.includes('debit') || h.includes('devido'));
+        if (j !== -1) return j;
         return headers.findIndex(h => h.includes('valor'));
       })();
 
@@ -993,6 +1027,11 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
 
       if (idxCpf === -1 || idxNome === -1) {
         notify('CSV inválido', 'O arquivo deve conter as colunas CPF e NOME.', 'error');
+        return;
+      }
+
+      if (idxValor === -1) {
+        notify('CSV inválido', 'O arquivo deve conter a coluna de VALOR/TOTAL DÉBITO.', 'error');
         return;
       }
 
