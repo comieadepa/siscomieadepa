@@ -7,6 +7,7 @@ import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { normalizePayloadUppercase } from '@/lib/text';
 import AssistenteWidget from '@/components/AssistenteWidget';
 import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
+import { resolveGrupoHospedagemAGO } from '@/lib/hospedagem-helpers';
 import {
   isEventoInscricaoPublicaDisponivel,
   resolveEventoStatusVisual,
@@ -581,6 +582,20 @@ export default function InscricaoPublicaPage() {
     });
   })();
   const ministroSemPerfil = ministroAtivo && tiposParaExibir.length === 0;
+  const grupoHospedagemPrevisto = resolveGrupoHospedagemAGO({
+    sexo: form.sexo || null,
+    data_nascimento: form.data_nascimento || null,
+    tipo_inscricao: tipoSelecionado?.nome || null,
+    hosp_necessidade_especial: form.hosp_necessidade_especial,
+    hosp_possui_comorbidade: form.hosp_possui_comorbidade,
+  });
+  const grupoHospedagemEsposaPrevisto = resolveGrupoHospedagemAGO({
+    sexo: 'F',
+    data_nascimento: formEsposa.data_nascimento || null,
+    tipo_inscricao: 'Esposa de Pastor Presidente Campo Missionário',
+    hosp_necessidade_especial: hospEsposa.hosp_necessidade_especial,
+    hosp_possui_comorbidade: hospEsposa.hosp_possui_comorbidade,
+  });
 
   function termosSuporteTexto() {
     if (!evento?.suporte_whatsapp) return 'Canal de suporte: secretaria do evento.';
@@ -658,11 +673,9 @@ export default function InscricaoPublicaPage() {
         // Campos hospedagem AGO
         hosp_necessidade_especial:  form.hosp_necessidade_especial,
         hosp_descricao_necessidade: form.hosp_descricao_necessidade.trim() || null,
-        hosp_cama_inferior:         form.hosp_cama_inferior,
         hosp_observacoes:           form.hosp_observacoes.trim() || null,
         hosp_possui_comorbidade:    form.hosp_possui_comorbidade,
         hosp_descricao_comorbidade: form.hosp_descricao_comorbidade.trim() || null,
-        grupo_hospedagem:           form.grupo_hospedagem || null,
         lgpd_aceito:                true,
       });
 
@@ -693,11 +706,9 @@ export default function InscricaoPublicaPage() {
           // Campos hospedagem da esposa
           hosp_necessidade_especial:  hospEsposa.hosp_necessidade_especial,
           hosp_descricao_necessidade: hospEsposa.hosp_descricao_necessidade.trim() || null,
-          hosp_cama_inferior:         hospEsposa.hosp_cama_inferior,
           hosp_observacoes:           hospEsposa.hosp_observacoes.trim() || null,
           hosp_possui_comorbidade:    hospEsposa.hosp_possui_comorbidade,
           hosp_descricao_comorbidade: hospEsposa.hosp_descricao_comorbidade.trim() || null,
-          grupo_hospedagem:           hospEsposa.grupo_hospedagem || null,
           lgpd_aceito:                true,
         });
       }
@@ -1426,27 +1437,13 @@ export default function InscricaoPublicaPage() {
                       </div>
                     )}
 
-                    <div className="flex items-center gap-3 mb-3">
-                      <input type="checkbox" id="hosp_cama_inferior"
-                        name="hosp_cama_inferior" checked={form.hosp_cama_inferior}
-                        onChange={handleCheck}
-                        className="accent-amber-600" />
-                      <label htmlFor="hosp_cama_inferior" className="text-sm text-gray-700 cursor-pointer">
-                        Preciso de <strong>cama inferior</strong> (beliche de baixo)
-                      </label>
+                    <div className="mb-3 p-3 bg-white border border-amber-300 rounded-lg">
+                      <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Grupo previsto</p>
+                      <p className="text-sm text-gray-700 mt-1">{grupoHospedagemPrevisto}</p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        A cama inferior e o grupo final sao definidos automaticamente pela organizacao conforme idade, necessidade especial, comorbidades e categoria.
+                      </p>
                     </div>
-
-                    {Array.isArray(evento.configuracoes_ago?.grupos) && evento.configuracoes_ago!.grupos!.length > 0 && (
-                      <div className="mb-3">
-                        <label className={LBL}>Grupo de hospedagem</label>
-                        <select name="grupo_hospedagem" value={form.grupo_hospedagem} onChange={handleText} className={INP}>
-                          <option value="">Selecione o grupo...</option>
-                          {evento.configuracoes_ago!.grupos!.map((g: string) => (
-                            <option key={g} value={g}>{g}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
 
                     <div>
                       <label className={LBL}>Observações de hospedagem (opcional)</label>
@@ -1557,23 +1554,13 @@ export default function InscricaoPublicaPage() {
                                 onChange={e => setHospEsposa(h => ({ ...h, hosp_descricao_comorbidade: e.target.value }))}
                                 placeholder="Descreva a comorbidade..." className={INP} />
                             )}
-                            <div className="flex items-center gap-3">
-                              <input type="checkbox" id="hosp_esp_cama_inf" checked={hospEsposa.hosp_cama_inferior}
-                                onChange={e => setHospEsposa(h => ({ ...h, hosp_cama_inferior: e.target.checked }))}
-                                className="accent-amber-600" />
-                              <label htmlFor="hosp_esp_cama_inf" className="text-sm text-gray-700 cursor-pointer">
-                                Precisa de <strong>cama inferior</strong>
-                              </label>
+                            <div className="p-3 bg-white border border-amber-300 rounded-lg">
+                              <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Grupo previsto</p>
+                              <p className="text-sm text-gray-700 mt-1">{grupoHospedagemEsposaPrevisto}</p>
+                              <p className="text-xs text-gray-500 mt-1">
+                                A cama inferior e o grupo final da esposa tambem sao definidos automaticamente pela organizacao.
+                              </p>
                             </div>
-                            {Array.isArray(evento.configuracoes_ago?.grupos) && evento.configuracoes_ago!.grupos!.length > 0 && (
-                              <select value={hospEsposa.grupo_hospedagem}
-                                onChange={e => setHospEsposa(h => ({ ...h, grupo_hospedagem: e.target.value }))} className={INP}>
-                                <option value="">Grupo de hospedagem...</option>
-                                {evento.configuracoes_ago!.grupos!.map((g: string) => (
-                                  <option key={g} value={g}>{g}</option>
-                                ))}
-                              </select>
-                            )}
                             <textarea value={hospEsposa.hosp_observacoes}
                               onChange={e => setHospEsposa(h => ({ ...h, hosp_observacoes: e.target.value }))}
                               rows={2} placeholder="Observações de hospedagem (opcional)" className={INP + ' resize-none'} />

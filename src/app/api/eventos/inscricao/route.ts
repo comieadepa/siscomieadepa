@@ -9,6 +9,11 @@ import { normalizePayloadUppercase } from '@/lib/text';
 import { logDB } from '@/lib/audit';
 import { cleanCpf, isValidCpf } from '@/lib/cpf';
 import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
+import {
+  calcularPrioridadeHospedagem,
+  resolveCamaInferiorAutomatica,
+  resolveGrupoHospedagemAGO,
+} from '@/lib/hospedagem-helpers';
 
 type ErrorJson = {
   error: string;
@@ -155,10 +160,13 @@ export async function POST(request: NextRequest) {
       // Campos hospedagem AGO
       hosp_necessidade_especial,
       hosp_descricao_necessidade,
-      hosp_cama_inferior,
       hosp_observacoes,
-      grupo_hospedagem,
     } = body;
+
+    const hospPossuiComorbidade = !!(body as any).hosp_possui_comorbidade;
+    const hospDescricaoComorbidade = ((body as any).hosp_descricao_comorbidade as string)?.trim() || null;
+    let hospCamaInferiorAuto = false;
+    let grupoHospedagemAuto: string | null = null;
 
     payloadResumo = {
       evento_slug: slug ?? null,
@@ -335,6 +343,23 @@ export async function POST(request: NextRequest) {
     const querHospedagem = evento.departamento === 'AGO'
       ? !!hospedagem
       : (tipoInclui.hospedagem || !!hospedagem);
+
+    if (evento.departamento === 'AGO') {
+      hospCamaInferiorAuto = resolveCamaInferiorAutomatica({
+        sexo: sexo || null,
+        data_nascimento: data_nascimento || null,
+        tipo_inscricao: tipoNome || null,
+        hosp_necessidade_especial: !!hosp_necessidade_especial,
+        hosp_possui_comorbidade: hospPossuiComorbidade,
+      });
+      grupoHospedagemAuto = resolveGrupoHospedagemAGO({
+        sexo: sexo || null,
+        data_nascimento: data_nascimento || null,
+        tipo_inscricao: tipoNome || null,
+        hosp_necessidade_especial: !!hosp_necessidade_especial,
+        hosp_possui_comorbidade: hospPossuiComorbidade,
+      });
+    }
     // Para lote: conta todos os participantes que terão hospedagem
     const qtdComHospedagem = ehLote
       ? (querHospedagem ? 1 : 0) + (Array.isArray(participantes)
@@ -530,16 +555,31 @@ export async function POST(request: NextRequest) {
         ministro_snapshot: ministroSnapshot,
         hosp_necessidade_especial:  !!hosp_necessidade_especial,
         hosp_descricao_necessidade: hosp_descricao_necessidade?.trim() || null,
-        hosp_cama_inferior:         !!hosp_cama_inferior,
+        hosp_cama_inferior:         hospCamaInferiorAuto,
         hosp_observacoes:           hosp_observacoes?.trim() || null,
-        hosp_possui_comorbidade:    !!(body as any).hosp_possui_comorbidade,
-        hosp_descricao_comorbidade: ((body as any).hosp_descricao_comorbidade as string)?.trim() || null,
-        grupo_hospedagem:           (grupo_hospedagem as string)?.trim() || null,
+        hosp_possui_comorbidade:    hospPossuiComorbidade,
+        hosp_descricao_comorbidade: hospDescricaoComorbidade,
+        grupo_hospedagem:           grupoHospedagemAuto,
         lgpd_aceito:      true,
         lgpd_aceito_em:   new Date().toISOString(),
       });
 
       const esposaData = esposa as Record<string, unknown>;
+      const esposaComorbidade = !!esposaData.hosp_possui_comorbidade;
+      const esposaCamaInferiorAuto = resolveCamaInferiorAutomatica({
+        sexo: 'F',
+        data_nascimento: esposaData.data_nascimento as string | null,
+        tipo_inscricao: tipoEsposa?.nome ?? 'Esposa de Pastor Presidente Campo Missionário',
+        hosp_necessidade_especial: !!esposaData.hosp_necessidade_especial,
+        hosp_possui_comorbidade: esposaComorbidade,
+      });
+      const esposaGrupoAuto = resolveGrupoHospedagemAGO({
+        sexo: 'F',
+        data_nascimento: esposaData.data_nascimento as string | null,
+        tipo_inscricao: tipoEsposa?.nome ?? 'Esposa de Pastor Presidente Campo Missionário',
+        hosp_necessidade_especial: !!esposaData.hosp_necessidade_especial,
+        hosp_possui_comorbidade: esposaComorbidade,
+      });
       const rowEsposa = normalizePayloadUppercase({
         evento_id:        evento.id,
         lote_id:          lote2.id,
@@ -568,11 +608,11 @@ export async function POST(request: NextRequest) {
         quantidade_refeicoes_saldo: refeicoesEsposa,
         hosp_necessidade_especial:  !!esposaData.hosp_necessidade_especial,
         hosp_descricao_necessidade: String(esposaData.hosp_descricao_necessidade ?? '').trim() || null,
-        hosp_cama_inferior:         !!esposaData.hosp_cama_inferior,
+        hosp_cama_inferior:         esposaCamaInferiorAuto,
         hosp_observacoes:           String(esposaData.hosp_observacoes ?? '').trim() || null,
-        hosp_possui_comorbidade:    !!esposaData.hosp_possui_comorbidade,
+        hosp_possui_comorbidade:    esposaComorbidade,
         hosp_descricao_comorbidade: String(esposaData.hosp_descricao_comorbidade ?? '').trim() || null,
-        grupo_hospedagem:           String(esposaData.grupo_hospedagem ?? '').trim() || null,
+        grupo_hospedagem:           esposaGrupoAuto,
         lgpd_aceito:      true,
         lgpd_aceito_em:   new Date().toISOString(),
       });
@@ -596,14 +636,13 @@ export async function POST(request: NextRequest) {
 
       // Cria registros de hospedagem AGO se solicitados
       if (evento.departamento === 'AGO') {
-        const { calcularPrioridadeHospedagem } = await import('@/lib/hospedagem-helpers');
         if (!!hospedagem) {
-          const priorPastor = calcularPrioridadeHospedagem({ id: insPastor.id, nome_inscrito: nome_inscrito.trim(), sexo: sexo || null, data_nascimento: data_nascimento || null, tipo_inscricao: tipoNome, hosp_necessidade_especial: !!hosp_necessidade_especial, hosp_descricao_necessidade: hosp_descricao_necessidade?.trim() || null, hosp_cama_inferior: !!hosp_cama_inferior, hosp_observacoes: hosp_observacoes?.trim() || null });
-          await supabase.from('evento_hospedagens').insert([normalizePayloadUppercase({ evento_id: evento.id, inscricao_id: insPastor.id, status: 'solicitada', prioridade: priorPastor, necessidade_especial: !!hosp_necessidade_especial, descricao_necessidade: hosp_descricao_necessidade?.trim() || null, cama_inferior: !!hosp_cama_inferior, observacoes: hosp_observacoes?.trim() || null, grupo_hospedagem: (grupo_hospedagem as string)?.trim() || null, alocacao_automatica: true })]);
+          const priorPastor = calcularPrioridadeHospedagem({ id: insPastor.id, nome_inscrito: nome_inscrito.trim(), sexo: sexo || null, data_nascimento: data_nascimento || null, tipo_inscricao: tipoNome, hosp_necessidade_especial: !!hosp_necessidade_especial, hosp_descricao_necessidade: hosp_descricao_necessidade?.trim() || null, hosp_cama_inferior: hospCamaInferiorAuto, hosp_observacoes: hosp_observacoes?.trim() || null, hosp_possui_comorbidade: hospPossuiComorbidade, hosp_descricao_comorbidade: hospDescricaoComorbidade });
+          await supabase.from('evento_hospedagens').insert([normalizePayloadUppercase({ evento_id: evento.id, inscricao_id: insPastor.id, status: 'solicitada', prioridade: priorPastor, necessidade_especial: !!hosp_necessidade_especial, descricao_necessidade: hosp_descricao_necessidade?.trim() || null, cama_inferior: hospCamaInferiorAuto, observacoes: hosp_observacoes?.trim() || null, grupo_hospedagem: grupoHospedagemAuto, alocacao_automatica: true })]);
         }
         if (!!esposaData.hospedagem) {
-          const priorEsposa = calcularPrioridadeHospedagem({ id: insEsposa.id, nome_inscrito: String(esposaData.nome_inscrito ?? ''), sexo: 'F', data_nascimento: esposaData.data_nascimento as string | null, tipo_inscricao: 'Esposa de Pastor Presidente', hosp_necessidade_especial: !!esposaData.hosp_necessidade_especial, hosp_descricao_necessidade: String(esposaData.hosp_descricao_necessidade ?? '').trim() || null, hosp_cama_inferior: !!esposaData.hosp_cama_inferior, hosp_observacoes: String(esposaData.hosp_observacoes ?? '').trim() || null });
-          await supabase.from('evento_hospedagens').insert([normalizePayloadUppercase({ evento_id: evento.id, inscricao_id: insEsposa.id, status: 'solicitada', prioridade: priorEsposa, necessidade_especial: !!esposaData.hosp_necessidade_especial, descricao_necessidade: String(esposaData.hosp_descricao_necessidade ?? '').trim() || null, cama_inferior: !!esposaData.hosp_cama_inferior, observacoes: String(esposaData.hosp_observacoes ?? '').trim() || null, grupo_hospedagem: String(esposaData.grupo_hospedagem ?? '').trim() || null, alocacao_automatica: true })]);
+          const priorEsposa = calcularPrioridadeHospedagem({ id: insEsposa.id, nome_inscrito: String(esposaData.nome_inscrito ?? ''), sexo: 'F', data_nascimento: esposaData.data_nascimento as string | null, tipo_inscricao: 'Esposa de Pastor Presidente', hosp_necessidade_especial: !!esposaData.hosp_necessidade_especial, hosp_descricao_necessidade: String(esposaData.hosp_descricao_necessidade ?? '').trim() || null, hosp_cama_inferior: esposaCamaInferiorAuto, hosp_observacoes: String(esposaData.hosp_observacoes ?? '').trim() || null, hosp_possui_comorbidade: esposaComorbidade, hosp_descricao_comorbidade: String(esposaData.hosp_descricao_comorbidade ?? '').trim() || null });
+          await supabase.from('evento_hospedagens').insert([normalizePayloadUppercase({ evento_id: evento.id, inscricao_id: insEsposa.id, status: 'solicitada', prioridade: priorEsposa, necessidade_especial: !!esposaData.hosp_necessidade_especial, descricao_necessidade: String(esposaData.hosp_descricao_necessidade ?? '').trim() || null, cama_inferior: esposaCamaInferiorAuto, observacoes: String(esposaData.hosp_observacoes ?? '').trim() || null, grupo_hospedagem: esposaGrupoAuto, alocacao_automatica: true })]);
         }
       }
 
@@ -666,7 +705,28 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      const rows = todos.map(p => normalizePayloadUppercase({
+      const rows = todos.map(p => {
+        const pComorb = !!(p as any).hosp_possui_comorbidade;
+        const pCamaInferiorAuto = evento.departamento === 'AGO'
+          ? resolveCamaInferiorAutomatica({
+            sexo: (p.sexo as string) || null,
+            data_nascimento: (p.data_nascimento as string) || null,
+            tipo_inscricao: tipoNome,
+            hosp_necessidade_especial: !!(p as any).hosp_necessidade_especial,
+            hosp_possui_comorbidade: pComorb,
+          })
+          : false;
+        const pGrupoAuto = evento.departamento === 'AGO'
+          ? resolveGrupoHospedagemAGO({
+            sexo: (p.sexo as string) || null,
+            data_nascimento: (p.data_nascimento as string) || null,
+            tipo_inscricao: tipoNome,
+            hosp_necessidade_especial: !!(p as any).hosp_necessidade_especial,
+            hosp_possui_comorbidade: pComorb,
+          })
+          : null;
+
+        return normalizePayloadUppercase({
         evento_id:        evento.id,
         lote_id:          lote.id,
         nome_inscrito:    String(p.nome_inscrito ?? nome_inscrito).trim(),
@@ -694,9 +754,17 @@ export async function POST(request: NextRequest) {
         quantidade_refeicoes_total: tipoInclui.alimentacao ? tipoRefeicoes : 0,
         quantidade_refeicoes_usadas: 0,
         quantidade_refeicoes_saldo: tipoInclui.alimentacao ? tipoRefeicoes : 0,
+        hosp_necessidade_especial: !!(p as any).hosp_necessidade_especial,
+        hosp_descricao_necessidade: ((p as any).hosp_descricao_necessidade as string)?.trim() || null,
+        hosp_cama_inferior: pCamaInferiorAuto,
+        hosp_observacoes: ((p as any).hosp_observacoes as string)?.trim() || null,
+        hosp_possui_comorbidade: pComorb,
+        hosp_descricao_comorbidade: ((p as any).hosp_descricao_comorbidade as string)?.trim() || null,
+        grupo_hospedagem: pGrupoAuto,
         lgpd_aceito:      true,
         lgpd_aceito_em:   new Date().toISOString(),
-      }));
+      });
+      });
 
       stage = 'insert_evento_inscricoes_lote';
       const { error: insRowsErr } = await supabase.from('evento_inscricoes').insert(rows);
@@ -776,11 +844,11 @@ export async function POST(request: NextRequest) {
       // Campos hospedagem AGO
       hosp_necessidade_especial:  !!hosp_necessidade_especial,
       hosp_descricao_necessidade: hosp_descricao_necessidade?.trim() || null,
-      hosp_cama_inferior:         !!hosp_cama_inferior,
+      hosp_cama_inferior:         hospCamaInferiorAuto,
       hosp_observacoes:           hosp_observacoes?.trim() || null,
-      hosp_possui_comorbidade:    !!(body as any).hosp_possui_comorbidade,
-      hosp_descricao_comorbidade: ((body as any).hosp_descricao_comorbidade as string)?.trim() || null,
-      grupo_hospedagem:           (grupo_hospedagem as string)?.trim() || null,
+      hosp_possui_comorbidade:    hospPossuiComorbidade,
+      hosp_descricao_comorbidade: hospDescricaoComorbidade,
+      grupo_hospedagem:           grupoHospedagemAuto,
       lgpd_aceito:      true,
       lgpd_aceito_em:   new Date().toISOString(),
     });
@@ -819,7 +887,6 @@ export async function POST(request: NextRequest) {
     // Cria registro de hospedagem AGO se evento AGO com hospedagem
     stage = 'insert_evento_hospedagens';
     if (querHospedagem && evento.departamento === 'AGO') {
-      const { calcularPrioridadeHospedagem } = await import('@/lib/hospedagem-helpers');
       const prioridade = calcularPrioridadeHospedagem({
         id: inscricao.id,
         nome_inscrito: nome_inscrito.trim(),
@@ -828,8 +895,10 @@ export async function POST(request: NextRequest) {
         tipo_inscricao: tipoNome,
         hosp_necessidade_especial: !!hosp_necessidade_especial,
         hosp_descricao_necessidade: hosp_descricao_necessidade?.trim() || null,
-        hosp_cama_inferior: !!hosp_cama_inferior,
+        hosp_cama_inferior: hospCamaInferiorAuto,
         hosp_observacoes: hosp_observacoes?.trim() || null,
+        hosp_possui_comorbidade: hospPossuiComorbidade,
+        hosp_descricao_comorbidade: hospDescricaoComorbidade,
       });
       const hospedagemPayload = normalizePayloadUppercase({
         evento_id:            evento.id,
@@ -838,9 +907,9 @@ export async function POST(request: NextRequest) {
         prioridade,
         necessidade_especial: !!hosp_necessidade_especial,
         descricao_necessidade: hosp_descricao_necessidade?.trim() || null,
-        cama_inferior:        !!hosp_cama_inferior,
+        cama_inferior:        hospCamaInferiorAuto,
         observacoes:          hosp_observacoes?.trim() || null,
-        grupo_hospedagem:     (grupo_hospedagem as string)?.trim() || null,
+        grupo_hospedagem:     grupoHospedagemAuto,
         alocacao_automatica:  true,
       });
       const { error: hospErr } = await supabase.from('evento_hospedagens').insert([hospedagemPayload]);

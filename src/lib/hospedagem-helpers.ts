@@ -14,7 +14,17 @@ export interface InscricaoParaHospedagem {
   hosp_descricao_necessidade: string | null;
   hosp_cama_inferior: boolean;
   hosp_observacoes: string | null;
+  hosp_possui_comorbidade?: boolean;
+  hosp_descricao_comorbidade?: string | null;
   grupo_hospedagem?: string | null;
+}
+
+export interface HospedagemAGOInput {
+  sexo: string | null;
+  data_nascimento: string | null;
+  tipo_inscricao: string | null;
+  hosp_necessidade_especial?: boolean;
+  hosp_possui_comorbidade?: boolean;
 }
 
 export interface Alojamento {
@@ -55,6 +65,9 @@ export function calcularPrioridadeHospedagem(inscricao: InscricaoParaHospedagem)
   // Cama inferior solicitada (ex: coluna, cirurgia)
   if (inscricao.hosp_cama_inferior) pontos += 80;
 
+  // Comorbidade relevante precisa de atencao adicional
+  if (inscricao.hosp_possui_comorbidade) pontos += 60;
+
   // Idade > 70 ou > 60
   const idade = calcularIdade(inscricao.data_nascimento);
   if (idade !== null) {
@@ -70,6 +83,30 @@ export function calcularPrioridadeHospedagem(inscricao: InscricaoParaHospedagem)
   if (tipoLower.includes('presidente')) pontos += 30;
 
   return pontos;
+}
+
+export function resolveCamaInferiorAutomatica(input: HospedagemAGOInput): boolean {
+  const idade = calcularIdade(input.data_nascimento);
+  const idadePrioritaria = idade !== null && idade >= 60;
+  return idadePrioritaria || !!input.hosp_necessidade_especial || !!input.hosp_possui_comorbidade;
+}
+
+export function resolveGrupoHospedagemAGO(input: HospedagemAGOInput): string {
+  const tipo = (input.tipo_inscricao ?? '').toLowerCase();
+  const sexo = (input.sexo ?? '').toUpperCase();
+
+  const ehEsposaOuViuva = tipo.includes('esposa') || tipo.includes('viuva') || tipo.includes('viúva');
+  if (sexo === 'F' || ehEsposaOuViuva) return 'Mulheres';
+
+  if (tipo.includes('presidente') || tipo.includes('jubilado')) {
+    return 'Pastor Presidente / Pastor Jubilado';
+  }
+
+  if (tipo.includes('auxiliar') || tipo.includes('juventude') || sexo === 'M') {
+    return 'Pastor Auxiliar / Juventude';
+  }
+
+  return 'Misto';
 }
 
 function calcularIdade(dataNascimento: string | null): number | null {

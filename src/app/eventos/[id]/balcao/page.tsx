@@ -10,6 +10,7 @@ import { normalizePayloadUppercase } from '@/lib/text';
 import { EventBadge } from '@/components/EventBadge';
 import { authenticatedFetch } from '@/lib/api-client';
 import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
+import { resolveGrupoHospedagemAGO } from '@/lib/hospedagem-helpers';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -107,6 +108,8 @@ interface FormState {
   hosp_necessidade_especial: boolean;
   hosp_descricao_necessidade: string;
   hosp_cama_inferior: boolean;
+  hosp_possui_comorbidade: boolean;
+  hosp_descricao_comorbidade: string;
   hosp_observacoes: string;
 }
 
@@ -121,6 +124,8 @@ const FORM_VAZIO: FormState = {
   hosp_necessidade_especial: false,
   hosp_descricao_necessidade: '',
   hosp_cama_inferior: false,
+  hosp_possui_comorbidade: false,
+  hosp_descricao_comorbidade: '',
   hosp_observacoes: '',
 };
 
@@ -292,6 +297,21 @@ export default function BalcaoPage() {
     const semPerfil = ativo && filtered.length === 0;
     return { ministroAtivo: ativo, ministroInativo: inativo, tiposParaExibir: filtered, ministroSemPerfil: semPerfil };
   }, [cpfStatus, ministroInfo, form.sexo, form.data_nascimento, tipos, evento]);
+
+  const grupoHospedagemPrevisto = resolveGrupoHospedagemAGO({
+    sexo: form.sexo || null,
+    data_nascimento: form.data_nascimento || null,
+    tipo_inscricao: tipoSel?.nome || null,
+    hosp_necessidade_especial: form.hosp_necessidade_especial,
+    hosp_possui_comorbidade: form.hosp_possui_comorbidade,
+  });
+  const grupoHospedagemEsposaPrevisto = resolveGrupoHospedagemAGO({
+    sexo: 'F',
+    data_nascimento: formEsposa.data_nascimento || null,
+    tipo_inscricao: 'Esposa de Pastor Presidente Campo Missionário',
+    hosp_necessidade_especial: hospEsposa.hosp_necessidade_especial,
+    hosp_possui_comorbidade: hospEsposa.hosp_possui_comorbidade,
+  });
 
   // ── Estado pós-inscrição ──────────────────────────────────
   const [salvando,      setSalvando]      = useState(false);
@@ -695,8 +715,9 @@ export default function BalcaoPage() {
         qr_code:          qrToken,
         hosp_necessidade_especial:  form.hosp_necessidade_especial,
         hosp_descricao_necessidade: form.hosp_descricao_necessidade.trim() || undefined,
-        hosp_cama_inferior:         form.hosp_cama_inferior,
         hosp_observacoes:           form.hosp_observacoes.trim() || undefined,
+        hosp_possui_comorbidade:    form.hosp_possui_comorbidade,
+        hosp_descricao_comorbidade: form.hosp_descricao_comorbidade.trim() || undefined,
       };
 
       // AGO Campo Missionário — esposa
@@ -713,11 +734,9 @@ export default function BalcaoPage() {
           qr_code:         generateQRCodeToken(),
           hosp_necessidade_especial:  hospEsposa.hosp_necessidade_especial,
           hosp_descricao_necessidade: hospEsposa.hosp_descricao_necessidade.trim() || undefined,
-          hosp_cama_inferior:         hospEsposa.hosp_cama_inferior,
           hosp_observacoes:           hospEsposa.hosp_observacoes.trim() || undefined,
           hosp_possui_comorbidade:    hospEsposa.hosp_possui_comorbidade,
           hosp_descricao_comorbidade: hospEsposa.hosp_descricao_comorbidade.trim() || undefined,
-          grupo_hospedagem:           hospEsposa.grupo_hospedagem || undefined,
           lgpd_aceito:                true,
         };
       }
@@ -1626,15 +1645,35 @@ export default function BalcaoPage() {
                   </div>
                 )}
 
-                {/* Cama inferior */}
-                <label className="flex items-center gap-2.5 cursor-pointer">
-                  <input type="checkbox" checked={form.hosp_cama_inferior}
-                    onChange={e => setField('hosp_cama_inferior', e.target.checked)}
-                    className="accent-amber-400" />
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input type="checkbox" checked={form.hosp_possui_comorbidade}
+                    onChange={e => setField('hosp_possui_comorbidade', e.target.checked)}
+                    className="mt-0.5 accent-amber-400" />
                   <span className="text-sm text-white/80">
-                    Precisa de <strong className="text-white">cama inferior</strong> (beliche de baixo)
+                    Possui <strong className="text-white">comorbidade relevante</strong>
+                    <span className="block text-xs text-white/40">diabetes, hipertensão, cardiopatia, etc.</span>
                   </span>
                 </label>
+
+                {form.hosp_possui_comorbidade && (
+                  <div>
+                    <label className={labelCls + ' text-amber-300'}>Descreva a comorbidade *</label>
+                    <input
+                      value={form.hosp_descricao_comorbidade}
+                      onChange={e => setField('hosp_descricao_comorbidade', e.target.value)}
+                      placeholder="Ex: hipertensao controlada"
+                      className={inputCls + ' border-amber-500/50'}
+                    />
+                  </div>
+                )}
+
+                <div className="rounded-xl border border-amber-500/40 bg-black/10 px-3 py-2">
+                  <p className="text-xs font-bold uppercase tracking-wide text-amber-300">Grupo previsto</p>
+                  <p className="text-sm text-white mt-1">{grupoHospedagemPrevisto}</p>
+                  <p className="text-xs text-white/60 mt-1">
+                    Cama inferior e grupo final sao definidos automaticamente pela organizacao conforme idade, necessidade especial e categoria.
+                  </p>
+                </div>
 
                 {/* Observações hospedagem */}
                 <div>
@@ -1720,12 +1759,11 @@ export default function BalcaoPage() {
                               onChange={e => setHospEsposa(h => ({ ...h, hosp_descricao_necessidade: e.target.value }))}
                               placeholder="Descreva a necessidade..." className={inputCls + ' border-amber-500/50'} />
                           )}
-                          <label className="flex items-center gap-2.5 cursor-pointer">
-                            <input type="checkbox" checked={hospEsposa.hosp_cama_inferior}
-                              onChange={e => setHospEsposa(h => ({ ...h, hosp_cama_inferior: e.target.checked }))}
-                              className="accent-amber-400" />
-                            <span className="text-sm text-white/80">Cama inferior (beliche de baixo)</span>
-                          </label>
+                          <div className="rounded-xl border border-amber-500/40 bg-black/10 px-3 py-2">
+                            <p className="text-xs font-bold uppercase tracking-wide text-amber-300">Grupo previsto da esposa</p>
+                            <p className="text-sm text-white mt-1">{grupoHospedagemEsposaPrevisto}</p>
+                            <p className="text-xs text-white/60 mt-1">A cama inferior final sera definida automaticamente pela organizacao.</p>
+                          </div>
                           <textarea value={hospEsposa.hosp_observacoes}
                             onChange={e => setHospEsposa(h => ({ ...h, hosp_observacoes: e.target.value }))}
                             rows={2} placeholder="Observações de hospedagem..." className={inputCls + ' resize-none border-amber-500/50'} />
