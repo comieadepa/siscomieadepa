@@ -793,7 +793,7 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
   const [lastImport, setLastImport] = useState<string | null>(null);
   const [expandedCpf, setExpandedCpf] = useState<string | null>(null);
   const [apenasNaoCadastrados, setApenasNaoCadastrados] = useState(false);
-  const [editCpf, setEditCpf] = useState<{ oldCpf: string; nome: string; value: string } | null>(null);
+  const [editCpf, setEditCpf] = useState<{ oldCpf: string; nome: string; value: string; ids: string[] } | null>(null);
   const [savingCpf, setSavingCpf] = useState(false);
   const [zerando, setZerando] = useState<string | null>(null);
 
@@ -806,9 +806,8 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
     }
     setSavingCpf(true);
     try {
-      const oldKey = normalizeCpf(editCpf.oldCpf);
-      // Atualiza todos os registros da tabela cgadb_debitos com o CPF antigo
-      const ids = debitos.filter(d => normalizeCpf(d.cpf) === oldKey).map(d => d.id);
+      // Atualiza apenas os registros da linha/grupo selecionado
+      const ids = editCpf.ids;
       if (ids.length === 0) return;
       const res = await authedFetch('/api/v1/secretaria/cgadb/debitos', {
         method: 'PATCH',
@@ -846,10 +845,9 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
     }
   }
 
-  async function handleDarBaixaTodos(cpfKey: string) {
-    const ids = debitos.filter(d => normalizeCpf(d.cpf) === cpfKey).map(d => d.id);
+  async function handleDarBaixaTodos(groupKey: string, ids: string[]) {
     if (ids.length === 0) return;
-    setZerando(`todos_${cpfKey}`);
+    setZerando(`todos_${groupKey}`);
     try {
       const res = await authedFetch('/api/v1/secretaria/cgadb/debitos', {
         method: 'DELETE',
@@ -858,7 +856,8 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || 'Erro ao dar baixa geral.');
-      setDebitos(prev => prev.filter(d => normalizeCpf(d.cpf) !== cpfKey));
+      const idsSet = new Set(ids);
+      setDebitos(prev => prev.filter(d => !idsSet.has(d.id)));
       setExpandedCpf(null);
       notify('Baixa realizada', `${ids.length} débito(s) removido(s) com sucesso.`, 'success');
     } catch (err: any) {
@@ -1083,10 +1082,12 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
   // Agrupar débitos por CPF (um card/linha por ministro)
   const busca = filtroBusca.toLowerCase();
   const grouped = (() => {
-    const map = new Map<string, { cpf: string; registro: string | null; nome: string; debitos: DebitoCgadb[]; total: number }>();
+    const map = new Map<string, { key: string; cpf: string; registro: string | null; nome: string; debitos: DebitoCgadb[]; total: number }>();
     for (const d of debitos) {
-      const key = normalizeCpf(d.cpf);
-      if (!map.has(key)) map.set(key, { cpf: d.cpf, registro: d.registro, nome: d.nome, debitos: [], total: 0 });
+      const cpfKey = normalizeCpf(d.cpf);
+      const registroKey = String(d.registro || '').trim();
+      const key = cpfKey || (registroKey ? `reg:${registroKey}` : `id:${d.id}`);
+      if (!map.has(key)) map.set(key, { key, cpf: d.cpf, registro: d.registro, nome: d.nome, debitos: [], total: 0 });
       const entry = map.get(key)!;
       entry.debitos.push(d);
       entry.total += d.valor || 0;
@@ -1108,6 +1109,7 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
   function resetPage() { setCurrentPage(1); }
 
   const totalDivida = filtered.reduce((sum, g) => sum + g.total, 0);
+  const totalRegistrosFiltrados = filtered.reduce((sum, g) => sum + g.debitos.length, 0);
 
   return (
     <div>
@@ -1221,7 +1223,7 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
         <div className="flex items-center gap-2">
           <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2 text-center min-w-[72px]">
             <p className="text-lg font-bold text-red-600 leading-none">{filtered.length}</p>
-            <p className="text-xs text-red-400 mt-0.5">ministro(s)</p>
+            <p className="text-xs text-red-400 mt-0.5">ministro(s) únicos</p>
           </div>
           <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-2 text-center">
             <p className="text-base font-bold text-orange-600 leading-none">{formatValor(totalDivida)}</p>
@@ -1233,7 +1235,7 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
       {/* Controle de itens por página */}
       {!loading && filtered.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-          <p className="text-xs text-gray-500">{filtered.length} ministro(s) com débito — página {currentPage} de {totalPages || 1}</p>
+          <p className="text-xs text-gray-500">{filtered.length} ministro(s) únicos / {totalRegistrosFiltrados} registro(s) — página {currentPage} de {totalPages || 1}</p>
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-500">Exibir:</span>
             {[20, 30, 50, 100].map(n => (
@@ -1281,13 +1283,14 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
               )}
               {paginated.map((g, idx) => {
                 const cpfKey = normalizeCpf(g.cpf);
-                const isExpanded = expandedCpf === cpfKey;
+                const groupKey = g.key;
+                const isExpanded = expandedCpf === groupKey;
                 const anos = g.debitos.map(d => d.ano).filter(Boolean).sort((a, b) => (b ?? 0) - (a ?? 0));
                 const statusCgadb = (g.debitos[0]?.status || '').toUpperCase();
                 return (
-                  <React.Fragment key={cpfKey}>
+                  <React.Fragment key={groupKey}>
                     <tr
-                      onClick={() => setExpandedCpf(isExpanded ? null : cpfKey)}
+                      onClick={() => setExpandedCpf(isExpanded ? null : groupKey)}
                       className={`border-b border-gray-100 cursor-pointer transition-colors ${
                         isExpanded ? 'bg-red-50' : idx % 2 === 0 ? 'bg-white hover:bg-red-50/50' : 'bg-gray-50/60 hover:bg-red-50/50'
                       }`}
@@ -1296,7 +1299,7 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
                         <div className="flex items-center gap-1.5">
                           <span className="font-mono text-xs text-gray-500">{formatCpfDisplay(g.cpf)}</span>
                           <button
-                            onClick={() => setEditCpf({ oldCpf: g.cpf, nome: g.nome, value: g.cpf })}
+                            onClick={() => setEditCpf({ oldCpf: g.cpf, nome: g.nome, value: g.cpf, ids: g.debitos.map(d => d.id) })}
                             className="text-blue-400 hover:text-blue-600 transition" title="Editar CPF"
                           >✏️</button>
                         </div>
@@ -1380,12 +1383,12 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
                                 </td>
                                 <td className="px-3 py-2 text-center">
                                   <button
-                                    onClick={e => { e.stopPropagation(); handleDarBaixaTodos(cpfKey); }}
+                                    onClick={e => { e.stopPropagation(); handleDarBaixaTodos(groupKey, g.debitos.map(d => d.id)); }}
                                     disabled={zerando !== null}
                                     className="px-2.5 py-1 bg-red-700 hover:bg-red-800 text-white text-xs font-semibold rounded-lg transition disabled:opacity-50"
                                     title="Dar baixa em todos os débitos deste ministro"
                                   >
-                                    {zerando === `todos_${cpfKey}` ? '...' : '✓ Baixa Geral'}
+                                    {zerando === `todos_${groupKey}` ? '...' : '✓ Baixa Geral'}
                                   </button>
                                 </td>
                               </tr>
