@@ -26,13 +26,43 @@ interface MinistroInfo {
   nome: string;
   matricula: string | null;
   cargoMinisterial: string | null;
+  email: string | null;
+  whatsapp: string | null;
   isPastorPresidente: boolean;
   isPastorAuxiliar: boolean;
   isJubilado: boolean;
   status: string | null;
   supervisao_id: string | null;
+  supervisao_nome: string | null;
   campo_id: string | null;
+  campo_nome: string | null;
   isCampoMissionario: boolean;
+}
+
+interface MemberLookupPayload {
+  encontrado?: boolean;
+  nome?: string | null;
+  email?: string | null;
+  whatsapp?: string | null;
+  telefone?: string | null;
+  celular?: string | null;
+  phone?: string | null;
+  sexo?: string | null;
+  data_nascimento?: string | null;
+  supervisao_id?: string | null;
+  supervisao_nome?: string | null;
+  campo_id?: string | null;
+  campo_nome?: string | null;
+  congregacao_id?: string | null;
+  matricula?: string | null;
+  cargo_ministerial?: string | null;
+  pastor_presidente?: boolean;
+  pastor_auxiliar?: boolean;
+  jubilado?: boolean;
+  status?: string | null;
+  nome_conjuge?: string | null;
+  cpf_conjuge?: string | null;
+  data_nascimento_conjuge?: string | null;
 }
 
 interface Evento {
@@ -159,6 +189,16 @@ function formatarCPF(v: string) {
     .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
 }
 
+function normalizarComparacao(v: string | null | undefined) {
+  return String(v || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // ─── Componente principal ────────────────────────────────────
 export default function InscricaoPublicaPage() {
   const params = useParams();
@@ -230,14 +270,17 @@ export default function InscricaoPublicaPage() {
 
   // ── Busca campos de uma supervisão específica (on-demand, evita limite 1000 do Supabase) ──
   const fetchCamposDaSupervisao = useCallback(async (supervisaoId: string) => {
-    if (!supervisaoId) { setCampos([]); return; }
+    if (!supervisaoId) { setCampos([]); return [] as Campo[]; }
     setCarregandoCampos(true);
     try {
       const res = await fetch(`/api/public/estrutura?supervisao_id=${encodeURIComponent(supervisaoId)}&includeCamposInactive=true`);
       const json = res.ok ? await res.json().catch(() => null) : null;
-      setCampos((json?.campos as Campo[]) || []);
+      const lista = ((json?.campos as Campo[]) || []);
+      setCampos(lista);
+      return lista;
     } catch {
       setCampos([]);
+      return [] as Campo[];
     } finally {
       setCarregandoCampos(false);
     }
@@ -315,109 +358,82 @@ export default function InscricaoPublicaPage() {
     if (isAGO) query.set('includeMatricula', 'true');
     const res = await fetch(`/api/public/members/lookup?${query.toString()}`);
     const json = res.ok ? await res.json().catch(() => null as any) : null;
-    const payload = (json ?? {}) as {
-      encontrado?: boolean;
-      nome?: string | null;
-      sexo?: string | null;
-      data_nascimento?: string | null;
-      supervisao_id?: string | null;
-      campo_id?: string | null;
-      congregacao_id?: string | null;
-      matricula?: string | null;
-      cargo_ministerial?: string | null;
-      pastor_presidente?: boolean;
-      pastor_auxiliar?: boolean;
-      jubilado?: boolean;
-      status?: string | null;
-      nome_conjuge?: string | null;
-      cpf_conjuge?: string | null;
-      data_nascimento_conjuge?: string | null;
-    };
+    const payload = (json ?? {}) as MemberLookupPayload;
 
     setBuscandoCPF(false);
     if (payload.encontrado) {
       const nome = (payload.nome ?? '') as string;
       setCpfStatus('encontrado');
       const sup = supervisoes.find(s => s.id === payload.supervisao_id);
+      const whatsappLookup = payload.whatsapp ?? payload.celular ?? payload.telefone ?? payload.phone ?? null;
+      let camposDaSup: Campo[] = [];
+      let campoSelecionado: Campo | null = null;
 
-      // Carrega os campos da supervisão encontrada e depois preenche o campo_id
       if (sup?.id) {
-        const res = await fetch(`/api/public/estrutura?supervisao_id=${encodeURIComponent(sup.id)}&includeCamposInactive=true`).catch(() => null);
-        const json = res?.ok ? await res.json().catch(() => null) : null;
-        const camposDaSup: Campo[] = (json?.campos as Campo[]) || [];
-        setCampos(camposDaSup);
-        const cam = camposDaSup.find(c => c.id === payload.campo_id);
-
-        // Verifica desconto Campo Missionário
-        const confAgo = evento.configuracoes_ago;
-        const descontoHabilitado = !!(confAgo?.habilitar_desconto_campo_missionario);
-        const campoMissionario = cam?.is_campo_missionario ?? false;
-        setDescontoCampoMissionario(descontoHabilitado && campoMissionario);
-
-        const isPP = !!payload.pastor_presidente;
-        const statusMinistro = payload.status ?? null;
-        const ministerioAtivo = ['active', 'ativo'].includes((statusMinistro ?? '').toLowerCase());
-
-        setMinistroInfo({
-          nome,
-          matricula: payload.matricula ?? null,
-          cargoMinisterial: payload.cargo_ministerial ?? null,
-          isPastorPresidente: isPP,
-          isPastorAuxiliar: !!payload.pastor_auxiliar,
-          isJubilado: !!payload.jubilado,
-          status: statusMinistro,
-          supervisao_id: payload.supervisao_id ?? null,
-          campo_id: payload.campo_id ?? null,
-          isCampoMissionario: campoMissionario,
-        });
-
-        // Pré-preenche dados da esposa se elegível ao campo missionário
-        const podeEsposa = ministerioAtivo && isPP && campoMissionario;
-        if (podeEsposa) {
-          setFormEsposa({
-            nome: payload.nome_conjuge || '',
-            cpf: payload.cpf_conjuge ? formatarCPF(payload.cpf_conjuge) : '',
-            data_nascimento: payload.data_nascimento_conjuge || '',
-            whatsapp: '',
-          });
-        } else {
-          setIncluirEsposa(false);
-          setFormEsposa({ ...FORM_ESPOSA_VAZIO });
-          setHospEsposa({ ...HOSP_ESPOSA_VAZIO });
+        camposDaSup = await fetchCamposDaSupervisao(sup.id);
+        campoSelecionado = camposDaSup.find(c => c.id === payload.campo_id) || null;
+        if (!campoSelecionado && payload.campo_nome) {
+          const campoNomeNorm = normalizarComparacao(payload.campo_nome);
+          campoSelecionado = camposDaSup.find(c => normalizarComparacao(c.nome) === campoNomeNorm) || null;
         }
-
-        setForm(f => ({
-          ...f,
-          nome_inscrito: nome                          || f.nome_inscrito,
-          supervisao_id: sup.id,
-          campo_id:      cam?.id                       || '',
-          ...(isAGO && payload.sexo             ? { sexo: payload.sexo } : {}),
-          ...(isAGO && payload.data_nascimento  ? { data_nascimento: payload.data_nascimento } : {}),
-        }));
       } else {
-        setMinistroInfo({
-          nome,
-          matricula: payload.matricula ?? null,
-          cargoMinisterial: payload.cargo_ministerial ?? null,
-          isPastorPresidente: !!payload.pastor_presidente,
-          isPastorAuxiliar: !!payload.pastor_auxiliar,
-          isJubilado: !!payload.jubilado,
-          status: payload.status ?? null,
-          supervisao_id: payload.supervisao_id ?? null,
-          campo_id: payload.campo_id ?? null,
-          isCampoMissionario: false,
-        });
-
-        setForm(f => ({
-          ...f,
-          nome_inscrito: nome || f.nome_inscrito,
-          ...(isAGO && payload.sexo             ? { sexo: payload.sexo } : {}),
-          ...(isAGO && payload.data_nascimento  ? { data_nascimento: payload.data_nascimento } : {}),
-        }));
+        setCampos([]);
       }
+
+      const confAgo = evento.configuracoes_ago;
+      const descontoHabilitado = !!(confAgo?.habilitar_desconto_campo_missionario);
+      const campoMissionario = campoSelecionado?.is_campo_missionario ?? false;
+      setDescontoCampoMissionario(descontoHabilitado && campoMissionario);
+
+      const isPP = !!payload.pastor_presidente;
+      const statusMinistro = payload.status ?? null;
+      const ministerioAtivo = ['active', 'ativo'].includes((statusMinistro ?? '').toLowerCase());
+
+      setMinistroInfo({
+        nome,
+        matricula: payload.matricula ?? null,
+        cargoMinisterial: payload.cargo_ministerial ?? null,
+        email: payload.email ?? null,
+        whatsapp: whatsappLookup,
+        isPastorPresidente: isPP,
+        isPastorAuxiliar: !!payload.pastor_auxiliar,
+        isJubilado: !!payload.jubilado,
+        status: statusMinistro,
+        supervisao_id: payload.supervisao_id ?? null,
+        supervisao_nome: payload.supervisao_nome ?? sup?.nome ?? null,
+        campo_id: payload.campo_id ?? campoSelecionado?.id ?? null,
+        campo_nome: campoSelecionado?.nome ?? payload.campo_nome ?? null,
+        isCampoMissionario: campoMissionario,
+      });
+
+      const podeEsposa = ministerioAtivo && isPP && campoMissionario;
+      if (podeEsposa) {
+        setFormEsposa({
+          nome: payload.nome_conjuge || '',
+          cpf: payload.cpf_conjuge ? formatarCPF(payload.cpf_conjuge) : '',
+          data_nascimento: payload.data_nascimento_conjuge || '',
+          whatsapp: '',
+        });
+      } else {
+        setIncluirEsposa(false);
+        setFormEsposa({ ...FORM_ESPOSA_VAZIO });
+        setHospEsposa({ ...HOSP_ESPOSA_VAZIO });
+      }
+
+      setForm(f => ({
+        ...f,
+        nome_inscrito: nome || f.nome_inscrito,
+        email: payload.email || f.email,
+        whatsapp: whatsappLookup || f.whatsapp,
+        supervisao_id: sup?.id || payload.supervisao_id || f.supervisao_id,
+        campo_id: campoSelecionado?.id || payload.campo_id || '',
+        ...(isAGO && payload.sexo ? { sexo: payload.sexo } : {}),
+        ...(isAGO && payload.data_nascimento ? { data_nascimento: payload.data_nascimento } : {}),
+      }));
     } else {
       setCpfStatus('nao_encontrado');
       setMinistroInfo(null);
+      setDescontoCampoMissionario(false);
       setIncluirEsposa(false);
       setFormEsposa({ ...FORM_ESPOSA_VAZIO });
       setHospEsposa({ ...HOSP_ESPOSA_VAZIO });
@@ -508,6 +524,7 @@ export default function InscricaoPublicaPage() {
   const ministroAtivo = cpfStatus === 'encontrado' && ministroInfo !== null &&
     ['active', 'ativo'].includes((ministroInfo.status ?? '').toLowerCase());
   const ministroInativo = cpfStatus === 'encontrado' && ministroInfo !== null && !ministroAtivo;
+  const dadosMinisteriaisBloqueados = evento?.departamento === 'AGO' && ministroAtivo;
   const cargoEhPastor = (ministroInfo?.cargoMinisterial ?? '').trim().toLowerCase() === 'pastor';
   const isPAEfetivo = !!ministroInfo?.isPastorAuxiliar
     || (cargoEhPastor && !ministroInfo?.isPastorPresidente && !ministroInfo?.isJubilado);
@@ -1061,10 +1078,34 @@ export default function InscricaoPublicaPage() {
                       <strong className="text-gray-800">{campos.find(c => c.id === form.campo_id)?.nome}</strong>
                     </div>
                   )}
+                  {!form.campo_id && ministroInfo.campo_nome && (
+                    <div>
+                      <span className="text-gray-500">Campo: </span>
+                      <strong className="text-gray-800">{ministroInfo.campo_nome}</strong>
+                    </div>
+                  )}
                   {form.supervisao_id && supervisoes.find(s => s.id === form.supervisao_id) && (
                     <div>
                       <span className="text-gray-500">Supervisão: </span>
                       <strong className="text-gray-800">{supervisoes.find(s => s.id === form.supervisao_id)?.nome}</strong>
+                    </div>
+                  )}
+                  {!form.supervisao_id && ministroInfo.supervisao_nome && (
+                    <div>
+                      <span className="text-gray-500">Supervisão: </span>
+                      <strong className="text-gray-800">{ministroInfo.supervisao_nome}</strong>
+                    </div>
+                  )}
+                  {ministroInfo.email && (
+                    <div className="col-span-2">
+                      <span className="text-gray-500">E-mail: </span>
+                      <strong className="text-gray-800">{ministroInfo.email}</strong>
+                    </div>
+                  )}
+                  {ministroInfo.whatsapp && (
+                    <div className="col-span-2">
+                      <span className="text-gray-500">WhatsApp: </span>
+                      <strong className="text-gray-800">{ministroInfo.whatsapp}</strong>
                     </div>
                   )}
                 </div>
@@ -1110,7 +1151,7 @@ export default function InscricaoPublicaPage() {
               <label className={LBL}>Nome completo *</label>
               <input name="nome_inscrito" value={form.nome_inscrito} onChange={handleText}
                 placeholder="Seu nome completo"
-                className={INP} required />
+                className={INP + (dadosMinisteriaisBloqueados ? ' bg-gray-50 text-gray-600' : '')} readOnly={dadosMinisteriaisBloqueados} required />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
@@ -1129,7 +1170,7 @@ export default function InscricaoPublicaPage() {
               {/* Sexo */}
               <div>
                 <label className={LBL}>Sexo</label>
-                <select name="sexo" value={form.sexo} onChange={handleText} className={INP}>
+                <select name="sexo" value={form.sexo} onChange={handleText} className={INP + (dadosMinisteriaisBloqueados ? ' bg-gray-50 text-gray-600' : '')} disabled={dadosMinisteriaisBloqueados}>
                   <option value="">Selecione...</option>
                   <option value="M">Masculino</option>
                   <option value="F">Feminino</option>
@@ -1139,7 +1180,7 @@ export default function InscricaoPublicaPage() {
               <div>
                 <label className={LBL}>Data de Nascimento</label>
                 <input name="data_nascimento" type="date" value={form.data_nascimento}
-                  onChange={handleText} className={INP} />
+                  onChange={handleText} className={INP + (dadosMinisteriaisBloqueados ? ' bg-gray-50 text-gray-600' : '')} readOnly={dadosMinisteriaisBloqueados} />
               </div>
             </div>
 
@@ -1147,7 +1188,7 @@ export default function InscricaoPublicaPage() {
             <div className="mb-4">
               <label className={LBL}>Supervisão *</label>
               <select name="supervisao_id" value={form.supervisao_id} onChange={handleText}
-                className={INP} required>
+                className={INP + (dadosMinisteriaisBloqueados ? ' bg-gray-50 text-gray-600' : '')} disabled={dadosMinisteriaisBloqueados} required>
                 <option value="">Selecione a supervisão...</option>
                 {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
               </select>
@@ -1156,8 +1197,8 @@ export default function InscricaoPublicaPage() {
             {/* Campo */}
             <div className="mb-6">
               <label className={LBL}>Campo</label>
-              <select name="campo_id" value={form.campo_id} onChange={handleText} className={INP}
-                disabled={carregandoCampos || !form.supervisao_id}>
+              <select name="campo_id" value={form.campo_id} onChange={handleText} className={INP + (dadosMinisteriaisBloqueados ? ' bg-gray-50 text-gray-600' : '')}
+                disabled={dadosMinisteriaisBloqueados || carregandoCampos || !form.supervisao_id}>
                 <option value="">
                   {carregandoCampos ? 'Carregando...' : !form.supervisao_id ? 'Selecione a supervisão primeiro' : 'Selecione o campo...'}
                 </option>
