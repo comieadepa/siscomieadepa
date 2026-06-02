@@ -822,15 +822,21 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const participantesComFallbackTipo: number[] = [];
       const calculados: ParticipanteCalculado[] = [];
 
       for (let idx = 0; idx < todos.length; idx++) {
         const p = todos[idx] as Record<string, unknown>;
-        let tipoParticipante = String(p.tipo_inscricao ?? '').trim() || null;
-        if (!tipoParticipante && tipoNome) {
-          tipoParticipante = tipoNome;
-          if (idx > 0) participantesComFallbackTipo.push(idx + 1);
+        const tipoParticipanteRaw = String(p.tipo_inscricao ?? '').trim() || null;
+        const tipoParticipante = idx === 0 ? (tipoParticipanteRaw || tipoNome) : tipoParticipanteRaw;
+
+        if (usaTipos && idx > 0 && !tipoParticipanteRaw) {
+          return buildErrorResponse(400, {
+            error: 'Tipo de inscrição obrigatório para cada participante do lote.',
+            stage: 'validacao_tipo_inscricao_lote',
+            code: 'TIPO_INSCRICAO_OBRIGATORIO_LOTE',
+            details: `Participante ${idx + 1} sem tipo_inscricao`,
+            payloadResumo: { ...payloadResumo, evento_id: evento.id },
+          });
         }
 
         if (usaTipos && !tipoParticipante) {
@@ -947,23 +953,6 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      if (participantesComFallbackTipo.length > 0) {
-        await logDB({
-          acao: 'inscricao_lote_valor_herdado_fallback',
-          modulo: 'eventos',
-          entidade: 'evento_inscricoes',
-          entidadeId: evento.id,
-          status: 'aviso',
-          descricao: `Participantes do lote sem tipo próprio detectados: ${participantesComFallbackTipo.length}`,
-          detalhes: {
-            evento_id: evento.id,
-            lote_codigo: codigoLote,
-            participantes_afetados: participantesComFallbackTipo,
-          },
-          request,
-        });
-      }
-
       const rows = calculados.map((p, idx) => {
         const pComorb = !!(p as any).hosp_possui_comorbidade;
         const pCamaInferiorAuto = evento.departamento === 'AGO'
@@ -1057,8 +1046,8 @@ export async function POST(request: NextRequest) {
         const customerId = await createOrFindAsaasCustomer({ nome: nome_inscrito.trim(), email: email?.trim() || null, cpf: cleanCpf(cpf), whatsapp: whatsapp || null });
         const dueDateLote = dueDateFromNow();
         const linhasDescricao = calculados
-          .slice(0, 8)
-          .map(p => `${p.tipo_inscricao ?? 'Sem categoria'}: R$ ${p.valor_final.toFixed(2).replace('.', ',')}`)
+          .slice(0, 12)
+          .map(p => `${p.nome_inscrito}: ${p.tipo_inscricao ?? 'Sem categoria'}: R$ ${p.valor_final.toFixed(2).replace('.', ',')}`)
           .join(' | ');
         const pagamento  = await createEventoPayment({
           customerId,

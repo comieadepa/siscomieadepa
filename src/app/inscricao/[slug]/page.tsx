@@ -20,6 +20,7 @@ interface Campo      { id: string; nome: string; supervisao_id: string; is_campo
 interface TipoInscricao {
   id: string; nome: string; valor: number;
   inclui_alimentacao: boolean; inclui_hospedagem: boolean;
+  quantidade_refeicoes?: number | null;
   cortesia?: boolean; limite_vagas?: number | null; ordem: number;
 }
 
@@ -113,6 +114,11 @@ interface ParticipanteExtra {
   sexo: string; data_nascimento: string; supervisao_id: string; campo_id: string;
   tipo_inscricao: string;
   hospedagem: boolean;
+  hosp_necessidade_especial: boolean;
+  hosp_descricao_necessidade: string;
+  hosp_observacoes: string;
+  hosp_possui_comorbidade: boolean;
+  hosp_descricao_comorbidade: string;
 }
 
 // Dados da esposa (AGO — Campo Missionário)
@@ -510,10 +516,15 @@ export default function InscricaoPublicaPage() {
       campo_id: form.campo_id,
       tipo_inscricao: '',
       hospedagem: false,
+      hosp_necessidade_especial: false,
+      hosp_descricao_necessidade: '',
+      hosp_observacoes: '',
+      hosp_possui_comorbidade: false,
+      hosp_descricao_comorbidade: '',
     }]);
   }
 
-  function atualizarParticipante(idx: number, field: keyof ParticipanteExtra, value: string) {
+  function atualizarParticipante(idx: number, field: keyof ParticipanteExtra, value: string | boolean) {
     setParticipantesExtra(p => p.map((x, i) => i === idx ? { ...x, [field]: value } : x));
   }
 
@@ -544,7 +555,7 @@ export default function InscricaoPublicaPage() {
     campos.filter(c => c.is_campo_missionario).map(c => c.id),
   );
 
-  function calcularValorParticipanteLote(tipoNome: string | null, campoId: string | null) {
+  function calcularValorParticipanteLote(tipoNome: string | null, campoId: string | null, solicitarHospedagem: boolean) {
     const tipoBase = tiposReferenciaLote.find(t => t.nome === (tipoNome ?? ''));
     let valorBaseParticipante = tipoBase?.valor ?? 0;
 
@@ -573,17 +584,33 @@ export default function InscricaoPublicaPage() {
     }
 
     const valorFinalParticipante = Math.max(0, valorBaseParticipante - descontoParticipante);
-    return { valorBaseParticipante, descontoParticipante, valorFinalParticipante };
+    const alimentacaoParticipante = !!tipoBase?.inclui_alimentacao;
+    const refeicoesParticipante = alimentacaoParticipante
+      ? Math.max(0, Number(tipoBase?.quantidade_refeicoes ?? 0))
+      : 0;
+    const hospedagemParticipante = evento?.departamento === 'AGO'
+      ? !!solicitarHospedagem
+      : (!!tipoBase?.inclui_hospedagem || !!solicitarHospedagem);
+    return {
+      valorBaseParticipante,
+      descontoParticipante,
+      valorFinalParticipante,
+      alimentacaoParticipante,
+      refeicoesParticipante,
+      hospedagemParticipante,
+    };
   }
 
   const participantesCalculados = [
     {
+      nome_inscrito: form.nome_inscrito || 'Titular',
       tipo_inscricao: tipoSelecionado?.nome ?? null,
-      ...calcularValorParticipanteLote(tipoSelecionado?.nome ?? null, form.campo_id || null),
+      ...calcularValorParticipanteLote(tipoSelecionado?.nome ?? null, form.campo_id || null, !!solicitaHospedagem),
     },
     ...participantesExtra.map(p => ({
+      nome_inscrito: p.nome_inscrito || 'Participante extra',
       tipo_inscricao: p.tipo_inscricao || null,
-      ...calcularValorParticipanteLote(p.tipo_inscricao || null, p.campo_id || null),
+      ...calcularValorParticipanteLote(p.tipo_inscricao || null, p.campo_id || null, !!p.hospedagem),
     })),
   ];
 
@@ -718,6 +745,9 @@ export default function InscricaoPublicaPage() {
         if (!participantesExtra[i].supervisao_id) {
           return setErroForm(`Supervisão do participante ${i + 2} é obrigatória.`);
         }
+        if (evento.usar_tipos_inscricao && !participantesExtra[i].tipo_inscricao) {
+          return setErroForm(`Tipo de inscrição do participante ${i + 2} é obrigatório.`);
+        }
       }
     }
 
@@ -756,6 +786,11 @@ export default function InscricaoPublicaPage() {
           cpf:           p.cpf.replace(/\D/g, ''),
           tipo_inscricao: p.tipo_inscricao || null,
           hospedagem:    !!p.hospedagem,
+          hosp_necessidade_especial:  !!p.hospedagem && !!p.hosp_necessidade_especial,
+          hosp_descricao_necessidade: !!p.hospedagem ? (p.hosp_descricao_necessidade.trim() || null) : null,
+          hosp_observacoes:           !!p.hospedagem ? (p.hosp_observacoes.trim() || null) : null,
+          hosp_possui_comorbidade:    !!p.hospedagem && !!p.hosp_possui_comorbidade,
+          hosp_descricao_comorbidade: !!p.hospedagem ? (p.hosp_descricao_comorbidade.trim() || null) : null,
           brinde:        false,
           qr_code:       generateQRCodeToken(),
           lgpd_aceito:   true,
@@ -1692,6 +1727,19 @@ export default function InscricaoPublicaPage() {
                     <span>Participantes</span><span>× {qtdTotal}</span>
                   </div>
                 )}
+                {modoLote && qtdTotal > 1 && (
+                  <div className="mt-2 mb-2 rounded-lg border border-[#123b63]/15 bg-white/70 p-3">
+                    <p className="text-xs font-bold text-[#123b63] mb-2 uppercase tracking-wide">Resumo do lote</p>
+                    {participantesCalculados.map((pc, idx) => (
+                      <div key={`resumo-lote-${idx}`} className="flex justify-between text-xs text-gray-700 mb-1">
+                        <span>
+                          {idx === 0 ? 'Titular' : `Participante extra ${idx}`}: {pc.tipo_inscricao || 'Sem tipo selecionado'}
+                        </span>
+                        <span>{fmtMoeda(pc.valorFinalParticipante)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {incluirEsposa && (
                   <div className="flex justify-between text-purple-700 mb-1">
                     <span>Esposa (Campo Missionário)</span><span>+ {fmtMoeda(valorEsposaBase)}</span>
@@ -1759,6 +1807,100 @@ export default function InscricaoPublicaPage() {
                           {campos.filter(c => !p.supervisao_id || c.supervisao_id === p.supervisao_id).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
                         </select>
                       </div>
+                      <div className="sm:col-span-2">
+                        <label className={LBL}>Tipo de inscrição *</label>
+                        <select
+                          value={p.tipo_inscricao}
+                          onChange={e => atualizarParticipante(idx, 'tipo_inscricao', e.target.value)}
+                          className={INP}
+                          required
+                        >
+                          <option value="">Selecione o tipo...</option>
+                          {tiposParaExibir.map(t => (
+                            <option key={`extra-${idx}-${t.id}`} value={t.nome}>
+                              {t.nome} - {fmtMoeda(t.valor)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {(() => {
+                        const calc = calcularValorParticipanteLote(
+                          p.tipo_inscricao || null,
+                          p.campo_id || null,
+                          !!p.hospedagem,
+                        );
+                        return (
+                          <div className="sm:col-span-2 rounded-lg border border-[#123b63]/15 bg-[#123b63]/5 p-3 text-xs text-gray-700">
+                            <p className="font-semibold text-[#123b63] mb-1">Cálculo do participante</p>
+                            <p>Valor: {fmtMoeda(calc.valorFinalParticipante)}</p>
+                            <p>Alimentação: {calc.alimentacaoParticipante ? 'Sim' : 'Não'}</p>
+                            <p>Quantidade de refeições: {calc.refeicoesParticipante}</p>
+                          </div>
+                        );
+                      })()}
+                      {evento.permite_hospedagem && (
+                        <div className="sm:col-span-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                          <label className="inline-flex items-center gap-2 text-sm font-semibold text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={!!p.hospedagem}
+                              onChange={e => atualizarParticipante(idx, 'hospedagem', e.target.checked)}
+                              className="accent-[#123b63]"
+                            />
+                            🛏️ Desejo solicitar hospedagem
+                          </label>
+
+                          {p.hospedagem && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                              <label className="inline-flex items-center gap-2 text-xs text-gray-700">
+                                <input
+                                  type="checkbox"
+                                  checked={!!p.hosp_necessidade_especial}
+                                  onChange={e => atualizarParticipante(idx, 'hosp_necessidade_especial', e.target.checked)}
+                                  className="accent-[#123b63]"
+                                />
+                                Necessidade especial
+                              </label>
+                              <label className="inline-flex items-center gap-2 text-xs text-gray-700">
+                                <input
+                                  type="checkbox"
+                                  checked={!!p.hosp_possui_comorbidade}
+                                  onChange={e => atualizarParticipante(idx, 'hosp_possui_comorbidade', e.target.checked)}
+                                  className="accent-[#123b63]"
+                                />
+                                Comorbidade
+                              </label>
+                              <div className="sm:col-span-2">
+                                <label className={LBL}>Descrição da necessidade (opcional)</label>
+                                <textarea
+                                  value={p.hosp_descricao_necessidade}
+                                  onChange={e => atualizarParticipante(idx, 'hosp_descricao_necessidade', e.target.value)}
+                                  rows={2}
+                                  className={INP + ' resize-none'}
+                                />
+                              </div>
+                              <div className="sm:col-span-2">
+                                <label className={LBL}>Descrição da comorbidade (opcional)</label>
+                                <textarea
+                                  value={p.hosp_descricao_comorbidade}
+                                  onChange={e => atualizarParticipante(idx, 'hosp_descricao_comorbidade', e.target.value)}
+                                  rows={2}
+                                  className={INP + ' resize-none'}
+                                />
+                              </div>
+                              <div className="sm:col-span-2">
+                                <label className={LBL}>Observações de hospedagem (opcional)</label>
+                                <textarea
+                                  value={p.hosp_observacoes}
+                                  onChange={e => atualizarParticipante(idx, 'hosp_observacoes', e.target.value)}
+                                  rows={2}
+                                  className={INP + ' resize-none'}
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}

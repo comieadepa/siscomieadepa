@@ -51,20 +51,33 @@ async function runScenario(sb, ctx, scenario) {
   const { slug, supervisao_id, campo_id, campo_missionario_id, tipos } = ctx;
   const now = Date.now();
   const titularCpf = gerarCpf(now % 100000 + scenario.seed);
-  const extraCpf = gerarCpf((now % 100000) + scenario.seed + 999);
-
   const titularTipo = scenario.titularTipo(tipos);
-  const extraTipo = scenario.extraTipo(tipos);
-  if (!titularTipo || !extraTipo) {
+  const extras = scenario.extras || [];
+
+  if (!titularTipo) {
     return {
       nome: scenario.nome,
       status: 'skipped',
-      motivo: 'Tipos obrigatórios não encontrados no evento.',
+      motivo: 'Tipo obrigatório do titular não encontrado no evento.',
     };
   }
 
+  const extrasResolvidos = [];
+  for (let i = 0; i < extras.length; i++) {
+    const ex = extras[i];
+    const tipo = ex.omitirTipo ? null : ex.tipo(tipos);
+    if (!ex.omitirTipo && !tipo) {
+      return {
+        nome: scenario.nome,
+        status: 'skipped',
+        motivo: `Tipo obrigatório do extra ${i + 1} não encontrado no evento.`,
+      };
+    }
+    extrasResolvidos.push({ ...ex, tipo });
+  }
+
   const titularCampo = scenario.usarCampoMissionario ? (campo_missionario_id || campo_id) : campo_id;
-  const extraCampo = scenario.usarCampoMissionario ? (campo_missionario_id || campo_id) : campo_id;
+  const campoExtraDefault = scenario.usarCampoMissionario ? (campo_missionario_id || campo_id) : campo_id;
 
   const payload = {
     slug,
@@ -78,20 +91,22 @@ async function runScenario(sb, ctx, scenario) {
     campo_id: titularCampo,
     tipo_inscricao: titularTipo,
     hospedagem: !!scenario.titularHospedagem,
-    participantes: [
-      {
-        nome_inscrito: `[TESTE_LOTE_VALOR] ${scenario.nome} EXTRA`,
+    participantes: extrasResolvidos.map((ex, idx) => {
+      const extraCpf = gerarCpf((now % 100000) + scenario.seed + 999 + idx);
+      const out = {
+        nome_inscrito: `[TESTE_LOTE_VALOR] ${scenario.nome} EXTRA ${idx + 1}`,
         cpf: extraCpf,
-        email: `teste.extra.${scenario.seed}.${now}@mail.test`,
-        whatsapp: '91999990001',
-        sexo: scenario.extraSexo || 'F',
-        data_nascimento: scenario.extraNascimento || '1982-02-02',
+        email: `teste.extra.${scenario.seed}.${idx}.${now}@mail.test`,
+        whatsapp: `91999990${String(idx).padStart(3, '0')}`,
+        sexo: ex.sexo || 'F',
+        data_nascimento: ex.data_nascimento || '1982-02-02',
         supervisao_id,
-        campo_id: extraCampo,
-        tipo_inscricao: extraTipo,
-        hospedagem: !!scenario.extraHospedagem,
-      },
-    ],
+        campo_id: ex.usarCampoMissionario ? (campo_missionario_id || campo_id) : campoExtraDefault,
+        hospedagem: !!ex.hospedagem,
+      };
+      if (!ex.omitirTipo) out.tipo_inscricao = ex.tipo;
+      return out;
+    }),
   };
 
   const resp = await fetch(`${APP_URL}/api/eventos/inscricao`, {
@@ -101,6 +116,17 @@ async function runScenario(sb, ctx, scenario) {
   });
   const json = await resp.json().catch(() => ({}));
 
+  if (scenario.expectedErrorStatus) {
+    const passou = resp.status === scenario.expectedErrorStatus;
+    return {
+      nome: scenario.nome,
+      status: passou ? 'ok' : 'error',
+      http: resp.status,
+      esperado_http: scenario.expectedErrorStatus,
+      resposta: json,
+    };
+  }
+
   if (!resp.ok || !json.loteId) {
     return {
       nome: scenario.nome,
@@ -108,7 +134,7 @@ async function runScenario(sb, ctx, scenario) {
       http: resp.status,
       payload_enviado: {
         titular_tipo: titularTipo,
-        extra_tipo: extraTipo,
+        extras_tipos: extrasResolvidos.map(ex => ex.tipo),
       },
       resposta: json,
     };
@@ -116,7 +142,7 @@ async function runScenario(sb, ctx, scenario) {
 
   const { data: rows, error: rowsErr } = await sb
     .from('evento_inscricoes')
-    .select('nome_inscrito,tipo_inscricao,valor_original,desconto_valor,valor_final,lote_id')
+    .select('nome_inscrito,tipo_inscricao,valor_original,desconto_valor,valor_final,alimentacao,quantidade_refeicoes_total,quantidade_refeicoes_saldo,hospedagem,lote_id')
     .eq('lote_id', json.loteId)
     .order('created_at', { ascending: true });
 
@@ -131,9 +157,9 @@ async function runScenario(sb, ctx, scenario) {
     };
   }
 
-  const byTipo = new Map((rows || []).map(r => [r.tipo_inscricao, r]));
-  const titularRow = byTipo.get(titularTipo) || null;
-  const extraRow = byTipo.get(extraTipo) || null;
+  const byNome = new Map((rows || []).map(r => [r.nome_inscrito, r]));
+  const titularRow = byNome.get(`[TESTE_LOTE_VALOR] ${scenario.nome} TITULAR`) || null;
+  const extrasRows = extrasResolvidos.map((_, idx) => byNome.get(`[TESTE_LOTE_VALOR] ${scenario.nome} EXTRA ${idx + 1}`) || null);
   const totalCalculado = (rows || []).reduce((acc, r) => acc + Number(r.valor_final || 0), 0);
 
   return {
@@ -142,14 +168,17 @@ async function runScenario(sb, ctx, scenario) {
     loteId: json.loteId,
     payload_antes: {
       titular_tipo: titularTipo,
-      extra_tipo: extraTipo,
+      extras_tipos: extrasResolvidos.map(ex => ex.tipo),
       total_visual_enviado: null,
     },
     payload_depois: {
       registros: rows,
       total_lote_calculado: totalCalculado,
       titular_valor: titularRow ? Number(titularRow.valor_final || 0) : null,
-      extra_valor: extraRow ? Number(extraRow.valor_final || 0) : null,
+      extras_valores: extrasRows.map(r => (r ? Number(r.valor_final || 0) : null)),
+      extras_alimentacao: extrasRows.map(r => (r ? !!r.alimentacao : null)),
+      extras_refeicoes_total: extrasRows.map(r => (r ? Number(r.quantidade_refeicoes_total || 0) : null)),
+      extras_refeicoes_saldo: extrasRows.map(r => (r ? Number(r.quantidade_refeicoes_saldo || 0) : null)),
     },
     resposta_api: {
       status: resp.status,
@@ -194,47 +223,92 @@ async function main() {
 
   const { data: tipos, error: tiposErr } = await sb
     .from('evento_tipos_inscricao')
-    .select('nome,valor')
+    .select('nome,valor,inclui_alimentacao,quantidade_refeicoes')
     .eq('evento_id', EVENTO_ID)
     .eq('ativo', true);
   if (tiposErr || !tipos || tipos.length === 0) throw new Error(`Sem tipos de inscrição ativos: ${tiposErr?.message || 'n/a'}`);
+
+  const tipoComAlimentacao = tipos.find(t => !!t.inclui_alimentacao && Number(t.quantidade_refeicoes || 0) > 0) || null;
+  const tipoSemAlimentacao = tipos.find(t => !t.inclui_alimentacao) || null;
 
   const scenarios = [
     {
       nome: 'CENARIO_A_PP_ESPOSA_PP',
       seed: 11,
       usarCampoMissionario: false,
-      titularSexo: 'M',
-      extraSexo: 'F',
       titularTipo: (ts) => findTipoName(ts, /pastor presidente$/),
-      extraTipo: (ts) => findTipoName(ts, /esposa de pastor presidente/),
+      extras: [
+        {
+          sexo: 'F',
+          tipo: (ts) => findTipoName(ts, /esposa de pastor presidente/),
+        },
+      ],
     },
     {
-      nome: 'CENARIO_B_PA_ESPOSA_PA',
+      nome: 'CENARIO_B_PP_VISITANTE',
       seed: 22,
       usarCampoMissionario: false,
-      titularSexo: 'M',
-      extraSexo: 'F',
-      titularTipo: (ts) => findTipoName(ts, /pastor auxiliar/),
-      extraTipo: (ts) => findTipoName(ts, /esposa de pastor auxiliar/),
-    },
-    {
-      nome: 'CENARIO_C_PP_CM_ESPOSA_CM',
-      seed: 33,
-      usarCampoMissionario: true,
-      titularSexo: 'M',
-      extraSexo: 'F',
       titularTipo: (ts) => findTipoName(ts, /pastor presidente/),
-      extraTipo: (ts) => findTipoName(ts, /esposa de pastor presidente/),
+      extras: [
+        {
+          sexo: 'F',
+          tipo: (ts) => findTipoName(ts, /visitante/),
+        },
+      ],
     },
     {
-      nome: 'CENARIO_D_RESP_VISITANTE',
+      nome: 'CENARIO_C_PP_2_EXTRAS',
+      seed: 33,
+      usarCampoMissionario: false,
+      titularTipo: (ts) => findTipoName(ts, /pastor presidente/),
+      extras: [
+        {
+          sexo: 'F',
+          tipo: (ts) => findTipoName(ts, /esposa de pastor presidente/),
+        },
+        {
+          sexo: 'F',
+          tipo: (ts) => findTipoName(ts, /visitante|esposa de pastor auxiliar|juventude/),
+        },
+      ],
+    },
+    {
+      nome: 'CENARIO_D_EXTRA_SEM_TIPO',
       seed: 44,
       usarCampoMissionario: false,
-      titularSexo: 'M',
-      extraSexo: 'F',
-      titularTipo: (ts) => findTipoName(ts, /pastor auxiliar|pastor presidente|jovem|juventude/),
-      extraTipo: (ts) => findTipoName(ts, /visitante/),
+      titularTipo: (ts) => findTipoName(ts, /pastor presidente/),
+      extras: [
+        {
+          sexo: 'F',
+          omitirTipo: true,
+          tipo: () => null,
+        },
+      ],
+      expectedErrorStatus: 400,
+    },
+    {
+      nome: 'CENARIO_E_EXTRA_COM_ALIMENTACAO',
+      seed: 55,
+      usarCampoMissionario: false,
+      titularTipo: (ts) => findTipoName(ts, /pastor presidente/),
+      extras: [
+        {
+          sexo: 'F',
+          tipo: () => tipoComAlimentacao?.nome || null,
+        },
+      ],
+    },
+    {
+      nome: 'CENARIO_F_EXTRA_SEM_ALIMENTACAO',
+      seed: 66,
+      usarCampoMissionario: false,
+      titularTipo: (ts) => findTipoName(ts, /pastor presidente/),
+      extras: [
+        {
+          sexo: 'F',
+          tipo: () => tipoSemAlimentacao?.nome || null,
+        },
+      ],
     },
   ];
 
