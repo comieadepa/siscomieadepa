@@ -79,6 +79,7 @@ export async function POST(
       hosp_observacoes,
       incluir_esposa,
       esposa,
+      participantes,
     } = body;
 
     const hospPossuiComorbidade = !!(body as any).hosp_possui_comorbidade;
@@ -138,12 +139,12 @@ export async function POST(
 
     // Determina forma e status de pagamento
     const formaStr = String(forma_pagamento ?? '');
-    const vFinal = typeof valor_final === 'number' ? valor_final : 0;
-    const vOriginal = typeof valor_original === 'number' ? valor_original : 0;
+    let vFinal = typeof valor_final === 'number' ? valor_final : 0;
+    let vOriginal = typeof valor_original === 'number' ? valor_original : 0;
     const vDesconto = typeof desconto_valor === 'number' ? desconto_valor : 0;
-    const isGratuito = vFinal <= 0 || formaStr === 'isento';
-    const isAsaas = formaStr === 'asaas' && !isGratuito;
-    const isPresencial = !isAsaas && !isGratuito;
+    let isGratuito = vFinal <= 0 || formaStr === 'isento';
+    let isAsaas = formaStr === 'asaas' && !isGratuito;
+    let isPresencial = !isAsaas && !isGratuito;
 
     const statusPag = isGratuito ? 'isento'
       : isAsaas ? 'pendente'
@@ -162,17 +163,19 @@ export async function POST(
     if (cpfLimpo && (evento as any).departamento === 'AGO') {
       const { data: membro } = await supabase
         .from('members')
-        .select('id,name,cpf,matricula,data_nascimento,campo_id,supervisao_id,status,cargo_ministerial,pastor_presidente,pastor_auxiliar,jubilado')
+        .select('id,name,cpf,matricula,data_nascimento,status,cargo_ministerial,pastor_presidente,pastor_auxiliar,jubilado')
         .eq('cpf', cpfLimpo)
         .maybeSingle();
       if (membro) {
         let isCampoMissionario = false;
         let campoNome: string | null = null;
-        if ((membro as any).campo_id) {
+        const campoIdSnapshot = String((membro as any).campo_id ?? campo_id ?? '').trim() || null;
+        const supervisaoIdSnapshot = String((membro as any).supervisao_id ?? supervisao_id ?? '').trim() || null;
+        if (campoIdSnapshot) {
           const { data: campoData } = await supabase
             .from('campos')
             .select('nome,is_campo_missionario')
-            .eq('id', (membro as any).campo_id)
+            .eq('id', campoIdSnapshot)
             .maybeSingle();
           if (campoData) {
             isCampoMissionario = !!(campoData as any).is_campo_missionario;
@@ -185,8 +188,8 @@ export async function POST(
           cpf:                (membro as any).cpf,
           matricula:          (membro as any).matricula ?? null,
           campo:              campoNome,
-          campo_id:           (membro as any).campo_id ?? null,
-          supervisao_id:      (membro as any).supervisao_id ?? null,
+          campo_id:           campoIdSnapshot,
+          supervisao_id:      supervisaoIdSnapshot,
           status_ministerial: (membro as any).status ?? null,
           cargo:              (membro as any).cargo_ministerial ?? null,
           is_pastor_presidente:  !!((membro as any).pastor_presidente),
@@ -197,6 +200,46 @@ export async function POST(
       }
     }
 
+    const confAgo = (evento as any).configuracoes_ago as Record<string, unknown> | null;
+    const cmConfig = parseCampoMissionarioConfig(confAgo);
+    const campoMissionarioEnabled = !!cmConfig?.enabled;
+    const statusMinistro = String(ministroSnapshot?.status_ministerial ?? '').toLowerCase();
+    const ministroAtivo = statusMinistro === 'active' || statusMinistro === 'ativo';
+    const fluxoCampoMissionarioEspecial =
+      (evento as any).departamento === 'AGO'
+      && campoMissionarioEnabled
+      && ministroAtivo
+      && !!ministroSnapshot?.is_pastor_presidente
+      && !!ministroSnapshot?.is_campo_missionario;
+
+    if (fluxoCampoMissionarioEspecial && Array.isArray(participantes) && participantes.length > 0) {
+      return NextResponse.json(
+        { error: 'Campo Missionário permite inscrição apenas do Pastor Presidente e, opcionalmente, sua esposa.' },
+        { status: 400 },
+      );
+    }
+
+    if (fluxoCampoMissionarioEspecial) {
+      if (!(tipoNome && /pastor\s*presidente/i.test(tipoNome))) {
+        return NextResponse.json(
+          { error: 'Campo Missionário exige categoria Pastor Presidente para o titular.' },
+          { status: 400 },
+        );
+      }
+
+      const valorCmPastor = cmConfig
+        ? (typeof cmConfig.valor_pastor_presidente === 'number' ? cmConfig.valor_pastor_presidente : parseFloat(String(cmConfig.valor_pastor_presidente)) || 0)
+        : 0;
+      if (valorCmPastor > 0) {
+        vOriginal = valorCmPastor;
+        vFinal = Math.max(0, vOriginal - vDesconto);
+      }
+
+      isGratuito = vFinal <= 0 || formaStr === 'isento';
+      isAsaas = formaStr === 'asaas' && !isGratuito;
+      isPresencial = !isAsaas && !isGratuito;
+    }
+
     // QR code
     const qrFinal = qr_code ? String(qr_code) : generateQRCodeToken();
     const cupomCodigo = cupom_codigo
@@ -204,7 +247,7 @@ export async function POST(
       : null;
 
     // ── Fluxo esposa (AGO Campo Missionário) ─────────────────
-    const ehEsposaFlow = !!(incluir_esposa) && !!(esposa) && (evento as any).departamento === 'AGO';
+    const ehEsposaFlow = !!(incluir_esposa) && !!(esposa) && (evento as any).departamento === 'AGO' && fluxoCampoMissionarioEspecial;
     if (ehEsposaFlow) {
       const confAgo = (evento as any).configuracoes_ago as Record<string, unknown> | null;
       const cmConfig = parseCampoMissionarioConfig(confAgo);

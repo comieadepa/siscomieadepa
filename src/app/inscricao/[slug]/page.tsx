@@ -208,6 +208,12 @@ function normalizarComparacao(v: string | null | undefined) {
     .trim();
 }
 
+function ehTipoPastorPresidenteNome(nome: string | null | undefined) {
+  const n = normalizarComparacao(nome);
+  const ehEsposaOuViuva = n.includes('esposa') || n.includes('viuva') || n.includes('viuva');
+  return n.includes('pastor presidente') && !ehEsposaOuViuva;
+}
+
 // ─── Componente principal ────────────────────────────────────
 export default function InscricaoPublicaPage() {
   const params = useParams();
@@ -535,6 +541,13 @@ export default function InscricaoPublicaPage() {
   // Valor a pagar calculado
   const isPastorPresidenteTipo = !!(tipoSelecionado && /pastor\s*presidente/i.test(tipoSelecionado.nome));
   const configCM = parseCampoMissionarioConfig(evento?.configuracoes_ago ?? null);
+  const fluxoCampoMissionarioEspecial =
+    !!evento
+    && evento.departamento === 'AGO'
+    && !!configCM?.enabled
+    && ['active', 'ativo'].includes((ministroInfo?.status ?? '').toLowerCase())
+    && !!ministroInfo?.isPastorPresidente
+    && !!ministroInfo?.isCampoMissionario;
   const valorEspecialMissionario = descontoCampoMissionario && isPastorPresidenteTipo
     ? (configCM ? (typeof configCM.valor_pastor_presidente === 'number' ? configCM.valor_pastor_presidente : parseFloat(String(configCM.valor_pastor_presidente)) || 0)
         : parseFloat(String(evento?.configuracoes_ago?.valor_pastor_presidente_campo_missionario ?? '0')) || 0)
@@ -643,6 +656,14 @@ export default function InscricaoPublicaPage() {
     // "Campo Missionário" nunca aparece como categoria pública — valor especial aplicado automaticamente ao preço
     const pool = tipos.filter(t => !/campo\s*mission/i.test(t.nome));
 
+    // Fluxo especial CM: só permite a categoria de Pastor Presidente.
+    if (fluxoCampoMissionarioEspecial) {
+      return pool.filter(t => {
+        const nome = normalizarComparacao(t.nome);
+        return nome.includes('pastor presidente') && !nome.includes('esposa') && !nome.includes('viuva');
+      });
+    }
+
     return pool.filter(t => {
       // Esposa/Viúva verificadas PRIMEIRO para evitar falso-positivo ministerial
       // (ex: "Esposa de Pastor Presidente" contém "pastor presidente" mas NÃO é categoria ministerial)
@@ -679,7 +700,71 @@ export default function InscricaoPublicaPage() {
       return !ministroAtivo;
     });
   })();
+  const tiposParaExibirNoLote: TipoInscricao[] = (() => {
+    if (!evento || evento.departamento !== 'AGO') return tipos;
+    // No lote comum, os extras não devem herdar o filtro ministerial do titular.
+    return tipos.filter(t => !/campo\s*mission/i.test(t.nome));
+  })();
+
+  const ppPorCampoNoLote = (() => {
+    const mapa = new Map<string, number>();
+    const incrementar = (campoId: string | null | undefined, tipoNome: string | null | undefined) => {
+      const campoKey = String(campoId || '').trim();
+      if (!campoKey) return;
+      if (!ehTipoPastorPresidenteNome(tipoNome)) return;
+      mapa.set(campoKey, (mapa.get(campoKey) || 0) + 1);
+    };
+
+    incrementar(form.campo_id, tipoSelecionado?.nome ?? null);
+    for (const p of participantesExtra) {
+      incrementar(p.campo_id, p.tipo_inscricao);
+    }
+    return mapa;
+  })();
+
+  const tiposDisponiveisParticipanteLote = (idx: number): TipoInscricao[] => {
+    const p = participantesExtra[idx];
+    if (!p) return tiposParaExibirNoLote;
+
+    const campoKey = String(p.campo_id || '').trim();
+    if (!campoKey) return tiposParaExibirNoLote;
+
+    const participanteAtualEhPP = ehTipoPastorPresidenteNome(p.tipo_inscricao);
+    const qtdPPNoCampo = ppPorCampoNoLote.get(campoKey) || 0;
+    const qtdPPNoCampoSemAtual = Math.max(0, qtdPPNoCampo - (participanteAtualEhPP ? 1 : 0));
+
+    return tiposParaExibirNoLote.filter((t) => {
+      if (!ehTipoPastorPresidenteNome(t.nome)) return true;
+      return qtdPPNoCampoSemAtual < 1;
+    });
+  };
   const ministroSemPerfil = ministroAtivo && tiposParaExibir.length === 0;
+
+  useEffect(() => {
+    if (!fluxoCampoMissionarioEspecial) return;
+
+    const tipoPP = tiposParaExibir.find(t => {
+      const nome = normalizarComparacao(t.nome);
+      return nome.includes('pastor presidente') && !nome.includes('esposa') && !nome.includes('viuva');
+    }) || null;
+
+    if (tipoPP && tipoSelecionado?.id !== tipoPP.id) {
+      setTipoSelecionado(tipoPP);
+      setCupomStatus('idle');
+      setCupomDesconto(0);
+      setCupomMeta(null);
+    }
+
+    if (modoLote) setModoLote(false);
+    if (participantesExtra.length > 0) setParticipantesExtra([]);
+  }, [
+    fluxoCampoMissionarioEspecial,
+    tiposParaExibir,
+    tipoSelecionado?.id,
+    modoLote,
+    participantesExtra.length,
+  ]);
+
   const grupoHospedagemPrevisto = resolveGrupoHospedagemAGO({
     sexo: form.sexo || null,
     data_nascimento: form.data_nascimento || null,
@@ -738,6 +823,19 @@ export default function InscricaoPublicaPage() {
 
     // Valida participantes extras se modo lote
     if (modoLote) {
+      if (fluxoCampoMissionarioEspecial) {
+        return setErroForm('Campo Missionário permite inscrição apenas do Pastor Presidente e, opcionalmente, sua esposa.');
+      }
+
+      const ppPorCampo = new Map<string, number>();
+      const somaPP = (campoId: string | null | undefined, tipoNome: string | null | undefined) => {
+        const campoKey = String(campoId || '').trim();
+        if (!campoKey || !ehTipoPastorPresidenteNome(tipoNome)) return;
+        ppPorCampo.set(campoKey, (ppPorCampo.get(campoKey) || 0) + 1);
+      };
+
+      somaPP(form.campo_id, tipoSelecionado?.nome ?? null);
+
       for (let i = 0; i < participantesExtra.length; i++) {
         if (!participantesExtra[i].nome_inscrito.trim()) {
           return setErroForm(`Nome do participante ${i + 2} é obrigatório.`);
@@ -747,6 +845,12 @@ export default function InscricaoPublicaPage() {
         }
         if (evento.usar_tipos_inscricao && !participantesExtra[i].tipo_inscricao) {
           return setErroForm(`Tipo de inscrição do participante ${i + 2} é obrigatório.`);
+        }
+
+        somaPP(participantesExtra[i].campo_id, participantesExtra[i].tipo_inscricao);
+        const campoKey = String(participantesExtra[i].campo_id || '').trim();
+        if (campoKey && (ppPorCampo.get(campoKey) || 0) > 1) {
+          return setErroForm(`Pastor Presidente só pode ter 1 inscrição por campo no lote (campo do participante ${i + 2}).`);
         }
       }
     }
@@ -780,7 +884,7 @@ export default function InscricaoPublicaPage() {
         lgpd_aceito:                true,
       });
 
-      if (modoLote && participantesExtra.length > 0) {
+      if (!fluxoCampoMissionarioEspecial && modoLote && participantesExtra.length > 0) {
         body.participantes = participantesExtra.map(p => normalizePayloadUppercase({
           ...p,
           cpf:           p.cpf.replace(/\D/g, ''),
@@ -798,7 +902,7 @@ export default function InscricaoPublicaPage() {
       }
 
       // AGO Campo Missionário — inscrição da esposa junto
-      if (incluirEsposa && formEsposa.nome.trim() && evento.departamento === 'AGO') {
+      if (fluxoCampoMissionarioEspecial && incluirEsposa && formEsposa.nome.trim() && evento.departamento === 'AGO') {
         body.incluir_esposa = true;
         body.esposa = normalizePayloadUppercase({
           nome_inscrito:   formEsposa.nome.trim(),
@@ -1577,7 +1681,7 @@ export default function InscricaoPublicaPage() {
             )}
 
             {/* AGO — Incluir Esposa (Campo Missionário) */}
-            {evento?.departamento === 'AGO' && descontoCampoMissionario && isPastorPresidenteTipo && ministroAtivo && (
+            {evento?.departamento === 'AGO' && fluxoCampoMissionarioEspecial && (
               <div className="mb-5 p-4 bg-purple-50 border border-purple-200 rounded-xl">
                 <label className="flex items-center gap-3 cursor-pointer select-none">
                   <input type="checkbox" checked={incluirEsposa}
@@ -1753,12 +1857,20 @@ export default function InscricaoPublicaPage() {
             )}
 
             {/* Inscrição em lote */}
-            <div className="mb-5">
-              <button type="button" onClick={() => { setModoLote(m => !m); if (modoLote) setParticipantesExtra([]); }}
-                className="text-sm text-[#123b63] font-semibold underline underline-offset-2 hover:text-[#0f2a45]">
-                {modoLote ? '➖ Cancelar inscrição em grupo' : '➕ Adicionar mais participantes (inscrição em grupo)'}
-              </button>
-            </div>
+            {!fluxoCampoMissionarioEspecial && (
+              <div className="mb-5">
+                <button type="button" onClick={() => { setModoLote(m => !m); if (modoLote) setParticipantesExtra([]); }}
+                  className="text-sm text-[#123b63] font-semibold underline underline-offset-2 hover:text-[#0f2a45]">
+                  {modoLote ? '➖ Cancelar inscrição em grupo' : '➕ Adicionar mais participantes (inscrição em grupo)'}
+                </button>
+              </div>
+            )}
+
+            {fluxoCampoMissionarioEspecial && (
+              <div className="mb-5 p-3 bg-green-50 border border-green-200 rounded-xl text-xs text-green-800">
+                Fluxo Campo Missionário ativo: inscrição apenas do Pastor Presidente e, opcionalmente, de sua esposa.
+              </div>
+            )}
 
             {modoLote && (
               <div className="mb-6 space-y-4">
@@ -1816,12 +1928,15 @@ export default function InscricaoPublicaPage() {
                           required
                         >
                           <option value="">Selecione o tipo...</option>
-                          {tiposParaExibir.map(t => (
+                          {tiposDisponiveisParticipanteLote(idx).map(t => (
                             <option key={`extra-${idx}-${t.id}`} value={t.nome}>
                               {t.nome} - {fmtMoeda(t.valor)}
                             </option>
                           ))}
                         </select>
+                        {String(p.campo_id || '').trim() && tiposDisponiveisParticipanteLote(idx).length === 0 && (
+                          <p className="mt-1 text-xs text-amber-700">Sem tipos disponíveis para este campo com as seleções atuais.</p>
+                        )}
                       </div>
                       {(() => {
                         const calc = calcularValorParticipanteLote(

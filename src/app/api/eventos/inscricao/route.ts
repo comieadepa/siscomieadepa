@@ -391,6 +391,16 @@ export async function POST(request: NextRequest) {
     let valorFinal = valorBase;
     let cupomUsado = null as string | null;
 
+    const confAgo = (evento as any).configuracoes_ago as Record<string, unknown> | null;
+    const cmConfig = parseCampoMissionarioConfig(confAgo);
+    const campoMissionarioEnabled = !!cmConfig?.enabled;
+    const valorCmPastorConfigurado = cmConfig
+      ? (typeof cmConfig.valor_pastor_presidente === 'number' ? cmConfig.valor_pastor_presidente : parseFloat(String(cmConfig.valor_pastor_presidente)) || 0)
+      : 0;
+    const valorCmEsposaConfigurado = cmConfig
+      ? (typeof cmConfig.valor_esposa === 'number' ? cmConfig.valor_esposa : parseFloat(String(cmConfig.valor_esposa)) || 0)
+      : 0;
+
     stage = 'calculo_valor';
     if (cupom_codigo) {
       const result = await calcularDesconto(supabase, evento.id, cupom_codigo, valorBase);
@@ -454,9 +464,19 @@ export async function POST(request: NextRequest) {
       });
     }
     // Para lote: conta todos os participantes que terão hospedagem
+    const calcularHospedagemParticipanteLote = (p: { hospedagem?: boolean; tipo_inscricao?: string }, idx: number): boolean => {
+      if (evento.departamento === 'AGO') return !!p.hospedagem;
+      const tipoNomeParticipante = idx === 0
+        ? (String(tipo_inscricao ?? '').trim() || tipoNome || null)
+        : (String(p.tipo_inscricao ?? '').trim() || null);
+      const tipoParticipante = tipoNomeParticipante ? resolveTipo(tipoNomeParticipante) : null;
+      return !!(tipoParticipante?.inclui_hospedagem || p.hospedagem);
+    };
+
     const qtdComHospedagem = ehLote
       ? (querHospedagem ? 1 : 0) + (Array.isArray(participantes)
-          ? (participantes as { hospedagem?: boolean }[]).filter(p => evento.departamento === 'AGO' ? !!p.hospedagem : (tipoInclui.hospedagem || !!p.hospedagem)).length
+          ? (participantes as { hospedagem?: boolean; tipo_inscricao?: string }[])
+            .filter((p, i) => calcularHospedagemParticipanteLote(p, i + 1)).length
           : 0)
       : (querHospedagem ? 1 : 0);
 
@@ -496,10 +516,11 @@ export async function POST(request: NextRequest) {
     stage = 'snapshot_ministerial';
     const cpfLimpo = cpf?.replace(/\D/g, '') || null;
     let ministroSnapshot: Record<string, unknown> | null = null;
+    let fluxoCampoMissionarioEspecial = false;
     if (cpfLimpo && evento.departamento === 'AGO') {
       const { data: membro } = await supabase
         .from('members')
-        .select('id, name, cpf, matricula, data_nascimento, campo_id, supervisao_id, status, cargo_ministerial, pastor_presidente, pastor_auxiliar, jubilado')
+        .select('id, name, cpf, matricula, data_nascimento, status, cargo_ministerial, pastor_presidente, pastor_auxiliar, jubilado')
         .eq('cpf', cpfLimpo)
         .maybeSingle();
       if (membro) {
@@ -507,11 +528,13 @@ export async function POST(request: NextRequest) {
         let isCampoMissionario = false;
         let campoNome: string | null = null;
         let supervisaoNome: string | null = null;
-        if (membro.campo_id) {
+        const campoIdSnapshot = String((membro as any).campo_id ?? campo_id ?? '').trim() || null;
+        const supervisaoIdSnapshot = String((membro as any).supervisao_id ?? supervisao_id ?? '').trim() || null;
+        if (campoIdSnapshot) {
           const { data: campoData } = await supabase
             .from('campos')
             .select('nome, is_campo_missionario, supervisao_id')
-            .eq('id', membro.campo_id)
+            .eq('id', campoIdSnapshot)
             .maybeSingle();
           if (campoData) {
             isCampoMissionario = !!campoData.is_campo_missionario;
@@ -519,28 +542,27 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Aplica desconto Campo Missionário se aplicável
-        const confAgo = (evento as any).configuracoes_ago as Record<string, unknown> | null;
-        const descontoHabilitado = !!(confAgo?.habilitar_desconto_campo_missionario);
         const isPastorPresidente = !!(membro as any).pastor_presidente;
-        const ehPastorPresidentePorTipo = tipoNome ? /pastor\s*presidente/i.test(tipoNome) : false;
-        if (descontoHabilitado && isCampoMissionario && (isPastorPresidente || ehPastorPresidentePorTipo)) {
-          const cmConfig = parseCampoMissionarioConfig(confAgo);
-          const valorEspecial = cmConfig
-            ? (typeof cmConfig.valor_pastor_presidente === 'number' ? cmConfig.valor_pastor_presidente : parseFloat(String(cmConfig.valor_pastor_presidente)) || 0)
-            : parseFloat(String(confAgo?.valor_pastor_presidente_campo_missionario ?? '0')) || 0;
-          if (valorEspecial > 0 && valorEspecial < valorBase) {
-            valorBase = valorEspecial;
-            valorFinal = valorBase - desconto > 0 ? valorBase - desconto : 0;
-          }
+        const statusMinistro = String((membro as any).status ?? '').toLowerCase();
+        const ministroAtivo = statusMinistro === 'active' || statusMinistro === 'ativo';
+
+        fluxoCampoMissionarioEspecial =
+          ministroAtivo
+          && isPastorPresidente
+          && isCampoMissionario
+          && campoMissionarioEnabled;
+
+        if (fluxoCampoMissionarioEspecial && valorCmPastorConfigurado > 0) {
+          valorBase = valorCmPastorConfigurado;
+          valorFinal = Math.max(0, valorBase - desconto);
         }
 
         ministroSnapshot = {
           ministro_id: membro.id, nome: membro.name, cpf: membro.cpf,
           matricula: membro.matricula ?? null,
           data_nascimento: membro.data_nascimento ?? null,
-          campo: campoNome, campo_id: membro.campo_id ?? null,
-          supervisao: supervisaoNome, supervisao_id: membro.supervisao_id ?? null,
+          campo: campoNome, campo_id: campoIdSnapshot,
+          supervisao: supervisaoNome, supervisao_id: supervisaoIdSnapshot,
           status_ministerial: (membro as any).status ?? null,
           cargo: (membro as any).cargo_ministerial ?? null,
           is_pastor_presidente: !!((membro as any).pastor_presidente),
@@ -559,17 +581,31 @@ export async function POST(request: NextRequest) {
       quantidade_refeicoes: tipoRefeicoes,
     });
 
+    if (fluxoCampoMissionarioEspecial && tipoNome && !ehTipoPastorPresidente(tipoNome)) {
+      return buildErrorResponse(400, {
+        error: 'Campo Missionário exige categoria Pastor Presidente para o titular.',
+        stage: 'validacao_campo_missionario_tipo_titular',
+        code: 'CAMPO_MISSIONARIO_TIPO_TITULAR_INVALIDO',
+        payloadResumo: { ...payloadResumo, evento_id: evento.id },
+      });
+    }
+
+    if (fluxoCampoMissionarioEspecial && ehLote) {
+      return buildErrorResponse(400, {
+        error: 'Campo Missionário permite inscrição apenas do Pastor Presidente e, opcionalmente, sua esposa.',
+        stage: 'validacao_campo_missionario_lote',
+        code: 'CAMPO_MISSIONARIO_EXTRAS_NAO_PERMITIDOS',
+        payloadResumo: { ...payloadResumo, evento_id: evento.id },
+      });
+    }
+
     // ════════════════════════════════════════════════════════════
     // FLUXO AGO CAMPO MISSIONÁRIO — ESPOSA (2 inscrições, 1 cobrança)
     // ════════════════════════════════════════════════════════════
-    const ehEsposaFlow = !!(incluir_esposa) && !!(esposa) && evento.departamento === 'AGO';
+    const ehEsposaFlow = !!(incluir_esposa) && !!(esposa) && evento.departamento === 'AGO' && fluxoCampoMissionarioEspecial;
     if (ehEsposaFlow) {
       // Busca valor da esposa a partir da config
-      const confAgo = (evento as any).configuracoes_ago as Record<string, unknown> | null;
-      const cmConfig = parseCampoMissionarioConfig(confAgo);
-      const valorEsposaBase = cmConfig
-        ? (typeof cmConfig.valor_esposa === 'number' ? cmConfig.valor_esposa : parseFloat(String(cmConfig.valor_esposa)) || 0)
-        : 0;
+      const valorEsposaBase = valorCmEsposaConfigurado;
 
       // Busca tipo "Esposa de Pastor Presidente*" para nome e inclui_alimentacao
       const { data: tipoEsposa } = await supabase
@@ -823,6 +859,24 @@ export async function POST(request: NextRequest) {
       }
 
       const calculados: ParticipanteCalculado[] = [];
+      const ppPorCampo = new Map<string, number>();
+
+      const validarPastorPresidentePorCampo = (campoId: string | null, tipoNomeAtual: string | null, participanteOrdem: number) => {
+        if (!campoId) return null;
+        if (!ehTipoPastorPresidente(tipoNomeAtual)) return null;
+        const totalAtual = (ppPorCampo.get(campoId) || 0) + 1;
+        ppPorCampo.set(campoId, totalAtual);
+        if (totalAtual > 1) {
+          return buildErrorResponse(400, {
+            error: 'Pastor Presidente só pode ter 1 inscrição por campo no lote.',
+            stage: 'validacao_pastor_presidente_por_campo_lote',
+            code: 'PASTOR_PRESIDENTE_DUPLICADO_CAMPO_LOTE',
+            details: `Participante ${participanteOrdem} excede limite de Pastor Presidente no campo ${campoId}`,
+            payloadResumo: { ...payloadResumo, evento_id: evento.id },
+          });
+        }
+        return null;
+      };
 
       for (let idx = 0; idx < todos.length; idx++) {
         const p = todos[idx] as Record<string, unknown>;
@@ -862,6 +916,13 @@ export async function POST(request: NextRequest) {
         let valorBaseParticipante = tipoEvento?.valor ?? valorBase;
         const campoIdParticipante = String(p.campo_id ?? '').trim() || null;
         const ehCampoMissionario = campoIdParticipante ? !!campoMissionarioMap.get(campoIdParticipante) : false;
+
+        const erroPPDuplicado = validarPastorPresidentePorCampo(
+          campoIdParticipante,
+          tipoEvento?.nome ?? tipoParticipante,
+          idx + 1,
+        );
+        if (erroPPDuplicado) return erroPPDuplicado;
 
         if (evento.departamento === 'AGO' && descontoCMHabilitado && ehCampoMissionario) {
           if (ehTipoPastorPresidente(tipoEvento?.nome ?? tipoParticipante) && valorCmPastor > 0) {
