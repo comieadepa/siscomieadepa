@@ -273,6 +273,12 @@ export default function BalcaoPage() {
       dataNascimento: form.data_nascimento,
       permitirViuvaEEsposaJubilado: true,
       permitirJubiladoManual: false,
+      cpfLocalizado: cpfStatus === 'encontrado',
+      ministroAtivo: ativo,
+      cargoMinisterial: ministroInfo?.cargoMinisterial ?? null,
+      pastorPresidente: !!ministroInfo?.isPastorPresidente,
+      pastorAuxiliar: !!ministroInfo?.isPastorAuxiliar,
+      jubilado: !!ministroInfo?.isJubilado,
     });
 
     // Ministro ativo mas sem nenhum tipo ministerial compatível → perfil indefinido

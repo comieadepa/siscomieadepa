@@ -8,6 +8,12 @@ export type FiltroTiposAgoOptions = {
   permitirViuvaEEsposaJubilado: boolean;
   permitirJubiladoManual: boolean;
   somentePastorPresidente?: boolean;
+  cpfLocalizado?: boolean;
+  ministroAtivo?: boolean;
+  cargoMinisterial?: string | null;
+  pastorPresidente?: boolean;
+  pastorAuxiliar?: boolean;
+  jubilado?: boolean;
 };
 
 export function normalizarTipoNome(v: string | null | undefined): string {
@@ -67,6 +73,11 @@ export function ehTipoJuventude(nome: string | null | undefined): boolean {
   return n.includes('juventude');
 }
 
+export function ehTipoVisitante(nome: string | null | undefined): boolean {
+  const n = normalizarTipoNome(nome);
+  return n.includes('visitante');
+}
+
 export function findTipoPastorJubilado<T extends TipoComNome>(tipos: T[]): T | null {
   return tipos.find((t) => ehTipoPastorJubilado(t.nome)) || null;
 }
@@ -78,10 +89,22 @@ export function filtrarTiposAgo<T extends TipoComNome>(tipos: T[], options: Filt
     permitirViuvaEEsposaJubilado,
     permitirJubiladoManual,
     somentePastorPresidente,
+    cpfLocalizado,
+    ministroAtivo,
+    cargoMinisterial,
+    pastorPresidente,
+    pastorAuxiliar,
+    jubilado,
   } = options;
 
   const idade = calcularIdade(dataNascimento);
   const sexoNorm = String(sexo || '').toUpperCase();
+  const cargoNorm = normalizarTipoNome(cargoMinisterial);
+  const cpfFoiLocalizado = !!cpfLocalizado;
+  const ministerioAtivo = !!ministroAtivo;
+  const ehPastorAuxiliarPorPerfil = !!pastorAuxiliar || (
+    cargoNorm === 'pastor' && !pastorPresidente && !jubilado
+  );
 
   return tipos
     .filter((t) => !/campo\s*mission/i.test(t.nome))
@@ -90,6 +113,13 @@ export function filtrarTiposAgo<T extends TipoComNome>(tipos: T[], options: Filt
       return true;
     })
     .filter((t) => {
+      if (cpfFoiLocalizado && ministerioAtivo && !!jubilado) {
+        return ehTipoPastorJubilado(t.nome);
+      }
+      return true;
+    })
+    .filter((t) => {
+      if (cpfFoiLocalizado && ministerioAtivo && !!jubilado) return true;
       if (permitirJubiladoManual) return true;
       return !ehTipoPastorJubilado(t.nome);
     })
@@ -106,6 +136,19 @@ export function filtrarTiposAgo<T extends TipoComNome>(tipos: T[], options: Filt
       if (sexoNorm === 'F') {
         if (ehTipoPastorPresidente(t.nome) || ehTipoPastorAuxiliar(t.nome)) return false;
       }
+      return true;
+    })
+    .filter((t) => {
+      if (!(cpfFoiLocalizado && ministerioAtivo)) return true;
+
+      if (ehTipoVisitante(t.nome)) return false;
+
+      if (ehTipoPastorPresidente(t.nome)) return !!pastorPresidente;
+
+      if (ehTipoPastorAuxiliar(t.nome)) return ehPastorAuxiliarPorPerfil;
+
+      if (ehTipoPastorJubilado(t.nome)) return !!jubilado;
+
       return true;
     })
     .filter((t) => {

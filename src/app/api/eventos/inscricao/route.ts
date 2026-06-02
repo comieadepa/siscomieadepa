@@ -320,6 +320,21 @@ export async function POST(request: NextRequest) {
       return n.includes('esposa') && n.includes('pastor presidente');
     };
 
+    const ehTipoPastorAuxiliar = (tipo: string | null | undefined) => {
+      const n = norm(tipo);
+      return n.includes('pastor auxiliar') && !ehTipoEsposaOuViuva(n);
+    };
+
+    const ehTipoPastorJubilado = (tipo: string | null | undefined) => {
+      const n = norm(tipo);
+      return n.includes('pastor jubilado') && !ehTipoEsposaOuViuva(n);
+    };
+
+    const ehTipoVisitante = (tipo: string | null | undefined) => {
+      const n = norm(tipo);
+      return n.includes('visitante');
+    };
+
     type TipoEvento = {
       nome: string;
       valor: number;
@@ -621,6 +636,52 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (ministroSnapshot) {
+      const statusTitular = String(ministroSnapshot.status_ministerial ?? '').toLowerCase();
+      const titularAtivo = statusTitular === 'active' || statusTitular === 'ativo';
+      const titularEhPP = !!ministroSnapshot.is_pastor_presidente;
+      const titularEhPA = !!ministroSnapshot.is_pastor_auxiliar;
+      const titularEhJub = !!ministroSnapshot.is_pastor_jubilado;
+      const cargoTitular = norm(String(ministroSnapshot.cargo ?? ''));
+      const titularPodePA = titularEhPA || (cargoTitular === 'pastor' && !titularEhPP && !titularEhJub);
+
+      if (titularAtivo && ehTipoVisitante(tipoNome)) {
+        return buildErrorResponse(400, {
+          error: 'Ministro ativo não pode se inscrever como Visitante.',
+          stage: 'validacao_tipo_ministro_ativo_titular',
+          code: 'MINISTRO_ATIVO_VISITANTE_NAO_PERMITIDO',
+          payloadResumo: { ...payloadResumo, evento_id: evento.id },
+        });
+      }
+
+      if (titularAtivo && ehTipoPastorPresidente(tipoNome) && !titularEhPP) {
+        return buildErrorResponse(400, {
+          error: 'Categoria Pastor Presidente exige flag ministerial de Pastor Presidente ativa.',
+          stage: 'validacao_tipo_pastor_presidente_titular',
+          code: 'PASTOR_PRESIDENTE_SEM_FLAG',
+          payloadResumo: { ...payloadResumo, evento_id: evento.id },
+        });
+      }
+
+      if (titularAtivo && ehTipoPastorAuxiliar(tipoNome) && !titularPodePA) {
+        return buildErrorResponse(400, {
+          error: 'Categoria Pastor Auxiliar não é compatível com o perfil ministerial informado.',
+          stage: 'validacao_tipo_pastor_auxiliar_titular',
+          code: 'PASTOR_AUXILIAR_INCOMPATIVEL',
+          payloadResumo: { ...payloadResumo, evento_id: evento.id },
+        });
+      }
+
+      if (titularAtivo && titularEhJub && !ehTipoPastorJubilado(tipoNome)) {
+        return buildErrorResponse(400, {
+          error: 'Ministro jubilado ativo deve usar categoria de Pastor Jubilado.',
+          stage: 'validacao_tipo_jubilado_titular',
+          code: 'JUBILADO_TIPO_INVALIDO',
+          payloadResumo: { ...payloadResumo, evento_id: evento.id },
+        });
+      }
+    }
+
     if (fluxoCampoMissionarioEspecial && ehLote) {
       return buildErrorResponse(400, {
         error: 'Campo Missionário permite inscrição apenas do Pastor Presidente e, opcionalmente, sua esposa.',
@@ -834,6 +895,30 @@ export async function POST(request: NextRequest) {
         ...participantes,
       ];
 
+      const ministrosPorCpf = new Map<string, { status: string | null; cargo: string | null; pastor_presidente: boolean; pastor_auxiliar: boolean; jubilado: boolean }>();
+      if (evento.departamento === 'AGO') {
+        const cpfsParaConsulta = Array.from(new Set(
+          todos
+            .map((p) => String((p as Record<string, unknown>).cpf ?? '').replace(/\D/g, '').trim())
+            .filter((c) => c.length === 11),
+        ));
+        if (cpfsParaConsulta.length > 0) {
+          const { data: membrosRows } = await supabase
+            .from('members')
+            .select('cpf,status,cargo_ministerial,pastor_presidente,pastor_auxiliar,jubilado')
+            .in('cpf', cpfsParaConsulta);
+          for (const m of membrosRows ?? []) {
+            ministrosPorCpf.set(String((m as any).cpf), {
+              status: (m as any).status ?? null,
+              cargo: (m as any).cargo_ministerial ?? null,
+              pastor_presidente: !!(m as any).pastor_presidente,
+              pastor_auxiliar: !!(m as any).pastor_auxiliar,
+              jubilado: !!(m as any).jubilado,
+            });
+          }
+        }
+      }
+
       type ParticipanteCalculado = {
         nome_inscrito: string;
         cpf: string | null;
@@ -945,6 +1030,53 @@ export async function POST(request: NextRequest) {
         }
 
         let valorBaseParticipante = tipoEvento?.valor ?? valorBase;
+        const cpfParticipante = String(p.cpf ?? '').replace(/\D/g, '').trim();
+        const ministroParticipante = cpfParticipante ? ministrosPorCpf.get(cpfParticipante) : null;
+        if (ministroParticipante) {
+          const statusMin = String(ministroParticipante.status ?? '').toLowerCase();
+          const minAtivo = statusMin === 'active' || statusMin === 'ativo';
+          const minEhPP = !!ministroParticipante.pastor_presidente;
+          const minEhPA = !!ministroParticipante.pastor_auxiliar;
+          const minEhJub = !!ministroParticipante.jubilado;
+          const cargoMin = norm(String(ministroParticipante.cargo ?? ''));
+          const minPodePA = minEhPA || (cargoMin === 'pastor' && !minEhPP && !minEhJub);
+
+          if (minAtivo && ehTipoVisitante(tipoParticipante)) {
+            return buildErrorResponse(400, {
+              error: `Ministro ativo não pode se inscrever como Visitante (participante ${idx + 1}).`,
+              stage: 'validacao_tipo_ministro_ativo_lote',
+              code: 'MINISTRO_ATIVO_VISITANTE_NAO_PERMITIDO_LOTE',
+              payloadResumo: { ...payloadResumo, evento_id: evento.id },
+            });
+          }
+
+          if (minAtivo && ehTipoPastorPresidente(tipoParticipante) && !minEhPP) {
+            return buildErrorResponse(400, {
+              error: `Participante ${idx + 1} não possui perfil de Pastor Presidente para essa categoria.`,
+              stage: 'validacao_tipo_pastor_presidente_lote',
+              code: 'PASTOR_PRESIDENTE_SEM_FLAG_LOTE',
+              payloadResumo: { ...payloadResumo, evento_id: evento.id },
+            });
+          }
+
+          if (minAtivo && ehTipoPastorAuxiliar(tipoParticipante) && !minPodePA) {
+            return buildErrorResponse(400, {
+              error: `Categoria Pastor Auxiliar incompatível no participante ${idx + 1}.`,
+              stage: 'validacao_tipo_pastor_auxiliar_lote',
+              code: 'PASTOR_AUXILIAR_INCOMPATIVEL_LOTE',
+              payloadResumo: { ...payloadResumo, evento_id: evento.id },
+            });
+          }
+
+          if (minAtivo && minEhJub && !ehTipoPastorJubilado(tipoParticipante)) {
+            return buildErrorResponse(400, {
+              error: `Ministro jubilado ativo deve usar categoria de Pastor Jubilado (participante ${idx + 1}).`,
+              stage: 'validacao_tipo_jubilado_lote',
+              code: 'JUBILADO_TIPO_INVALIDO_LOTE',
+              payloadResumo: { ...payloadResumo, evento_id: evento.id },
+            });
+          }
+        }
         const campoIdParticipante = String(p.campo_id ?? '').trim() || null;
         const ehCampoMissionario = campoIdParticipante ? !!campoMissionarioMap.get(campoIdParticipante) : false;
 

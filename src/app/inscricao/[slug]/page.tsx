@@ -126,6 +126,15 @@ interface ParticipanteExtra {
   hosp_descricao_comorbidade: string;
 }
 
+interface ExtraMinisterialInfo {
+  cpfStatus: 'idle' | 'encontrado' | 'nao_encontrado';
+  ministroAtivo: boolean;
+  cargoMinisterial: string | null;
+  isPastorPresidente: boolean;
+  isPastorAuxiliar: boolean;
+  isJubilado: boolean;
+}
+
 // Dados da esposa (AGO — Campo Missionário)
 interface FormEsposa {
   nome: string;
@@ -258,6 +267,7 @@ export default function InscricaoPublicaPage() {
   // Lote (participantes extras)
   const [modoLote,          setModoLote]          = useState(false);
   const [participantesExtra,setParticipantesExtra] = useState<ParticipanteExtra[]>([]);
+  const [extrasMinisteriais, setExtrasMinisteriais] = useState<ExtraMinisterialInfo[]>([]);
 
   // Confirmação + pagamento
   const [confirmacao,    setConfirmacao]    = useState<{
@@ -527,6 +537,14 @@ export default function InscricaoPublicaPage() {
       hosp_possui_comorbidade: false,
       hosp_descricao_comorbidade: '',
     }]);
+    setExtrasMinisteriais((m) => [...m, {
+      cpfStatus: 'idle',
+      ministroAtivo: false,
+      cargoMinisterial: null,
+      isPastorPresidente: false,
+      isPastorAuxiliar: false,
+      isJubilado: false,
+    }]);
   }
 
   function atualizarParticipante(idx: number, field: keyof ParticipanteExtra, value: string | boolean) {
@@ -535,6 +553,56 @@ export default function InscricaoPublicaPage() {
 
   function removerParticipante(idx: number) {
     setParticipantesExtra(p => p.filter((_, i) => i !== idx));
+    setExtrasMinisteriais((m) => m.filter((_, i) => i !== idx));
+  }
+
+  async function buscarCpfParticipanteExtra(idx: number, cpfFormatado: string) {
+    const cpfLimpo = cpfFormatado.replace(/\D/g, '');
+    if (cpfLimpo.length !== 11) return;
+
+    const res = await fetch(`/api/public/members/lookup?cpf=${cpfLimpo}&includeMatricula=true`);
+    const payload = res.ok ? await res.json().catch(() => null as any) : null;
+
+    if (!payload?.encontrado) {
+      setExtrasMinisteriais((m) => m.map((x, i) => i === idx ? {
+        cpfStatus: 'nao_encontrado',
+        ministroAtivo: false,
+        cargoMinisterial: null,
+        isPastorPresidente: false,
+        isPastorAuxiliar: false,
+        isJubilado: false,
+      } : x));
+      return;
+    }
+
+    const statusMinistro = String(payload.status ?? '').toLowerCase();
+    const ministroAtivoExtra = statusMinistro === 'active' || statusMinistro === 'ativo';
+    const cargo = payload.cargo_ministerial ? String(payload.cargo_ministerial) : null;
+    const isJubiladoExtra = !!payload.jubilado;
+
+    setExtrasMinisteriais((m) => m.map((x, i) => i === idx ? {
+      cpfStatus: 'encontrado',
+      ministroAtivo: ministroAtivoExtra,
+      cargoMinisterial: cargo,
+      isPastorPresidente: !!payload.pastor_presidente,
+      isPastorAuxiliar: !!payload.pastor_auxiliar,
+      isJubilado: isJubiladoExtra,
+    } : x));
+
+    setParticipantesExtra((p) => p.map((x, i) => i === idx ? {
+      ...x,
+      sexo: payload.sexo || x.sexo,
+      data_nascimento: payload.data_nascimento || x.data_nascimento,
+      supervisao_id: payload.supervisao_id || x.supervisao_id,
+      campo_id: payload.campo_id || x.campo_id,
+    } : x));
+
+    if (isJubiladoExtra) {
+      const tipoJub = findTipoPastorJubilado(tipos);
+      if (tipoJub) {
+        setParticipantesExtra((p) => p.map((x, i) => i === idx ? { ...x, tipo_inscricao: tipoJub.nome } : x));
+      }
+    }
   }
 
   // Valor a pagar calculado
@@ -653,6 +721,12 @@ export default function InscricaoPublicaPage() {
       permitirViuvaEEsposaJubilado: false,
       permitirJubiladoManual: false,
       somentePastorPresidente: fluxoCampoMissionarioEspecial,
+      cpfLocalizado: cpfStatus === 'encontrado',
+      ministroAtivo,
+      cargoMinisterial: ministroInfo?.cargoMinisterial ?? null,
+      pastorPresidente: !!ministroInfo?.isPastorPresidente,
+      pastorAuxiliar: !!ministroInfo?.isPastorAuxiliar,
+      jubilado: !!ministroInfo?.isJubilado,
     });
   })();
 
@@ -698,6 +772,12 @@ export default function InscricaoPublicaPage() {
         dataNascimento: p.data_nascimento,
         permitirViuvaEEsposaJubilado: false,
         permitirJubiladoManual: false,
+        cpfLocalizado: extrasMinisteriais[idx]?.cpfStatus === 'encontrado',
+        ministroAtivo: !!extrasMinisteriais[idx]?.ministroAtivo,
+        cargoMinisterial: extrasMinisteriais[idx]?.cargoMinisterial ?? null,
+        pastorPresidente: !!extrasMinisteriais[idx]?.isPastorPresidente,
+        pastorAuxiliar: !!extrasMinisteriais[idx]?.isPastorAuxiliar,
+        jubilado: !!extrasMinisteriais[idx]?.isJubilado,
       })
       : tipos;
 
@@ -725,12 +805,14 @@ export default function InscricaoPublicaPage() {
 
     if (modoLote) setModoLote(false);
     if (participantesExtra.length > 0) setParticipantesExtra([]);
+    if (extrasMinisteriais.length > 0) setExtrasMinisteriais([]);
   }, [
     fluxoCampoMissionarioEspecial,
     tiposParaExibir,
     tipoSelecionado?.id,
     modoLote,
     participantesExtra.length,
+    extrasMinisteriais.length,
   ]);
 
   useEffect(() => {
@@ -1877,7 +1959,19 @@ export default function InscricaoPublicaPage() {
                       </div>
                       <div>
                         <label className={LBL}>CPF</label>
-                        <input value={p.cpf} onChange={e => atualizarParticipante(idx, 'cpf', formatarCPF(e.target.value))} className={INP} placeholder="000.000.000-00" maxLength={14} />
+                        <input
+                          value={p.cpf}
+                          onChange={async (e) => {
+                            const masked = formatarCPF(e.target.value);
+                            atualizarParticipante(idx, 'cpf', masked);
+                            if (masked.replace(/\D/g, '').length === 11) {
+                              await buscarCpfParticipanteExtra(idx, masked);
+                            }
+                          }}
+                          className={INP}
+                          placeholder="000.000.000-00"
+                          maxLength={14}
+                        />
                       </div>
                       <div>
                         <label className={LBL}>WhatsApp</label>

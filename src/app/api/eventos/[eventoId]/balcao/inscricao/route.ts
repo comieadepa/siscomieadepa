@@ -103,6 +103,34 @@ export async function POST(
     }
 
     let tipoNome = tipo_inscricao ? String(tipo_inscricao).trim() : null;
+    const norm = (v: string | null | undefined) =>
+      String(v || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const ehTipoEsposaOuViuva = (tipo: string | null | undefined) => {
+      const n = norm(tipo);
+      return n.includes('esposa') || n.includes('viuva');
+    };
+    const ehTipoPastorPresidente = (tipo: string | null | undefined) => {
+      const n = norm(tipo);
+      return n.includes('pastor presidente') && !ehTipoEsposaOuViuva(n);
+    };
+    const ehTipoPastorAuxiliar = (tipo: string | null | undefined) => {
+      const n = norm(tipo);
+      return n.includes('pastor auxiliar') && !ehTipoEsposaOuViuva(n);
+    };
+    const ehTipoPastorJubilado = (tipo: string | null | undefined) => {
+      const n = norm(tipo);
+      return n.includes('pastor jubilado') && !ehTipoEsposaOuViuva(n);
+    };
+    const ehTipoVisitante = (tipo: string | null | undefined) => {
+      const n = norm(tipo);
+      return n.includes('visitante');
+    };
     let incluiAlimentacao = false;
     let quantidadeRefeicoes = 0;
     if (tipoNome) {
@@ -244,8 +272,46 @@ export async function POST(
       );
     }
 
+    if (ministroSnapshot) {
+      const statusTitular = String(ministroSnapshot.status_ministerial ?? '').toLowerCase();
+      const titularAtivo = statusTitular === 'active' || statusTitular === 'ativo';
+      const titularEhPP = !!ministroSnapshot.is_pastor_presidente;
+      const titularEhPA = !!ministroSnapshot.is_pastor_auxiliar;
+      const titularEhJub = !!ministroSnapshot.is_pastor_jubilado;
+      const cargoTitular = norm(String(ministroSnapshot.cargo ?? ''));
+      const titularPodePA = titularEhPA || (cargoTitular === 'pastor' && !titularEhPP && !titularEhJub);
+
+      if (titularAtivo && ehTipoVisitante(tipoNome)) {
+        return NextResponse.json(
+          { error: 'Ministro ativo não pode se inscrever como Visitante.' },
+          { status: 400 },
+        );
+      }
+
+      if (titularAtivo && ehTipoPastorPresidente(tipoNome) && !titularEhPP) {
+        return NextResponse.json(
+          { error: 'Categoria Pastor Presidente exige flag ministerial de Pastor Presidente ativa.' },
+          { status: 400 },
+        );
+      }
+
+      if (titularAtivo && ehTipoPastorAuxiliar(tipoNome) && !titularPodePA) {
+        return NextResponse.json(
+          { error: 'Categoria Pastor Auxiliar não é compatível com o perfil ministerial informado.' },
+          { status: 400 },
+        );
+      }
+
+      if (titularAtivo && titularEhJub && !ehTipoPastorJubilado(tipoNome)) {
+        return NextResponse.json(
+          { error: 'Ministro jubilado ativo deve usar categoria de Pastor Jubilado.' },
+          { status: 400 },
+        );
+      }
+    }
+
     if (fluxoCampoMissionarioEspecial) {
-      if (!(tipoNome && /pastor\s*presidente/i.test(tipoNome))) {
+      if (!(tipoNome && ehTipoPastorPresidente(tipoNome))) {
         return NextResponse.json(
           { error: 'Campo Missionário exige categoria Pastor Presidente para o titular.' },
           { status: 400 },
