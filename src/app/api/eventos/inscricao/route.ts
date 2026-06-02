@@ -45,7 +45,8 @@ function buildErrorResponse(
 function extractMissingColumn(msg: string | null | undefined): string | null {
   if (!msg) return null;
   const m = msg.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+of\s+relation\s+"?[a-zA-Z0-9_]+"?\s+does not exist/i)
-    || msg.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+does not exist/i);
+    || msg.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+does not exist/i)
+    || msg.match(/Could not find the '([a-zA-Z0-9_]+)' column/i);
   return m?.[1] ?? null;
 }
 
@@ -78,6 +79,40 @@ async function insertInscricaoComFallback(
   }
 
   return { data: null, error: { message: 'Falha ao inserir inscrição após fallback de colunas.', code: 'FALLBACK_MAX_RETRIES' }, colunasRemovidas };
+}
+
+async function insertLoteComFallback(
+  supabase: ReturnType<typeof createServerClient>,
+  rows: Record<string, unknown>[],
+) {
+  const candidates = rows.map(r => ({ ...r }));
+  const colunasRemovidas: string[] = [];
+
+  for (let tentativa = 1; tentativa <= 8; tentativa++) {
+    const { error } = await supabase
+      .from('evento_inscricoes')
+      .insert(candidates);
+
+    if (!error) {
+      return { error: null as null, colunasRemovidas };
+    }
+
+    const missing = extractMissingColumn(error?.message);
+    if (!missing) {
+      return { error, colunasRemovidas };
+    }
+
+    for (const row of candidates) {
+      if (missing in row) delete row[missing];
+    }
+    colunasRemovidas.push(missing);
+    console.warn('[INSCRICAO][fallback_coluna_ausente_lote]', { tentativa, missing });
+  }
+
+  return {
+    error: { message: 'Falha ao inserir lote após fallback de colunas.', code: 'FALLBACK_MAX_RETRIES' },
+    colunasRemovidas,
+  };
 }
 
 // Valida e retorna desconto de cupom (sem incrementar usados ainda)
@@ -249,6 +284,64 @@ export async function POST(request: NextRequest) {
     let tipoRefeicoes = 0;
 
     stage = 'buscar_tipo_inscricao';
+    const norm = (v: string | null | undefined) =>
+      String(v || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const ehTipoEsposaOuViuva = (tipo: string | null | undefined) => {
+      const n = norm(tipo);
+      return n.includes('esposa') || n.includes('viuva');
+    };
+
+    const ehTipoPastorPresidente = (tipo: string | null | undefined) => {
+      const n = norm(tipo);
+      return n.includes('pastor presidente') && !ehTipoEsposaOuViuva(n);
+    };
+
+    const ehTipoEsposaPastorPresidente = (tipo: string | null | undefined) => {
+      const n = norm(tipo);
+      return n.includes('esposa') && n.includes('pastor presidente');
+    };
+
+    type TipoEvento = {
+      nome: string;
+      valor: number;
+      inclui_alimentacao: boolean;
+      inclui_hospedagem: boolean;
+      quantidade_refeicoes: number | null;
+    };
+
+    let tiposAtivos: TipoEvento[] = [];
+    if (usaTipos) {
+      const { data: tiposData, error: tiposErr } = await supabase
+        .from('evento_tipos_inscricao')
+        .select('nome, valor, inclui_alimentacao, inclui_hospedagem, quantidade_refeicoes')
+        .eq('evento_id', evento.id)
+        .eq('ativo', true);
+
+      if (tiposErr) {
+        return buildErrorResponse(500, {
+          error: 'Erro ao buscar categorias de inscrição.',
+          stage,
+          details: tiposErr.message,
+          code: (tiposErr as any)?.code ?? null,
+          payloadResumo: { ...payloadResumo, evento_id: evento.id },
+        });
+      }
+
+      tiposAtivos = (tiposData ?? []) as TipoEvento[];
+    }
+
+    const resolveTipo = (nome: string | null | undefined) => {
+      const alvo = norm(nome);
+      if (!alvo) return null;
+      return tiposAtivos.find(t => norm(t.nome) === alvo) ?? null;
+    };
     if (tipo_inscricao && usaTipos) {
       const { data: tipo, error: tipoErr } = await supabase
         .from('evento_tipos_inscricao')
@@ -673,7 +766,156 @@ export async function POST(request: NextRequest) {
         { nome_inscrito, cpf, email, telefone, whatsapp, sexo, data_nascimento, supervisao_id, campo_id, hospedagem: querHospedagem, alimentacao: tipoInclui.alimentacao, brinde: !!brinde, qr_code },
         ...participantes,
       ];
-      const valorTotalLote = valorFinal * todos.length;
+
+      type ParticipanteCalculado = {
+        nome_inscrito: string;
+        cpf: string | null;
+        email: string | null;
+        telefone: string | null;
+        whatsapp: string | null;
+        sexo: string | null;
+        data_nascimento: string | null;
+        supervisao_id: string | null;
+        campo_id: string | null;
+        hospedagem: boolean;
+        brinde: boolean;
+        qr_code: string | null;
+        tipo_inscricao: string | null;
+        valor_original: number;
+        desconto_valor: number;
+        valor_final: number;
+        cupom_codigo: string | null;
+        alimentacao: boolean;
+        refeicoes: number;
+        hosp_necessidade_especial: boolean;
+        hosp_descricao_necessidade: string | null;
+        hosp_observacoes: string | null;
+        hosp_possui_comorbidade: boolean;
+        hosp_descricao_comorbidade: string | null;
+      };
+
+      const confAgo = (evento as any).configuracoes_ago as Record<string, unknown> | null;
+      const cmConfig = parseCampoMissionarioConfig(confAgo);
+      const descontoCMHabilitado = !!(confAgo?.habilitar_desconto_campo_missionario);
+      const valorCmPastor = cmConfig
+        ? (typeof cmConfig.valor_pastor_presidente === 'number' ? cmConfig.valor_pastor_presidente : parseFloat(String(cmConfig.valor_pastor_presidente)) || 0)
+        : parseFloat(String(confAgo?.valor_pastor_presidente_campo_missionario ?? '0')) || 0;
+      const valorCmEsposa = cmConfig
+        ? (typeof cmConfig.valor_esposa === 'number' ? cmConfig.valor_esposa : parseFloat(String(cmConfig.valor_esposa)) || 0)
+        : 0;
+
+      const campoIds = Array.from(
+        new Set(
+          todos
+            .map(p => String((p as Record<string, unknown>).campo_id ?? '').trim())
+            .filter(Boolean),
+        ),
+      );
+      const campoMissionarioMap = new Map<string, boolean>();
+      if (campoIds.length > 0) {
+        const { data: camposRows } = await supabase
+          .from('campos')
+          .select('id,is_campo_missionario')
+          .in('id', campoIds);
+        for (const c of camposRows ?? []) {
+          campoMissionarioMap.set(String((c as any).id), !!(c as any).is_campo_missionario);
+        }
+      }
+
+      const participantesComFallbackTipo: number[] = [];
+      const calculados: ParticipanteCalculado[] = [];
+
+      for (let idx = 0; idx < todos.length; idx++) {
+        const p = todos[idx] as Record<string, unknown>;
+        let tipoParticipante = String(p.tipo_inscricao ?? '').trim() || null;
+        if (!tipoParticipante && tipoNome) {
+          tipoParticipante = tipoNome;
+          if (idx > 0) participantesComFallbackTipo.push(idx + 1);
+        }
+
+        if (usaTipos && !tipoParticipante) {
+          return buildErrorResponse(400, {
+            error: `Participante ${idx + 1} sem categoria de inscrição.`,
+            stage: 'validacao_tipo_inscricao_lote',
+            code: 'TIPO_INSCRICAO_OBRIGATORIO_LOTE',
+            payloadResumo: { ...payloadResumo, evento_id: evento.id },
+          });
+        }
+
+        const tipoEvento = usaTipos ? resolveTipo(tipoParticipante) : null;
+        if (usaTipos && !tipoEvento) {
+          return buildErrorResponse(400, {
+            error: `Categoria inválida para participante ${idx + 1}.`,
+            stage: 'validacao_tipo_inscricao_lote',
+            code: 'TIPO_INSCRICAO_INVALIDO_LOTE',
+            details: `Categoria não encontrada/inativa: ${String(tipoParticipante ?? '').trim()}`,
+            payloadResumo: { ...payloadResumo, evento_id: evento.id },
+          });
+        }
+
+        let valorBaseParticipante = tipoEvento?.valor ?? valorBase;
+        const campoIdParticipante = String(p.campo_id ?? '').trim() || null;
+        const ehCampoMissionario = campoIdParticipante ? !!campoMissionarioMap.get(campoIdParticipante) : false;
+
+        if (evento.departamento === 'AGO' && descontoCMHabilitado && ehCampoMissionario) {
+          if (ehTipoPastorPresidente(tipoEvento?.nome ?? tipoParticipante) && valorCmPastor > 0) {
+            valorBaseParticipante = valorCmPastor;
+          }
+          if (ehTipoEsposaPastorPresidente(tipoEvento?.nome ?? tipoParticipante) && valorCmEsposa > 0) {
+            valorBaseParticipante = valorCmEsposa;
+          }
+        }
+
+        let descontoParticipante = 0;
+        let cupomParticipante: string | null = null;
+        if (cupom_codigo) {
+          const cupom = await calcularDesconto(supabase, evento.id, cupom_codigo, valorBaseParticipante);
+          if (cupom) {
+            descontoParticipante = cupom.desconto;
+            cupomParticipante = String(cupom_codigo).trim().toUpperCase();
+          }
+        }
+
+        const valorFinalParticipante = Math.max(0, valorBaseParticipante - descontoParticipante);
+        const alimentacaoParticipante = !!(tipoEvento?.inclui_alimentacao ?? false);
+        const refeicoesParticipante = alimentacaoParticipante
+          ? Math.max(0, Number(tipoEvento?.quantidade_refeicoes ?? 0))
+          : 0;
+        const hospedagemParticipante = evento.departamento === 'AGO'
+          ? !!p.hospedagem
+          : (!!(tipoEvento?.inclui_hospedagem ?? false) || !!p.hospedagem);
+
+        calculados.push({
+          nome_inscrito: String(p.nome_inscrito ?? '').trim(),
+          cpf: String(p.cpf ?? '').replace(/\D/g, '') || null,
+          email: String(p.email ?? '').trim() || null,
+          telefone: String(p.telefone ?? '').trim() || null,
+          whatsapp: String(p.whatsapp ?? '').trim() || null,
+          sexo: String(p.sexo ?? '').trim() || null,
+          data_nascimento: String(p.data_nascimento ?? '').trim() || null,
+          supervisao_id: String(p.supervisao_id ?? '').trim() || null,
+          campo_id: campoIdParticipante,
+          hospedagem: hospedagemParticipante,
+          brinde: !!p.brinde,
+          qr_code: String(p.qr_code ?? '').trim() || null,
+          tipo_inscricao: tipoEvento?.nome ?? tipoParticipante,
+          valor_original: valorBaseParticipante,
+          desconto_valor: descontoParticipante,
+          valor_final: valorFinalParticipante,
+          cupom_codigo: cupomParticipante,
+          alimentacao: alimentacaoParticipante,
+          refeicoes: refeicoesParticipante,
+          hosp_necessidade_especial: !!p.hosp_necessidade_especial,
+          hosp_descricao_necessidade: String(p.hosp_descricao_necessidade ?? '').trim() || null,
+          hosp_observacoes: String(p.hosp_observacoes ?? '').trim() || null,
+          hosp_possui_comorbidade: !!p.hosp_possui_comorbidade,
+          hosp_descricao_comorbidade: String(p.hosp_descricao_comorbidade ?? '').trim() || null,
+        });
+      }
+
+      const valorTotalLote = calculados.reduce((acc, p) => acc + p.valor_final, 0);
+      const descontoTotalLote = calculados.reduce((acc, p) => acc + p.desconto_valor, 0);
+      const isGratuitoLote = valorTotalLote <= 0;
       const codigoLote     = gerarCodigoLote();
 
       const lotePayload = normalizePayloadUppercase({
@@ -683,9 +925,9 @@ export async function POST(request: NextRequest) {
         responsavel_email:    email?.trim() || null,
         responsavel_whatsapp: whatsapp?.trim() || null,
         valor_total:          valorTotalLote,
-        status_pagamento:     isGratuito ? 'isento' : 'pendente',
+        status_pagamento:     isGratuitoLote ? 'isento' : 'pendente',
         cupom_codigo:         cupomUsado,
-        desconto_valor:       desconto * todos.length,
+        desconto_valor:       descontoTotalLote,
       });
 
       stage = 'insert_lote';
@@ -705,13 +947,30 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      const rows = todos.map(p => {
+      if (participantesComFallbackTipo.length > 0) {
+        await logDB({
+          acao: 'inscricao_lote_valor_herdado_fallback',
+          modulo: 'eventos',
+          entidade: 'evento_inscricoes',
+          entidadeId: evento.id,
+          status: 'aviso',
+          descricao: `Participantes do lote sem tipo próprio detectados: ${participantesComFallbackTipo.length}`,
+          detalhes: {
+            evento_id: evento.id,
+            lote_codigo: codigoLote,
+            participantes_afetados: participantesComFallbackTipo,
+          },
+          request,
+        });
+      }
+
+      const rows = calculados.map((p, idx) => {
         const pComorb = !!(p as any).hosp_possui_comorbidade;
         const pCamaInferiorAuto = evento.departamento === 'AGO'
           ? resolveCamaInferiorAutomatica({
             sexo: (p.sexo as string) || null,
             data_nascimento: (p.data_nascimento as string) || null,
-            tipo_inscricao: tipoNome,
+            tipo_inscricao: p.tipo_inscricao,
             hosp_necessidade_especial: !!(p as any).hosp_necessidade_especial,
             hosp_possui_comorbidade: pComorb,
           })
@@ -720,7 +979,7 @@ export async function POST(request: NextRequest) {
           ? resolveGrupoHospedagemAGO({
             sexo: (p.sexo as string) || null,
             data_nascimento: (p.data_nascimento as string) || null,
-            tipo_inscricao: tipoNome,
+            tipo_inscricao: p.tipo_inscricao,
             hosp_necessidade_especial: !!(p as any).hosp_necessidade_especial,
             hosp_possui_comorbidade: pComorb,
           })
@@ -736,24 +995,24 @@ export async function POST(request: NextRequest) {
         whatsapp:         p.whatsapp?.trim() || null,
         sexo:             p.sexo || null,
         data_nascimento:  p.data_nascimento || null,
-        supervisao_id:    p.supervisao_id || supervisao_id,
-        campo_id:         p.campo_id || campo_id || null,
+        supervisao_id:    p.supervisao_id || null,
+        campo_id:         p.campo_id || null,
         hospedagem:       !!p.hospedagem,
-        alimentacao:      tipoInclui.alimentacao,
+        alimentacao:      p.alimentacao,
         brinde:           !!p.brinde,
-        tipo_inscricao:   tipoNome,
-        valor_original:   valorBase,
-        cupom_codigo:     cupomUsado,
-        desconto_valor:   desconto,
-        valor_final:      valorFinal,
-        valor_pago:       valorFinal,
-        status_pagamento: isGratuito ? 'isento' : 'pendente',
+        tipo_inscricao:   p.tipo_inscricao,
+        valor_original:   p.valor_original,
+        cupom_codigo:     p.cupom_codigo,
+        desconto_valor:   p.desconto_valor,
+        valor_final:      p.valor_final,
+        valor_pago:       0,
+        status_pagamento: isGratuitoLote ? 'isento' : 'pendente',
         qr_code:          p.qr_code || null,
-        refeicoes_total:  tipoInclui.alimentacao ? tipoRefeicoes : 0,
+        refeicoes_total:  p.refeicoes,
         refeicoes_utilizadas: 0,
-        quantidade_refeicoes_total: tipoInclui.alimentacao ? tipoRefeicoes : 0,
+        quantidade_refeicoes_total: p.refeicoes,
         quantidade_refeicoes_usadas: 0,
-        quantidade_refeicoes_saldo: tipoInclui.alimentacao ? tipoRefeicoes : 0,
+        quantidade_refeicoes_saldo: p.refeicoes,
         hosp_necessidade_especial: !!(p as any).hosp_necessidade_especial,
         hosp_descricao_necessidade: ((p as any).hosp_descricao_necessidade as string)?.trim() || null,
         hosp_cama_inferior: pCamaInferiorAuto,
@@ -761,26 +1020,35 @@ export async function POST(request: NextRequest) {
         hosp_possui_comorbidade: pComorb,
         hosp_descricao_comorbidade: ((p as any).hosp_descricao_comorbidade as string)?.trim() || null,
         grupo_hospedagem: pGrupoAuto,
+        responsavel_pagamento: idx === 0,
         lgpd_aceito:      true,
         lgpd_aceito_em:   new Date().toISOString(),
       });
       });
 
       stage = 'insert_evento_inscricoes_lote';
-      const { error: insRowsErr } = await supabase.from('evento_inscricoes').insert(rows);
+      const { error: insRowsErr, colunasRemovidas: loteColunasRemovidas } = await insertLoteComFallback(
+        supabase,
+        rows as Record<string, unknown>[],
+      );
       if (insRowsErr) {
         return buildErrorResponse(500, {
           error: 'Erro ao inserir inscrições do lote',
           stage,
           details: insRowsErr?.message ?? null,
           code: (insRowsErr as any)?.code ?? null,
-          payloadResumo: { ...payloadResumo, evento_id: evento.id, valor_final: valorTotalLote, alimentacao: tipoInclui.alimentacao, hospedagem: querHospedagem },
+          payloadResumo: {
+            ...payloadResumo,
+            evento_id: evento.id,
+            valor_final: valorTotalLote,
+            colunas_removidas_fallback: loteColunasRemovidas,
+          },
         });
       }
 
       if (cupomUsado) await incrementarCupom(supabase, evento.id, cupomUsado, todos.length);
 
-      if (isGratuito) {
+      if (isGratuitoLote) {
         return NextResponse.json({ loteId: lote.id, inscricoes: todos.length, statusPagamento: 'isento', pagamento: null });
       }
 
@@ -788,7 +1056,17 @@ export async function POST(request: NextRequest) {
         stage = 'criar_asaas_lote';
         const customerId = await createOrFindAsaasCustomer({ nome: nome_inscrito.trim(), email: email?.trim() || null, cpf: cleanCpf(cpf), whatsapp: whatsapp || null });
         const dueDateLote = dueDateFromNow();
-        const pagamento  = await createEventoPayment({ customerId, value: valorTotalLote, dueDate: dueDateLote, description: `Lote ${codigoLote} — ${evento.nome} (${todos.length} insc.)`, externalReference: `lote:${lote.id}` });
+        const linhasDescricao = calculados
+          .slice(0, 8)
+          .map(p => `${p.tipo_inscricao ?? 'Sem categoria'}: R$ ${p.valor_final.toFixed(2).replace('.', ',')}`)
+          .join(' | ');
+        const pagamento  = await createEventoPayment({
+          customerId,
+          value: valorTotalLote,
+          dueDate: dueDateLote,
+          description: `Lote ${codigoLote} — ${evento.nome} (${todos.length} insc.)${linhasDescricao ? ` | ${linhasDescricao}` : ''}`,
+          externalReference: `lote:${lote.id}`,
+        });
         await supabase.from('evento_lotes_inscricao').update({
           asaas_payment_id: pagamento.id,
           invoice_url:      pagamento.invoiceUrl,

@@ -111,6 +111,8 @@ interface FormData {
 interface ParticipanteExtra {
   nome_inscrito: string; cpf: string; email: string; whatsapp: string;
   sexo: string; data_nascimento: string; supervisao_id: string; campo_id: string;
+  tipo_inscricao: string;
+  hospedagem: boolean;
 }
 
 // Dados da esposa (AGO — Campo Missionário)
@@ -226,6 +228,7 @@ export default function InscricaoPublicaPage() {
   const [cupomStatus,     setCupomStatus]     = useState<'idle' | 'validando' | 'ok' | 'erro'>('idle');
   const [cupomDesconto,   setCupomDesconto]   = useState(0);
   const [cupomMensagem,   setCupomMensagem]   = useState('');
+  const [cupomMeta,       setCupomMeta]       = useState<{ tipo: 'percentual' | 'valor_fixo'; valor: number } | null>(null);
   const [descontoCampoMissionario, setDescontoCampoMissionario] = useState(false);
 
   // Dados ministeriais (AGO — preenchidos após consulta de CPF)
@@ -476,21 +479,38 @@ export default function InscricaoPublicaPage() {
       if (json.valido) {
         setCupomStatus('ok');
         setCupomDesconto(json.desconto);
+        setCupomMeta({
+          tipo: json.tipo === 'percentual' ? 'percentual' : 'valor_fixo',
+          valor: Number(json.valorCupom ?? 0),
+        });
         setCupomMensagem(`Desconto de ${fmtMoeda(json.desconto)} aplicado!`);
       } else {
         setCupomStatus('erro');
         setCupomDesconto(0);
+        setCupomMeta(null);
         setCupomMensagem(json.erro || 'Cupom inválido.');
       }
     } catch {
       setCupomStatus('erro');
+      setCupomMeta(null);
       setCupomMensagem('Erro ao validar cupom.');
     }
   }
 
   // ── Adiciona participante no lote ───────────────────────
   function adicionarParticipante() {
-    setParticipantesExtra(p => [...p, { nome_inscrito: '', cpf: '', email: '', whatsapp: '', sexo: '', data_nascimento: '', supervisao_id: form.supervisao_id, campo_id: form.campo_id }]);
+    setParticipantesExtra(p => [...p, {
+      nome_inscrito: '',
+      cpf: '',
+      email: '',
+      whatsapp: '',
+      sexo: '',
+      data_nascimento: '',
+      supervisao_id: form.supervisao_id,
+      campo_id: form.campo_id,
+      tipo_inscricao: '',
+      hospedagem: false,
+    }]);
   }
 
   function atualizarParticipante(idx: number, field: keyof ParticipanteExtra, value: string) {
@@ -516,8 +536,59 @@ export default function InscricaoPublicaPage() {
   const valorEsposaBase = configCM
     ? (typeof configCM.valor_esposa === 'number' ? configCM.valor_esposa : parseFloat(String(configCM.valor_esposa)) || 0)
     : 0;
+
+  const cupomTipo = cupomMeta?.tipo ?? null;
+  const cupomValor = cupomMeta?.valor ?? 0;
+  const tiposReferenciaLote = tipos;
+  const camposMissionarios = new Set(
+    campos.filter(c => c.is_campo_missionario).map(c => c.id),
+  );
+
+  function calcularValorParticipanteLote(tipoNome: string | null, campoId: string | null) {
+    const tipoBase = tiposReferenciaLote.find(t => t.nome === (tipoNome ?? ''));
+    let valorBaseParticipante = tipoBase?.valor ?? 0;
+
+    if (evento?.departamento === 'AGO' && configCM?.enabled && campoId && camposMissionarios.has(campoId)) {
+      const tipoNorm = normalizarComparacao(tipoNome ?? '');
+      const ehEsposa = tipoNorm.includes('esposa') || tipoNorm.includes('viuva') || tipoNorm.includes('viúva');
+      const ehPastorPresidente = tipoNorm.includes('pastor presidente') && !ehEsposa;
+      if (ehPastorPresidente) {
+        const vPP = typeof configCM.valor_pastor_presidente === 'number'
+          ? configCM.valor_pastor_presidente
+          : parseFloat(String(configCM.valor_pastor_presidente)) || 0;
+        if (vPP > 0) valorBaseParticipante = vPP;
+      }
+      if (ehEsposa && tipoNorm.includes('pastor presidente')) {
+        if (valorEsposaBase > 0) valorBaseParticipante = valorEsposaBase;
+      }
+    }
+
+    let descontoParticipante = 0;
+    if (cupomStatus === 'ok' && cupomTipo && cupomValor > 0) {
+      if (cupomTipo === 'percentual') {
+        descontoParticipante = Math.round((valorBaseParticipante * cupomValor / 100) * 100) / 100;
+      } else {
+        descontoParticipante = Math.min(cupomValor, valorBaseParticipante);
+      }
+    }
+
+    const valorFinalParticipante = Math.max(0, valorBaseParticipante - descontoParticipante);
+    return { valorBaseParticipante, descontoParticipante, valorFinalParticipante };
+  }
+
+  const participantesCalculados = [
+    {
+      tipo_inscricao: tipoSelecionado?.nome ?? null,
+      ...calcularValorParticipanteLote(tipoSelecionado?.nome ?? null, form.campo_id || null),
+    },
+    ...participantesExtra.map(p => ({
+      tipo_inscricao: p.tipo_inscricao || null,
+      ...calcularValorParticipanteLote(p.tipo_inscricao || null, p.campo_id || null),
+    })),
+  ];
+
   const qtdTotal   = modoLote ? 1 + participantesExtra.length : 1;
-  const totalLote  = valorFinal * qtdTotal;
+  const totalLote  = participantesCalculados.reduce((acc, p) => acc + p.valorFinalParticipante, 0);
   const totalComEsposa = incluirEsposa ? valorFinal + valorEsposaBase : valorFinal;
 
   // ── Filtragem de categorias AGO ──────────────────────────────────────────────
@@ -683,8 +754,8 @@ export default function InscricaoPublicaPage() {
         body.participantes = participantesExtra.map(p => normalizePayloadUppercase({
           ...p,
           cpf:           p.cpf.replace(/\D/g, ''),
-          hospedagem:    evento.departamento === 'AGO' ? false : (tipoSelecionado?.inclui_hospedagem ?? false),
-          alimentacao:   tipoSelecionado?.inclui_alimentacao ?? false,
+          tipo_inscricao: p.tipo_inscricao || null,
+          hospedagem:    !!p.hospedagem,
           brinde:        false,
           qr_code:       generateQRCodeToken(),
           lgpd_aceito:   true,
@@ -1181,7 +1252,7 @@ export default function InscricaoPublicaPage() {
               {/* Sexo */}
               <div>
                 <label className={LBL}>Sexo</label>
-                <select name="sexo" value={form.sexo} onChange={handleText} className={INP + (dadosMinisteriaisBloqueados ? ' bg-gray-50 text-gray-600' : '')} disabled={dadosMinisteriaisBloqueados}>
+                <select name="sexo" value={form.sexo} onChange={handleText} className={INP}>
                   <option value="">Selecione...</option>
                   <option value="M">Masculino</option>
                   <option value="F">Feminino</option>
@@ -1199,7 +1270,7 @@ export default function InscricaoPublicaPage() {
             <div className="mb-4">
               <label className={LBL}>Supervisão *</label>
               <select name="supervisao_id" value={form.supervisao_id} onChange={handleText}
-                className={INP + (dadosMinisteriaisBloqueados ? ' bg-gray-50 text-gray-600' : '')} disabled={dadosMinisteriaisBloqueados} required>
+                className={INP} required>
                 <option value="">Selecione a supervisão...</option>
                 {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
               </select>
@@ -1208,8 +1279,8 @@ export default function InscricaoPublicaPage() {
             {/* Campo */}
             <div className="mb-6">
               <label className={LBL}>Campo</label>
-              <select name="campo_id" value={form.campo_id} onChange={handleText} className={INP + (dadosMinisteriaisBloqueados ? ' bg-gray-50 text-gray-600' : '')}
-                disabled={dadosMinisteriaisBloqueados || carregandoCampos || !form.supervisao_id}>
+              <select name="campo_id" value={form.campo_id} onChange={handleText} className={INP}
+                disabled={carregandoCampos || !form.supervisao_id}>
                 <option value="">
                   {carregandoCampos ? 'Carregando...' : !form.supervisao_id ? 'Selecione a supervisão primeiro' : 'Selecione o campo...'}
                 </option>
@@ -1272,7 +1343,7 @@ export default function InscricaoPublicaPage() {
                             <div className="flex items-center gap-3">
                               <input type="radio" name="tipo_inscricao" value={t.id}
                                 checked={tipoSelecionado?.id === t.id}
-                                onChange={() => { setTipoSelecionado(t); setCupomStatus('idle'); setCupomDesconto(0); }}
+                                onChange={() => { setTipoSelecionado(t); setCupomStatus('idle'); setCupomDesconto(0); setCupomMeta(null); }}
                                 className="accent-[#123b63]" />
                               <div>
                                 <p className="text-sm font-semibold text-gray-800 flex items-center gap-2">
@@ -1307,7 +1378,7 @@ export default function InscricaoPublicaPage() {
                           <div className="flex items-center gap-3">
                             <input type="radio" name="tipo_inscricao" value={t.id}
                               checked={tipoSelecionado?.id === t.id}
-                              onChange={() => { setTipoSelecionado(t); setCupomStatus('idle'); setCupomDesconto(0); }}
+                              onChange={() => { setTipoSelecionado(t); setCupomStatus('idle'); setCupomDesconto(0); setCupomMeta(null); }}
                               className="accent-[#123b63]" />
                             <div>
                               <p className="text-sm font-semibold text-gray-800 flex items-center gap-2">
@@ -1588,7 +1659,7 @@ export default function InscricaoPublicaPage() {
                       {cupomStatus === 'validando' ? 'Validando...' : 'Aplicar'}
                     </button>
                   ) : (
-                    <button type="button" onClick={() => { setCupomStatus('idle'); setCupomCodigo(''); setCupomDesconto(0); }}
+                    <button type="button" onClick={() => { setCupomStatus('idle'); setCupomCodigo(''); setCupomDesconto(0); setCupomMeta(null); }}
                       className="w-full sm:w-auto px-4 py-2 bg-gray-200 text-gray-600 text-sm font-semibold rounded-xl hover:bg-gray-300 transition whitespace-nowrap">
                       Remover
                     </button>

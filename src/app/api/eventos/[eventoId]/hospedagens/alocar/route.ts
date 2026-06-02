@@ -25,6 +25,46 @@ export async function POST(
   if (!guard.ok) return guard.response;
   const supabase = guard.ctx.supabaseAdmin;
 
+  const lockTipo = 'autoalocacao_hospedagem';
+  const lockOwnerToken = crypto.randomUUID();
+  let lockAdquirido = false;
+
+  await supabase
+    .from('evento_autoalocacao_locks')
+    .delete()
+    .eq('evento_id', eventoId)
+    .eq('tipo', lockTipo)
+    .lt('expires_at', new Date().toISOString());
+
+  const { error: errLock } = await supabase
+    .from('evento_autoalocacao_locks')
+    .insert({
+      evento_id: eventoId,
+      tipo: lockTipo,
+      owner_token: lockOwnerToken,
+      expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    });
+
+  if (errLock) {
+    if (errLock.code === '23505') {
+      return NextResponse.json(
+        { error: 'Autoalocacao ja esta em execucao para este evento. Aguarde finalizar.' },
+        { status: 409 },
+      );
+    }
+    if (errLock.code === '42P01') {
+      return NextResponse.json(
+        { error: 'Infra de lock da autoalocacao nao configurada. Aplique a migracao 20260602_hospedagem_concorrencia_e_integridade.sql.' },
+        { status: 500 },
+      );
+    }
+    return NextResponse.json({ error: errLock.message }, { status: 500 });
+  }
+
+  lockAdquirido = true;
+
+  const executarAutoalocacao = async () => {
+
   await logDB({
     userId: guard.ctx.user?.id,
     userEmail: guard.ctx.user?.email ?? undefined,
@@ -261,11 +301,44 @@ export async function POST(
       return pb - pa;
     });
 
+  const chunkArray = <T,>(items: T[], chunkSize: number): T[][] => {
+    if (items.length === 0) return [];
+    const size = Math.max(1, chunkSize);
+    const chunks: T[][] = [];
+    for (let i = 0; i < items.length; i += size) {
+      chunks.push(items.slice(i, i + size));
+    }
+    return chunks;
+  };
+
   let alocadas_count = 0;
   let lista_espera_count = 0;
   let leitos_atribuidos = 0;
   let prioridadeSemInferior = 0;
   let semVaga = 0;
+
+  type HospedagemUpdateRow = {
+    id: string;
+    status: string;
+    alojamento_id: string | null;
+    tipo_cama: string | null;
+    numero_cama: string | null;
+    prioridade?: number;
+    observacoes?: string | null;
+    alocacao_automatica: boolean;
+  };
+
+  const hospedagensParaAtualizar: HospedagemUpdateRow[] = [];
+  const leitosParaInserir: Array<{
+    evento_id: string;
+    alojamento_id: string;
+    inscricao_id: string;
+    numero: string;
+    tipo_leito: 'beliche';
+    posicao: 'inferior' | 'superior' | 'unico';
+    ocupado: boolean;
+  }> = [];
+  const leitosParaLiberar: string[] = [];
 
   for (const hosp of elegiveis) {
     const insc = hosp.evento_inscricoes as unknown as (InscricaoParaHospedagem & { grupo_hospedagem?: string | null }) | null;
@@ -291,22 +364,15 @@ export async function POST(
     const sugestao = sugerirAlojamento(insc, candidatos, prioridade);
 
     if (!sugestao.alojamento_id || sugestao.status === 'lista_espera') {
-      await supabase
-        .from('evento_hospedagens')
-        .update({
-          status: 'lista_espera',
-          alojamento_id: null,
-          tipo_cama: null,
-          numero_cama: null,
-          alocacao_automatica: true,
-        })
-        .eq('id', hosp.id)
-        .eq('evento_id', eventoId);
-      await supabase
-        .from('evento_hospedagem_leitos')
-        .delete()
-        .eq('evento_id', eventoId)
-        .eq('inscricao_id', hosp.inscricao_id as string);
+      hospedagensParaAtualizar.push({
+        id: hosp.id as string,
+        status: 'lista_espera',
+        alojamento_id: null,
+        tipo_cama: null,
+        numero_cama: null,
+        alocacao_automatica: true,
+      });
+      leitosParaLiberar.push(hosp.inscricao_id as string);
       semVaga++;
       lista_espera_count++;
       continue;
@@ -327,43 +393,105 @@ export async function POST(
     const alertaTxt = alertaInferior ? 'PRIORIDADE SEM LEITO INFERIOR DISPONIVEL' : '';
     const observacaoNova = [observacaoAtual, alertaTxt].filter(Boolean).join(' | ') || null;
 
-    await supabase
-      .from('evento_hospedagens')
-      .update({
-        alojamento_id: alojId,
-        tipo_cama: sugestao.tipo_cama,
-        numero_cama: numeroCama,
-        status: 'alocada',
-        prioridade: sugestao.prioridade,
-        observacoes: observacaoNova,
-        alocacao_automatica: true,
-      })
-      .eq('id', hosp.id)
-      .eq('evento_id', eventoId);
+    hospedagensParaAtualizar.push({
+      id: hosp.id as string,
+      alojamento_id: alojId,
+      tipo_cama: sugestao.tipo_cama,
+      numero_cama: numeroCama,
+      status: 'alocada',
+      prioridade: sugestao.prioridade,
+      observacoes: observacaoNova,
+      alocacao_automatica: true,
+    });
 
-    const { error: errLeito } = await supabase
-      .from('evento_hospedagem_leitos')
-      .upsert(
-        [{
-          evento_id: eventoId,
-          alojamento_id: alojId,
-          inscricao_id: hosp.inscricao_id,
-          numero: numeroCama,
-          tipo_leito: 'beliche',
-          posicao,
-          ocupado: true,
-        }],
-        { onConflict: 'inscricao_id' },
-      );
-
-    if (!errLeito) {
-      leitos_atribuidos++;
-    }
+    leitosParaInserir.push({
+      evento_id: eventoId,
+      alojamento_id: alojId,
+      inscricao_id: hosp.inscricao_id as string,
+      numero: numeroCama,
+      tipo_leito: 'beliche',
+      posicao,
+      ocupado: true,
+    });
+    leitos_atribuidos++;
 
     vagasMap[alojId].total--;
     if (sugestao.tipo_cama === 'inferior') vagasMap[alojId].inferiores--;
     if (sugestao.tipo_cama === 'superior') vagasMap[alojId].superiores--;
     alocadas_count++;
+  }
+
+  // Persiste decisões com concorrência limitada para reduzir round-trips sem perder segurança.
+  for (const batch of chunkArray(hospedagensParaAtualizar, 40)) {
+    const resultados = await Promise.allSettled(
+      batch.map(row =>
+        supabase
+          .from('evento_hospedagens')
+          .update({
+            status: row.status,
+            alojamento_id: row.alojamento_id,
+            tipo_cama: row.tipo_cama,
+            numero_cama: row.numero_cama,
+            prioridade: row.prioridade,
+            observacoes: row.observacoes,
+            alocacao_automatica: row.alocacao_automatica,
+          })
+          .eq('id', row.id)
+          .eq('evento_id', eventoId),
+      ),
+    );
+
+    const houveErro = resultados.some(r => {
+      if (r.status === 'rejected') return true;
+      const erro = (r.value as { error?: { message?: string } | null }).error;
+      return !!erro;
+    });
+
+    if (houveErro) {
+      return NextResponse.json({ error: 'Falha ao persistir atualizacoes de hospedagem.' }, { status: 500 });
+    }
+  }
+
+  if (leitosParaLiberar.length > 0) {
+    for (const batch of chunkArray(leitosParaLiberar, 500)) {
+      const { error: errDelete } = await supabase
+        .from('evento_hospedagem_leitos')
+        .delete()
+        .eq('evento_id', eventoId)
+        .in('inscricao_id', batch);
+      if (errDelete) {
+        return NextResponse.json({ error: errDelete.message }, { status: 500 });
+      }
+    }
+  }
+
+  const inscricoesComLeitoNovo = Array.from(new Set(leitosParaInserir.map(l => l.inscricao_id)));
+  if (inscricoesComLeitoNovo.length > 0) {
+    for (const batch of chunkArray(inscricoesComLeitoNovo, 500)) {
+      const { error: errDeletePrevio } = await supabase
+        .from('evento_hospedagem_leitos')
+        .delete()
+        .eq('evento_id', eventoId)
+        .in('inscricao_id', batch);
+      if (errDeletePrevio) {
+        return NextResponse.json({ error: errDeletePrevio.message }, { status: 500 });
+      }
+    }
+  }
+
+  for (const batch of chunkArray(leitosParaInserir, 300)) {
+    const { error: errLeitos } = await supabase
+      .from('evento_hospedagem_leitos')
+      .insert(batch);
+    if (errLeitos) {
+      if (errLeitos.code === '23505') {
+        return NextResponse.json(
+          { error: 'Conflito de leito detectado durante a autoalocacao. Tente novamente.' },
+          { status: 409 },
+        );
+      }
+      return NextResponse.json({ error: errLeitos.message }, { status: 500 });
+    }
   }
 
   await logDB({
@@ -375,30 +503,6 @@ export async function POST(
     entidadeId: eventoId,
     descricao: `[Hospedagem] Alocacoes automaticas realizadas: ${alocadas_count}`,
     detalhes: { quantidade: alocadas_count },
-    request: _req,
-  });
-
-  await logDB({
-    userId: guard.ctx.user?.id,
-    userEmail: guard.ctx.user?.email ?? undefined,
-    acao: 'hospedagem_lista_espera',
-    modulo: 'eventos',
-    entidade: 'evento_hospedagens',
-    entidadeId: eventoId,
-    descricao: `[Hospedagem] Lista de espera gerada: ${lista_espera_count}`,
-    detalhes: { quantidade: lista_espera_count },
-    request: _req,
-  });
-
-  await logDB({
-    userId: guard.ctx.user?.id,
-    userEmail: guard.ctx.user?.email ?? undefined,
-    acao: 'hospedagem_sem_vaga',
-    modulo: 'eventos',
-    entidade: 'evento_hospedagens',
-    entidadeId: eventoId,
-    descricao: `[Hospedagem] Sem vaga para alocacao: ${semVaga}`,
-    detalhes: { quantidade: semVaga },
     request: _req,
   });
 
@@ -430,4 +534,18 @@ export async function POST(
     aguardando_pagamento: pendentesPagamento.length,
     prioridade_sem_leito_inferior: prioridadeSemInferior,
   });
+  };
+
+  try {
+    return await executarAutoalocacao();
+  } finally {
+    if (lockAdquirido) {
+      await supabase
+        .from('evento_autoalocacao_locks')
+        .delete()
+        .eq('evento_id', eventoId)
+        .eq('tipo', lockTipo)
+        .eq('owner_token', lockOwnerToken);
+    }
+  }
 }
