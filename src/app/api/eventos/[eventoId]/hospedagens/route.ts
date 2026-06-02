@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireEventoPermission } from '@/lib/evento-guard';
 import { normalizePayloadUppercase } from '@/lib/text';
+import { logDB } from '@/lib/audit';
+import { grupoMatchesAlojamento } from '@/lib/hospedagem-helpers';
+import {
+  isElegivelAutoalocacao,
+  isPagamentoElegivel,
+  resolveStatusOperacionalHospedagem,
+} from '@/lib/hospedagem-operacional';
 
 // GET /api/eventos/[eventoId]/hospedagens
 // Lista todas as solicitações de hospedagem (inscricoes com hospedagem=true)
@@ -39,7 +46,7 @@ export async function GET(
       tipo_cama, numero_cama, observacoes, alocacao_automatica,
       grupo_hospedagem,
       checkin_at, checkout_at, checkin_operador, checkout_operador,
-      evento_alojamentos ( id, nome, publico )
+      evento_alojamentos ( id, nome, publico, total_vagas )
     `)
     .eq('evento_id', eventoId);
 
@@ -57,6 +64,37 @@ export async function GET(
     const ei = insc as unknown as InscRow;
     const aloc = alocMap.get(insc.id);
     const aloj = aloc ? (aloc.evento_alojamentos as AlocRow | null) : null;
+    const statusOperacional = resolveStatusOperacionalHospedagem({
+      status: (aloc?.status ?? 'solicitada') as string,
+      status_pagamento: insc.status_pagamento ?? null,
+      alojamento_id: (aloc?.alojamento_id ?? null) as string | null,
+      tipo_cama: (aloc?.tipo_cama ?? null) as string | null,
+      numero_cama: (aloc?.numero_cama ?? null) as string | null,
+      hospedagem: true,
+    });
+    const elegivelAutoalocacao = isElegivelAutoalocacao({
+      status: (aloc?.status ?? 'solicitada') as string,
+      status_pagamento: insc.status_pagamento ?? null,
+      alojamento_id: (aloc?.alojamento_id ?? null) as string | null,
+      tipo_cama: (aloc?.tipo_cama ?? null) as string | null,
+      numero_cama: (aloc?.numero_cama ?? null) as string | null,
+      hospedagem: true,
+    });
+    const pendencias: string[] = [];
+    const statusPagamento = String(insc.status_pagamento ?? '').toLowerCase();
+    const alocacaoIncompleta = !!(aloc?.alojamento_id) && (!aloc?.tipo_cama || !aloc?.numero_cama);
+    const grupoIncompativel = !!(aloj && (aloc?.grupo_hospedagem ?? ei.grupo_hospedagem) && !grupoMatchesAlojamento(
+      (aloc?.grupo_hospedagem ?? ei.grupo_hospedagem) as string,
+      { publico: String((aloj as AlocRow).publico ?? ''), nome: String((aloj as AlocRow).nome ?? '') },
+    ));
+
+    if (isPagamentoElegivel(statusPagamento) && !aloc?.alojamento_id) pendencias.push('pagou_mas_nao_alocado');
+    if (!isPagamentoElegivel(statusPagamento)) pendencias.push('solicitou_sem_pagamento');
+    if (!!(ei.hosp_cama_inferior) && aloc?.tipo_cama && aloc.tipo_cama !== 'inferior') pendencias.push('prioridade_sem_leito_inferior');
+    if (!(aloc?.grupo_hospedagem ?? ei.grupo_hospedagem)) pendencias.push('sem_grupo_calculado');
+    if (grupoIncompativel) pendencias.push('grupo_incompativel_alojamento');
+    if (alocacaoIncompleta) pendencias.push('sem_numero_leito');
+
     return {
       id:                    aloc?.id              ?? null,
       inscricao_id:          insc.id,
@@ -86,9 +124,37 @@ export async function GET(
       campo_id:          insc.campo_id          ?? null,
       tipo_inscricao:    insc.tipo_inscricao    ?? null,
       status_pagamento:  insc.status_pagamento  ?? null,
+      status_operacional: statusOperacional,
+      elegivel_autoalocacao: elegivelAutoalocacao,
+      pendencias,
       // Alojamento
       alojamento_nome:   aloj?.nome             ?? null,
     };
+  });
+
+  // Pendencia de capacidade (global): alojamento acima da capacidade
+  const capacidadeMap = new Map<string, { capacidade: number; ocupados: number }>();
+  for (const a of alocacoes ?? []) {
+    const alojRaw = (a as unknown as AlocRow).evento_alojamentos as AlocRow | AlocRow[] | null;
+    const alojObj = Array.isArray(alojRaw) ? (alojRaw[0] ?? null) : alojRaw;
+    const alojId = String((a as unknown as AlocRow).alojamento_id ?? '');
+    if (!alojId || !alojObj) continue;
+    const capacidade = Number((alojObj as AlocRow).total_vagas ?? 0);
+    if (!capacidadeMap.has(alojId)) capacidadeMap.set(alojId, { capacidade, ocupados: 0 });
+    const atual = capacidadeMap.get(alojId)!;
+    if (['alocada', 'confirmada', 'checkin_realizado'].includes(String((a as unknown as AlocRow).status ?? ''))) {
+      atual.ocupados += 1;
+    }
+  }
+  const acimaCapacidade = new Set<string>();
+  for (const [alojId, cap] of capacidadeMap.entries()) {
+    if (cap.capacidade > 0 && cap.ocupados > cap.capacidade) acimaCapacidade.add(alojId);
+  }
+  hospedagens.forEach((h) => {
+    const alojId = typeof h.alojamento_id === 'string' ? h.alojamento_id : null;
+    if (alojId && acimaCapacidade.has(alojId)) {
+      h.pendencias = Array.from(new Set([...(h.pendencias ?? []), 'alojamento_acima_capacidade']));
+    }
   });
 
   return NextResponse.json({ hospedagens });
@@ -136,6 +202,17 @@ export async function POST(
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  await logDB({
+    userId: guard.ctx.user?.id,
+    userEmail: guard.ctx.user?.email ?? undefined,
+    acao: 'ajuste_manual_hospedagem',
+    modulo: 'eventos',
+    entidade: 'evento_hospedagens',
+    entidadeId: String(data?.id ?? inscricao_id),
+    descricao: '[Hospedagem] Criacao/ajuste manual de hospedagem',
+    detalhes: { evento_id: eventoId, inscricao_id },
+    request,
+  });
   return NextResponse.json({ hospedagem: data });
 }
 
@@ -210,6 +287,17 @@ export async function PATCH(
     .eq('evento_id', eventoId);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  await logDB({
+    userId: guard.ctx.user?.id,
+    userEmail: guard.ctx.user?.email ?? undefined,
+    acao: 'ajuste_manual_hospedagem',
+    modulo: 'eventos',
+    entidade: 'evento_hospedagens',
+    entidadeId: id,
+    descricao: '[Hospedagem] Edicao manual de hospedagem',
+    detalhes: { evento_id: eventoId, updates: updatesNormalized },
+    request,
+  });
   return NextResponse.json({ ok: true });
 }
 
@@ -233,5 +321,16 @@ export async function DELETE(
     .eq('evento_id', eventoId);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  await logDB({
+    userId: guard.ctx.user?.id,
+    userEmail: guard.ctx.user?.email ?? undefined,
+    acao: 'ajuste_manual_hospedagem',
+    modulo: 'eventos',
+    entidade: 'evento_hospedagens',
+    entidadeId: id,
+    descricao: '[Hospedagem] Remocao manual de hospedagem',
+    detalhes: { evento_id: eventoId },
+    request,
+  });
   return NextResponse.json({ ok: true });
 }

@@ -48,6 +48,7 @@ export interface SugestaoHospedagem {
   tipo_cama: 'inferior' | 'superior' | null;
   status: 'confirmada' | 'lista_espera';
   prioridade: number;
+  prioridadeInferiorNaoAtendida?: boolean;
 }
 
 // ─── Prioridade ───────────────────────────────────────────────
@@ -215,10 +216,19 @@ export function sugerirAlojamento(
           tipo_cama: 'inferior',
           status: 'confirmada',
           prioridade,
+          prioridadeInferiorNaoAtendida: false,
         };
       }
-      // Sem inferior disponível: pode usar superior (lista espera para inferior?)
-      // Por spec: se não cabe preferência, coloca em lista_espera
+      const supLivres = aloj.superiores_livres ?? (aloj.camas_superiores - 0);
+      if (supLivres > 0) {
+        return {
+          alojamento_id: aloj.id,
+          tipo_cama: 'superior',
+          status: 'confirmada',
+          prioridade,
+          prioridadeInferiorNaoAtendida: true,
+        };
+      }
       continue;
     }
 
@@ -230,6 +240,7 @@ export function sugerirAlojamento(
         tipo_cama: 'superior',
         status: 'confirmada',
         prioridade,
+        prioridadeInferiorNaoAtendida: false,
       };
     }
 
@@ -241,9 +252,16 @@ export function sugerirAlojamento(
         tipo_cama: 'inferior',
         status: 'confirmada',
         prioridade,
+        prioridadeInferiorNaoAtendida: false,
       };
     }
   }
 
-  return { alojamento_id: null, tipo_cama: null, status: 'lista_espera', prioridade };
+  return {
+    alojamento_id: null,
+    tipo_cama: null,
+    status: 'lista_espera',
+    prioridade,
+    prioridadeInferiorNaoAtendida: false,
+  };
 }

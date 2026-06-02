@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireEventoPermission } from '@/lib/evento-guard';
+import { logDB } from '@/lib/audit';
 
 /**
  * POST /api/eventos/[eventoId]/hospedagens/realocar
@@ -141,6 +142,25 @@ export async function POST(
       descricao:    motivo?.trim() || null,
       operador:     operador?.trim() || null,
     });
+
+  await logDB({
+    userId: guard.ctx.user?.id,
+    userEmail: guard.ctx.user?.email ?? undefined,
+    acao: 'ajuste_manual_hospedagem',
+    modulo: 'eventos',
+    entidade: 'evento_hospedagens',
+    entidadeId: hospedagem_id,
+    descricao: '[Hospedagem] Realocacao manual de participante',
+    detalhes: {
+      evento_id: eventoId,
+      inscricao_id: hospedagem.inscricao_id,
+      novo_alojamento_id,
+      novo_tipo_cama: novo_tipo_cama ?? null,
+      novo_numero_cama: novoNumero,
+      motivo: motivo ?? null,
+    },
+    request: req,
+  });
 
   return NextResponse.json({ ok: true, novo_numero_leito: novoNumero });
 }

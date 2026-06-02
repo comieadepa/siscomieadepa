@@ -67,18 +67,40 @@ interface Hospedagem {
   tipo_inscricao?: string | null;
   status_pagamento?: string | null;
   alojamento_nome?: string | null;
+  status_operacional?:
+    | 'solicitada'
+    | 'aguardando_pagamento'
+    | 'elegivel'
+    | 'alocada'
+    | 'confirmada'
+    | 'checkin_realizado'
+    | 'lista_espera';
+  elegivel_autoalocacao?: boolean;
+  pendencias?: string[];
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 const STATUS_HOSP_CFG: Record<string, { label: string; cls: string }> = {
-  solicitada:        { label: 'Solicitada',       cls: 'bg-yellow-100 text-yellow-700' },
-  alocada:           { label: 'Alocada',          cls: 'bg-blue-100 text-blue-700' },
-  confirmada:        { label: 'Confirmada',       cls: 'bg-emerald-100 text-emerald-700' },
-  checkin_realizado: { label: 'Check-in ✔',      cls: 'bg-teal-100 text-teal-700' },
-  checkout_realizado:{ label: 'Check-out ✔',     cls: 'bg-gray-100 text-gray-600' },
-  lista_espera:      { label: 'Lista Espera',     cls: 'bg-orange-100 text-orange-700' },
-  cancelada:         { label: 'Cancelada',        cls: 'bg-red-100 text-red-700' },
-  recusada:          { label: 'Recusada',         cls: 'bg-red-100 text-red-700' },
+  solicitada:           { label: 'Solicitada',            cls: 'bg-yellow-100 text-yellow-700' },
+  aguardando_pagamento: { label: 'Aguardando pagamento',  cls: 'bg-amber-100 text-amber-800' },
+  elegivel:             { label: 'Elegível',              cls: 'bg-blue-100 text-blue-700' },
+  alocada:              { label: 'Alocada',               cls: 'bg-indigo-100 text-indigo-700' },
+  confirmada:           { label: 'Confirmada',            cls: 'bg-emerald-100 text-emerald-700' },
+  checkin_realizado:    { label: 'Check-in realizado',    cls: 'bg-teal-100 text-teal-700' },
+  lista_espera:         { label: 'Lista de espera',       cls: 'bg-orange-100 text-orange-700' },
+  checkout_realizado:   { label: 'Check-out realizado',   cls: 'bg-gray-100 text-gray-600' },
+  cancelada:            { label: 'Cancelada',             cls: 'bg-red-100 text-red-700' },
+  recusada:             { label: 'Recusada',              cls: 'bg-red-100 text-red-700' },
+};
+
+const PENDENCIA_LABEL: Record<string, string> = {
+  pagou_mas_nao_alocado: 'Pagou, mas sem alocação',
+  solicitou_sem_pagamento: 'Solicitou, mas sem pagamento',
+  prioridade_sem_leito_inferior: 'Prioridade sem leito inferior',
+  sem_grupo_calculado: 'Sem grupo calculado',
+  grupo_incompativel_alojamento: 'Grupo incompatível com alojamento',
+  sem_numero_leito: 'Sem número de leito',
+  alojamento_acima_capacidade: 'Alojamento acima da capacidade',
 };
 
 
@@ -134,6 +156,7 @@ export default function TabHospedagem({
   const [filtroSup,     setFiltroSup]     = useState('');
   const [filtroNecEsp,  setFiltroNecEsp]  = useState('');
   const [filtroGrupo,   setFiltroGrupo]   = useState('');
+  const [filtroPend,    setFiltroPend]    = useState('');
   const [busca,         setBusca]         = useState('');
 
   // Modal edição
@@ -234,12 +257,13 @@ export default function TabHospedagem({
 
   const hospFiltradas = useMemo(() => {
     let list = hospedagens;
-    if (filtroStatus)  list = list.filter(h => h.status === filtroStatus);
+    if (filtroStatus)  list = list.filter(h => (h.status_operacional ?? h.status) === filtroStatus);
     if (filtroAloj)    list = list.filter(h => h.alojamento_id === filtroAloj);
     if (filtroSup)     list = list.filter(h => h.supervisao_id === filtroSup);
     if (filtroNecEsp === '1') list = list.filter(h => h.necessidade_especial);
     if (filtroNecEsp === '0') list = list.filter(h => !h.necessidade_especial);
     if (filtroGrupo)   list = list.filter(h => h.grupo_hospedagem === filtroGrupo);
+    if (filtroPend)    list = list.filter(h => (h.pendencias ?? []).includes(filtroPend));
     if (busca.trim()) {
       const q = busca.trim().toLowerCase();
       list = list.filter(h =>
@@ -248,18 +272,30 @@ export default function TabHospedagem({
       );
     }
     return list;
-  }, [hospedagens, filtroStatus, filtroAloj, filtroSup, filtroNecEsp, filtroGrupo, busca]);
+  }, [hospedagens, filtroStatus, filtroAloj, filtroSup, filtroNecEsp, filtroGrupo, filtroPend, busca]);
 
   // ── Stats ──────────────────────────────────────────────────
   const stats = useMemo(() => ({
-    total:       hospedagens.length,
-    solicitadas: hospedagens.filter(h => h.status === 'solicitada').length,
-    confirmadas: hospedagens.filter(h => h.status === 'confirmada').length,
-    listaEspera: hospedagens.filter(h => h.status === 'lista_espera').length,
-    necEsp:      hospedagens.filter(h => h.necessidade_especial).length,
-    camaInf:     hospedagens.filter(h => h.cama_inferior).length,
-    vagasDisp:   alojamentos.filter(a => a.ativo).reduce((sum, a) => sum + (a.vagas_livres ?? 0), 0),
+    total: hospedagens.length,
+    aguardandoPagamento: hospedagens.filter(h => (h.status_operacional ?? h.status) === 'aguardando_pagamento').length,
+    elegiveis: hospedagens.filter(h => (h.status_operacional ?? h.status) === 'elegivel').length,
+    alocadas: hospedagens.filter(h => ['alocada', 'confirmada', 'checkin_realizado'].includes(h.status_operacional ?? h.status)).length,
+    listaEspera: hospedagens.filter(h => (h.status_operacional ?? h.status) === 'lista_espera').length,
+    vagasDisp: alojamentos.filter(a => a.ativo).reduce((sum, a) => sum + (a.vagas_livres ?? 0), 0),
+    prioridadeInferiorPendente: hospedagens.filter(h => (h.pendencias ?? []).includes('prioridade_sem_leito_inferior')).length,
   }), [hospedagens, alojamentos]);
+
+  const pendenciasResumo = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const h of hospedagens) {
+      for (const p of h.pendencias ?? []) {
+        map[p] = (map[p] ?? 0) + 1;
+      }
+    }
+    return Object.entries(map)
+      .sort((a, b) => b[1] - a[1])
+      .map(([codigo, qtd]) => ({ codigo, qtd, label: PENDENCIA_LABEL[codigo] ?? codigo }));
+  }, [hospedagens]);
 
   // ── Setores planejados (configuracoes_ago.setores) ─────────
   const setoresConfigurados = useMemo(
@@ -281,36 +317,6 @@ export default function TabHospedagem({
       .catch(console.error)
       .finally(() => setSincronizando(false));
   }, [loadingAloj, alojamentos.length, setoresConfigurados.length, eventoId, fetchAlojamentos]);
-
-  // ── Stats de capacidade ────────────────────────────────────
-  const statsCapacidade = useMemo(() => {
-    // Quando não há alojamentos físicos, usar capacidade dos setores planejados
-    const semAlojamentos = alojamentos.length === 0 && setoresConfigurados.length > 0;
-    const capacidadeTotal = semAlojamentos
-      ? setoresConfigurados.filter(s => s.ativo).reduce((sum, s) => sum + s.quantidade_leitos, 0)
-      : alojamentos.filter(a => a.ativo).reduce((s, a) => s + a.total_vagas, 0);
-    const inferioresTotal = semAlojamentos
-      ? setoresConfigurados.filter(s => s.ativo).reduce((sum, s) => sum + s.quantidade_leitos_inferiores, 0)
-      : alojamentos.filter(a => a.ativo).reduce((s, a) => s + a.camas_inferiores, 0);
-    const confirmadas     = hospedagens.filter(h => h.status === 'confirmada').length;
-    const infOcupados     = hospedagens.filter(h => h.status === 'confirmada' && h.tipo_cama === 'inferior').length;
-    const checkins        = hospedagens.filter(h => h.status === 'checkin_realizado').length;
-    const checkouts       = hospedagens.filter(h => h.status === 'checkout_realizado').length;
-    const ausentes        = hospedagens.filter(h =>
-      (h.status === 'confirmada' || h.status === 'alocada') && !h.checkin_at,
-    ).length;
-    return {
-      capacidadeTotal,
-      ocupados:         confirmadas,
-      livres:           Math.max(0, capacidadeTotal - confirmadas - checkins),
-      taxaOcupacao:     capacidadeTotal > 0 ? Math.round((confirmadas + checkins) / capacidadeTotal * 100) : 0,
-      inferioresLivres: Math.max(0, inferioresTotal - infOcupados),
-      necEspPend:       hospedagens.filter(h => h.necessidade_especial && h.status === 'solicitada').length,
-      checkins,
-      checkouts,
-      ausentes,
-    };
-  }, [hospedagens, alojamentos, setoresConfigurados]);
 
   // ── Abrir modal edição ─────────────────────────────────────
   function abrirEdicao(h: Hospedagem) {
@@ -542,7 +548,7 @@ export default function TabHospedagem({
         h.alojamento_nome,
         h.numero_cama,
         h.tipo_cama,
-        h.status,
+        h.status_operacional ?? h.status,
         h.prioridade,
         h.necessidade_especial ? 'Sim' : 'Não',
         h.descricao_necessidade,
@@ -579,15 +585,16 @@ export default function TabHospedagem({
         ))}
       </div>
 
-      {/* ── Cards de capacidade ──────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      {/* ── Cards operacionais ──────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
         {[
-          { label: 'Cap. Total',    value: statsCapacidade.capacidadeTotal,  cor: 'text-[#123b63]' },
-          { label: 'Check-in ✓',   value: statsCapacidade.checkins,         cor: 'text-teal-600' },
-          { label: 'Check-out ✓',  value: statsCapacidade.checkouts,        cor: 'text-gray-500' },
-          { label: 'Ausentes',      value: statsCapacidade.ausentes,         cor: 'text-amber-600' },
-          { label: 'Livres',        value: statsCapacidade.livres,           cor: 'text-emerald-600' },
-          { label: 'NE Pendentes',  value: statsCapacidade.necEspPend,       cor: 'text-purple-600' },
+          { label: 'Solicitações', value: stats.total, cor: 'text-[#123b63]' },
+          { label: 'Aguard. pgto', value: stats.aguardandoPagamento, cor: 'text-amber-700' },
+          { label: 'Elegíveis', value: stats.elegiveis, cor: 'text-blue-700' },
+          { label: 'Alocados', value: stats.alocadas, cor: 'text-indigo-700' },
+          { label: 'Lista espera', value: stats.listaEspera, cor: 'text-orange-700' },
+          { label: 'Vagas livres', value: stats.vagasDisp, cor: 'text-emerald-700' },
+          { label: 'Prioridade ↓ pendente', value: stats.prioridadeInferiorPendente, cor: 'text-rose-700' },
         ].map(s => (
           <div key={s.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 text-center">
             <p className={`text-xl font-black ${s.cor}`}>{s.value}</p>
@@ -601,7 +608,7 @@ export default function TabHospedagem({
         <div className={`rounded-xl px-5 py-3 flex items-center gap-3 border text-sm font-semibold ${
           autoalocResult.erros > 0 ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
         }`}>
-          ✅ Autoalocação concluída: {autoalocResult.alocadas} confirmadas · {autoalocResult.leitos} leitos · {autoalocResult.listaEspera} lista espera
+          ✅ Autoalocação concluída: {autoalocResult.alocadas} alocadas · {autoalocResult.leitos} leitos · {autoalocResult.listaEspera} em lista de espera
           <button onClick={() => setAutoalocResult(null)} className="ml-auto text-gray-400 hover:text-gray-600">✕</button>
         </div>
       )}
@@ -620,7 +627,7 @@ export default function TabHospedagem({
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-wrap gap-3 items-end">
             <button
               onClick={autoalocar}
-              disabled={autoalocando || stats.solicitadas === 0}
+              disabled={autoalocando || stats.elegiveis === 0}
               className="w-full sm:w-auto flex items-center gap-2 bg-[#0D2B4E] text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-[#0a1e38] transition disabled:opacity-50"
             >
               {autoalocando ? '⏳ Alocando...' : '🤖 Autoalocar'}
@@ -639,14 +646,12 @@ export default function TabHospedagem({
               <select value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}
                 className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
                 <option value="">Todos os status</option>
-                <option value="solicitada">Solicitada</option>
+                <option value="aguardando_pagamento">Aguardando pagamento</option>
+                <option value="elegivel">Elegível para alocação</option>
                 <option value="alocada">Alocada</option>
                 <option value="confirmada">Confirmada</option>
                 <option value="checkin_realizado">Check-in Realizado</option>
-                <option value="checkout_realizado">Check-out Realizado</option>
                 <option value="lista_espera">Lista Espera</option>
-                <option value="cancelada">Cancelada</option>
-                <option value="recusada">Recusada</option>
               </select>
 
               <select value={filtroAloj} onChange={e => setFiltroAloj(e.target.value)}
@@ -676,6 +681,14 @@ export default function TabHospedagem({
                 </select>
               )}
 
+              <select value={filtroPend} onChange={e => setFiltroPend(e.target.value)}
+                className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+                <option value="">Todas as pendências</option>
+                {Object.entries(PENDENCIA_LABEL).map(([codigo, label]) => (
+                  <option key={codigo} value={codigo}>{label}</option>
+                ))}
+              </select>
+
               <input
                 type="text"
                 value={busca}
@@ -689,6 +702,31 @@ export default function TabHospedagem({
               className="w-full sm:w-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition">
               📥 CSV
             </button>
+          </div>
+
+          {/* Pendências de hospedagem */}
+          <div className="bg-white rounded-xl border border-amber-200 shadow-sm p-4">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h3 className="text-sm font-bold text-amber-800">Pendências de hospedagem</h3>
+              <span className="text-xs text-amber-700">{pendenciasResumo.reduce((s, p) => s + p.qtd, 0)} ocorrências</span>
+            </div>
+            {pendenciasResumo.length === 0 ? (
+              <p className="text-xs text-gray-500">Nenhuma pendência operacional encontrada no momento.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {pendenciasResumo.map((p) => (
+                  <button
+                    key={p.codigo}
+                    onClick={() => setFiltroPend(p.codigo)}
+                    className="text-left px-3 py-2 rounded-lg border border-amber-100 hover:bg-amber-50 transition"
+                    title="Filtrar participantes com esta pendência"
+                  >
+                    <p className="text-xs font-semibold text-amber-900">{p.label}</p>
+                    <p className="text-[11px] text-amber-700">{p.qtd} caso(s)</p>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Tabela hospedagens */}
@@ -726,7 +764,8 @@ export default function TabHospedagem({
                 </thead>
                 <tbody>
                   {hospFiltradas.map(h => {
-                    const stCfg = STATUS_HOSP_CFG[h.status] ?? STATUS_HOSP_CFG.solicitada;
+                    const statusRef = h.status_operacional ?? h.status;
+                    const stCfg = STATUS_HOSP_CFG[statusRef] ?? STATUS_HOSP_CFG.solicitada;
                     const carregando = salvandoId === h.inscricao_id;
                     const idade = h.data_nascimento
                       ? (() => {
@@ -748,7 +787,14 @@ export default function TabHospedagem({
                         <td className={tdCls + ' text-xs'}>{h.grupo_hospedagem ?? <span className="text-gray-300">—</span>}</td>
                         <td className={tdCls}>{h.alojamento_nome ?? <span className="text-gray-400 italic text-xs">Não alocado</span>}</td>
                         <td className={tdCls}>
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${stCfg.cls}`}>{stCfg.label}</span>
+                          <div className="space-y-1">
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${stCfg.cls}`}>{stCfg.label}</span>
+                            {(h.pendencias ?? []).length > 0 && (
+                              <p className="text-[10px] text-rose-600 font-semibold" title={(h.pendencias ?? []).map(p => PENDENCIA_LABEL[p] ?? p).join(' | ')}>
+                                {(h.pendencias ?? []).length} pendência(s)
+                              </p>
+                            )}
+                          </div>
                         </td>
                         <td className={tdCls + ' text-center'}>
                           {h.necessidade_especial ? (
