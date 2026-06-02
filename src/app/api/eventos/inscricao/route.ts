@@ -335,6 +335,15 @@ export async function POST(request: NextRequest) {
       return n.includes('visitante');
     };
 
+    const ehCategoriaFeminina = (tipo: string | null | undefined) => {
+      const n = norm(tipo);
+      return n.includes('esposa') || n.includes('viuva');
+    };
+
+    const ehCategoriaMasculina = (tipo: string | null | undefined) => {
+      return ehTipoPastorPresidente(tipo) || ehTipoPastorAuxiliar(tipo) || ehTipoPastorJubilado(tipo);
+    };
+
     type TipoEvento = {
       nome: string;
       valor: number;
@@ -682,6 +691,24 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const sexoTitularNorm = String(sexo ?? '').trim().toUpperCase();
+    if (sexoTitularNorm === 'M' && ehCategoriaFeminina(tipoNome)) {
+      return buildErrorResponse(400, {
+        error: 'Categoria feminina inválida para sexo masculino.',
+        stage: 'validacao_tipo_por_sexo_titular',
+        code: 'TIPO_INVALIDO_SEXO_MASCULINO',
+        payloadResumo: { ...payloadResumo, evento_id: evento.id },
+      });
+    }
+    if (sexoTitularNorm === 'F' && ehCategoriaMasculina(tipoNome)) {
+      return buildErrorResponse(400, {
+        error: 'Categoria masculina inválida para sexo feminino.',
+        stage: 'validacao_tipo_por_sexo_titular',
+        code: 'TIPO_INVALIDO_SEXO_FEMININO',
+        payloadResumo: { ...payloadResumo, evento_id: evento.id },
+      });
+    }
+
     if (fluxoCampoMissionarioEspecial && ehLote) {
       return buildErrorResponse(400, {
         error: 'Campo Missionário permite inscrição apenas do Pastor Presidente e, opcionalmente, sua esposa.',
@@ -1025,6 +1052,24 @@ export async function POST(request: NextRequest) {
             stage: 'validacao_tipo_inscricao_lote',
             code: 'TIPO_INSCRICAO_INVALIDO_LOTE',
             details: `Categoria não encontrada/inativa: ${String(tipoParticipante ?? '').trim()}`,
+            payloadResumo: { ...payloadResumo, evento_id: evento.id },
+          });
+        }
+
+        const sexoParticipanteNorm = String(p.sexo ?? '').trim().toUpperCase();
+        if (sexoParticipanteNorm === 'M' && ehCategoriaFeminina(tipoParticipante)) {
+          return buildErrorResponse(400, {
+            error: `Categoria feminina inválida para sexo masculino (participante ${idx + 1}).`,
+            stage: 'validacao_tipo_por_sexo_lote',
+            code: 'TIPO_INVALIDO_SEXO_MASCULINO_LOTE',
+            payloadResumo: { ...payloadResumo, evento_id: evento.id },
+          });
+        }
+        if (sexoParticipanteNorm === 'F' && ehCategoriaMasculina(tipoParticipante)) {
+          return buildErrorResponse(400, {
+            error: `Categoria masculina inválida para sexo feminino (participante ${idx + 1}).`,
+            stage: 'validacao_tipo_por_sexo_lote',
+            code: 'TIPO_INVALIDO_SEXO_FEMININO_LOTE',
             payloadResumo: { ...payloadResumo, evento_id: evento.id },
           });
         }

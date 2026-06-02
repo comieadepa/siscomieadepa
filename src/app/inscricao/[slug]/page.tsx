@@ -11,7 +11,10 @@ import { resolveGrupoHospedagemAGO } from '@/lib/hospedagem-helpers';
 import {
   filtrarTiposAgo,
   findTipoPastorJubilado,
+  ehTipoPastorAuxiliar,
   ehTipoPastorPresidente,
+  ehTipoPastorJubilado,
+  ehTipoVisitante,
 } from '@/lib/ago-inscricao-regras';
 import {
   isEventoInscricaoPublicaDisponivel,
@@ -134,6 +137,15 @@ interface ExtraMinisterialInfo {
   isPastorAuxiliar: boolean;
   isJubilado: boolean;
 }
+
+const EXTRA_MINISTERIAL_VAZIO: ExtraMinisterialInfo = {
+  cpfStatus: 'idle',
+  ministroAtivo: false,
+  cargoMinisterial: null,
+  isPastorPresidente: false,
+  isPastorAuxiliar: false,
+  isJubilado: false,
+};
 
 // Dados da esposa (AGO — Campo Missionário)
 interface FormEsposa {
@@ -537,18 +549,21 @@ export default function InscricaoPublicaPage() {
       hosp_possui_comorbidade: false,
       hosp_descricao_comorbidade: '',
     }]);
-    setExtrasMinisteriais((m) => [...m, {
-      cpfStatus: 'idle',
-      ministroAtivo: false,
-      cargoMinisterial: null,
-      isPastorPresidente: false,
-      isPastorAuxiliar: false,
-      isJubilado: false,
-    }]);
+    setExtrasMinisteriais((m) => [...m, { ...EXTRA_MINISTERIAL_VAZIO }]);
   }
 
   function atualizarParticipante(idx: number, field: keyof ParticipanteExtra, value: string | boolean) {
-    setParticipantesExtra(p => p.map((x, i) => i === idx ? { ...x, [field]: value } : x));
+    setParticipantesExtra(p => p.map((x, i) => {
+      if (i !== idx) return x;
+      if (field === 'sexo') {
+        return {
+          ...x,
+          sexo: String(value || ''),
+          tipo_inscricao: '',
+        };
+      }
+      return { ...x, [field]: value };
+    }));
   }
 
   function removerParticipante(idx: number) {
@@ -565,12 +580,8 @@ export default function InscricaoPublicaPage() {
 
     if (!payload?.encontrado) {
       setExtrasMinisteriais((m) => m.map((x, i) => i === idx ? {
+        ...EXTRA_MINISTERIAL_VAZIO,
         cpfStatus: 'nao_encontrado',
-        ministroAtivo: false,
-        cargoMinisterial: null,
-        isPastorPresidente: false,
-        isPastorAuxiliar: false,
-        isJubilado: false,
       } : x));
       return;
     }
@@ -597,7 +608,7 @@ export default function InscricaoPublicaPage() {
       campo_id: payload.campo_id || x.campo_id,
     } : x));
 
-    if (isJubiladoExtra) {
+    if (ministroAtivoExtra && isJubiladoExtra) {
       const tipoJub = findTipoPastorJubilado(tipos);
       if (tipoJub) {
         setParticipantesExtra((p) => p.map((x, i) => i === idx ? { ...x, tipo_inscricao: tipoJub.nome } : x));
@@ -750,6 +761,18 @@ export default function InscricaoPublicaPage() {
     const p = participantesExtra[idx];
     if (!p) return tipos;
 
+    if (!String(p.sexo || '').trim()) return [];
+
+    const extraMin = extrasMinisteriais[idx] ?? EXTRA_MINISTERIAL_VAZIO;
+    const extraCpfLocalizado = extraMin.cpfStatus === 'encontrado';
+    const extraMinistroAtivo = !!extraMin.ministroAtivo;
+    const cargoNorm = normalizarComparacao(extraMin.cargoMinisterial || '');
+    const podePastorPresidente = extraCpfLocalizado && extraMinistroAtivo && !!extraMin.isPastorPresidente;
+    const podePastorAuxiliar = extraCpfLocalizado
+      && extraMinistroAtivo
+      && (!!extraMin.isPastorAuxiliar || (cargoNorm === 'pastor' && !extraMin.isPastorPresidente && !extraMin.isJubilado));
+    const jubiladoAutomaticoExtra = extraCpfLocalizado && extraMinistroAtivo && !!extraMin.isJubilado;
+
     const campoKey = String(p.campo_id || '').trim();
     if (!campoKey) {
       return evento?.departamento === 'AGO'
@@ -758,7 +781,20 @@ export default function InscricaoPublicaPage() {
           dataNascimento: p.data_nascimento,
           permitirViuvaEEsposaJubilado: false,
           permitirJubiladoManual: false,
+          cpfLocalizado: extraCpfLocalizado,
+          ministroAtivo: extraMinistroAtivo,
+          cargoMinisterial: extraMin.cargoMinisterial,
+          pastorPresidente: !!extraMin.isPastorPresidente,
+          pastorAuxiliar: !!extraMin.isPastorAuxiliar,
+          jubilado: !!extraMin.isJubilado,
         })
+          .filter((t) => {
+            if (ehTipoPastorPresidente(t.nome)) return podePastorPresidente;
+            if (ehTipoPastorAuxiliar(t.nome)) return podePastorAuxiliar;
+            if (ehTipoPastorJubilado(t.nome)) return jubiladoAutomaticoExtra;
+            if (extraMinistroAtivo && ehTipoVisitante(t.nome)) return false;
+            return true;
+          })
         : tipos;
     }
 
@@ -772,13 +808,20 @@ export default function InscricaoPublicaPage() {
         dataNascimento: p.data_nascimento,
         permitirViuvaEEsposaJubilado: false,
         permitirJubiladoManual: false,
-        cpfLocalizado: extrasMinisteriais[idx]?.cpfStatus === 'encontrado',
-        ministroAtivo: !!extrasMinisteriais[idx]?.ministroAtivo,
-        cargoMinisterial: extrasMinisteriais[idx]?.cargoMinisterial ?? null,
-        pastorPresidente: !!extrasMinisteriais[idx]?.isPastorPresidente,
-        pastorAuxiliar: !!extrasMinisteriais[idx]?.isPastorAuxiliar,
-        jubilado: !!extrasMinisteriais[idx]?.isJubilado,
+        cpfLocalizado: extraCpfLocalizado,
+        ministroAtivo: extraMinistroAtivo,
+        cargoMinisterial: extraMin.cargoMinisterial,
+        pastorPresidente: !!extraMin.isPastorPresidente,
+        pastorAuxiliar: !!extraMin.isPastorAuxiliar,
+        jubilado: !!extraMin.isJubilado,
       })
+        .filter((t) => {
+          if (ehTipoPastorPresidente(t.nome)) return podePastorPresidente;
+          if (ehTipoPastorAuxiliar(t.nome)) return podePastorAuxiliar;
+          if (ehTipoPastorJubilado(t.nome)) return jubiladoAutomaticoExtra;
+          if (extraMinistroAtivo && ehTipoVisitante(t.nome)) return false;
+          return true;
+        })
       : tipos;
 
     return tiposElegiveis.filter((t) => {
@@ -827,6 +870,34 @@ export default function InscricaoPublicaPage() {
     jubiladoAutomaticoAtivo,
     tipoJubiladoAutomatico,
     tipoSelecionado?.id,
+  ]);
+
+  useEffect(() => {
+    if (!modoLote || participantesExtra.length === 0) return;
+
+    setParticipantesExtra((listaAtual) => {
+      let alterou = false;
+      const listaNova = listaAtual.map((p, idx) => {
+        if (!String(p.sexo || '').trim()) {
+          if (!p.tipo_inscricao) return p;
+          alterou = true;
+          return { ...p, tipo_inscricao: '' };
+        }
+
+        const nomesElegiveis = new Set(tiposDisponiveisParticipanteLote(idx).map((t) => t.nome));
+        if (!p.tipo_inscricao || nomesElegiveis.has(p.tipo_inscricao)) return p;
+        alterou = true;
+        return { ...p, tipo_inscricao: '' };
+      });
+
+      return alterou ? listaNova : listaAtual;
+    });
+  }, [
+    modoLote,
+    participantesExtra,
+    extrasMinisteriais,
+    tipos,
+    evento?.departamento,
   ]);
 
   const grupoHospedagemPrevisto = resolveGrupoHospedagemAGO({
@@ -1931,7 +2002,13 @@ export default function InscricaoPublicaPage() {
             {/* Inscrição em lote */}
             {!fluxoCampoMissionarioEspecial && (
               <div className="mb-5">
-                <button type="button" onClick={() => { setModoLote(m => !m); if (modoLote) setParticipantesExtra([]); }}
+                <button type="button" onClick={() => {
+                  setModoLote(m => !m);
+                  if (modoLote) {
+                    setParticipantesExtra([]);
+                    setExtrasMinisteriais([]);
+                  }
+                }}
                   className="text-sm text-[#123b63] font-semibold underline underline-offset-2 hover:text-[#0f2a45]">
                   {modoLote ? '➖ Cancelar inscrição em grupo' : '➕ Adicionar mais participantes (inscrição em grupo)'}
                 </button>
@@ -1964,8 +2041,11 @@ export default function InscricaoPublicaPage() {
                           onChange={async (e) => {
                             const masked = formatarCPF(e.target.value);
                             atualizarParticipante(idx, 'cpf', masked);
-                            if (masked.replace(/\D/g, '').length === 11) {
+                            const cpfDigits = masked.replace(/\D/g, '');
+                            if (cpfDigits.length === 11) {
                               await buscarCpfParticipanteExtra(idx, masked);
+                            } else {
+                              setExtrasMinisteriais((m) => m.map((x, i) => i === idx ? { ...EXTRA_MINISTERIAL_VAZIO } : x));
                             }
                           }}
                           className={INP}
@@ -2009,9 +2089,10 @@ export default function InscricaoPublicaPage() {
                           value={p.tipo_inscricao}
                           onChange={e => atualizarParticipante(idx, 'tipo_inscricao', e.target.value)}
                           className={INP}
+                          disabled={!String(p.sexo || '').trim()}
                           required
                         >
-                          <option value="">Selecione o tipo...</option>
+                          <option value="">{String(p.sexo || '').trim() ? 'Selecione o tipo...' : 'Aguardando dados!'}</option>
                           {tiposDisponiveisParticipanteLote(idx).map(t => (
                             <option key={`extra-${idx}-${t.id}`} value={t.nome}>
                               {t.nome} - {fmtMoeda(t.valor)}
