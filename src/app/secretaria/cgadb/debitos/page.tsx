@@ -1282,7 +1282,6 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
                 </tr>
               )}
               {paginated.map((g, idx) => {
-                const cpfKey = normalizeCpf(g.cpf);
                 const groupKey = g.key;
                 const isExpanded = expandedCpf === groupKey;
                 const anos = g.debitos.map(d => d.ano).filter(Boolean).sort((a, b) => (b ?? 0) - (a ?? 0));
