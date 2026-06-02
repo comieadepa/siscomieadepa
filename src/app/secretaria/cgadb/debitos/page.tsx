@@ -143,6 +143,7 @@ export default function CgadbDebitosPage() {
   }>({ isOpen: false, title: '', message: '', type: 'success' });
   const [usuarioEmail, setUsuarioEmail] = useState<string | null>(null);
   const [usuarioNome, setUsuarioNome] = useState<string | null>(null);
+  const [dadosVersion, setDadosVersion] = useState(0);
 
   useEffect(() => {
     const supabase = createClient();
@@ -234,9 +235,15 @@ export default function CgadbDebitosPage() {
 
           <div className="bg-white rounded-b-lg shadow-md p-6">
             <div className={activeTab === 'ministros' ? '' : 'hidden'}>
-              <AbaMinistros notify={notify} initialNaoRegistrados={naoRegistradosParam} />
+              <AbaMinistros
+                notify={notify}
+                initialNaoRegistrados={naoRegistradosParam}
+                reloadKey={dadosVersion}
+              />
             </div>
-            <div className={activeTab === 'debitos' ? '' : 'hidden'}><AbaDebitos notify={notify} /></div>
+            <div className={activeTab === 'debitos' ? '' : 'hidden'}>
+              <AbaDebitos notify={notify} onDataChanged={() => setDadosVersion(v => v + 1)} />
+            </div>
           </div>
         </div>
       </div>
@@ -249,9 +256,11 @@ export default function CgadbDebitosPage() {
 function AbaMinistros({
   notify,
   initialNaoRegistrados = false,
+  reloadKey,
 }: {
   notify: (t: string, m: string, tp: 'success' | 'error' | 'warning' | 'info') => void;
   initialNaoRegistrados?: boolean;
+  reloadKey: number;
 }) {
   const authedFetch = (input: string, init?: RequestInit) => authenticatedFetch(input, init);
 
@@ -278,7 +287,7 @@ function AbaMinistros({
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [reloadKey]);
 
   async function load() {
     try {
@@ -317,6 +326,7 @@ function AbaMinistros({
       const debitosByCpf = new Map<string, DebitoCgadb[]>();
       for (const d of debitos) {
         const key = normalizeCpf(d.cpf);
+        if (!key) continue;
         if (!debitosByCpf.has(key)) debitosByCpf.set(key, []);
         debitosByCpf.get(key)!.push(d);
       }
@@ -325,7 +335,7 @@ function AbaMinistros({
       const lista: MinistroComDebito[] = membros.map((m: any) => {
         const cf = (m.custom_fields || {}) as Record<string, any>;
         const cpfNorm = normalizeCpf(String(m.cpf || ''));
-        const debs = debitosByCpf.get(cpfNorm) || [];
+        const debs = cpfNorm ? (debitosByCpf.get(cpfNorm) || []) : [];
         const total = debs.reduce((acc, d) => acc + (d.valor || 0), 0);
         const anos = debs.map(d => d.ano!).filter(Boolean).sort((a, b) => b - a);
 
@@ -811,7 +821,13 @@ function AbaMinistros({
 
 // ── Aba 2: Débito CGADB (com upload CSV) ─────────────────────────────────────
 
-function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' | 'error' | 'warning' | 'info') => void }) {
+function AbaDebitos({
+  notify,
+  onDataChanged,
+}: {
+  notify: (t: string, m: string, tp: 'success' | 'error' | 'warning' | 'info') => void;
+  onDataChanged?: () => void;
+}) {
   const authedFetch = (input: string, init?: RequestInit) => authenticatedFetch(input, init);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -851,6 +867,7 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
       notify('CPF atualizado', `CPF de ${editCpf.nome} atualizado com sucesso.`, 'success');
       setEditCpf(null);
       await loadDebitos();
+      onDataChanged?.();
     } catch (err: any) {
       notify('Erro', 'Erro ao atualizar CPF: ' + (err?.message || ''), 'error');
     } finally {
@@ -869,6 +886,7 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || 'Erro ao dar baixa.');
       setDebitos(prev => prev.filter(d => d.id !== id));
+      onDataChanged?.();
       notify('Baixa realizada', 'Débito removido com sucesso.', 'success');
     } catch (err: any) {
       notify('Erro', 'Erro ao dar baixa: ' + (err?.message || ''), 'error');
@@ -891,6 +909,7 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
       const idsSet = new Set(ids);
       setDebitos(prev => prev.filter(d => !idsSet.has(d.id)));
       setExpandedCpf(null);
+      onDataChanged?.();
       notify('Baixa realizada', `${ids.length} débito(s) removido(s) com sucesso.`, 'success');
     } catch (err: any) {
       notify('Erro', 'Erro ao dar baixa geral: ' + (err?.message || ''), 'error');
@@ -965,6 +984,7 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
       setLastImport(null);
       setExpandedCpf(null);
       setConfirmDelete(false);
+      onDataChanged?.();
       notify('Dados apagados', 'Todos os débitos foram removidos da tabela.', 'success');
     } catch (err: any) {
       notify('Erro', 'Erro ao apagar dados: ' + (err?.message || ''), 'error');
@@ -1096,6 +1116,7 @@ function AbaDebitos({ notify }: { notify: (t: string, m: string, tp: 'success' |
 
       notify('Importação concluída', `${upserted} registro(s) importados com sucesso!`, 'success');
       await loadDebitos();
+      onDataChanged?.();
     } catch (err: any) {
       notify('Erro na importação', err?.message || 'Erro desconhecido', 'error');
     } finally {
