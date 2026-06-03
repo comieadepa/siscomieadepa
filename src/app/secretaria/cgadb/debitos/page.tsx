@@ -5,9 +5,11 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import NotificationModal from '@/components/NotificationModal';
+import FichaMembro from '@/components/FichaMembro';
 import { authenticatedFetch } from '@/lib/api-client';
 import { buildUrl, getAppBaseUrl } from '@/lib/urls';
 import { createClient } from '@/lib/supabase-client';
+import { fetchConfiguracaoIgrejaFromSupabase } from '@/lib/igreja-config-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -279,10 +281,27 @@ function AbaMinistros({
   // Expandir detalhes de débito por ministro
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [zerandoMin, setZerandoMin] = useState<string | null>(null);
+  const [abrindoFichaId, setAbrindoFichaId] = useState<string | null>(null);
+  const [membroImprimindo, setMembroImprimindo] = useState<any | null>(null);
+  const [configIgreja, setConfigIgreja] = useState({
+    nome: 'COMIEADEPA',
+    endereco: 'Belém - PA',
+    cnpj: '',
+    telefone: '',
+    email: '',
+    logo: '',
+  });
 
   useEffect(() => {
     setApenasNaoRegistrados(initialNaoRegistrados);
   }, [initialNaoRegistrados]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    fetchConfiguracaoIgrejaFromSupabase(supabase)
+      .then(setConfigIgreja)
+      .catch(() => null);
+  }, []);
 
   useEffect(() => {
     load();
@@ -417,6 +436,89 @@ function AbaMinistros({
       notify('Erro', 'Erro ao dar baixa geral: ' + (err?.message || ''), 'error');
     } finally {
       setZerandoMin(null);
+    }
+  }
+
+  function mapMemberToFicha(member: any, fallback: MinistroComDebito) {
+    const cf = (member?.custom_fields && typeof member.custom_fields === 'object') ? member.custom_fields : {};
+    return {
+      matricula: String(member?.matricula || (cf as any).matricula || ''),
+      id: String(member?.id || fallback.id),
+      uniqueId: String(member?.unique_id || (cf as any).uniqueId || member?.id || fallback.id),
+      nome: String(member?.name || fallback.nome || ''),
+      cpf: String(member?.cpf || fallback.cpf || ''),
+      tipoCadastro: String(member?.tipo_cadastro || 'ministro'),
+      dataNascimento: String(member?.data_nascimento || ''),
+      sexo: String(member?.sexo || ''),
+      tipoSanguineo: String(member?.tipo_sanguineo || ''),
+      escolaridade: String(member?.escolaridade || ''),
+      estadoCivil: String(member?.estado_civil || ''),
+      rg: String(member?.rg || ''),
+      orgaoEmissor: String(member?.orgao_emissor || ''),
+      uf_rg: String(member?.uf_rg || ''),
+      nacionalidade: String(member?.nacionalidade || ''),
+      naturalidade: String(member?.naturalidade || ''),
+      uf: String(member?.uf_naturalidade || member?.estado || ''),
+      cep: String(member?.cep || ''),
+      logradouro: String(member?.logradouro || ''),
+      numero: String(member?.numero || ''),
+      bairro: String(member?.bairro || ''),
+      complemento: String(member?.complemento || ''),
+      cidade: String(member?.cidade || ''),
+      nomeConjuge: String(member?.nome_conjuge || ''),
+      cpfConjuge: String(member?.cpf_conjuge || ''),
+      dataNascimentoConjuge: String(member?.data_nascimento_conjuge || ''),
+      nomePai: String(member?.nome_pai || ''),
+      nomeMae: String(member?.nome_mae || ''),
+      email: String(member?.email || ''),
+      celular: String(member?.celular || member?.phone || fallback.telefone || ''),
+      whatsapp: String(member?.whatsapp || ''),
+      qualFuncao: String(member?.qual_funcao || member?.profissao || ''),
+      setorDepartamento: String(member?.setor_departamento || ''),
+      cargo: String((cf as any).cargoMinisterial || (cf as any).cargo_ministerial || member?.cargo_ministerial || fallback.cargo || ''),
+      numero_cgadb: String(member?.numero_cgadb || ''),
+      posicaoNoCampo: String(member?.posicao_no_campo || ''),
+      supervisao: String((cf as any).supervisao || fallback.supervisao || ''),
+      campo: String((cf as any).campo || fallback.campo || ''),
+      cursoTeologico: String(member?.curso_teologico || ''),
+      instituicaoTeologica: String(member?.instituicao_teologica || ''),
+      profissao: String(member?.profissao || ''),
+      dataBatismoAguas: String(member?.data_batismo_aguas || ''),
+      dataConsagracao: String((cf as any).dataConsagracao || ''),
+      data_filiacao: String(member?.data_filiacao || ''),
+      ev_autorizado_data: String(member?.ev_autorizado_data || ''),
+      ev_autorizado_local: String(member?.ev_autorizado_local || ''),
+      ev_consagrado_data: String(member?.ev_consagrado_data || ''),
+      ev_consagrado_local: String(member?.ev_consagrado_local || ''),
+      cons_missionario_data: String(member?.cons_missionario_data || ''),
+      cons_missionario_local: String(member?.cons_missionario_local || ''),
+      orden_pastor_data: String(member?.orden_pastor_data || ''),
+      orden_pastor_local: String(member?.orden_pastor_local || ''),
+      conjuge_rg: String(member?.conjuge_rg || ''),
+      conjuge_naturalidade: String(member?.conjuge_naturalidade || ''),
+      conjuge_nome_pai: String(member?.conjuge_nome_pai || ''),
+      conjuge_nome_mae: String(member?.conjuge_nome_mae || ''),
+      conjuge_tipo_sanguineo: String(member?.conjuge_tipo_sanguineo || ''),
+      conjuge_titulo_eleitoral: String(member?.conjuge_titulo_eleitoral || ''),
+      conjuge_fone: String(member?.conjuge_fone || ''),
+      conjuge_email: String(member?.conjuge_email || ''),
+      qtd_filhos: Number(member?.qtd_filhos ?? 0),
+      observacoes: String(member?.observacoes || ''),
+      fotoUrl: String(member?.foto_url || ''),
+    };
+  }
+
+  async function handleAbrirFicha(m: MinistroComDebito) {
+    setAbrindoFichaId(m.id);
+    try {
+      const res = await authedFetch(`/api/v1/members/${m.id}`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error || 'Erro ao carregar ficha do ministro.');
+      setMembroImprimindo(mapMemberToFicha(json, m));
+    } catch (err: any) {
+      notify('Erro', 'Não foi possível carregar a ficha: ' + (err?.message || ''), 'error');
+    } finally {
+      setAbrindoFichaId(null);
     }
   }
 
@@ -662,7 +764,7 @@ function AbaMinistros({
                 <th className="text-right px-4 py-3 font-semibold text-xs uppercase tracking-wide">Total Devido</th>
                 <th className="text-center px-4 py-3 font-semibold text-xs uppercase tracking-wide">Status</th>
                 <th className="text-center px-4 py-3 font-semibold text-xs uppercase tracking-wide">CGADB</th>
-                <th className="text-center px-4 py-3 font-semibold text-xs uppercase tracking-wide">Detalhes</th>
+                <th className="text-center px-4 py-3 font-semibold text-xs uppercase tracking-wide">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -713,14 +815,24 @@ function AbaMinistros({
                       }
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {m.debitos.length > 0 && (
+                      <div className="inline-flex items-center gap-3">
                         <button
-                          onClick={() => setExpandedId(expandedId === m.id ? null : m.id)}
-                          className="text-teal-600 hover:text-teal-800 text-xs font-semibold"
+                          onClick={() => handleAbrirFicha(m)}
+                          disabled={abrindoFichaId !== null}
+                          className="px-3 py-1 rounded-md bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Visualizar ficha do ministro"
                         >
-                          {expandedId === m.id ? '▲ Fechar' : '▼ Ver'}
+                          {abrindoFichaId === m.id ? 'ABRINDO...' : 'FICHA'}
                         </button>
-                      )}
+                        <button
+                          onClick={() => m.debitos.length > 0 && setExpandedId(expandedId === m.id ? null : m.id)}
+                          disabled={m.debitos.length === 0}
+                          className="px-3 py-1 rounded-md bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+                          title={m.debitos.length > 0 ? 'Ver detalhes de débitos' : 'Sem débitos para visualizar'}
+                        >
+                          VER
+                        </button>
+                      </div>
                     </td>
                   </tr>
 
@@ -812,6 +924,48 @@ function AbaMinistros({
               className="px-2 py-1 text-xs border rounded disabled:opacity-40 hover:bg-gray-100">›</button>
             <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}
               className="px-2 py-1 text-xs border rounded disabled:opacity-40 hover:bg-gray-100">»</button>
+          </div>
+        </div>
+      )}
+
+      {membroImprimindo && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full my-8 flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center px-6 py-4 border-b-2 border-teal-500 bg-gradient-to-r from-teal-600 to-teal-700 flex-shrink-0">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <span>🖨️</span> Ficha do Ministro
+              </h2>
+              <button
+                onClick={() => setMembroImprimindo(null)}
+                className="text-white hover:text-gray-100 text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              <FichaMembro
+                membro={membroImprimindo}
+                dadosIgreja={{
+                  nomeIgreja: configIgreja.nome || 'COMIEADEPA',
+                  endereco: configIgreja.endereco || 'Belém - PA',
+                  telefone: configIgreja.telefone || '',
+                  email: configIgreja.email || '',
+                  cnpj: (configIgreja as any).cnpj || '',
+                  logoUrl: configIgreja.logo || undefined,
+                }}
+                fotoUrl={membroImprimindo.fotoUrl || undefined}
+              />
+            </div>
+
+            <div className="flex gap-4 px-6 py-4 border-t border-gray-300 bg-gray-50 flex-shrink-0">
+              <button
+                onClick={() => setMembroImprimindo(null)}
+                className="flex-1 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition font-semibold text-sm"
+              >
+                ✕ Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}

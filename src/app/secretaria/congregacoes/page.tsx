@@ -52,6 +52,10 @@ interface Divisao2 {
   pastor_member_id?: string | null;
   pastor_nome?: string | null;
   pastor_data_posse?: string | null;
+  presidente_nome?: string | null;
+  presidente_cpf?: string | null;
+  presidente_matricula?: string | null;
+  presidente_data_posse?: string | null;
   is_active: boolean;
   created_at: string;
 }
@@ -1418,6 +1422,9 @@ export default function CongregacoesPage() {
       pastor_member_id: formD2.informar_pastor ? (formD2.pastor_member_id || null) : null,
       pastor_nome: formD2.informar_pastor ? (formD2.pastor_nome || formD2.pastor_nome_input || null) : null,
       pastor_data_posse: formD2.informar_pastor ? (formD2.pastor_data_posse || null) : null,
+      // Compatibilidade: manter colunas novas de presidente sincronizadas com os campos do formulário
+      presidente_nome: formD2.informar_pastor ? (formD2.pastor_nome || formD2.pastor_nome_input || null) : null,
+      presidente_data_posse: formD2.informar_pastor ? (formD2.pastor_data_posse || null) : null,
       cep: formD2.cep || null,
       endereco: formD2.endereco || null,
       numero: formD2.numero || null,
@@ -2314,7 +2321,7 @@ export default function CongregacoesPage() {
         <td>${sup ? sup.nome : '—'}</td>
         <td>${c.uf || '—'}</td>
         <td>${c.nome}${ (c as any).is_campo_missionario ? ' <span style="color:#166534;font-weight:700;font-size:0.75em">[Missionário]</span>' : ''}</td>
-        <td>${(c as any).presidente_nome || '—'}</td>
+        <td>${(c as any).presidente_nome || c.pastor_nome || '—'}</td>
         <td>${c.cnpj ? 'SIM' : 'NÃO'}</td>
       </tr>`;
     }).join('');
@@ -3349,7 +3356,7 @@ export default function CongregacoesPage() {
                                 <td className="px-4 py-3 text-gray-700 text-xs">{sup ? sup.nome : '-'}</td>
                                 <td className="px-4 py-3 text-gray-700 text-xs">{c.uf || '-'}</td>
                                 <td className="px-4 py-3 text-gray-700 font-semibold text-xs">{c.nome}</td>
-                                <td className="px-4 py-3 text-gray-700 text-xs">{(c as any).presidente_nome || '-'}</td>
+                                <td className="px-4 py-3 text-gray-700 text-xs">{(c as any).presidente_nome || c.pastor_nome || '-'}</td>
                                 <td className="px-4 py-3 text-center text-xs">
                                   {c.cnpj
                                     ? <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded font-semibold">SIM</span>
@@ -3371,11 +3378,11 @@ export default function CongregacoesPage() {
                                         telefone: c.telefone || '',
                                         observacoes: c.observacoes || '',
                                         logomarca_url: c.logomarca_url || '',
-                                        informar_pastor: !!c.pastor_member_id,
-                                        pastor_nome_input: c.pastor_nome || '',
+                                        informar_pastor: !!(c.pastor_member_id || c.pastor_nome || c.presidente_nome),
+                                        pastor_nome_input: c.pastor_nome || c.presidente_nome || '',
                                         pastor_member_id: c.pastor_member_id || '',
-                                        pastor_nome: c.pastor_nome || '',
-                                        pastor_data_posse: (c.pastor_data_posse as any) || '',
+                                        pastor_nome: c.pastor_nome || c.presidente_nome || '',
+                                        pastor_data_posse: (c.pastor_data_posse as any) || (c.presidente_data_posse as any) || '',
                                         cep: c.cep || '',
                                         endereco: c.endereco || '',
                                         numero: c.numero || '',
