@@ -11,6 +11,8 @@ import { formatCpf, formatPhone } from '@/lib/mascaras';
 import { normalizePayloadToUppercase } from '@/lib/uppercase-normalizer';
 import { authenticatedFetch } from '@/lib/api-client';
 import type { Member } from '@/types/supabase';
+import DocumentosMinistro from '@/components/DocumentosMinistro';
+import jsPDF from 'jspdf';
 
 interface SimpleOption {
   id: string;
@@ -51,6 +53,17 @@ const CATEGORIA_REGISTRO_OPTIONS = [
   'INTEGRAÇÃO',
   'REINTEGRAÇÃO',
 ];
+
+const DOCUMENTOS_OBRIGATORIOS_CANDIDATO = ['RG', 'CPF', 'COMPROVANTE DE RESIDENCIA'];
+
+function normalizeDocumentoTipo(value: string): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
 
 const normalizeTipoRegistro = (value: string) => {
   if (value === 'novo') return 'chegada';
@@ -97,6 +110,8 @@ export default function ConsagracaoPage() {
   const [processModalOpen, setProcessModalOpen] = useState(false);
   const [processRegistro, setProcessRegistro] = useState<any | null>(null);
   const [consagracaoModuleReady, setConsagracaoModuleReady] = useState(true);
+  const [candidatoDocumentos, setCandidatoDocumentos] = useState<any | null>(null);
+  const [documentosStatus, setDocumentosStatus] = useState<Record<string, { total: number; tipos: string[] }>>({});
 
   const [memberQuery, setMemberQuery] = useState('');
   const [memberResults, setMemberResults] = useState<Member[]>([]);
@@ -226,10 +241,29 @@ export default function ConsagracaoPage() {
     } else {
       const payload = await registrosRes.json().catch(() => null as any);
       setConsagracaoModuleReady(true);
-      setRegistros((payload?.data as any[]) || []);
+      const rows = (payload?.data as any[]) || [];
+      setRegistros(rows);
+      void loadDocumentosStatus(rows);
     }
 
     setLoadingData(false);
+  };
+
+  const loadDocumentosStatus = async (rows: any[]) => {
+    const ids = rows.map((r) => String(r.id || '')).filter(Boolean);
+    if (ids.length === 0) {
+      setDocumentosStatus({});
+      return;
+    }
+
+    const params = new URLSearchParams({ ids: ids.join(',') });
+    const res = await authenticatedFetch(`/api/v1/secretaria/consagracao/documentos-status?${params.toString()}`);
+    if (!res.ok) {
+      setDocumentosStatus({});
+      return;
+    }
+    const payload = await res.json().catch(() => null as any);
+    setDocumentosStatus((payload?.data as Record<string, { total: number; tipos: string[] }>) || {});
   };
 
   useEffect(() => {
@@ -881,7 +915,9 @@ export default function ConsagracaoPage() {
     const registrosRes = await authenticatedFetch('/api/v1/secretaria/consagracao');
     if (registrosRes.ok) {
       const payload = await registrosRes.json().catch(() => null as any);
-      setRegistros((payload?.data as any[]) || []);
+      const rows = (payload?.data as any[]) || [];
+      setRegistros(rows);
+      void loadDocumentosStatus(rows);
     }
   };
 
@@ -906,7 +942,11 @@ export default function ConsagracaoPage() {
       setStatusMensagem('Erro ao remover registro.');
       return;
     }
-    setRegistros((prev) => prev.filter((r) => r.id !== id));
+    setRegistros((prev) => {
+      const next = prev.filter((r) => r.id !== id);
+      void loadDocumentosStatus(next);
+      return next;
+    });
   };
 
   const handleUpdateStatus = async (status: string) => {
@@ -979,6 +1019,201 @@ export default function ConsagracaoPage() {
     }
     return true;
   });
+
+  const LINHAS_POR_PAGINA = 25;
+  const getSupervisaoNome = (id: string) => supervisoes.find((s) => s.id === id)?.nome || 'Todas as Supervisões';
+  const getCampoNome = (id: string) => campos.find((c) => c.id === id)?.nome || 'Todos os Campos';
+
+  const filtrosAplicadosImpressao = [
+    filtroRegiao ? `Categoria: ${filtroRegiao}` : null,
+    filtroSupervisao ? `Supervisão: ${getSupervisaoNome(filtroSupervisao)}` : null,
+    filtroCampo ? `Campo: ${getCampoNome(filtroCampo)}` : null,
+    filtroStatus ? `Status: ${STATUS_LABELS[filtroStatus] || filtroStatus}` : null,
+    filtroBusca.trim() ? `Busca: ${filtroBusca.trim()}` : null,
+  ].filter((item): item is string => Boolean(item));
+
+  const filtrosResumoImpressao = filtrosAplicadosImpressao.join(' | ');
+
+  const paginasImpressao = (() => {
+    const pages: any[][] = [];
+    for (let i = 0; i < registrosFiltrados.length; i += LINHAS_POR_PAGINA) {
+      pages.push(registrosFiltrados.slice(i, i + LINHAS_POR_PAGINA));
+    }
+    return pages.length > 0 ? pages : [[]];
+  })();
+
+  const handlePrintRegistros = async () => {
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const marginX = 10;
+    const marginY = 10;
+    const contentWidth = pageWidth - marginX * 2;
+    const rowHeight = 5;
+    const headerHeight = 6;
+    const columnWidths = [22, 18, 62, 30, 32, 45, 30, 38];
+    const headers = ['Nº Processo', 'Data', 'Nome', 'CPF', 'Categoria', 'Tipo', 'Status', 'Documentação'];
+
+    const toText = (value: unknown) => String(value ?? '—');
+    const fitText = (value: unknown, maxWidth: number) => {
+      const raw = toText(value).replace(/\s+/g, ' ').trim() || '—';
+      if (pdf.getTextWidth(raw) <= maxWidth - 2) return raw;
+      let cut = raw;
+      while (cut.length > 1 && pdf.getTextWidth(`${cut}…`) > maxWidth - 2) {
+        cut = cut.slice(0, -1);
+      }
+      return `${cut}…`;
+    };
+
+    const loadLogoDataUrl = async () => {
+      try {
+        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = () => reject(new Error('Falha ao carregar logo'));
+          image.src = '/img/logo_comieadepa.png';
+        });
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        ctx.drawImage(img, 0, 0);
+        return canvas.toDataURL('image/png');
+      } catch {
+        return null;
+      }
+    };
+
+    const logoDataUrl = await loadLogoDataUrl();
+
+    paginasImpressao.forEach((pagina, pageIndex) => {
+      if (pageIndex > 0) {
+        pdf.addPage();
+      }
+
+      let currentY = marginY;
+
+      if (logoDataUrl) {
+        pdf.addImage(logoDataUrl, 'PNG', marginX, currentY, 18, 18);
+      }
+
+      const centerStartX = marginX + 20;
+      const centerWidth = contentWidth - 20;
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(10);
+      pdf.text('COMIEADEPA - CONVENÇÃO INTERESTADUAL DE MINISTROS E IGREJAS', centerStartX + centerWidth / 2, currentY + 4, { align: 'center' });
+      pdf.text('EVANGÉLICAS ASSEMBLEIA DE DEUS NO PARÁ', centerStartX + centerWidth / 2, currentY + 8, { align: 'center' });
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.text('Emails: comieadepa@bol.com.br / Site: www.comieadepa.org', centerStartX + centerWidth / 2, currentY + 12, { align: 'center' });
+      pdf.text('RODOVIA DO MÁRIO COVAS, 2500, 67115-000 / COQUEIRO, ANANINDEUA - PA', centerStartX + centerWidth / 2, currentY + 15.5, { align: 'center' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 102, 204);
+      pdf.text('PRESIDENTE: PR. OCELIO NAUAR', centerStartX + centerWidth / 2, currentY + 19, { align: 'center' });
+      pdf.setTextColor(0, 0, 0);
+
+      currentY += 22;
+      pdf.setDrawColor(0, 0, 0);
+      pdf.setLineWidth(0.35);
+      pdf.line(marginX, currentY, pageWidth - marginX, currentY);
+
+      currentY += 6;
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(12);
+      pdf.text('Lista de Candidatos - Consagração', pageWidth / 2, currentY, { align: 'center' });
+
+      currentY += 5;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.text(
+        `Emitido em ${new Date().toLocaleString('pt-BR')} | Total: ${registrosFiltrados.length} registro(s) | Página ${pageIndex + 1} de ${paginasImpressao.length}`,
+        pageWidth / 2,
+        currentY,
+        { align: 'center' }
+      );
+
+      if (filtrosAplicadosImpressao.length > 0) {
+        currentY += 4;
+        const filtrosLinhas = pdf.splitTextToSize(filtrosResumoImpressao, contentWidth);
+        pdf.text(filtrosLinhas, marginX, currentY);
+        currentY += filtrosLinhas.length * 3 + 3;
+      } else {
+        currentY += 6;
+      }
+
+      let currentX = marginX;
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8);
+      pdf.setTextColor(0, 0, 0);
+      headers.forEach((header, idx) => {
+        const width = columnWidths[idx];
+        pdf.setFillColor(255, 255, 255);
+        pdf.rect(currentX, currentY, width, headerHeight, 'S');
+        pdf.text(fitText(header, width), currentX + 1, currentY + 3.9);
+        currentX += width;
+      });
+
+      currentY += headerHeight;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(7.5);
+
+      const rows = pagina.length ? pagina : [null];
+      rows.forEach((reg, rowIndex) => {
+        const doc = reg ? getDocumentacaoStatus(String(reg.id || '')) : { label: '—' };
+        const dataProc = reg?.data_processo ? new Date(`${reg.data_processo}T00:00:00`).toLocaleDateString('pt-BR') : '—';
+        const values = reg
+          ? [
+              reg.numero_processo || '—',
+              dataProc,
+              reg.nome || '—',
+              reg.cpf || '—',
+              reg.regiao || '—',
+              TIPO_REGISTRO_LABELS[reg.tipo_registro] || reg.tipo_registro || '—',
+              STATUS_LABELS[reg.status_processo] || reg.status_processo || '—',
+              doc.label,
+            ]
+          : ['Nenhum registro encontrado.', '', '', '', '', '', '', ''];
+
+        currentX = marginX;
+        columnWidths.forEach((width, colIndex) => {
+          const isZebra = rowIndex % 2 === 1;
+          if (isZebra) {
+            pdf.setFillColor(249, 250, 251);
+            pdf.rect(currentX, currentY, width, rowHeight, 'F');
+          }
+          pdf.rect(currentX, currentY, width, rowHeight);
+          const value = colIndex === 0 && !reg ? (colIndex === 0 ? 'Nenhum registro encontrado.' : '') : values[colIndex];
+          pdf.text(fitText(value, width), currentX + 1, currentY + 3.6);
+          currentX += width;
+        });
+        currentY += rowHeight;
+      });
+
+      pdf.setFontSize(7);
+      pdf.text('Gerado automaticamente pelo módulo Consagração', marginX, pageHeight - 5);
+    });
+
+    const dataArquivo = new Date().toISOString().slice(0, 10);
+    pdf.save(`consagracao-registros-${dataArquivo}.pdf`);
+  };
+
+  const getDocumentacaoStatus = (registroId: string) => {
+    const info = documentosStatus[registroId] || { total: 0, tipos: [] };
+    const tiposNormalizados = info.tipos.map(normalizeDocumentoTipo);
+    const obrigatoriosOk = DOCUMENTOS_OBRIGATORIOS_CANDIDATO.every((obrigatorio) =>
+      tiposNormalizados.some((tipo) => tipo.includes(obrigatorio))
+    );
+
+    if (info.total === 0) {
+      return { label: 'Pendente', className: 'bg-red-100 text-red-700' };
+    }
+    if (obrigatoriosOk) {
+      return { label: 'Completa', className: 'bg-green-100 text-green-700' };
+    }
+    return { label: 'Parcial', className: 'bg-yellow-100 text-yellow-700' };
+  };
 
   return (
     <PageLayout
@@ -1794,7 +2029,74 @@ export default function ConsagracaoPage() {
 
         {/* ABA: REGISTROS */}
         {activeTab === 'registros' && (
-        <div className="space-y-4">
+        <>
+        <style jsx global>{`
+          @media screen {
+            .print-only {
+              display: none;
+            }
+          }
+
+          @media print {
+            aside,
+            nav,
+            header,
+            [role='navigation'] {
+              display: none !important;
+            }
+
+            .screen-only {
+              display: none !important;
+              visibility: hidden !important;
+            }
+
+            .print-only {
+              display: block !important;
+              position: absolute;
+              top: 0;
+              left: 0;
+              width: 100%;
+              background: white;
+              z-index: 9999;
+            }
+
+            .print-page {
+              page-break-after: always;
+              break-after: page;
+              min-height: calc(210mm - 24mm);
+              padding: 0;
+              box-sizing: border-box;
+              background: white;
+            }
+
+            .print-page:last-child {
+              page-break-after: auto;
+              break-after: auto;
+            }
+
+            .print-page table {
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 9px;
+            }
+
+            .print-page thead {
+              display: table-header-group;
+            }
+
+            .print-page tr {
+              page-break-inside: avoid;
+              break-inside: avoid;
+            }
+
+            @page {
+              size: A4 landscape;
+              margin: 12mm;
+            }
+          }
+        `}</style>
+
+        <div className="screen-only space-y-4">
 
           {/* Cards resumo */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1883,6 +2185,13 @@ export default function ConsagracaoPage() {
                 Limpar
               </button>
 
+              <button
+                onClick={handlePrintRegistros}
+                className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition"
+              >
+                Gerar PDF
+              </button>
+
               <span className="text-sm text-gray-500 font-medium ml-auto">
                 {registrosFiltrados.length} registro(s)
               </span>
@@ -1893,21 +2202,22 @@ export default function ConsagracaoPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr>
-                    <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800 w-12">Foto</th>
-                    <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800 whitespace-nowrap">Nº Processo</th>
-                    <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800 whitespace-nowrap">Data Proc.</th>
-                    <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800">Nome</th>
-                    <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800">CPF</th>
-                    <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800">Categoria</th>
-                    <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800">Tipo</th>
-                    <th className="px-3 py-3 text-left font-semibold bg-gray-200 text-gray-800">Status</th>
-                    <th className="px-3 py-3 text-right font-semibold bg-gray-200 text-gray-800">Ações</th>
+                    <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800 w-12">Foto</th>
+                    <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800 whitespace-nowrap">Nº Processo</th>
+                    <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800 whitespace-nowrap">Data Proc.</th>
+                    <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">Nome</th>
+                    <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">CPF</th>
+                    <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">Categoria</th>
+                    <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">Tipo</th>
+                    <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">Status</th>
+                    <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">Documentação</th>
+                    <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
                   {registrosFiltrados.length === 0 && (
                     <tr>
-                      <td colSpan={9} className="px-4 py-8 text-center text-gray-500">Nenhum registro encontrado.</td>
+                      <td colSpan={10} className="px-4 py-8 text-center text-gray-500">Nenhum registro encontrado.</td>
                     </tr>
                   )}
                   {registrosFiltrados.map((reg) => (
@@ -1927,7 +2237,7 @@ export default function ConsagracaoPage() {
                       <td className="px-3 py-2 text-xs text-gray-600">{reg.cpf || '—'}</td>
                       <td className="px-3 py-2 text-xs text-gray-600">{reg.regiao || '—'}</td>
                       <td className="px-3 py-2 text-xs text-gray-600">{TIPO_REGISTRO_LABELS[reg.tipo_registro] || reg.tipo_registro || '—'}</td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 text-center">
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
                           reg.status_processo === 'em_processo' ? 'bg-teal-100 text-teal-700' :
                           reg.status_processo === 'deferir' ? 'bg-green-100 text-green-700' :
@@ -1938,11 +2248,35 @@ export default function ConsagracaoPage() {
                           {STATUS_LABELS[reg.status_processo] || reg.status_processo}
                         </span>
                       </td>
+                      <td className="px-3 py-2">
+                        {(() => {
+                          const doc = getDocumentacaoStatus(String(reg.id || ''));
+                          return (
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${doc.className}`}>
+                              {doc.label}
+                            </span>
+                          );
+                        })()}
+                      </td>
                       <td className="px-3 py-2 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <button
-                            className="px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition text-xs font-semibold"
-                            onClick={() => {
+                          <div className="relative group">
+                            <button
+                              className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded hover:bg-indigo-100 transition text-xs font-semibold"
+                              onClick={() => setCandidatoDocumentos(reg)}
+                              title="Documentos"
+                              aria-label="Documentos"
+                            >
+                              📁
+                            </button>
+                            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-[10px] font-medium text-white opacity-0 group-hover:opacity-100 transition">
+                              Documentos
+                            </span>
+                          </div>
+                          <div className="relative group">
+                            <button
+                              className="px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition text-xs font-semibold"
+                              onClick={() => {
                               setEditingRegistro(reg);
                               setFormRegistro({
                                 tipo_registro: normalizeTipoRegistro(reg.tipo_registro || ''),
@@ -1999,24 +2333,44 @@ export default function ConsagracaoPage() {
                               setShowForm(true);
                               setActiveTab('cadastro');
                             }}
-                          >
-                            Editar
-                          </button>
-                          <button
-                            className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded hover:bg-emerald-100 transition text-xs font-semibold"
-                            onClick={() => {
+                              title="Editar"
+                              aria-label="Editar"
+                            >
+                              ✏️
+                            </button>
+                            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-[10px] font-medium text-white opacity-0 group-hover:opacity-100 transition">
+                              Editar
+                            </span>
+                          </div>
+                          <div className="relative group">
+                            <button
+                              className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded hover:bg-emerald-100 transition text-xs font-semibold"
+                              onClick={() => {
                               setProcessRegistro(reg);
                               setProcessModalOpen(true);
                             }}
-                          >
-                            Processar
-                          </button>
-                          <button
-                            className="px-2 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100 transition text-xs font-semibold"
-                            onClick={() => handleDeleteRegistro(reg.id)}
-                          >
-                            Excluir
-                          </button>
+                              title="Processar"
+                              aria-label="Processar"
+                            >
+                              ⚙️
+                            </button>
+                            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-[10px] font-medium text-white opacity-0 group-hover:opacity-100 transition">
+                              Processar
+                            </span>
+                          </div>
+                          <div className="relative group">
+                            <button
+                              className="px-2 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100 transition text-xs font-semibold"
+                              onClick={() => handleDeleteRegistro(reg.id)}
+                              title="Excluir"
+                              aria-label="Excluir"
+                            >
+                              🗑️
+                            </button>
+                            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-[10px] font-medium text-white opacity-0 group-hover:opacity-100 transition">
+                              Excluir
+                            </span>
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -2026,6 +2380,69 @@ export default function ConsagracaoPage() {
             </div>
           </div>
         </div>
+
+        <div className="print-only">
+          {paginasImpressao.map((pagina, index) => (
+            <section className="print-page" key={`print-page-${index}`}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', borderBottom: '2px solid #000', paddingBottom: '10px', marginBottom: '10px' }}>
+                <img src="/img/logo_comieadepa.png" alt="COMIEADEPA" style={{ width: '65px', height: 'auto', flexShrink: 0 }} />
+                <div style={{ textAlign: 'center', padding: '0 8px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 'bold', lineHeight: 1.4 }}>COMIEADEPA - CONVENÇÃO INTERESTADUAL DE MINISTROS E IGREJAS<br />EVANGÉLICAS ASSEMBLEIA DE DEUS NO PARÁ</div>
+                  <div style={{ fontSize: '9px', color: '#333', marginTop: '3px' }}>Emails: comieadepa@bol.com.br / Site: www.comieadepa.org</div>
+                  <div style={{ fontSize: '9px', fontWeight: 'bold', marginTop: '2px' }}>RODOVIA DO MÁRIO COVAS, 2500, 67115-000 / COQUEIRO, ANANINDEUA - PA</div>
+                  <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#0066cc', marginTop: '6px' }}>PRESIDENTE: PR. OCELIO NAUAR</div>
+                </div>
+              </div>
+
+              <h1 style={{ fontSize: '14px', margin: '8px 0 6px', textAlign: 'center', borderBottom: '1px solid #000', paddingBottom: '6px' }}>Lista de Candidatos - Consagração</h1>
+              <div style={{ fontSize: '12px', color: '#374151', marginBottom: '6px', textAlign: 'center' }}>
+                Emitido em {new Date().toLocaleString('pt-BR')} | Total: {registrosFiltrados.length} registro(s) | Página {index + 1} de {paginasImpressao.length}
+              </div>
+              {filtrosAplicadosImpressao.length > 0 && (
+                <div style={{ fontSize: '11px', color: '#4b5563', marginBottom: '14px' }}>{filtrosResumoImpressao}</div>
+              )}
+
+              <table>
+                <thead>
+                  <tr>
+                    <th style={{ border: '1px solid #d1d5db', padding: '6px 8px', textAlign: 'left', background: '#e5e7eb', fontWeight: 700 }}>Nº Processo</th>
+                    <th style={{ border: '1px solid #d1d5db', padding: '6px 8px', textAlign: 'left', background: '#e5e7eb', fontWeight: 700 }}>Data Proc.</th>
+                    <th style={{ border: '1px solid #d1d5db', padding: '6px 8px', textAlign: 'left', background: '#e5e7eb', fontWeight: 700 }}>Nome</th>
+                    <th style={{ border: '1px solid #d1d5db', padding: '6px 8px', textAlign: 'left', background: '#e5e7eb', fontWeight: 700 }}>CPF</th>
+                    <th style={{ border: '1px solid #d1d5db', padding: '6px 8px', textAlign: 'left', background: '#e5e7eb', fontWeight: 700 }}>Categoria</th>
+                    <th style={{ border: '1px solid #d1d5db', padding: '6px 8px', textAlign: 'left', background: '#e5e7eb', fontWeight: 700 }}>Tipo</th>
+                    <th style={{ border: '1px solid #d1d5db', padding: '6px 8px', textAlign: 'left', background: '#e5e7eb', fontWeight: 700 }}>Status</th>
+                    <th style={{ border: '1px solid #d1d5db', padding: '6px 8px', textAlign: 'left', background: '#e5e7eb', fontWeight: 700 }}>Documentação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagina.length === 0 && (
+                    <tr>
+                      <td colSpan={8} style={{ border: '1px solid #d1d5db', padding: '6px 8px', textAlign: 'center' }}>Nenhum registro encontrado.</td>
+                    </tr>
+                  )}
+                  {pagina.map((reg, idx) => {
+                    const doc = getDocumentacaoStatus(String(reg.id || ''));
+                    const dataProc = reg.data_processo ? new Date(`${reg.data_processo}T00:00:00`).toLocaleDateString('pt-BR') : '—';
+                    return (
+                      <tr key={`print-row-${index}-${idx}`}>
+                        <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{reg.numero_processo || '—'}</td>
+                        <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{dataProc}</td>
+                        <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{reg.nome || '—'}</td>
+                        <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{reg.cpf || '—'}</td>
+                        <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{reg.regiao || '—'}</td>
+                        <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{TIPO_REGISTRO_LABELS[reg.tipo_registro] || reg.tipo_registro || '—'}</td>
+                        <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{STATUS_LABELS[reg.status_processo] || reg.status_processo || '—'}</td>
+                        <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{doc.label}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </section>
+          ))}
+        </div>
+        </>
         )}
 
         {/* ABA: IMPORTAR CSV */}
@@ -2124,6 +2541,21 @@ export default function ConsagracaoPage() {
         className="hidden"
         onChange={handleFotoUpload}
       />
+
+      {candidatoDocumentos && (
+        <DocumentosMinistro
+          memberId={String(candidatoDocumentos.id)}
+          memberName={String(candidatoDocumentos.nome || 'Candidato')}
+          matricula={String(candidatoDocumentos.numero_processo || 'SEM-PROCESSO')}
+          entityType="candidato_consagracao"
+          entityId={String(candidatoDocumentos.id)}
+          titulo="Documentos do Candidato"
+          subtitulo={`${String(candidatoDocumentos.nome || 'Candidato')} • ${String(candidatoDocumentos.cargo_pretendido || 'Cargo não informado')} • Processo ${String(candidatoDocumentos.numero_processo || '—')}`}
+          anoReferencia={String(candidatoDocumentos.data_processo || '').slice(0, 4) || String(new Date().getFullYear())}
+          onChanged={() => void loadDocumentosStatus(registros)}
+          onClose={() => setCandidatoDocumentos(null)}
+        />
+      )}
 
       {processModalOpen && processRegistro && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">

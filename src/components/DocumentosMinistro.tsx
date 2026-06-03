@@ -18,15 +18,35 @@ interface DocumentosMinistroProps {
   memberName: string;
   matricula: string;
   onClose: () => void;
+  entityType?: 'ministro' | 'candidato_consagracao';
+  entityId?: string;
+  titulo?: string;
+  subtitulo?: string;
+  anoReferencia?: string;
+  tipoDocumentoOptions?: string[];
+  onChanged?: () => void;
 }
 
-const TIPOS_DOCUMENTO = [
+const TIPOS_DOCUMENTO_MINISTRO = [
   'RG',
   'CPF',
   'Comprovante de Residência',
   'Diploma Teológico',
   'Certificado de Ordenação',
   'Carta de Transferência',
+  'Foto',
+  'Outros',
+];
+
+const TIPOS_DOCUMENTO_CANDIDATO = [
+  'RG',
+  'CPF',
+  'Comprovante de Residência',
+  'Certidão de Casamento',
+  'Diploma Teológico',
+  'Carta de Recomendação',
+  'Certificado de Batismo',
+  'Certificado de Ordenação anterior',
   'Foto',
   'Outros',
 ];
@@ -69,13 +89,31 @@ function displayName(name: string): string {
   return name.replace(/^\[[^\]]+\]\s*/, '');
 }
 
-export default function DocumentosMinistro({ memberId, memberName, matricula, onClose }: DocumentosMinistroProps) {
+export default function DocumentosMinistro({
+  memberId,
+  memberName,
+  matricula,
+  onClose,
+  entityType = 'ministro',
+  entityId,
+  titulo,
+  subtitulo,
+  anoReferencia,
+  tipoDocumentoOptions,
+  onChanged,
+}: DocumentosMinistroProps) {
+  const resolvedEntityId = entityId || memberId;
+  const resolvedEntityName = memberName;
+  const tituloModal = titulo || (entityType === 'candidato_consagracao' ? 'Documentos do Candidato' : 'Documentos do Ministro');
+  const subtituloModal = subtitulo || `${matricula} — ${memberName}`;
+  const tiposDocumento = tipoDocumentoOptions || (entityType === 'candidato_consagracao' ? TIPOS_DOCUMENTO_CANDIDATO : TIPOS_DOCUMENTO_MINISTRO);
+
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
-  const [tipoDocumento, setTipoDocumento] = useState(TIPOS_DOCUMENTO[0]);
+  const [tipoDocumento, setTipoDocumento] = useState(tiposDocumento[0] || 'Outros');
   const [descricaoOutros, setDescricaoOutros] = useState('');
   const [confirmDeletar, setConfirmDeletar] = useState<string | null>(null);
   const [deletando, setDeletando] = useState(false);
@@ -127,7 +165,14 @@ export default function DocumentosMinistro({ memberId, memberName, matricula, on
     setError('');
     try {
       const headers = await getAuthHeader();
-      const params = new URLSearchParams({ memberId, memberName, matricula });
+      const params = new URLSearchParams({
+        entityType,
+        entityId: resolvedEntityId,
+        entityName: resolvedEntityName,
+        memberId,
+        memberName,
+        matricula,
+      });
       const res = await fetch(`/api/documentos?${params}`, { headers });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Erro ao listar documentos');
@@ -137,7 +182,7 @@ export default function DocumentosMinistro({ memberId, memberName, matricula, on
     } finally {
       setLoading(false);
     }
-  }, [memberId, memberName, matricula, getAuthHeader]);
+  }, [entityType, resolvedEntityId, resolvedEntityName, memberId, memberName, matricula, getAuthHeader]);
 
   useEffect(() => { fetchFiles(); }, [fetchFiles]);
 
@@ -148,9 +193,13 @@ export default function DocumentosMinistro({ memberId, memberName, matricula, on
       const headers = await getAuthHeader();
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('entityType', entityType);
+      formData.append('entityId', resolvedEntityId);
+      formData.append('entityName', resolvedEntityName);
       formData.append('memberId', memberId);
       formData.append('memberName', memberName);
       formData.append('matricula', matricula);
+      if (anoReferencia) formData.append('ano', anoReferencia);
       const tipoFinal = tipoDocumento === 'Outros' && descricaoOutros.trim()
         ? `Outros - ${descricaoOutros.trim()}`
         : tipoDocumento;
@@ -160,6 +209,7 @@ export default function DocumentosMinistro({ memberId, memberName, matricula, on
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Erro ao enviar arquivo');
       await fetchFiles();
+      onChanged?.();
     } catch (e) {
       setUploadError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -184,12 +234,14 @@ export default function DocumentosMinistro({ memberId, memberName, matricula, on
     setDeletando(true);
     try {
       const headers = await getAuthHeader();
-      const res = await fetch(`/api/documentos/${fileId}`, { method: 'DELETE', headers });
+      const params = new URLSearchParams({ entityType, entityId: resolvedEntityId });
+      const res = await fetch(`/api/documentos/${fileId}?${params}`, { method: 'DELETE', headers });
       if (!res.ok) {
         const json = await res.json();
         throw new Error(json.error || 'Erro ao deletar');
       }
       setFiles(prev => prev.filter(f => f.id !== fileId));
+      onChanged?.();
     } catch (e) {
       alert('Erro ao deletar: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
@@ -205,9 +257,9 @@ export default function DocumentosMinistro({ memberId, memberName, matricula, on
         <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-[#0D2B4E] to-[#1a4a7a] rounded-t-xl flex-shrink-0">
           <div>
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <span>📁</span> Documentos do Ministro
+              <span>📁</span> {tituloModal}
             </h2>
-            <p className="text-xs text-blue-200 mt-0.5">{matricula} — {memberName}</p>
+            <p className="text-xs text-blue-200 mt-0.5">{subtituloModal}</p>
           </div>
           <button onClick={onClose} className="text-white hover:text-gray-300 text-2xl leading-none">✕</button>
         </div>
@@ -222,7 +274,7 @@ export default function DocumentosMinistro({ memberId, memberName, matricula, on
                 className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#0D2B4E]"
                 disabled={uploading}
               >
-                {TIPOS_DOCUMENTO.map(t => <option key={t} value={t}>{t}</option>)}
+                {tiposDocumento.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
               <button
                 onClick={() => fileInputRef.current?.click()}

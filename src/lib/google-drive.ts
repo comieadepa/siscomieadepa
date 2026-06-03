@@ -12,6 +12,20 @@ import type { drive_v3 } from 'googleapis';
 import { Readable } from 'stream';
 import { buildUrl, getAppBaseUrl } from '@/lib/urls';
 
+export type DocumentoEntidadeTipo = 'ministro' | 'candidato_consagracao';
+
+type UploadDocumentoDriveInput = {
+  entidadeTipo: DocumentoEntidadeTipo;
+  entidadeId: string;
+  entidadeNome: string;
+  tipoDocumento?: string;
+  fileName: string;
+  mimeType: string;
+  fileBuffer: Buffer;
+  matricula?: string;
+  ano?: string;
+};
+
 function getOAuth2Client() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -59,18 +73,18 @@ const ROOT_FOLDER_ID = () => {
   return id;
 };
 
-/** Retorna o ID da subpasta do ministro, criando se não existir */
-export async function getOrCreateMemberFolder(
-  memberId: string,
-  memberName: string,
-  matricula: string,
-): Promise<string> {
-  const drive = getDriveClient();
-  const rootId = ROOT_FOLDER_ID();
-  const folderName = `${matricula || memberId}_${memberName.replace(/[<>:"/\\|?*]/g, '').trim()}`;
+function sanitizeFolderName(value: string): string {
+  return String(value || '')
+    .replace(/[<>:"/\\|?*]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
+async function getOrCreateFolder(parentId: string, folderName: string): Promise<string> {
+  const drive = getDriveClient();
+  const safeName = sanitizeFolderName(folderName);
   const res = await drive.files.list({
-    q: `name = '${folderName.replace(/'/g, "\\'")}' and '${rootId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+    q: `name = '${safeName.replace(/'/g, "\\'")}' and '${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
     fields: 'files(id, name)',
     spaces: 'drive',
   });
@@ -81,14 +95,38 @@ export async function getOrCreateMemberFolder(
 
   const folder = await drive.files.create({
     requestBody: {
-      name: folderName,
+      name: safeName,
       mimeType: 'application/vnd.google-apps.folder',
-      parents: [rootId],
+      parents: [parentId],
     },
     fields: 'id',
   });
 
   return folder.data.id!;
+}
+
+async function getOrCreateConsagracaoCandidateFolder(input: {
+  candidatoId: string;
+  candidatoNome: string;
+  ano?: string;
+}): Promise<string> {
+  const rootId = ROOT_FOLDER_ID();
+  const year = String(input.ano || new Date().getFullYear());
+  const consagracoesId = await getOrCreateFolder(rootId, 'Consagracoes');
+  const yearId = await getOrCreateFolder(consagracoesId, year);
+  const candidatoFolder = `${sanitizeFolderName(input.candidatoNome) || 'CANDIDATO'} - ${input.candidatoId}`;
+  return getOrCreateFolder(yearId, candidatoFolder);
+}
+
+/** Retorna o ID da subpasta do ministro, criando se não existir */
+export async function getOrCreateMemberFolder(
+  memberId: string,
+  memberName: string,
+  matricula: string,
+): Promise<string> {
+  const rootId = ROOT_FOLDER_ID();
+  const folderName = `${matricula || memberId}_${sanitizeFolderName(memberName)}`;
+  return getOrCreateFolder(rootId, folderName);
 }
 
 /** Lista todos os arquivos na subpasta do ministro */
@@ -127,6 +165,28 @@ export async function uploadFileToDrive(
   });
 
   return res.data;
+}
+
+export async function uploadDocumentoDrive(input: UploadDocumentoDriveInput): Promise<drive_v3.Schema$File> {
+  const tipoPrefixo = input.tipoDocumento ? `[${input.tipoDocumento}] ` : '';
+  const nomeArquivo = `${tipoPrefixo}${input.fileName}`;
+
+  let folderId: string;
+  if (input.entidadeTipo === 'candidato_consagracao') {
+    folderId = await getOrCreateConsagracaoCandidateFolder({
+      candidatoId: input.entidadeId,
+      candidatoNome: input.entidadeNome,
+      ano: input.ano,
+    });
+  } else {
+    folderId = await getOrCreateMemberFolder(
+      input.entidadeId,
+      input.entidadeNome,
+      input.matricula || '',
+    );
+  }
+
+  return uploadFileToDrive(folderId, nomeArquivo, input.mimeType, input.fileBuffer);
 }
 
 /** Deleta um arquivo do Drive */
