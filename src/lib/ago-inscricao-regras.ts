@@ -97,7 +97,8 @@ export function filtrarTiposAgo<T extends TipoComNome>(tipos: T[], options: Filt
   } = options;
 
   const idade = calcularIdade(dataNascimento);
-  const sexoNorm = String(sexo || '').toUpperCase();
+  const sexoRaw = String(sexo || '').trim().toUpperCase();
+  const sexoNorm = sexoRaw.startsWith('M') ? 'M' : sexoRaw.startsWith('F') ? 'F' : '';
   const cpfFoiLocalizado = !!cpfLocalizado;
   const ministerioAtivo = !!ministroAtivo;
   const ehPastorAuxiliarPorPerfil = !!pastorAuxiliar || (

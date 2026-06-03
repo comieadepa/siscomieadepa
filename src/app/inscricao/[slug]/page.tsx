@@ -718,6 +718,8 @@ export default function InscricaoPublicaPage() {
     ['active', 'ativo'].includes((ministroInfo.status ?? '').toLowerCase());
   const ministroInativo = cpfStatus === 'encontrado' && ministroInfo !== null && !ministroAtivo;
   const dadosMinisteriaisBloqueados = evento?.departamento === 'AGO' && ministroAtivo;
+  const sexoTitularRaw = String(form.sexo || '').trim().toUpperCase();
+  const sexoTitularNorm = sexoTitularRaw.startsWith('M') ? 'M' : sexoTitularRaw.startsWith('F') ? 'F' : '';
 
   const tipoJubiladoAutomatico = findTipoPastorJubilado(tipos);
   const jubiladoAutomaticoAtivo = !!(evento?.departamento === 'AGO' && ministroInfo?.isJubilado);
@@ -773,7 +775,8 @@ export default function InscricaoPublicaPage() {
     const extraMin = extrasMinisteriais[idx] ?? EXTRA_MINISTERIAL_VAZIO;
     const extraCpfLocalizado = extraMin.cpfStatus === 'encontrado';
     const extraMinistroAtivo = !!extraMin.ministroAtivo;
-    const sexoExtraNorm = String(p.sexo || '').trim().toUpperCase();
+    const sexoExtraRaw = String(p.sexo || '').trim().toUpperCase();
+    const sexoExtraNorm = sexoExtraRaw.startsWith('M') ? 'M' : sexoExtraRaw.startsWith('F') ? 'F' : '';
     const podePastorPresidente = extraCpfLocalizado && extraMinistroAtivo && !!extraMin.isPastorPresidente;
     const podePastorAuxiliar = extraCpfLocalizado
       && extraMinistroAtivo
@@ -1610,7 +1613,7 @@ export default function InscricaoPublicaPage() {
                     </div>
                   )}
                   {/* Dica: informar CPF para categorias ministeriais (sexo M, CPF ainda não verificado) */}
-                  {form.sexo === 'M' && cpfStatus === 'idle' && (
+                  {sexoTitularNorm === 'M' && cpfStatus === 'idle' && (
                     <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-700">
                       🔍 Para categorias ministeriais (Pastor Presidente, Auxiliar, Jubilado), informe o CPF acima.
                     </div>
