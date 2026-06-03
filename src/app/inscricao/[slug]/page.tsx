@@ -425,6 +425,9 @@ export default function InscricaoPublicaPage() {
       const isPP = !!payload.pastor_presidente;
       const statusMinistro = payload.status ?? null;
       const ministerioAtivo = ['active', 'ativo'].includes((statusMinistro ?? '').toLowerCase());
+      const sexoLookupRaw = String(payload.sexo || '').trim().toUpperCase();
+      const sexoLookup = sexoLookupRaw.startsWith('M') ? 'M' : sexoLookupRaw.startsWith('F') ? 'F' : '';
+      const sexoPadraoAgo = isAGO ? (sexoLookup || (ministerioAtivo ? 'M' : '')) : '';
 
       setMinistroInfo({
         nome,
@@ -464,7 +467,7 @@ export default function InscricaoPublicaPage() {
         whatsapp: whatsappLookup || f.whatsapp,
         supervisao_id: sup?.id || payload.supervisao_id || f.supervisao_id,
         campo_id: campoSelecionado?.id || payload.campo_id || '',
-        ...(isAGO && payload.sexo ? { sexo: payload.sexo } : {}),
+        ...(isAGO && sexoPadraoAgo ? { sexo: sexoPadraoAgo } : {}),
         ...(isAGO && payload.data_nascimento ? { data_nascimento: payload.data_nascimento } : {}),
       }));
     } else {
@@ -726,6 +729,10 @@ export default function InscricaoPublicaPage() {
       return [tipoJubiladoAutomatico];
     }
 
+    if (!String(form.sexo || '').trim()) {
+      return [];
+    }
+
     return filtrarTiposAgo(tipos, {
       sexo: form.sexo,
       dataNascimento: form.data_nascimento,
@@ -872,6 +879,23 @@ export default function InscricaoPublicaPage() {
     jubiladoAutomaticoAtivo,
     tipoJubiladoAutomatico,
     tipoSelecionado?.id,
+  ]);
+
+  useEffect(() => {
+    if (!evento || evento.departamento !== 'AGO') return;
+    if (!tipoSelecionado) return;
+
+    const tipoAindaValido = tiposParaExibir.some((t) => t.id === tipoSelecionado.id);
+    if (tipoAindaValido) return;
+
+    setTipoSelecionado(null);
+    setCupomStatus('idle');
+    setCupomDesconto(0);
+    setCupomMeta(null);
+  }, [
+    evento,
+    tipoSelecionado,
+    tiposParaExibir,
   ]);
 
   useEffect(() => {
