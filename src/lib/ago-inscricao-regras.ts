@@ -82,6 +82,10 @@ export function findTipoPastorJubilado<T extends TipoComNome>(tipos: T[]): T | n
   return tipos.find((t) => ehTipoPastorJubilado(t.nome)) || null;
 }
 
+export function findTipoEsposaJubilado<T extends TipoComNome>(tipos: T[]): T | null {
+  return tipos.find((t) => ehTipoEsposaJubilado(t.nome)) || null;
+}
+
 export function filtrarTiposAgo<T extends TipoComNome>(tipos: T[], options: FiltroTiposAgoOptions): T[] {
   const {
     sexo,

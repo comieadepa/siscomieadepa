@@ -271,6 +271,56 @@ export async function POST(request: NextRequest) {
     const usaTipos = !!(evento as Record<string, unknown>).usar_tipos_inscricao;
 
     const cpfLimpoInput = cpf?.replace(/\D/g, '') || null;
+    const vinculoEsposaJubiladoPorCpf = new Map<string, { ministroId: string; ministroNome: string | null } | null>();
+    const resolverVinculoEsposaJubilado = async (cpfParaValidar: string | null | undefined) => {
+      const cpfNorm = String(cpfParaValidar || '').replace(/\D/g, '');
+      if (cpfNorm.length !== 11) return null;
+      if (vinculoEsposaJubiladoPorCpf.has(cpfNorm)) {
+        return vinculoEsposaJubiladoPorCpf.get(cpfNorm) || null;
+      }
+
+      const { data: rows, error: vincErr } = await supabase
+        .from('members')
+        .select('id,name,jubilado,status,estado_civil,nome_conjuge,cpf_conjuge')
+        .eq('jubilado', true)
+        .in('status', ['active', 'ativo'])
+        .eq('cpf_conjuge', cpfNorm)
+        .limit(10);
+
+      if (vincErr) {
+        throw new Error(`Falha ao validar cpf_conjuge de jubilado: ${vincErr.message}`);
+      }
+
+      const match = (rows ?? []).find((r) => {
+        const cpfConjuge = String((r as any).cpf_conjuge ?? '').replace(/\D/g, '');
+        const nomeConjuge = String((r as any).nome_conjuge ?? '').trim();
+        const estadoCivilNorm = String((r as any).estado_civil ?? '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase()
+          .trim();
+        return cpfConjuge === cpfNorm
+          && cpfConjuge.length === 11
+          && !!nomeConjuge
+          && estadoCivilNorm.includes('casad');
+      }) as { id?: string | null; name?: string | null } | undefined;
+
+      const resolved = match
+        ? {
+          ministroId: String(match.id || ''),
+          ministroNome: match.name ? String(match.name) : null,
+        }
+        : null;
+
+      vinculoEsposaJubiladoPorCpf.set(cpfNorm, resolved);
+      return resolved;
+    };
+
+    let vinculoEsposaJubiladoTitular: { ministroId: string; ministroNome: string | null } | null = null;
+    if (usaTipos && evento.departamento === 'AGO' && cpfLimpoInput) {
+      vinculoEsposaJubiladoTitular = await resolverVinculoEsposaJubilado(cpfLimpoInput);
+    }
+
     let jubiladoAutomatico = false;
     if (usaTipos && evento.departamento === 'AGO' && cpfLimpoInput) {
       const { data: membroTipoAuto } = await supabase
@@ -281,7 +331,7 @@ export async function POST(request: NextRequest) {
       jubiladoAutomatico = !!(membroTipoAuto as any)?.jubilado;
     }
 
-    if (usaTipos && !tipo_inscricao && !jubiladoAutomatico) {
+    if (usaTipos && !tipo_inscricao && !jubiladoAutomatico && !vinculoEsposaJubiladoTitular) {
       return buildErrorResponse(400, {
         error: 'Selecione uma modalidade de inscrição.',
         stage: 'validacao_tipo_inscricao',
@@ -330,6 +380,11 @@ export async function POST(request: NextRequest) {
       return n.includes('pastor jubilado') && !ehTipoEsposaOuViuva(n);
     };
 
+    const ehTipoEsposaJubilado = (tipo: string | null | undefined) => {
+      const n = norm(tipo);
+      return n.includes('esposa') && n.includes('pastor jubilado');
+    };
+
     const ehTipoVisitante = (tipo: string | null | undefined) => {
       const n = norm(tipo);
       return n.includes('visitante');
@@ -342,6 +397,13 @@ export async function POST(request: NextRequest) {
 
     const ehCategoriaMasculina = (tipo: string | null | undefined) => {
       return ehTipoPastorPresidente(tipo) || ehTipoPastorAuxiliar(tipo) || ehTipoPastorJubilado(tipo);
+    };
+
+    const normalizarSexo = (valor: unknown): 'M' | 'F' | '' => {
+      const raw = String(valor ?? '').trim().toUpperCase();
+      if (raw.startsWith('M')) return 'M';
+      if (raw.startsWith('F')) return 'F';
+      return '';
     };
 
     type TipoEvento = {
@@ -379,7 +441,27 @@ export async function POST(request: NextRequest) {
       return tiposAtivos.find(t => norm(t.nome) === alvo) ?? null;
     };
 
-    if (usaTipos && jubiladoAutomatico) {
+    if (usaTipos && vinculoEsposaJubiladoTitular) {
+      const tipoEsposaJubilado = tiposAtivos.find((t) => ehTipoEsposaJubilado(t.nome)) ?? null;
+      if (!tipoEsposaJubilado) {
+        return buildErrorResponse(400, {
+          error: 'Categoria Esposa de Pastor Jubilado não está disponível para este evento.',
+          stage: 'validacao_tipo_esposa_jubilado_indisponivel',
+          code: 'TIPO_ESPOSA_JUBILADO_INDISPONIVEL',
+          payloadResumo: { ...payloadResumo, evento_id: evento.id },
+        });
+      }
+
+      tipoNome = tipoEsposaJubilado.nome;
+      valorBase = 0;
+      tipoInclui = {
+        alimentacao: !!tipoEsposaJubilado.inclui_alimentacao,
+        hospedagem: !!tipoEsposaJubilado.inclui_hospedagem,
+      };
+      tipoRefeicoes = tipoEsposaJubilado.inclui_alimentacao
+        ? Math.max(0, Number(tipoEsposaJubilado.quantidade_refeicoes ?? 0))
+        : 0;
+    } else if (usaTipos && jubiladoAutomatico) {
       const tipoJubilado = tiposAtivos.find((t) => {
         const n = norm(t.nome);
         return n.includes('pastor jubilado') && !n.includes('esposa') && !n.includes('viuva');
@@ -397,7 +479,7 @@ export async function POST(request: NextRequest) {
           : 0;
       }
     }
-    if (tipo_inscricao && usaTipos) {
+    if (tipo_inscricao && usaTipos && !vinculoEsposaJubiladoTitular) {
       const { data: tipo, error: tipoErr } = await supabase
         .from('evento_tipos_inscricao')
         .select('nome, valor, inclui_alimentacao, inclui_hospedagem, quantidade_refeicoes')
@@ -440,6 +522,29 @@ export async function POST(request: NextRequest) {
       inclui_hospedagem: tipoInclui.hospedagem,
       quantidade_refeicoes: tipoRefeicoes,
     });
+
+    const solicitouEsposaJubilado = ehTipoEsposaJubilado(tipo_inscricao as string | null | undefined)
+      || ehTipoEsposaJubilado(tipoNome);
+
+    if (usaTipos && evento.departamento === 'AGO') {
+      if (solicitouEsposaJubilado && !vinculoEsposaJubiladoTitular) {
+        return buildErrorResponse(400, {
+          error: 'Categoria Esposa de Pastor Jubilado exige validação pelo CPF do cônjuge no cadastro do Pastor Jubilado.',
+          stage: 'validacao_esposa_jubilado_portal',
+          code: 'ESPOSA_JUBILADO_SEM_VINCULO_CPF_CONJUGE',
+          payloadResumo: { ...payloadResumo, evento_id: evento.id },
+        });
+      }
+
+      if (vinculoEsposaJubiladoTitular && !ehTipoEsposaJubilado(tipoNome)) {
+        return buildErrorResponse(400, {
+          error: 'CPF vinculado a cônjuge de Pastor Jubilado ativo. A inscrição deve usar a categoria Esposa de Pastor Jubilado.',
+          stage: 'validacao_esposa_jubilado_tipo_obrigatorio',
+          code: 'ESPOSA_JUBILADO_TIPO_OBRIGATORIO',
+          payloadResumo: { ...payloadResumo, evento_id: evento.id },
+        });
+      }
+    }
 
     // ── Aplica cupom ──────────────────────────────────────────
     let desconto   = 0;
@@ -651,7 +756,7 @@ export async function POST(request: NextRequest) {
       const titularEhPP = !!ministroSnapshot.is_pastor_presidente;
       const titularEhPA = !!ministroSnapshot.is_pastor_auxiliar;
       const titularEhJub = !!ministroSnapshot.is_pastor_jubilado;
-      const sexoTitularNorm = String(sexo ?? '').trim().toUpperCase();
+      const sexoTitularNorm = normalizarSexo(sexo);
       const titularPodePA = titularEhPA || (titularAtivo && sexoTitularNorm === 'M' && !titularEhPP && !titularEhJub);
 
       if (titularAtivo && ehTipoVisitante(tipoNome)) {
@@ -691,7 +796,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const sexoTitularNorm = String(sexo ?? '').trim().toUpperCase();
+    const sexoTitularNorm = normalizarSexo(sexo);
     if (sexoTitularNorm === 'M' && ehCategoriaFeminina(tipoNome)) {
       return buildErrorResponse(400, {
         error: 'Categoria feminina inválida para sexo masculino.',
@@ -1056,7 +1161,20 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        const sexoParticipanteNorm = String(p.sexo ?? '').trim().toUpperCase();
+        const cpfParticipante = String(p.cpf ?? '').replace(/\D/g, '').trim();
+        if (ehTipoEsposaJubilado(tipoParticipante)) {
+          const vinculoConjugeParticipante = await resolverVinculoEsposaJubilado(cpfParticipante);
+          if (!vinculoConjugeParticipante) {
+            return buildErrorResponse(400, {
+              error: `Categoria Esposa de Pastor Jubilado exige validação por cpf_conjuge (participante ${idx + 1}).`,
+              stage: 'validacao_esposa_jubilado_lote',
+              code: 'ESPOSA_JUBILADO_SEM_VINCULO_CPF_CONJUGE_LOTE',
+              payloadResumo: { ...payloadResumo, evento_id: evento.id },
+            });
+          }
+        }
+
+        const sexoParticipanteNorm = normalizarSexo(p.sexo);
         if (sexoParticipanteNorm === 'M' && ehCategoriaFeminina(tipoParticipante)) {
           return buildErrorResponse(400, {
             error: `Categoria feminina inválida para sexo masculino (participante ${idx + 1}).`,
@@ -1075,7 +1193,9 @@ export async function POST(request: NextRequest) {
         }
 
         let valorBaseParticipante = tipoEvento?.valor ?? valorBase;
-        const cpfParticipante = String(p.cpf ?? '').replace(/\D/g, '').trim();
+        if (ehTipoEsposaJubilado(tipoParticipante)) {
+          valorBaseParticipante = 0;
+        }
         const ministroParticipante = cpfParticipante ? ministrosPorCpf.get(cpfParticipante) : null;
         if (ministroParticipante) {
           const statusMin = String(ministroParticipante.status ?? '').toLowerCase();
@@ -1083,7 +1203,7 @@ export async function POST(request: NextRequest) {
           const minEhPP = !!ministroParticipante.pastor_presidente;
           const minEhPA = !!ministroParticipante.pastor_auxiliar;
           const minEhJub = !!ministroParticipante.jubilado;
-          const sexoParticipanteMinNorm = String(p.sexo ?? '').trim().toUpperCase();
+          const sexoParticipanteMinNorm = normalizarSexo(p.sexo);
           const minPodePA = minEhPA || (minAtivo && sexoParticipanteMinNorm === 'M' && !minEhPP && !minEhJub);
 
           if (minAtivo && ehTipoVisitante(tipoParticipante)) {

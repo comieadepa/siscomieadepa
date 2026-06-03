@@ -10,6 +10,7 @@ import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
 import { resolveGrupoHospedagemAGO } from '@/lib/hospedagem-helpers';
 import {
   filtrarTiposAgo,
+  findTipoEsposaJubilado,
   findTipoPastorJubilado,
   ehTipoPastorAuxiliar,
   ehTipoPastorPresidente,
@@ -51,6 +52,10 @@ interface MinistroInfo {
 
 interface MemberLookupPayload {
   encontrado?: boolean;
+  lookup_kind?: 'ministro' | 'conjuge_jubilado' | null;
+  conjuge_jubilado_validado?: boolean;
+  conjuge_de_ministro_id?: string | null;
+  conjuge_de_nome?: string | null;
   nome?: string | null;
   email?: string | null;
   whatsapp?: string | null;
@@ -265,6 +270,7 @@ export default function InscricaoPublicaPage() {
 
   // Dados ministeriais (AGO — preenchidos após consulta de CPF)
   const [ministroInfo, setMinistroInfo] = useState<MinistroInfo | null>(null);
+  const [esposaJubiladoAuto, setEsposaJubiladoAuto] = useState<{ ministroId: string | null; ministroNome: string | null } | null>(null);
   // Hospedagem AGO: solicitada pelo usuário mesmo quando tipo não inclui automaticamente
   const [solicitaHospedagem, setSolicitaHospedagem] = useState(false);
 
@@ -389,6 +395,7 @@ export default function InscricaoPublicaPage() {
     if (limpo.length < 11 || !evento) return;
     setBuscandoCPF(true);
     setCpfStatus('idle');
+    setEsposaJubiladoAuto(null);
 
     const isAGO = evento.departamento === 'AGO';
     const query = new URLSearchParams({ cpf: limpo });
@@ -401,6 +408,10 @@ export default function InscricaoPublicaPage() {
     if (payload.encontrado) {
       const nome = (payload.nome ?? '') as string;
       setCpfStatus('encontrado');
+      const conjugeJubiladoAuto = isAGO && (
+        payload.lookup_kind === 'conjuge_jubilado'
+        || !!payload.conjuge_jubilado_validado
+      );
       const sup = supervisoes.find(s => s.id === payload.supervisao_id);
       const whatsappLookup = payload.whatsapp ?? payload.celular ?? payload.telefone ?? payload.phone ?? null;
       let camposDaSup: Campo[] = [];
@@ -420,6 +431,40 @@ export default function InscricaoPublicaPage() {
       const confAgo = evento.configuracoes_ago;
       const descontoHabilitado = !!(confAgo?.habilitar_desconto_campo_missionario);
       const campoMissionario = campoSelecionado?.is_campo_missionario ?? false;
+
+      if (conjugeJubiladoAuto) {
+        setEsposaJubiladoAuto({
+          ministroId: payload.conjuge_de_ministro_id ?? null,
+          ministroNome: payload.conjuge_de_nome ?? null,
+        });
+        setMinistroInfo(null);
+        setDescontoCampoMissionario(false);
+        setIncluirEsposa(false);
+        setFormEsposa({ ...FORM_ESPOSA_VAZIO });
+        setHospEsposa({ ...HOSP_ESPOSA_VAZIO });
+
+        setForm(f => ({
+          ...f,
+          nome_inscrito: nome || f.nome_inscrito,
+          email: payload.email || f.email,
+          whatsapp: whatsappLookup || f.whatsapp,
+          supervisao_id: sup?.id || payload.supervisao_id || f.supervisao_id,
+          campo_id: campoSelecionado?.id || payload.campo_id || '',
+          sexo: 'F',
+          ...(payload.data_nascimento ? { data_nascimento: payload.data_nascimento } : {}),
+        }));
+
+        const tipoEsposaJubilado = findTipoEsposaJubilado(tipos);
+        if (tipoEsposaJubilado) {
+          setTipoSelecionado(tipoEsposaJubilado);
+          setCupomStatus('idle');
+          setCupomDesconto(0);
+          setCupomMeta(null);
+        }
+        return;
+      }
+
+      setEsposaJubiladoAuto(null);
       setDescontoCampoMissionario(descontoHabilitado && campoMissionario);
 
       const isPP = !!payload.pastor_presidente;
@@ -473,6 +518,7 @@ export default function InscricaoPublicaPage() {
     } else {
       setCpfStatus('nao_encontrado');
       setMinistroInfo(null);
+      setEsposaJubiladoAuto(null);
       setDescontoCampoMissionario(false);
       setIncluirEsposa(false);
       setFormEsposa({ ...FORM_ESPOSA_VAZIO });
@@ -717,15 +763,21 @@ export default function InscricaoPublicaPage() {
   const ministroAtivo = cpfStatus === 'encontrado' && ministroInfo !== null &&
     ['active', 'ativo'].includes((ministroInfo.status ?? '').toLowerCase());
   const ministroInativo = cpfStatus === 'encontrado' && ministroInfo !== null && !ministroAtivo;
-  const dadosMinisteriaisBloqueados = evento?.departamento === 'AGO' && ministroAtivo;
+  const dadosMinisteriaisBloqueados = evento?.departamento === 'AGO' && (ministroAtivo || !!esposaJubiladoAuto);
   const sexoTitularRaw = String(form.sexo || '').trim().toUpperCase();
   const sexoTitularNorm = sexoTitularRaw.startsWith('M') ? 'M' : sexoTitularRaw.startsWith('F') ? 'F' : '';
 
   const tipoJubiladoAutomatico = findTipoPastorJubilado(tipos);
+  const tipoEsposaJubiladoAutomatico = findTipoEsposaJubilado(tipos);
   const jubiladoAutomaticoAtivo = !!(evento?.departamento === 'AGO' && ministroInfo?.isJubilado);
+  const esposaJubiladoAutomaticoAtivo = !!(evento?.departamento === 'AGO' && esposaJubiladoAuto);
 
   const tiposParaExibir: TipoInscricao[] = (() => {
     if (!evento || evento.departamento !== 'AGO') return tipos;
+
+    if (esposaJubiladoAutomaticoAtivo && tipoEsposaJubiladoAutomatico) {
+      return [tipoEsposaJubiladoAutomatico];
+    }
 
     if (jubiladoAutomaticoAtivo && tipoJubiladoAutomatico) {
       return [tipoJubiladoAutomatico];
@@ -881,6 +933,20 @@ export default function InscricaoPublicaPage() {
   }, [
     jubiladoAutomaticoAtivo,
     tipoJubiladoAutomatico,
+    tipoSelecionado?.id,
+  ]);
+
+  useEffect(() => {
+    if (!esposaJubiladoAutomaticoAtivo || !tipoEsposaJubiladoAutomatico) return;
+    if (tipoSelecionado?.id === tipoEsposaJubiladoAutomatico.id) return;
+
+    setTipoSelecionado(tipoEsposaJubiladoAutomatico);
+    setCupomStatus('idle');
+    setCupomDesconto(0);
+    setCupomMeta(null);
+  }, [
+    esposaJubiladoAutomaticoAtivo,
+    tipoEsposaJubiladoAutomatico,
     tipoSelecionado?.id,
   ]);
 
@@ -1428,7 +1494,7 @@ export default function InscricaoPublicaPage() {
                 <p className="mt-1 text-xs text-orange-600 font-semibold">⚠️ Registro ministerial localizado, mas não está ativo.</p>
               )}
               {cpfStatus === 'nao_encontrado' && evento.departamento === 'AGO' && (
-                <p className="mt-1 text-xs text-yellow-600">⚠️ CPF não localizado. Você pode continuar preenchendo manualmente.</p>
+                <p className="mt-1 text-xs text-yellow-600">⚠️ CPF não localizado. Você pode continuar preenchendo manualmente. Para Esposa de Pastor Jubilado sem validação por CPF, procure o Balcão/Secretaria.</p>
               )}
             </div>
 
@@ -1532,7 +1598,7 @@ export default function InscricaoPublicaPage() {
             {/* Aviso AGO quando CPF não localizado */}
             {evento.departamento === 'AGO' && cpfStatus === 'nao_encontrado' && (
               <div className="mb-5 p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-sm text-yellow-800">
-                ⚠️ CPF não localizado no cadastro ministerial. Continue normalmente selecionando a categoria correspondente ao seu vínculo com o evento.
+                ⚠️ CPF não localizado no cadastro ministerial. Continue normalmente selecionando a categoria correspondente ao seu vínculo com o evento. Se for Esposa de Pastor Jubilado sem validação por CPF, procure o Balcão/Secretaria.
               </div>
             )}
 
@@ -1560,7 +1626,13 @@ export default function InscricaoPublicaPage() {
               {/* Sexo */}
               <div>
                 <label className={LBL}>Sexo</label>
-                <select name="sexo" value={form.sexo} onChange={handleText} className={INP}>
+                <select
+                  name="sexo"
+                  value={form.sexo}
+                  onChange={handleText}
+                  className={INP + (esposaJubiladoAutomaticoAtivo ? ' bg-gray-50 text-gray-600' : '')}
+                  disabled={esposaJubiladoAutomaticoAtivo}
+                >
                   <option value="">Selecione...</option>
                   <option value="M">Masculino</option>
                   <option value="F">Feminino</option>
@@ -1638,6 +1710,11 @@ export default function InscricaoPublicaPage() {
                   {jubiladoAutomaticoAtivo && tipoJubiladoAutomatico && (
                     <div className="mb-3 p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-xs text-indigo-800">
                       Categoria de Jubilado aplicada automaticamente pelo cadastro ministerial.
+                    </div>
+                  )}
+                  {esposaJubiladoAutomaticoAtivo && (
+                    <div className="mb-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800">
+                      Esposa de Pastor Jubilado identificada pelo cadastro ministerial. Cortesia aplicada automaticamente.
                     </div>
                   )}
                   {/* Nenhuma categoria disponível (só exibe se sexo foi selecionado) */}

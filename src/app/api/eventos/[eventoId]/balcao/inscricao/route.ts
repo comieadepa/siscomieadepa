@@ -127,9 +127,19 @@ export async function POST(
       const n = norm(tipo);
       return n.includes('pastor jubilado') && !ehTipoEsposaOuViuva(n);
     };
+    const ehTipoEsposaJubilado = (tipo: string | null | undefined) => {
+      const n = norm(tipo);
+      return n.includes('esposa') && n.includes('pastor jubilado');
+    };
     const ehTipoVisitante = (tipo: string | null | undefined) => {
       const n = norm(tipo);
       return n.includes('visitante');
+    };
+    const normalizarSexo = (valor: unknown): 'M' | 'F' | '' => {
+      const raw = String(valor ?? '').trim().toUpperCase();
+      if (raw.startsWith('M')) return 'M';
+      if (raw.startsWith('F')) return 'F';
+      return '';
     };
     let incluiAlimentacao = false;
     let quantidadeRefeicoes = 0;
@@ -188,6 +198,74 @@ export async function POST(
 
     // CPF limpo
     const cpfLimpo = cpf ? String(cpf).replace(/\D/g, '') : null;
+
+    const resolverVinculoEsposaJubilado = async (cpfParaValidar: string | null | undefined) => {
+      const cpfNorm = String(cpfParaValidar || '').replace(/\D/g, '');
+      if (cpfNorm.length !== 11) return null;
+
+      const { data: rows, error: vincErr } = await supabase
+        .from('members')
+        .select('id,name,jubilado,status,estado_civil,nome_conjuge,cpf_conjuge')
+        .eq('jubilado', true)
+        .in('status', ['active', 'ativo'])
+        .eq('cpf_conjuge', cpfNorm)
+        .limit(10);
+
+      if (vincErr) {
+        throw new Error(`Falha ao validar cpf_conjuge de jubilado no balcao: ${vincErr.message}`);
+      }
+
+      const match = (rows ?? []).find((r) => {
+        const cpfConjuge = String((r as any).cpf_conjuge ?? '').replace(/\D/g, '');
+        const nomeConjuge = String((r as any).nome_conjuge ?? '').trim();
+        const estadoCivilNorm = String((r as any).estado_civil ?? '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase()
+          .trim();
+        return cpfConjuge === cpfNorm
+          && cpfConjuge.length === 11
+          && !!nomeConjuge
+          && estadoCivilNorm.includes('casad');
+      }) as { id?: string | null; name?: string | null } | undefined;
+
+      if (!match) return null;
+      return {
+        ministroId: String(match.id || ''),
+        ministroNome: match.name ? String(match.name) : null,
+      };
+    };
+
+    const vinculoEsposaJubiladoTitular = (evento as any).departamento === 'AGO' && cpfLimpo
+      ? await resolverVinculoEsposaJubilado(cpfLimpo)
+      : null;
+
+    if ((evento as any).departamento === 'AGO' && vinculoEsposaJubiladoTitular) {
+      const { data: tipoEsposaJubilado } = await supabase
+        .from('evento_tipos_inscricao')
+        .select('nome, inclui_alimentacao, quantidade_refeicoes')
+        .eq('evento_id', eventoId)
+        .eq('ativo', true)
+        .ilike('nome', '%Esposa%Pastor Jubilado%')
+        .maybeSingle();
+
+      if (!tipoEsposaJubilado) {
+        return NextResponse.json(
+          { error: 'Categoria Esposa de Pastor Jubilado não está disponível para este evento.' },
+          { status: 400 },
+        );
+      }
+
+      tipoNome = tipoEsposaJubilado.nome;
+      incluiAlimentacao = !!tipoEsposaJubilado.inclui_alimentacao;
+      quantidadeRefeicoes = incluiAlimentacao ? Math.max(0, Number(tipoEsposaJubilado.quantidade_refeicoes ?? 0)) : 0;
+      vOriginal = 0;
+      vFinal = 0;
+      isGratuito = true;
+      isAsaas = false;
+      isPresencial = false;
+      recalcularPagamento();
+    }
 
     // Snapshot ministerial (AGO)
     let ministroSnapshot: Record<string, unknown> | null = null;
@@ -278,7 +356,7 @@ export async function POST(
       const titularEhPP = !!ministroSnapshot.is_pastor_presidente;
       const titularEhPA = !!ministroSnapshot.is_pastor_auxiliar;
       const titularEhJub = !!ministroSnapshot.is_pastor_jubilado;
-      const sexoTitularNorm = String(sexo ?? '').trim().toUpperCase();
+      const sexoTitularNorm = normalizarSexo(sexo);
       const titularPodePA = titularEhPA || (titularAtivo && sexoTitularNorm === 'M' && !titularEhPP && !titularEhJub);
 
       if (titularAtivo && ehTipoVisitante(tipoNome)) {
@@ -309,6 +387,11 @@ export async function POST(
         );
       }
     }
+
+    const esposaJubiladoManualSemVinculo =
+      (evento as any).departamento === 'AGO'
+      && ehTipoEsposaJubilado(tipoNome)
+      && !vinculoEsposaJubiladoTitular;
 
     if (fluxoCampoMissionarioEspecial) {
       if (!(tipoNome && ehTipoPastorPresidente(tipoNome))) {
@@ -612,9 +695,32 @@ export async function POST(
         valor_final:      vFinal,
         status_pagamento: statusPag,
         operador_id:      operadorId,
+        categoria_esposa_jubilado_manual_sem_vinculo: esposaJubiladoManualSemVinculo,
+        conjuge_jubilado_vinculado_por_cpf: !!vinculoEsposaJubiladoTitular,
       },
       request,
     });
+
+    if (esposaJubiladoManualSemVinculo) {
+      void logDB({
+        userId: operadorId,
+        userEmail: operadorEmail,
+        acao: 'aplicar_esposa_jubilado_manual_balcao',
+        modulo: 'eventos',
+        entidade: 'evento_inscricoes',
+        entidadeId: inscricaoId,
+        descricao: `[Balcão] Categoria Esposa de Pastor Jubilado aplicada manualmente sem vínculo automático de cpf_conjuge.`,
+        detalhes: {
+          evento_id: eventoId,
+          inscricao_id: inscricaoId,
+          cpf_informado: cpfLimpo,
+          tipo_inscricao: tipoNome,
+          operador_id: operadorId,
+          motivo: 'validacao_humana_balcao_sem_vinculo_automatico',
+        },
+        request,
+      });
+    }
 
     // ASAAS: cria cobrança
     if (isAsaas) {

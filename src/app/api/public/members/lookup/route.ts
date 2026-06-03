@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from('members')
-    .select('name,email,email2,phone,whatsapp,celular,sexo,data_nascimento,supervisao_id,congregacao_id,congregacoes!congregacao_id(nome,campo_id),custom_fields,matricula,cargo_ministerial,pastor_presidente,pastor_auxiliar,jubilado,status,nome_conjuge,cpf_conjuge,data_nascimento_conjuge')
+    .select('name,email,email2,phone,whatsapp,celular,sexo,data_nascimento,supervisao_id,congregacao_id,congregacoes!congregacao_id(nome,campo_id),custom_fields,matricula,cargo_ministerial,pastor_presidente,pastor_auxiliar,jubilado,status,estado_civil,nome_conjuge,cpf_conjuge,data_nascimento_conjuge')
     .eq('cpf', cpf)
     .limit(1);
 
@@ -67,7 +67,91 @@ export async function GET(request: NextRequest) {
   }
 
   if (!data || data.length === 0) {
-    return NextResponse.json({ encontrado: false });
+    const { data: conjugeRows, error: conjugeErr } = await supabase
+      .from('members')
+      .select('id,name,status,jubilado,estado_civil,nome_conjuge,cpf_conjuge,data_nascimento_conjuge,supervisao_id,congregacao_id,congregacoes!congregacao_id(nome,campo_id),custom_fields')
+      .eq('jubilado', true)
+      .in('status', ['active', 'ativo'])
+      .eq('cpf_conjuge', cpf)
+      .limit(5);
+
+    if (conjugeErr) {
+      return NextResponse.json({ error: conjugeErr.message }, { status: 500 });
+    }
+
+    const conjugeRow = (conjugeRows ?? []).find((r) => {
+      const nomeConjuge = String((r as any).nome_conjuge || '').trim();
+      const cpfConjuge = onlyDigits(String((r as any).cpf_conjuge || ''));
+      const estadoCivilNorm = String((r as any).estado_civil || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+      return !!nomeConjuge
+        && cpfConjuge.length === 11
+        && cpfConjuge === cpf
+        && (estadoCivilNorm.includes('casad'));
+    }) as {
+      id?: string | null;
+      name?: string | null;
+      status?: string | null;
+      nome_conjuge?: string | null;
+      cpf_conjuge?: string | null;
+      data_nascimento_conjuge?: string | null;
+      supervisao_id?: string | null;
+      congregacao_id?: string | null;
+      congregacoes?: { nome?: string | null; campo_id?: string | null } | null;
+      custom_fields?: Record<string, unknown> | null;
+    } | undefined;
+
+    if (!conjugeRow) {
+      return NextResponse.json({ encontrado: false });
+    }
+
+    const campoIdViaFkConjuge = conjugeRow.congregacoes?.campo_id || null;
+    const campoNomeViaCfConjuge = readCustomField(conjugeRow.custom_fields, ['campo']);
+    const supervisaoNomeViaCfConjuge = readCustomField(conjugeRow.custom_fields, ['supervisao']);
+
+    let supervisaoNomeConjuge: string | null = null;
+    if (conjugeRow.supervisao_id) {
+      const { data: supervisaoRow } = await supabase
+        .from('supervisoes')
+        .select('nome')
+        .eq('id', conjugeRow.supervisao_id)
+        .maybeSingle();
+      supervisaoNomeConjuge = (supervisaoRow as { nome?: string | null } | null)?.nome?.trim() || null;
+    }
+
+    let campoNomeConjuge: string | null = campoNomeViaCfConjuge;
+    if (campoIdViaFkConjuge) {
+      const { data: campoRow } = await supabase
+        .from('campos')
+        .select('nome')
+        .eq('id', campoIdViaFkConjuge)
+        .maybeSingle();
+      campoNomeConjuge = (campoRow as { nome?: string | null } | null)?.nome?.trim() || campoNomeViaCfConjuge;
+    }
+
+    return NextResponse.json({
+      encontrado: true,
+      lookup_kind: 'conjuge_jubilado',
+      conjuge_jubilado_validado: true,
+      nome: conjugeRow.nome_conjuge || null,
+      sexo: 'F',
+      data_nascimento: conjugeRow.data_nascimento_conjuge || null,
+      supervisao_id: conjugeRow.supervisao_id || null,
+      supervisao_nome: supervisaoNomeConjuge || supervisaoNomeViaCfConjuge,
+      campo_id: campoIdViaFkConjuge,
+      campo_nome: campoNomeConjuge,
+      congregacao_id: conjugeRow.congregacao_id || null,
+      congregacao_nome: conjugeRow.congregacoes?.nome?.trim() || readCustomField(conjugeRow.custom_fields, ['congregacao']),
+      conjuge_de_ministro_id: conjugeRow.id || null,
+      conjuge_de_nome: conjugeRow.name || null,
+      status: conjugeRow.status || null,
+      jubilado: false,
+      pastor_presidente: false,
+      pastor_auxiliar: false,
+    });
   }
 
   const row = data[0] as {
@@ -89,6 +173,7 @@ export async function GET(request: NextRequest) {
     pastor_auxiliar?: boolean | null;
     jubilado?: boolean | null;
     status?: string | null;
+    estado_civil?: string | null;
     nome_conjuge?: string | null;
     cpf_conjuge?: string | null;
     data_nascimento_conjuge?: string | null;
@@ -128,6 +213,8 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     encontrado: true,
+    lookup_kind: 'ministro',
+    conjuge_jubilado_validado: false,
     nome: row.name || null,
     email,
     whatsapp,
