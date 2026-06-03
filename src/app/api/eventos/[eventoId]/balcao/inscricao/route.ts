@@ -278,8 +278,8 @@ export async function POST(
       const titularEhPP = !!ministroSnapshot.is_pastor_presidente;
       const titularEhPA = !!ministroSnapshot.is_pastor_auxiliar;
       const titularEhJub = !!ministroSnapshot.is_pastor_jubilado;
-      const cargoTitular = norm(String(ministroSnapshot.cargo ?? ''));
-      const titularPodePA = titularEhPA || (cargoTitular === 'pastor' && !titularEhPP && !titularEhJub);
+      const sexoTitularNorm = String(sexo ?? '').trim().toUpperCase();
+      const titularPodePA = titularEhPA || (titularAtivo && sexoTitularNorm === 'M' && !titularEhPP && !titularEhJub);
 
       if (titularAtivo && ehTipoVisitante(tipoNome)) {
         return NextResponse.json(

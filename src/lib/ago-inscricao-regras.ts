@@ -91,7 +91,6 @@ export function filtrarTiposAgo<T extends TipoComNome>(tipos: T[], options: Filt
     somentePastorPresidente,
     cpfLocalizado,
     ministroAtivo,
-    cargoMinisterial,
     pastorPresidente,
     pastorAuxiliar,
     jubilado,
@@ -99,11 +98,10 @@ export function filtrarTiposAgo<T extends TipoComNome>(tipos: T[], options: Filt
 
   const idade = calcularIdade(dataNascimento);
   const sexoNorm = String(sexo || '').toUpperCase();
-  const cargoNorm = normalizarTipoNome(cargoMinisterial);
   const cpfFoiLocalizado = !!cpfLocalizado;
   const ministerioAtivo = !!ministroAtivo;
   const ehPastorAuxiliarPorPerfil = !!pastorAuxiliar || (
-    cargoNorm === 'pastor' && !pastorPresidente && !jubilado
+    cpfFoiLocalizado && ministerioAtivo && sexoNorm === 'M' && !pastorPresidente && !jubilado
   );
 
   return tipos

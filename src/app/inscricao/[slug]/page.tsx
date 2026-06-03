@@ -766,11 +766,13 @@ export default function InscricaoPublicaPage() {
     const extraMin = extrasMinisteriais[idx] ?? EXTRA_MINISTERIAL_VAZIO;
     const extraCpfLocalizado = extraMin.cpfStatus === 'encontrado';
     const extraMinistroAtivo = !!extraMin.ministroAtivo;
-    const cargoNorm = normalizarComparacao(extraMin.cargoMinisterial || '');
+    const sexoExtraNorm = String(p.sexo || '').trim().toUpperCase();
     const podePastorPresidente = extraCpfLocalizado && extraMinistroAtivo && !!extraMin.isPastorPresidente;
     const podePastorAuxiliar = extraCpfLocalizado
       && extraMinistroAtivo
-      && (!!extraMin.isPastorAuxiliar || (cargoNorm === 'pastor' && !extraMin.isPastorPresidente && !extraMin.isJubilado));
+      && sexoExtraNorm === 'M'
+      && !extraMin.isPastorPresidente
+      && !extraMin.isJubilado;
     const jubiladoAutomaticoExtra = extraCpfLocalizado && extraMinistroAtivo && !!extraMin.isJubilado;
 
     const campoKey = String(p.campo_id || '').trim();

@@ -651,8 +651,8 @@ export async function POST(request: NextRequest) {
       const titularEhPP = !!ministroSnapshot.is_pastor_presidente;
       const titularEhPA = !!ministroSnapshot.is_pastor_auxiliar;
       const titularEhJub = !!ministroSnapshot.is_pastor_jubilado;
-      const cargoTitular = norm(String(ministroSnapshot.cargo ?? ''));
-      const titularPodePA = titularEhPA || (cargoTitular === 'pastor' && !titularEhPP && !titularEhJub);
+      const sexoTitularNorm = String(sexo ?? '').trim().toUpperCase();
+      const titularPodePA = titularEhPA || (titularAtivo && sexoTitularNorm === 'M' && !titularEhPP && !titularEhJub);
 
       if (titularAtivo && ehTipoVisitante(tipoNome)) {
         return buildErrorResponse(400, {
@@ -1083,8 +1083,8 @@ export async function POST(request: NextRequest) {
           const minEhPP = !!ministroParticipante.pastor_presidente;
           const minEhPA = !!ministroParticipante.pastor_auxiliar;
           const minEhJub = !!ministroParticipante.jubilado;
-          const cargoMin = norm(String(ministroParticipante.cargo ?? ''));
-          const minPodePA = minEhPA || (cargoMin === 'pastor' && !minEhPP && !minEhJub);
+          const sexoParticipanteMinNorm = String(p.sexo ?? '').trim().toUpperCase();
+          const minPodePA = minEhPA || (minAtivo && sexoParticipanteMinNorm === 'M' && !minEhPP && !minEhJub);
 
           if (minAtivo && ehTipoVisitante(tipoParticipante)) {
             return buildErrorResponse(400, {
