@@ -164,6 +164,77 @@ async function incrementarCupom(
   }
 }
 
+function normalizePhoneCompare(value: string | null | undefined): string {
+  return String(value || '').replace(/\D/g, '');
+}
+
+async function sincronizarFichaMembroPorInscricao(
+  supabase: ReturnType<typeof createServerClient>,
+  payload: {
+    cpf?: string | null;
+    email?: string | null;
+    whatsapp?: string | null;
+    campoId?: string | null;
+  },
+) {
+  const cpf = String(payload.cpf || '').replace(/\D/g, '');
+  if (cpf.length !== 11) return;
+
+  const { data: membro, error: membroErr } = await supabase
+    .from('members')
+    .select('id,email,whatsapp,custom_fields')
+    .eq('cpf', cpf)
+    .maybeSingle();
+
+  if (membroErr || !membro) return;
+
+  const updates: Record<string, unknown> = {};
+  const emailNovo = String(payload.email || '').trim() || null;
+  const whatsappNovo = String(payload.whatsapp || '').trim() || null;
+
+  const emailAtualNorm = String((membro as any).email || '').trim().toLowerCase();
+  const emailNovoNorm = String(emailNovo || '').toLowerCase();
+  if (emailNovo && emailNovoNorm !== emailAtualNorm) {
+    updates.email = emailNovo;
+  }
+
+  const whatsappAtualNorm = normalizePhoneCompare((membro as any).whatsapp || null);
+  const whatsappNovoNorm = normalizePhoneCompare(whatsappNovo);
+  if (whatsappNovo && whatsappNovoNorm && whatsappNovoNorm !== whatsappAtualNorm) {
+    updates.whatsapp = whatsappNovo;
+  }
+
+  const campoId = String(payload.campoId || '').trim();
+  if (campoId) {
+    const { data: campoRow } = await supabase
+      .from('campos')
+      .select('nome')
+      .eq('id', campoId)
+      .maybeSingle();
+
+    const campoNome = String((campoRow as { nome?: string | null } | null)?.nome || '').trim();
+    if (campoNome) {
+      const cfAtual = ((membro as any).custom_fields && typeof (membro as any).custom_fields === 'object')
+        ? ((membro as any).custom_fields as Record<string, unknown>)
+        : {};
+      const campoAtual = String(cfAtual.campo || '').trim();
+      if (campoAtual !== campoNome) {
+        updates.custom_fields = {
+          ...cfAtual,
+          campo: campoNome,
+        };
+      }
+    }
+  }
+
+  if (Object.keys(updates).length === 0) return;
+
+  await supabase
+    .from('members')
+    .update(updates)
+    .eq('id', (membro as any).id);
+}
+
 export async function POST(request: NextRequest) {
   let stage = 'init';
   let payloadResumo: Record<string, unknown> = {};
@@ -987,6 +1058,21 @@ export async function POST(request: NextRequest) {
 
       const [insPastor, insEsposa] = insRows;
 
+      await Promise.all([
+        sincronizarFichaMembroPorInscricao(supabase, {
+          cpf: cpf?.replace(/\D/g, '') || null,
+          email: email?.trim() || null,
+          whatsapp: whatsapp?.trim() || null,
+          campoId: campo_id || null,
+        }),
+        sincronizarFichaMembroPorInscricao(supabase, {
+          cpf: String(esposaData.cpf ?? '').replace(/\D/g, '') || null,
+          email: null,
+          whatsapp: String(esposaData.whatsapp ?? '').trim() || null,
+          campoId: campo_id || null,
+        }),
+      ]);
+
       // Cria registros de hospedagem AGO se solicitados
       if (evento.departamento === 'AGO') {
         if (!!hospedagem) {
@@ -1424,6 +1510,15 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      await Promise.all(
+        calculados.map((p) => sincronizarFichaMembroPorInscricao(supabase, {
+          cpf: p.cpf,
+          email: p.email,
+          whatsapp: p.whatsapp,
+          campoId: p.campo_id,
+        })),
+      );
+
       if (cupomUsado) await incrementarCupom(supabase, evento.id, cupomUsado, todos.length);
 
       if (isGratuitoLote) {
@@ -1537,6 +1632,13 @@ export async function POST(request: NextRequest) {
         },
       });
     }
+
+    await sincronizarFichaMembroPorInscricao(supabase, {
+      cpf: cpf?.replace(/\D/g, '') || null,
+      email: email?.trim() || null,
+      whatsapp: whatsapp?.trim() || null,
+      campoId: campo_id || null,
+    });
 
     if (cupomUsado) await incrementarCupom(supabase, evento.id, cupomUsado);
 

@@ -40,6 +40,76 @@ async function incrementarCupom(
   }
 }
 
+function normalizePhoneCompare(value: string | null | undefined): string {
+  return String(value || '').replace(/\D/g, '');
+}
+
+async function sincronizarFichaMembroPorInscricao(
+  supabase: Awaited<ReturnType<typeof import('@/lib/supabase-server').createServerClient>>,
+  payload: {
+    cpf?: string | null;
+    email?: string | null;
+    whatsapp?: string | null;
+    campoId?: string | null;
+  },
+) {
+  const cpf = String(payload.cpf || '').replace(/\D/g, '');
+  if (cpf.length !== 11) return;
+
+  const { data: membro, error: membroErr } = await supabase
+    .from('members')
+    .select('id,email,whatsapp,custom_fields')
+    .eq('cpf', cpf)
+    .maybeSingle();
+
+  if (membroErr || !membro) return;
+
+  const updates: Record<string, unknown> = {};
+  const emailNovo = String(payload.email || '').trim() || null;
+  const whatsappNovo = String(payload.whatsapp || '').trim() || null;
+
+  const emailAtualNorm = String((membro as any).email || '').trim().toLowerCase();
+  const emailNovoNorm = String(emailNovo || '').toLowerCase();
+  if (emailNovo && emailNovoNorm !== emailAtualNorm) {
+    updates.email = emailNovo;
+  }
+
+  const whatsappAtualNorm = normalizePhoneCompare((membro as any).whatsapp || null);
+  const whatsappNovoNorm = normalizePhoneCompare(whatsappNovo);
+  if (whatsappNovo && whatsappNovoNorm && whatsappNovoNorm !== whatsappAtualNorm) {
+    updates.whatsapp = whatsappNovo;
+  }
+
+  const campoId = String(payload.campoId || '').trim();
+  if (campoId) {
+    const { data: campoRow } = await supabase
+      .from('campos')
+      .select('nome')
+      .eq('id', campoId)
+      .maybeSingle();
+    const campoNome = String((campoRow as { nome?: string | null } | null)?.nome || '').trim();
+    if (campoNome) {
+      const cfAtual = ((membro as any).custom_fields && typeof (membro as any).custom_fields === 'object')
+        ? ((membro as any).custom_fields as Record<string, unknown>)
+        : {};
+      const campoAtual = String(cfAtual.campo || '').trim();
+      if (campoAtual !== campoNome) {
+        updates.custom_fields = {
+          ...cfAtual,
+          campo: campoNome,
+        };
+      }
+    }
+  }
+
+  if (Object.keys(updates).length === 0) return;
+
+  await supabase
+    .from('members')
+    .update(updates)
+    .eq('id', (membro as any).id);
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ eventoId: string }> }
@@ -548,6 +618,21 @@ export async function POST(
 
       const [insPastor, insEsposa] = insRows as { id: string }[];
 
+      await Promise.all([
+        sincronizarFichaMembroPorInscricao(supabase, {
+          cpf: cpfLimpo,
+          email: email ? String(email).trim() : null,
+          whatsapp: whatsapp ? String(whatsapp).trim() : null,
+          campoId: campo_id ? String(campo_id) : null,
+        }),
+        sincronizarFichaMembroPorInscricao(supabase, {
+          cpf: String(esposaData.cpf ?? '').replace(/\D/g, '') || null,
+          email: null,
+          whatsapp: esposaData.whatsapp ? String(esposaData.whatsapp).trim() : null,
+          campoId: campo_id ? String(campo_id) : null,
+        }),
+      ]);
+
       // Hospedagem
       if (!!hospedagem) {
         const priorPastor = calcularPrioridadeHospedagem({ id: insPastor.id, nome_inscrito: String(nome_inscrito).trim(), sexo: sexo ? String(sexo) : null, data_nascimento: data_nascimento ? String(data_nascimento) : null, tipo_inscricao: tipo_inscricao ? String(tipo_inscricao) : null, hosp_necessidade_especial: !!hosp_necessidade_especial, hosp_descricao_necessidade: hosp_descricao_necessidade ? String(hosp_descricao_necessidade).trim() : null, hosp_cama_inferior: hospCamaInferiorAuto, hosp_observacoes: hosp_observacoes ? String(hosp_observacoes).trim() : null, hosp_possui_comorbidade: hospPossuiComorbidade, hosp_descricao_comorbidade: hospDescricaoComorbidade });
@@ -639,6 +724,13 @@ export async function POST(
     }
 
     const inscricaoId = (inscricao as any).id as string;
+
+    await sincronizarFichaMembroPorInscricao(supabase, {
+      cpf: cpfLimpo,
+      email: email ? String(email).trim() : null,
+      whatsapp: whatsapp ? String(whatsapp).trim() : null,
+      campoId: campo_id ? String(campo_id) : null,
+    });
 
     // Incrementa cupom
     if (cupomCodigo) {
