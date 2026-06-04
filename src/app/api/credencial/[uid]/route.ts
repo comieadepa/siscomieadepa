@@ -36,8 +36,13 @@ export async function GET(
   if (byUniqueId.data) {
     data = byUniqueId.data;
   } else {
-    // Tenta por UUID (id) — válido apenas se o uid tiver formato de UUID
+    // Fallback 1: UUID completo com hífens (ex: 550e8400-e29b-41d4-a716-446655440000)
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uid);
+    // Fallback 2: stableUniqueId — front-end deriva 16 chars HEX do UUID quando unique_id é NULL
+    //   formula: UPPER(id.replace(/-/g,'').slice(0,16))
+    //   ex: UUID 550e8400-e29b-41d4-... → '550E8400E29B41D4'
+    const isHex16 = /^[0-9a-f]{16}$/i.test(uid);
+
     if (isUuid) {
       const byId = await supabaseAdmin
         .from('members')
@@ -46,6 +51,16 @@ export async function GET(
         .maybeSingle();
       data = byId.data;
       error = byId.error;
+    } else if (isHex16) {
+      // Reconstrói o prefixo do UUID (primeiros 16 chars sem hífens → 8-4-4)
+      const uuidPrefix = `${uid.slice(0,8)}-${uid.slice(8,12)}-${uid.slice(12,16)}`;
+      const byHex = await supabaseAdmin
+        .from('members')
+        .select('id, unique_id, name, matricula, cargo_ministerial, tipo_sanguineo, data_nascimento, foto_url, custom_fields, status, cred_validade, orden_pastor_data, ev_consagrado_data, cons_missionario_data, ev_autorizado_data')
+        .ilike('id', `${uuidPrefix}%`)
+        .maybeSingle();
+      data = byHex.data;
+      error = byHex.error;
     } else {
       error = byUniqueId.error;
     }

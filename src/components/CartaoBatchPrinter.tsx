@@ -393,7 +393,7 @@ export default function CartaoBatchPrinter({ membros, onComplete }: CartaoBatchP
       <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
         {membros.map((membro) => (
           <div key={`qr-${membro.id}`} id={`source-qr-${membro.id}`}>
-            <QRCode value={buildUrl(getAppBaseUrl(), `/autentica_qrcode-05985642/${membro.uniqueId}`)} size={128} level="H" />
+            <QRCode value={buildUrl(getAppBaseUrl(), `/autentica_qrcode-05985642/${membro.uniqueId || membro.id}`)} size={128} level="H" />
           </div>
         ))}
       </div>
