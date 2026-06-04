@@ -30,7 +30,6 @@ export default function CredencialDigitalPage({ params }: { params: Promise<{ ui
   const [dados, setDados] = useState<CredencialData | null>(null);
   const [erro, setErro] = useState('');
   const [loading, setLoading] = useState(true);
-  const [face, setFace] = useState<'frente' | 'verso'>('frente');
 
   useEffect(() => {
     fetch(`/api/credencial/${uid}`)
@@ -43,28 +42,8 @@ export default function CredencialDigitalPage({ params }: { params: Promise<{ ui
       .finally(() => setLoading(false));
   }, [uid]);
 
-  const fmtDate = (v?: string, rejectFuture = false) => {
-    if (!v || v === 'null' || v === 'undefined' || v.trim() === '') return '-';
-    const d = new Date(v.length === 10 ? v + 'T12:00:00' : v);
-    if (isNaN(d.getTime())) return '-';
-    if (rejectFuture && d > new Date()) return '-';
-    return d.toLocaleDateString('pt-BR');
-  };
-
   const vl = (v?: string) => (v && v.trim() ? v : '-');
   const ativo = dados?.status === 'active';
-
-  const cardStyle: React.CSSProperties = {
-    position: 'relative', width: '460px', maxWidth: '100%',
-    borderRadius: '16px', overflow: 'hidden',
-    boxShadow: '0 8px 32px rgba(0,0,0,0.22)',
-  };
-
-  const row = (top: number, left: number, extra?: React.CSSProperties): React.CSSProperties => ({
-    position: 'absolute', top, left,
-    fontSize: '10px', fontFamily: 'Arial', fontWeight: 700, color: '#000',
-    ...extra,
-  });
 
   return (
     <div style={{
@@ -96,85 +75,62 @@ export default function CredencialDigitalPage({ params }: { params: Promise<{ ui
 
       {!loading && dados && (
         <>
-          {/* FRENTE */}
-          {face === 'frente' && (
-            <div style={cardStyle}>
-              <img src="/img/cred_minf.png" alt="Frente" style={{ width: '100%', display: 'block' }} />
-              <div style={{ position: 'absolute', inset: 0 }}>
-                <div style={{
-                  position: 'absolute', top: '138px', left: '355px',
-                  width: '99px', height: '110px', overflow: 'hidden', backgroundColor: '#e5e7eb',
-                }}>
-                  <img
-                    src={dados.fotoUrl || '/img/foto_placeholder.png'}
-                    alt="Foto"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/img/foto_placeholder.png'; }}
-                  />
-                </div>
-                <div style={row(188, 15, { fontSize: '11px' })}>
-                  REG.: <span style={{ color: '#a00c0c' }}>{vl(dados.matricula)}</span>
-                </div>
-                <div style={row(207, 15, { fontSize: '11px', maxWidth: '290px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' })}>
-                  NOME: <span style={{ color: '#a00c0c' }}>{vl(dados.nome)}</span>
-                </div>
-                <div style={row(226, 15, { fontSize: '11px' })}>
-                  CARGO: <span style={{ color: '#a00c0c' }}>{vl(dados.cargo)}</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* VERSO */}
-          {face === 'verso' && (
-            <div style={cardStyle}>
-              <img src="/img/cred_minc.png" alt="Verso" style={{ width: '100%', display: 'block' }} />
-              <div style={{ position: 'absolute', inset: 0 }}>
-                <div style={row(30, 27)}>
-                  RG: <span style={{ color: '#a00c0c' }}>{vl(dados.rg)}</span>
-                </div>
-                <div style={row(44, 27)}>
-                  CPF: <span style={{ color: '#a00c0c' }}>{vl(dados.cpf)}</span>
-                </div>
-                <div style={row(58, 27)}>
-                  DATA DE NASC.: <span style={{ color: '#a00c0c' }}>{fmtDate(dados.dataNascimento, true)}</span>
-                </div>
-                <div style={row(72, 27)}>
-                  NATURALIDADE: <span style={{ color: '#a00c0c' }}>{vl(dados.naturalidade)}</span>
-                </div>
-                <div style={row(86, 27)}>
-                  REG. CGADB: <span style={{ color: '#a00c0c' }}>{vl(dados.registroCgadb)}</span>
-                </div>
-                <div style={row(100, 27)}>
-                  CONSAGRACAO: <span style={{ color: '#a00c0c' }}>{fmtDate(dados.dataConsagracao)}</span>
-                </div>
-                <div style={row(114, 27)}>
-                  TIPO SANGUINEO: <span style={{ color: '#a00c0c' }}>{vl(dados.tipoSanguineo)}</span>
-                </div>
-                <div style={row(128, 27, { maxWidth: '260px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' })}>
-                  FILIACAO: <span style={{ color: '#a00c0c' }}>{vl(dados.filiacao)}</span>
-                </div>
-                <div style={row(184, 311, { width: '121px', fontSize: '9px', textAlign: 'center' })}>
-                  VALIDADE: <span style={{ color: '#a00c0c' }}>{fmtDate(dados.dataValidade)}</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <button
-            onClick={() => setFace(face === 'frente' ? 'verso' : 'frente')}
-            style={{
-              marginTop: '16px', padding: '10px 28px', borderRadius: '24px',
-              border: '1.5px solid #0D2B4E', background: '#fff', color: '#0D2B4E',
-              fontWeight: 700, fontSize: '13px', cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-            }}
-          >
-            {face === 'frente' ? 'Ver verso' : 'Ver frente'}
-          </button>
-
+          {/* CARTAO */}
           <div style={{
-            marginTop: '16px', textAlign: 'center', width: '460px', maxWidth: '100%',
+            position: 'relative', width: '520px', maxWidth: '100%',
+            borderRadius: '10px', overflow: 'hidden',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.22)',
+          }}>
+            <img src="/img/card001.png" alt="Credencial" style={{ width: '100%', display: 'block' }} />
+            <div style={{ position: 'absolute', inset: 0 }}>
+
+              {/* FOTO — area branca no canto superior direito do template */}
+              <div style={{
+                position: 'absolute', top: '5%', left: '79%',
+                width: '18%', height: '38%',
+                overflow: 'hidden', backgroundColor: '#e5e7eb',
+              }}>
+                <img
+                  src={dados.fotoUrl || '/img/foto_placeholder.png'}
+                  alt="Foto"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }}
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/img/foto_placeholder.png'; }}
+                />
+              </div>
+
+              {/* REG — valor apos o rotulo impresso no template */}
+              <div style={{
+                position: 'absolute', top: '62%', left: '12%',
+                fontSize: '8.5px', fontFamily: 'Arial', fontWeight: 700, color: '#7a0000',
+                maxWidth: '60%', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
+              }}>
+                {vl(dados.matricula)}
+              </div>
+
+              {/* NOME */}
+              <div style={{
+                position: 'absolute', top: '71%', left: '12%',
+                fontSize: '8.5px', fontFamily: 'Arial', fontWeight: 700, color: '#7a0000',
+                maxWidth: '60%', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
+              }}>
+                {vl(dados.nome)}
+              </div>
+
+              {/* CARGO */}
+              <div style={{
+                position: 'absolute', top: '80%', left: '14%',
+                fontSize: '8.5px', fontFamily: 'Arial', fontWeight: 700, color: '#7a0000',
+                maxWidth: '60%', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
+              }}>
+                {vl(dados.cargo)}
+              </div>
+
+            </div>
+          </div>
+
+          {/* INFO DE VALIDACAO */}
+          <div style={{
+            marginTop: '16px', textAlign: 'center', width: '520px', maxWidth: '100%',
             background: '#fff', borderRadius: '12px', padding: '16px 20px',
             boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
           }}>
