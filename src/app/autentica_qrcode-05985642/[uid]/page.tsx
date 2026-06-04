@@ -109,26 +109,26 @@ export default function CredencialDigitalPage({ params }: { params: Promise<{ ui
             />
             <div style={{ position: 'absolute', inset: 0 }}>
 
-              {/* FOTO — slot branco direito: left=74.8%, top=4.5%, w=23.2%, h=60% */}
+              {/* FOTO — slot branco direito: left=74.8%, top=11.5%, w=23.2%, h=66% */}
               <div style={{
                 position: 'absolute',
-                top: '4.5%',
+                top: '11.5%',
                 left: '74.8%',
                 width: '23.2%',
-                height: '60%',
+                height: '66%',
                 overflow: 'hidden',
-                backgroundColor: '#d1d5db',
+                backgroundColor: '#fff',
               }}>
                 <img
                   src={dados.fotoUrl || '/img/foto_placeholder.png'}
                   alt="Foto"
-                  style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center center' }}
                   onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/img/foto_placeholder.png'; }}
                 />
               </div>
 
               {/* REG — y:192/291=66%, x:47/465=10.1% */}
-              <div style={field('66%', '10.1%')}>
+              <div style={field('66%', '10.8%')}>
                 {vl(dados.matricula)}
               </div>
 
