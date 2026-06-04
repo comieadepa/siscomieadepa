@@ -20,10 +20,11 @@ import {
 const CERTIFICADO_CANVAS = { largura: 840, altura: 595 };
 
 const ELEMENTOS_TIPOS = [
-  { tipo: 'texto',  label: 'Texto',  icone: 'T'   },
-  { tipo: 'logo',   label: 'Logo',   icone: 'L'   },
-  { tipo: 'imagem', label: 'Imagem', icone: 'IMG' },
-  { tipo: 'chapa',  label: 'Chapa',  icone: 'CH'  },
+  { tipo: 'texto',  label: 'Texto',   icone: 'T'   },
+  { tipo: 'logo',   label: 'Logo',    icone: 'L'   },
+  { tipo: 'imagem', label: 'Imagem',  icone: 'IMG' },
+  { tipo: 'chapa',  label: 'Chapa',   icone: 'CH'  },
+  { tipo: 'qrcode', label: 'QR Code', icone: '▣'   },
 ];
 
 interface CertificadoElemento {
@@ -205,8 +206,8 @@ export default function ConfiguracoesCertificadosPage() {
       tipo,
       x: 40,
       y: 40,
-      largura: tipo === 'logo' ? 90 : tipo === 'imagem' ? 160 : tipo === 'chapa' ? 200 : 320,
-      altura:  tipo === 'logo' ? 90 : tipo === 'imagem' ? 120 : tipo === 'chapa' ? 40  : 40,
+      largura: tipo === 'logo' ? 90 : tipo === 'imagem' ? 160 : tipo === 'chapa' ? 200 : tipo === 'qrcode' ? 100 : 320,
+      altura:  tipo === 'logo' ? 90 : tipo === 'imagem' ? 120 : tipo === 'chapa' ? 40  : tipo === 'qrcode' ? 100 : 40,
       fontSize: 16,
       cor: '#111827',
       fonte: 'Arial',

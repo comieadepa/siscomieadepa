@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf';
+import QRCode from 'qrcode';
 import { substituirPlaceholdersCertificado } from './certificados-utils';
 
 // Dimensões do canvas do editor (px)
@@ -51,6 +52,8 @@ export interface DadosCertificadoMembro {
   presidente_nome?: string;
   nome_igreja?: string;
   data_emissao?: string;
+  uniqueId?: string;  // unique_id do membro (para QR code)
+  memberId?: string;  // id UUID do membro (fallback para QR code)
 }
 
 export interface TemplateCertificado {
@@ -150,8 +153,20 @@ export async function gerarCertificadoMembroPDF(
       if (img) {
         pdf.addImage(img.data, img.format, x, y, w, h);
       }
+    } else if (el.tipo === 'qrcode') {
+      // Gera QR code com a URL de autenticação do membro
+      const uid = dados.uniqueId || dados.memberId;
+      if (uid) {
+        const appUrl = typeof window !== 'undefined' ? window.location.origin : 'https://siscomieadepa.org';
+        const qrUrl = `${appUrl}/autentica_qrcode-05985642/${uid}`;
+        try {
+          const qrDataUrl = await QRCode.toDataURL(qrUrl, { errorCorrectionLevel: 'H', margin: 1, width: 256 });
+          pdf.addImage(qrDataUrl, 'PNG', x, y, w, h);
+        } catch {
+          // QR falhou silenciosamente
+        }
+      }
     }
-    // qrcode: ignorado por enquanto
   }
 
   // Abre em nova aba

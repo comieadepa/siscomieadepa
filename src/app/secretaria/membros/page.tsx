@@ -472,6 +472,8 @@ export default function MembrosPage() {
         data_consagracao: dataConsagracao,
         presidente_nome: presidente?.nome || '',
         nome_igreja: configIgreja.nome || '',
+        uniqueId: membro.uniqueId || undefined,
+        memberId: membro.id,
       };
       await gerarCertificadoMembroPDF(tmpl, dados);
     } catch (err) {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { obterPreviewTexto } from '@/lib/cartoes-utils';
 import { createClient } from '@/lib/supabase-client';
 import { fetchConfiguracaoIgrejaFromSupabase } from '@/lib/igreja-config-utils';
@@ -418,7 +419,6 @@ export default function InteractiveCanvas({
                 break;
 
             case 'qrcode':
-                // Gerar QR code dinamicamente (placeholder por enquanto no editor)
                 conteudo = (
                     <div
                         style={{
@@ -428,12 +428,14 @@ export default function InteractiveCanvas({
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            fontSize: '10px',
-                            color: '#666',
-                            border: '1px solid #ddd'
                         }}
                     >
-                        📱 QR Code
+                        <QRCodeSVG
+                            value="https://siscomieadepa.org/autentica_qrcode-05985642/PREVIEW"
+                            size={Math.min(elemento.largura, elemento.altura) - 4}
+                            level="H"
+                            includeMargin={false}
+                        />
                     </div>
                 );
                 break;
