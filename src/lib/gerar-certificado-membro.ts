@@ -9,9 +9,6 @@ const CANVAS_H = 595;
 const PAGE_W = 297;
 const PAGE_H = 210;
 
-const SCALE_X = PAGE_W / CANVAS_W;
-const SCALE_Y = PAGE_H / CANVAS_H;
-
 function loadImgBase64(url: string): Promise<{ data: string; format: string } | null> {
   return new Promise((resolve) => {
     try {
