@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 
 // Prefixo fixo da URL — presente tanto aqui quanto no QR code
 export const CREDENCIAL_URL_PREFIX = '/autentica_qrcode-05985642/';
@@ -21,13 +21,14 @@ interface CredencialData {
   status: string;
 }
 
-export default function CredencialDigitalPage({ params }: { params: { uid: string } }) {
+export default function CredencialDigitalPage({ params }: { params: Promise<{ uid: string }> }) {
+  const { uid } = use(params);
   const [dados, setDados] = useState<CredencialData | null>(null);
   const [erro, setErro] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`/api/credencial/${params.uid}`)
+    fetch(`/api/credencial/${uid}`)
       .then(async (res) => {
         const json = await res.json();
         if (!res.ok) {
@@ -38,7 +39,7 @@ export default function CredencialDigitalPage({ params }: { params: { uid: strin
       })
       .catch(() => setErro('Erro de conexão. Tente novamente.'))
       .finally(() => setLoading(false));
-  }, [params.uid]);
+  }, [uid]);
 
   const fmtDate = (v?: string) => {
     if (!v) return '—';
