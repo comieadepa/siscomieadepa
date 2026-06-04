@@ -13,7 +13,7 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const SELECT_COLS = 'id, unique_id, name, matricula, cargo_ministerial, tipo_sanguineo, data_nascimento, foto_url, custom_fields, status, cred_validade, orden_pastor_data, ev_consagrado_data, cons_missionario_data, ev_autorizado_data, rg, cpf, naturalidade, registro_cgadb, filiacao, nome_pai, nome_mae';
+const SELECT_COLS = 'id, unique_id, name, matricula, cargo_ministerial, tipo_sanguineo, data_nascimento, foto_url, custom_fields, status, cred_validade, orden_pastor_data, ev_consagrado_data, cons_missionario_data, ev_autorizado_data, rg, cpf, naturalidade, numero_cgadb, nome_pai, nome_mae';
 
 export async function GET(
   req: NextRequest,
@@ -157,7 +157,7 @@ export async function GET(
     rg: String(data.rg || cf.rg || cf.numeroRg || cf.documentoRg || ''),
     cpf: String(data.cpf || cf.cpf || ''),
     naturalidade: String(data.naturalidade || cf.naturalidade || cf.cidadeNascimento || ''),
-    registroCgadb: String(data.registro_cgadb || cf.registroCgadb || cf.cgadb || cf.numeroCgadb || ''),
+    registroCgadb: String(data.numero_cgadb || cf.registroCgadb || cf.cgadb || cf.numeroCgadb || ''),
     filiacao: String(filiacao),
   });
 }
