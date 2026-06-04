@@ -45,16 +45,17 @@ export default function CredencialDigitalPage({ params }: { params: Promise<{ ui
   const vl = (v?: string) => (v && v.trim() ? v : '-');
   const ativo = dados?.status === 'active';
 
-  // Estilo de texto overlay sobre o card (percentual baseado em 465x291)
+  // Estilo de texto overlay — card 465x291 renderizado em ate 500px
+  // font-size fixo em 10px: equivale a ~2.1% da largura do card
   const field = (top: string, left: string, extra?: React.CSSProperties): React.CSSProperties => ({
     position: 'absolute',
     top,
     left,
-    fontSize: '1.9vw',  // escala com a largura do card
+    fontSize: '10px',
     fontFamily: 'Arial, sans-serif',
     fontWeight: 700,
     color: '#8B0000',
-    maxWidth: '55%',
+    maxWidth: '62%',
     overflow: 'hidden',
     whiteSpace: 'nowrap',
     textOverflow: 'ellipsis',
@@ -108,20 +109,20 @@ export default function CredencialDigitalPage({ params }: { params: Promise<{ ui
             />
             <div style={{ position: 'absolute', inset: 0 }}>
 
-              {/* FOTO — x:347/465=74.6%, y:13/291=4.5%, w:105/465=22.6%, h:185/291=63.6% */}
+              {/* FOTO — slot branco direito: left=74.8%, top=4.5%, w=23.2%, h=60% */}
               <div style={{
                 position: 'absolute',
                 top: '4.5%',
-                left: '74.6%',
-                width: '22.6%',
-                height: '63.6%',
+                left: '74.8%',
+                width: '23.2%',
+                height: '60%',
                 overflow: 'hidden',
                 backgroundColor: '#d1d5db',
               }}>
                 <img
                   src={dados.fotoUrl || '/img/foto_placeholder.png'}
                   alt="Foto"
-                  style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }}
                   onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/img/foto_placeholder.png'; }}
                 />
               </div>
