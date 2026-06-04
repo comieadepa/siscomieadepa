@@ -29,7 +29,7 @@ export async function GET(
 
   const byUniqueId = await supabaseAdmin
     .from('members')
-    .select('id, unique_id, name, matricula, cargo_ministerial, tipo_sanguineo, data_nascimento, foto_url, custom_fields, status, data_validade_credencial, data_consagracao, orden_pastor_data, ev_consagrado_data, cons_missionario_data, ev_autorizado_data')
+    .select('id, unique_id, name, matricula, cargo_ministerial, tipo_sanguineo, data_nascimento, foto_url, custom_fields, status, data_validade_credencial, orden_pastor_data, ev_consagrado_data, cons_missionario_data, ev_autorizado_data')
     .eq('unique_id', uid)
     .maybeSingle();
 
@@ -41,7 +41,7 @@ export async function GET(
     if (isUuid) {
       const byId = await supabaseAdmin
         .from('members')
-        .select('id, unique_id, name, matricula, cargo_ministerial, tipo_sanguineo, data_nascimento, foto_url, custom_fields, status, data_validade_credencial, data_consagracao, orden_pastor_data, ev_consagrado_data, cons_missionario_data, ev_autorizado_data')
+        .select('id, unique_id, name, matricula, cargo_ministerial, tipo_sanguineo, data_nascimento, foto_url, custom_fields, status, data_validade_credencial, orden_pastor_data, ev_consagrado_data, cons_missionario_data, ev_autorizado_data')
         .eq('id', uid)
         .maybeSingle();
       data = byId.data;
@@ -62,16 +62,17 @@ export async function GET(
   const cf = (data.custom_fields && typeof data.custom_fields === 'object') ? data.custom_fields as Record<string, any> : {};
 
   // Seleciona a data de consagração correta conforme o cargo
+  // data_consagracao não é coluna de members; lê dos campos específicos de cargo ou custom_fields
   const cargo = String(data.cargo_ministerial || cf.cargoMinisterial || '');
   const cargoNorm = cargo.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const dataConsagracao =
     cargoNorm === 'pastor'
-      ? data.orden_pastor_data || data.data_consagracao || cf.dataConsagracao || ''
+      ? data.orden_pastor_data || cf.ordenPastorData || cf.dataConsagracao || ''
       : cargoNorm === 'missionario' || cargoNorm === 'missionaria'
-      ? data.cons_missionario_data || data.data_consagracao || cf.dataConsagracao || ''
+      ? data.cons_missionario_data || cf.consMissionarioData || cf.dataConsagracao || ''
       : cargoNorm === 'evangelista'
-      ? data.ev_consagrado_data || data.data_consagracao || cf.dataConsagracao || ''
-      : data.ev_autorizado_data || data.ev_consagrado_data || data.data_consagracao || cf.dataConsagracao || '';
+      ? data.ev_consagrado_data || cf.evConsagradoData || cf.dataConsagracao || ''
+      : data.ev_autorizado_data || data.ev_consagrado_data || cf.dataConsagracao || '';
 
   return NextResponse.json({
     id: data.id,
