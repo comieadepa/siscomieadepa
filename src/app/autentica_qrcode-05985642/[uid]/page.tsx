@@ -45,6 +45,23 @@ export default function CredencialDigitalPage({ params }: { params: Promise<{ ui
   const vl = (v?: string) => (v && v.trim() ? v : '-');
   const ativo = dados?.status === 'active';
 
+  // Estilo de texto overlay sobre o card (percentual baseado em 465x291)
+  const field = (top: string, left: string, extra?: React.CSSProperties): React.CSSProperties => ({
+    position: 'absolute',
+    top,
+    left,
+    fontSize: '1.9vw',  // escala com a largura do card
+    fontFamily: 'Arial, sans-serif',
+    fontWeight: 700,
+    color: '#8B0000',
+    maxWidth: '55%',
+    overflow: 'hidden',
+    whiteSpace: 'nowrap',
+    textOverflow: 'ellipsis',
+    lineHeight: 1,
+    ...extra,
+  });
+
   return (
     <div style={{
       minHeight: '100vh', backgroundColor: '#f0f2f5',
@@ -75,20 +92,31 @@ export default function CredencialDigitalPage({ params }: { params: Promise<{ ui
 
       {!loading && dados && (
         <>
-          {/* CARTAO */}
+          {/* CARTAO — dimensoes originais 465x291, posicoes em % */}
           <div style={{
-            position: 'relative', width: '520px', maxWidth: '100%',
-            borderRadius: '10px', overflow: 'hidden',
+            position: 'relative',
+            width: '100%',
+            maxWidth: '500px',
+            borderRadius: '10px',
+            overflow: 'hidden',
             boxShadow: '0 8px 32px rgba(0,0,0,0.22)',
           }}>
-            <img src="/img/card001.png" alt="Credencial" style={{ width: '100%', display: 'block' }} />
+            <img
+              src="/img/card001.png"
+              alt=""
+              style={{ width: '100%', display: 'block' }}
+            />
             <div style={{ position: 'absolute', inset: 0 }}>
 
-              {/* FOTO — area branca no canto superior direito do template */}
+              {/* FOTO — x:347/465=74.6%, y:13/291=4.5%, w:105/465=22.6%, h:185/291=63.6% */}
               <div style={{
-                position: 'absolute', top: '5%', left: '79%',
-                width: '18%', height: '38%',
-                overflow: 'hidden', backgroundColor: '#e5e7eb',
+                position: 'absolute',
+                top: '4.5%',
+                left: '74.6%',
+                width: '22.6%',
+                height: '63.6%',
+                overflow: 'hidden',
+                backgroundColor: '#d1d5db',
               }}>
                 <img
                   src={dados.fotoUrl || '/img/foto_placeholder.png'}
@@ -98,30 +126,18 @@ export default function CredencialDigitalPage({ params }: { params: Promise<{ ui
                 />
               </div>
 
-              {/* REG — valor apos o rotulo impresso no template */}
-              <div style={{
-                position: 'absolute', top: '62%', left: '12%',
-                fontSize: '8.5px', fontFamily: 'Arial', fontWeight: 700, color: '#7a0000',
-                maxWidth: '60%', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
-              }}>
+              {/* REG — y:192/291=66%, x:47/465=10.1% */}
+              <div style={field('66%', '10.1%')}>
                 {vl(dados.matricula)}
               </div>
 
-              {/* NOME */}
-              <div style={{
-                position: 'absolute', top: '71%', left: '12%',
-                fontSize: '8.5px', fontFamily: 'Arial', fontWeight: 700, color: '#7a0000',
-                maxWidth: '60%', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
-              }}>
+              {/* NOME — y:213/291=73.2%, x:52/465=11.2% */}
+              <div style={field('73.2%', '11.2%')}>
                 {vl(dados.nome)}
               </div>
 
-              {/* CARGO */}
-              <div style={{
-                position: 'absolute', top: '80%', left: '14%',
-                fontSize: '8.5px', fontFamily: 'Arial', fontWeight: 700, color: '#7a0000',
-                maxWidth: '60%', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
-              }}>
+              {/* CARGO — y:234/291=80.4%, x:57/465=12.3% */}
+              <div style={field('80.4%', '12.3%')}>
                 {vl(dados.cargo)}
               </div>
 
@@ -130,7 +146,7 @@ export default function CredencialDigitalPage({ params }: { params: Promise<{ ui
 
           {/* INFO DE VALIDACAO */}
           <div style={{
-            marginTop: '16px', textAlign: 'center', width: '520px', maxWidth: '100%',
+            marginTop: '16px', textAlign: 'center', width: '100%', maxWidth: '500px',
             background: '#fff', borderRadius: '12px', padding: '16px 20px',
             boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
           }}>
