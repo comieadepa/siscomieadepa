@@ -42,6 +42,11 @@ export async function GET(
     //   formula: UPPER(id.replace(/-/g,'').slice(0,16))
     //   ex: UUID 550e8400-e29b-41d4-... → '550E8400E29B41D4'
     const isHex16 = /^[0-9a-f]{16}$/i.test(uid);
+    // Fallback 3: código legado Bubble — padrão {timestamp_ms}x{18_dígitos}
+    //   ex: 1732376890397x648561853352979600
+    //   Esses códigos foram importados do sistema Bubble e ficam em custom_fields->>'uniqueId'
+    //   A coluna unique_id era VARCHAR(20) e não comporta 32 chars — busca via JSONB
+    const isBubble = /^\d{10,}x\d+$/.test(uid);
 
     if (isUuid) {
       const byId = await supabaseAdmin
@@ -61,6 +66,15 @@ export async function GET(
         .maybeSingle();
       data = byHex.data;
       error = byHex.error;
+    } else if (isBubble) {
+      // Busca pelo código Bubble armazenado em custom_fields->>'uniqueId'
+      const byBubble = await supabaseAdmin
+        .from('members')
+        .select('id, unique_id, name, matricula, cargo_ministerial, tipo_sanguineo, data_nascimento, foto_url, custom_fields, status, cred_validade, orden_pastor_data, ev_consagrado_data, cons_missionario_data, ev_autorizado_data')
+        .eq('custom_fields->>uniqueId', uid)
+        .maybeSingle();
+      data = byBubble.data;
+      error = byBubble.error;
     } else {
       error = byUniqueId.error;
     }
