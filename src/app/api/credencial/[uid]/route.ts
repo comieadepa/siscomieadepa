@@ -29,7 +29,7 @@ export async function GET(
 
   const byUniqueId = await supabaseAdmin
     .from('members')
-    .select('id, unique_id, name, matricula, cargo_ministerial, tipo_sanguineo, data_nascimento, foto_url, custom_fields, status, data_validade_credencial, orden_pastor_data, ev_consagrado_data, cons_missionario_data, ev_autorizado_data')
+    .select('id, unique_id, name, matricula, cargo_ministerial, tipo_sanguineo, data_nascimento, foto_url, custom_fields, status, cred_validade, orden_pastor_data, ev_consagrado_data, cons_missionario_data, ev_autorizado_data')
     .eq('unique_id', uid)
     .maybeSingle();
 
@@ -41,7 +41,7 @@ export async function GET(
     if (isUuid) {
       const byId = await supabaseAdmin
         .from('members')
-        .select('id, unique_id, name, matricula, cargo_ministerial, tipo_sanguineo, data_nascimento, foto_url, custom_fields, status, data_validade_credencial, orden_pastor_data, ev_consagrado_data, cons_missionario_data, ev_autorizado_data')
+        .select('id, unique_id, name, matricula, cargo_ministerial, tipo_sanguineo, data_nascimento, foto_url, custom_fields, status, cred_validade, orden_pastor_data, ev_consagrado_data, cons_missionario_data, ev_autorizado_data')
         .eq('id', uid)
         .maybeSingle();
       data = byId.data;
@@ -83,7 +83,7 @@ export async function GET(
     tipoSanguineo: String(data.tipo_sanguineo || cf.tipoSanguineo || ''),
     dataNascimento: String(data.data_nascimento || cf.dataNascimento || ''),
     dataConsagracao: String(dataConsagracao),
-    dataValidade: String(data.data_validade_credencial || cf.dataValidadeCredencial || cf.validade || ''),
+    dataValidade: String(data.cred_validade || cf.dataValidadeCredencial || cf.validade || ''),
     fotoUrl: data.foto_url || cf.fotoUrl || null,
     supervisao: String(cf.supervisao || ''),
     campo: String(cf.campo || ''),
