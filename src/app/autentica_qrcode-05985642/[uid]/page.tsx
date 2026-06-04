@@ -55,7 +55,7 @@ export default function CredencialDigitalPage({ params }: { params: Promise<{ ui
     fontFamily: 'Arial, sans-serif',
     fontWeight: 700,
     color: '#8B0000',
-    maxWidth: '62%',
+    maxWidth: extra?.maxWidth ?? '62%',
     overflow: 'hidden',
     whiteSpace: 'nowrap',
     textOverflow: 'ellipsis',
@@ -93,7 +93,7 @@ export default function CredencialDigitalPage({ params }: { params: Promise<{ ui
 
       {!loading && dados && (
         <>
-          {/* CARTAO — dimensoes originais 465x291, posicoes em % */}
+          {/* CARTAO DE MINISTRO — template alinhado com a visualização da lista de membros */}
           <div style={{
             position: 'relative',
             width: '100%',
@@ -103,19 +103,19 @@ export default function CredencialDigitalPage({ params }: { params: Promise<{ ui
             boxShadow: '0 8px 32px rgba(0,0,0,0.22)',
           }}>
             <img
-              src="/img/card001.png"
+              src="/img/cred_minf.png"
               alt=""
               style={{ width: '100%', display: 'block' }}
             />
             <div style={{ position: 'absolute', inset: 0 }}>
 
-              {/* FOTO — slot branco direito: left=74.8%, top=11.5%, w=23.2%, h=66% */}
+              {/* FOTO — x:355, y:138, largura:99, altura:110 */}
               <div style={{
                 position: 'absolute',
-                top: '11.5%',
-                left: '74.8%',
-                width: '23.2%',
-                height: '66%',
+                top: '47.4%',
+                left: '76.3%',
+                width: '21.3%',
+                height: '37.8%',
                 overflow: 'hidden',
                 backgroundColor: '#fff',
               }}>
@@ -127,19 +127,19 @@ export default function CredencialDigitalPage({ params }: { params: Promise<{ ui
                 />
               </div>
 
-              {/* REG — y:192/291=66%, x:47/465=10.1% */}
-              <div style={field('66%', '10.8%')}>
-                {vl(dados.matricula)}
+              {/* REGISTRO — x:15, y:188 */}
+              <div style={field('64.6%', '3.2%', { width: '63.4%', fontSize: '14px', color: '#000', fontWeight: 700 })}>
+                REG.: {vl(dados.matricula)}
               </div>
 
-              {/* NOME — y:213/291=73.2%, x:52/465=11.2% */}
-              <div style={field('73.2%', '11.2%')}>
-                {vl(dados.nome)}
+              {/* NOME — x:15, y:207 */}
+              <div style={field('71.1%', '3.2%', { width: '63.4%', fontSize: '14px', color: '#000', fontWeight: 700 })}>
+                NOME: {vl(dados.nome)}
               </div>
 
-              {/* CARGO — y:234/291=80.4%, x:57/465=12.3% */}
-              <div style={field('80.4%', '12.3%')}>
-                {vl(dados.cargo)}
+              {/* CARGO — x:15, y:226 */}
+              <div style={field('77.7%', '3.2%', { width: '63.4%', fontSize: '14px', color: '#000', fontWeight: 700 })}>
+                CARGO: {vl(dados.cargo)}
               </div>
 
             </div>
