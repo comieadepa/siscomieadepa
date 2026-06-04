@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import InteractiveCanvas from '@/components/InteractiveCanvas';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
@@ -76,6 +76,18 @@ export default function ConfiguracoesCertificadosPage() {
 
   const backgroundInputRef = useRef<HTMLInputElement>(null);
   const imagemInputRef = useRef<HTMLInputElement>(null);
+  const [canvasScale, setCanvasScale] = useState(1);
+  const roRef = useRef<ResizeObserver | null>(null);
+
+  const canvasWrapperRef = useCallback((el: HTMLDivElement | null) => {
+    if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
+    if (!el) return;
+    const update = () => setCanvasScale(el.clientWidth / CERTIFICADO_CANVAS.largura);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    roRef.current = ro;
+  }, []);
 
   const [activeMenu, setActiveMenu]       = useState('config-certificados');
   const [loadingData, setLoadingData]     = useState(true);
@@ -399,21 +411,23 @@ export default function ConfiguracoesCertificadosPage() {
                     </div>
                   </div>
 
-                  <div className="bg-white border rounded-lg p-2">
-                    <InteractiveCanvas
-                      elementos={templateEmEdicao.elementos}
-                      elementoSelecionado={elementoSelecionado}
-                      elementosSelecionados={elementosSelecionados}
-                      onElementoSelecionado={setElementoSelecionado}
-                      onElementosSelecionados={setElementosSelecionados}
-                      onElementoAtualizado={updateEl}
-                      onMultiplosElementosAtualizados={updateMultiplos}
-                      onElementoRemovido={handleRemoveEl}
-                      getPreviewText={obterPreviewTextoCertificado}
-                      backgroundUrl={templateEmEdicao.backgroundUrl}
-                      larguraCanvas={CERTIFICADO_CANVAS.largura}
-                      alturaCanvas={CERTIFICADO_CANVAS.altura}
-                    />
+                  <div ref={canvasWrapperRef} className="rounded-lg overflow-hidden w-full" style={{ height: `${Math.round(CERTIFICADO_CANVAS.altura * canvasScale)}px`, lineHeight: 0 }}>
+                    <div style={{ transformOrigin: 'top left', transform: `scale(${canvasScale})`, width: `${CERTIFICADO_CANVAS.largura}px`, height: `${CERTIFICADO_CANVAS.altura}px` }}>
+                      <InteractiveCanvas
+                        elementos={templateEmEdicao.elementos}
+                        elementoSelecionado={elementoSelecionado}
+                        elementosSelecionados={elementosSelecionados}
+                        onElementoSelecionado={setElementoSelecionado}
+                        onElementosSelecionados={setElementosSelecionados}
+                        onElementoAtualizado={updateEl}
+                        onMultiplosElementosAtualizados={updateMultiplos}
+                        onElementoRemovido={handleRemoveEl}
+                        getPreviewText={obterPreviewTextoCertificado}
+                        backgroundUrl={templateEmEdicao.backgroundUrl}
+                        larguraCanvas={CERTIFICADO_CANVAS.largura}
+                        alturaCanvas={CERTIFICADO_CANVAS.altura}
+                      />
+                    </div>
                   </div>
                 </div>
               </>

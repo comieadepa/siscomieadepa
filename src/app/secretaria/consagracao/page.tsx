@@ -1092,55 +1092,66 @@ export default function ConsagracaoPage() {
         pdf.addPage();
       }
 
+      const isFirstPage = pageIndex === 0;
       let currentY = marginY;
 
-      if (logoDataUrl) {
-        pdf.addImage(logoDataUrl, 'PNG', marginX, currentY, 18, 18);
-      }
+      if (isFirstPage) {
+        if (logoDataUrl) {
+          pdf.addImage(logoDataUrl, 'PNG', marginX, currentY, 18, 18);
+        }
 
-      const centerStartX = marginX + 20;
-      const centerWidth = contentWidth - 20;
+        const centerStartX = marginX + 20;
+        const centerWidth = contentWidth - 20;
 
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(10);
-      pdf.text('COMIEADEPA - CONVENÇÃO INTERESTADUAL DE MINISTROS E IGREJAS', centerStartX + centerWidth / 2, currentY + 4, { align: 'center' });
-      pdf.text('EVANGÉLICAS ASSEMBLEIA DE DEUS NO PARÁ', centerStartX + centerWidth / 2, currentY + 8, { align: 'center' });
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(8);
-      pdf.text('Emails: comieadepa@bol.com.br / Site: www.comieadepa.org', centerStartX + centerWidth / 2, currentY + 12, { align: 'center' });
-      pdf.text('RODOVIA DO MÁRIO COVAS, 2500, 67115-000 / COQUEIRO, ANANINDEUA - PA', centerStartX + centerWidth / 2, currentY + 15.5, { align: 'center' });
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(0, 102, 204);
-      pdf.text('PRESIDENTE: PR. OCELIO NAUAR', centerStartX + centerWidth / 2, currentY + 19, { align: 'center' });
-      pdf.setTextColor(0, 0, 0);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(10);
+        pdf.text('COMIEADEPA - CONVENÇÃO INTERESTADUAL DE MINISTROS E IGREJAS', centerStartX + centerWidth / 2, currentY + 4, { align: 'center' });
+        pdf.text('EVANGÉLICAS ASSEMBLEIA DE DEUS NO PARÁ', centerStartX + centerWidth / 2, currentY + 8, { align: 'center' });
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        pdf.text('Emails: comieadepa@bol.com.br / Site: www.comieadepa.org', centerStartX + centerWidth / 2, currentY + 12, { align: 'center' });
+        pdf.text('RODOVIA DO MÁRIO COVAS, 2500, 67115-000 / COQUEIRO, ANANINDEUA - PA', centerStartX + centerWidth / 2, currentY + 15.5, { align: 'center' });
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(0, 102, 204);
+        pdf.text('PRESIDENTE: PR. OCELIO NAUAR', centerStartX + centerWidth / 2, currentY + 19, { align: 'center' });
+        pdf.setTextColor(0, 0, 0);
 
-      currentY += 22;
-      pdf.setDrawColor(0, 0, 0);
-      pdf.setLineWidth(0.35);
-      pdf.line(marginX, currentY, pageWidth - marginX, currentY);
+        currentY += 22;
+        pdf.setDrawColor(0, 0, 0);
+        pdf.setLineWidth(0.35);
+        pdf.line(marginX, currentY, pageWidth - marginX, currentY);
 
-      currentY += 6;
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(12);
-      pdf.text('Lista de Candidatos - Consagração', pageWidth / 2, currentY, { align: 'center' });
-
-      currentY += 5;
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(8);
-      pdf.text(
-        `Emitido em ${new Date().toLocaleString('pt-BR')} | Total: ${registrosFiltrados.length} registro(s) | Página ${pageIndex + 1} de ${paginasImpressao.length}`,
-        pageWidth / 2,
-        currentY,
-        { align: 'center' }
-      );
-
-      if (filtrosAplicadosImpressao.length > 0) {
-        currentY += 4;
-        const filtrosLinhas = pdf.splitTextToSize(filtrosResumoImpressao, contentWidth);
-        pdf.text(filtrosLinhas, marginX, currentY);
-        currentY += filtrosLinhas.length * 3 + 3;
-      } else {
         currentY += 6;
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(12);
+        pdf.text('Lista de Candidatos - Consagração', pageWidth / 2, currentY, { align: 'center' });
+
+        currentY += 5;
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        pdf.text(
+          `Emitido em ${new Date().toLocaleString('pt-BR')} | Total: ${registrosFiltrados.length} registro(s) | Página ${pageIndex + 1} de ${paginasImpressao.length}`,
+          pageWidth / 2,
+          currentY,
+          { align: 'center' }
+        );
+
+        if (filtrosAplicadosImpressao.length > 0) {
+          currentY += 4;
+          const filtrosLinhas = pdf.splitTextToSize(filtrosResumoImpressao, contentWidth);
+          pdf.text(filtrosLinhas, marginX, currentY);
+          currentY += filtrosLinhas.length * 3 + 3;
+        } else {
+          currentY += 6;
+        }
+      } else {
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(11);
+        pdf.text('Lista de Candidatos - Consagração', pageWidth / 2, currentY + 4, { align: 'center' });
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        pdf.text(`Página ${pageIndex + 1} de ${paginasImpressao.length}`, pageWidth / 2, currentY + 8, { align: 'center' });
+        currentY += 12;
       }
 
       let currentX = marginX;

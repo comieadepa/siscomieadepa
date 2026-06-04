@@ -18,6 +18,8 @@ import { getMensagemSemTemplate } from '@/lib/cartoes-utils';
 import { createClient } from '@/lib/supabase-client';
 import { loadOrgNomenclaturasFromSupabaseOrMigrate } from '@/lib/org-nomenclaturas';
 import { loadTemplatesForCurrentUser } from '@/lib/cartoes-templates-sync';
+import { loadCertificadosTemplatesForCurrentUser } from '@/lib/certificados-templates-sync';
+import { gerarCertificadoMembroPDF, encontrarTemplatePorCargo, type TemplateCertificado } from '@/lib/gerar-certificado-membro';
 import { authenticatedFetch } from '@/lib/api-client';
 import { useMembers } from '@/hooks/useMembers';
 import type { Member, CreateMemberRequest, UpdateMemberRequest } from '@/types/supabase';
@@ -84,6 +86,14 @@ interface Membro {
   dataConsagracao?: string;
   dataEmissao?: string;
   dataValidadeCredencial?: string;
+  evAutorizadoData?: string;
+  evAutorizadoLocal?: string;
+  evConsagradoData?: string;
+  evConsagradoLocal?: string;
+  consMissionarioData?: string;
+  consMissionarioLocal?: string;
+  ordenPastorData?: string;
+  ordenPastorLocal?: string;
   dadosCargos?: {
     [key: string]: {
       dataConsagracaoRecebimento: string;
@@ -262,7 +272,7 @@ export default function MembrosPage() {
       temFuncaoIgreja: member.tem_funcao_igreja ?? (cf as any).temFuncaoIgreja ?? false,
       setorDepartamento: String(member.setor_departamento || (cf as any).setorDepartamento || ''),
       observacoesMinisteriais: String(member.observacoes_ministeriais || (cf as any).observacoesMinisteriais || ''),
-      dataConsagracao: String((cf as any).dataConsagracao || ''),
+      dataConsagracao: String(member.data_consagracao || (cf as any).dataConsagracao || ''),
       dataEmissao: String(member.data_emissao || (cf as any).dataEmissao || ''),
       dataValidadeCredencial: String((member as any).cred_validade || (cf as any).dataValidadeCredencial || ''),
       dataBatismoAguas: String(member.data_batismo_aguas || (cf as any).dataBatismoAguas || ''),
@@ -408,6 +418,69 @@ export default function MembrosPage() {
 
   const [maxMembros] = useState<number>(0); // 0 = sem limite
   const _limiteMembrosAtingido = maxMembros > 0 && membros.length >= maxMembros; void _limiteMembrosAtingido;
+
+  /* ---------- certificados ---------- */
+  const [certTemplates, setCertTemplates] = useState<TemplateCertificado[]>([]);
+  const [certTemplatesCarregados, setCertTemplatesCarregados] = useState(false);
+  const [gerandoCertificado, setGerandoCertificado] = useState<string | null>(null);
+
+  const ensureCertTemplates = async (): Promise<TemplateCertificado[]> => {
+    if (certTemplatesCarregados) return certTemplates;
+    const { templates } = await loadCertificadosTemplatesForCurrentUser(supabase);
+    const list = templates as TemplateCertificado[];
+    setCertTemplates(list);
+    setCertTemplatesCarregados(true);
+    return list;
+  };
+
+  const gerarCertificadoParaMembro = async (membro: Membro) => {
+    const cargo = membro.cargoMinisterial?.trim();
+    if (!cargo) {
+      setNotification({ isOpen: true, title: 'Cargo não definido', message: 'Este membro não possui cargo ministerial definido.', type: 'warning', autoClose: 4000, showButton: false });
+      return;
+    }
+    setGerandoCertificado(membro.id);
+    try {
+      const templates = await ensureCertTemplates();
+      const tmpl = encontrarTemplatePorCargo(templates, cargo);
+      if (!tmpl) {
+        setNotification({ isOpen: true, title: 'Modelo não encontrado', message: `Nenhum modelo de certificado com o nome "${cargo}" foi encontrado. Crie um modelo com esse nome em Configurações → Certificados.`, type: 'warning', autoClose: 6000, showButton: false });
+        return;
+      }
+      // Busca presidente: primeiro membro com pastorPresidente = true
+      const presidente = membros.find((m) => m.pastorPresidente);
+
+      // Seleciona a data de consagração correta conforme o cargo
+      const cargoNorm = cargo.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const dataConsagracao =
+        cargoNorm === 'pastor'
+          ? membro.ordenPastorData || membro.dataConsagracao || ''
+          : cargoNorm === 'missionario' || cargoNorm === 'missionaria'
+          ? membro.consMissionarioData || membro.dataConsagracao || ''
+          : cargoNorm === 'evangelista'
+          ? membro.evConsagradoData || membro.dataConsagracao || ''
+          : membro.evAutorizadoData
+            || membro.evConsagradoData
+            || membro.dataConsagracao
+            || '';
+
+      const dados = {
+        ministro_nome: membro.nome || '',
+        matricula: membro.matricula || '',
+        cargo_ministerial: cargo,
+        congregacao: membro.congregacao || '',
+        data_consagracao: dataConsagracao,
+        presidente_nome: presidente?.nome || '',
+        nome_igreja: configIgreja.nome || '',
+      };
+      await gerarCertificadoMembroPDF(tmpl, dados);
+    } catch (err) {
+      console.error('Erro ao gerar certificado:', err);
+      setNotification({ isOpen: true, title: 'Erro', message: 'Não foi possível gerar o certificado. Tente novamente.', type: 'error', autoClose: 4000, showButton: false });
+    } finally {
+      setGerandoCertificado(null);
+    }
+  };
 
   const [showForm, setShowForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -3095,15 +3168,20 @@ useEffect(() => {
                       </td>
                       <td className="border border-gray-300 px-4 py-3">
                         <div className="flex justify-center gap-0">
+                          {/* Imprimir Ficha */}
+                          <div className="relative group">
                           <button
                             onClick={() => setMembroSelecionandoImpressao(membro)}
                             className="p-1.5 text-gray-600 hover:bg-gray-200 rounded-lg transition"
-                            title="Imprimir Ficha"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                             </svg>
                           </button>
+                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity z-50">Imprimir Ficha</span>
+                          </div>
+                          {/* Credencial */}
+                          <div className="relative group">
                           <button
                             onClick={async () => {
                               const templatesBase = await ensureTemplatesSnapshot();
@@ -3119,21 +3197,42 @@ useEffect(() => {
                               setMembroImprimindoCartao(membro);
                             }}
                             className="p-1.5 text-purple-600 hover:bg-purple-100 rounded-lg transition"
-                            title="Imprimir Credencial"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
                             </svg>
                           </button>
+                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity z-50">Imprimir Credencial</span>
+                          </div>
+                          {/* Certificado */}
+                          <div className="relative group">
+                          <button
+                            onClick={() => gerarCertificadoParaMembro(membro)}
+                            disabled={gerandoCertificado === membro.id}
+                            className="p-1.5 text-emerald-700 hover:bg-emerald-100 rounded-lg transition disabled:opacity-50"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16v12H4z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h8M8 14h5" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 3v3M17 3v3" />
+                            </svg>
+                          </button>
+                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity z-50">Imprimir Certificado</span>
+                          </div>
+                          {/* Editar */}
+                          <div className="relative group">
                           <button
                             onClick={() => abrirEdicao(membro)}
                             className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition"
-                            title="Editar"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                             </svg>
                           </button>
+                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity z-50">Editar</span>
+                          </div>
+                          {/* Alterar Status */}
+                          <div className="relative group">
                           <button
                             onClick={() => {
                               setMembroAlterandoStatus(membro);
@@ -3142,39 +3241,49 @@ useEffect(() => {
                               setMotivoStatus('');
                             }}
                             className="p-1.5 text-amber-600 hover:bg-amber-100 rounded-lg transition"
-                            title="Alterar Status"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                           </button>
+                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity z-50">Alterar Status</span>
+                          </div>
+                          {/* Cartas Convencionais */}
+                          <div className="relative group">
                           <button
                             onClick={() => setMembroSelecionandoCarta(membro)}
                             className="p-1.5 text-green-700 hover:bg-green-100 rounded-lg transition"
-                            title="Cartas Convencionais"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                             </svg>
                           </button>
+                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity z-50">Cartas Convencionais</span>
+                          </div>
+                          {/* Documentos */}
+                          <div className="relative group">
                           <button
                             onClick={() => setMembroDocumentos(membro)}
                             className="p-1.5 text-indigo-600 hover:bg-indigo-100 rounded-lg transition"
-                            title="Documentos"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
                             </svg>
                           </button>
+                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity z-50">Documentos</span>
+                          </div>
+                          {/* Histórico */}
+                          <div className="relative group">
                           <button
                             onClick={() => setMembroHistorico(membro)}
                             className="p-1.5 text-slate-600 hover:bg-slate-100 rounded-lg transition"
-                            title="Histórico"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                           </button>
+                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity z-50">Histórico</span>
+                          </div>
 
                         </div>
                       </td>

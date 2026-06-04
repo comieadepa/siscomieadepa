@@ -645,9 +645,10 @@ export default function InteractiveCanvas({
                 height: `${alturaCanvas}px`,
                 backgroundColor: '#fff',
                 backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : 'none',
-                backgroundSize: 'cover',
+                backgroundSize: '100% 100%',
                 backgroundPosition: 'center',
-                border: '1px solid #d1d5db',
+                backgroundRepeat: 'no-repeat',
+                border: 'none',
                 overflow: 'hidden',
                 cursor: isDragging || isResizing ? 'default' : 'auto',
                 outline: 'none'
