@@ -103,7 +103,7 @@ export default function CredencialDigitalPage({ params }: { params: Promise<{ ui
             boxShadow: '0 8px 32px rgba(0,0,0,0.22)',
           }}>
             <img
-              src="/img/cred_minf.png"
+              src="/img/card001.png"
               alt=""
               style={{ width: '100%', display: 'block' }}
             />
