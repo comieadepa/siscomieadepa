@@ -75,6 +75,9 @@ interface DadosMembro {
   numero_aemadepa?: string;
   observacoes?: string;
   casaDoPastorAcp?: string;
+  numeroProcesso?: string;
+  categoriaRegistro?: string;
+  regiao?: string;
 }
 
 interface DadosIgreja {
@@ -299,6 +302,16 @@ export default function FichaMembro({ membro, dadosIgreja, fotoUrl }: FichaMembr
                       <td style={lbl}>Supervisao</td>
                       <td colSpan={3} style={cell}>{fmt(membro.supervisao).toUpperCase()}</td>
                     </tr>
+                    {(membro.numeroProcesso || membro.categoriaRegistro || membro.regiao) && (
+                      <tr>
+                        <td style={lbl}>Processo nº</td>
+                        <td style={cell}>{fmt(membro.numeroProcesso)}</td>
+                        <td style={lbl}>Cat. / Região</td>
+                        <td style={cell}>
+                          {[membro.categoriaRegistro, membro.regiao].filter(Boolean).join(' - ').toUpperCase()}
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </td>

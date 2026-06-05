@@ -2693,6 +2693,8 @@ export default function ConsagracaoPage() {
                   matricula: membroImprimindo.matricula || '',
                   id: membroImprimindo.member_id || membroImprimindo.id,
                   uniqueId: membroImprimindo.unique_id || '',
+                  numeroProcesso: membroImprimindo.numero_processo || '',
+                  categoriaRegistro: membroImprimindo.regiao || '',
                   nome: membroImprimindo.nome || '',
                   cpf: formatCpf(membroImprimindo.cpf || ''),
                   tipoCadastro: 'ministro',
