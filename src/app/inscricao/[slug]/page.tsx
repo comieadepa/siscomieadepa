@@ -472,7 +472,6 @@ export default function InscricaoPublicaPage() {
       const ministerioAtivo = ['active', 'ativo'].includes((statusMinistro ?? '').toLowerCase());
       const sexoLookupRaw = String(payload.sexo || '').trim().toUpperCase();
       const sexoLookup = sexoLookupRaw.startsWith('M') ? 'M' : sexoLookupRaw.startsWith('F') ? 'F' : '';
-      const sexoPadraoAgo = isAGO ? (sexoLookup || (ministerioAtivo ? 'M' : '')) : '';
 
       setMinistroInfo({
         nome,
@@ -512,8 +511,8 @@ export default function InscricaoPublicaPage() {
         whatsapp: whatsappLookup || f.whatsapp,
         supervisao_id: sup?.id || payload.supervisao_id || f.supervisao_id,
         campo_id: campoSelecionado?.id || payload.campo_id || '',
-        ...(isAGO && sexoPadraoAgo ? { sexo: sexoPadraoAgo } : {}),
-        ...(isAGO && payload.data_nascimento ? { data_nascimento: payload.data_nascimento } : {}),
+        sexo: sexoLookup || f.sexo,
+        data_nascimento: payload.data_nascimento || f.data_nascimento,
       }));
     } else {
       setCpfStatus('nao_encontrado');
@@ -1623,8 +1622,8 @@ export default function InscricaoPublicaPage() {
                   name="sexo"
                   value={form.sexo}
                   onChange={handleText}
-                  className={INP + (esposaJubiladoAutomaticoAtivo ? ' bg-gray-50 text-gray-600' : '')}
-                  disabled={esposaJubiladoAutomaticoAtivo}
+                  className={INP + (cpfStatus === 'encontrado' || esposaJubiladoAutomaticoAtivo ? ' bg-gray-50 text-gray-600' : '')}
+                  disabled={cpfStatus === 'encontrado' || esposaJubiladoAutomaticoAtivo}
                 >
                   <option value="">Selecione...</option>
                   <option value="M">Masculino</option>
