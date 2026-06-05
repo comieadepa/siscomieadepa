@@ -249,6 +249,7 @@ export default function InscricaoPublicaPage() {
   const [campos,      setCampos]      = useState<Campo[]>([]);
   const [tipos,       setTipos]       = useState<TipoInscricao[]>([]);
   const [vagasHospedagem, setVagasHospedagem] = useState<number | null>(null);
+  const [vagasPorGrupo, setVagasPorGrupo] = useState<Record<string, number>>({});
   const [loading,     setLoading]     = useState(true);
   const [estadoErro,  setEstadoErro]  = useState<'nao_encontrado' | 'fechado' | 'encerrado' | 'esgotado' | null>(null);
 
@@ -372,6 +373,7 @@ export default function InscricaoPublicaPage() {
     if (ev.limite_hospedagem && vagasHosp !== null) {
       setVagasHospedagem(vagasHosp);
     }
+    setVagasPorGrupo(evJson?.vagasPorGrupo || {});
 
     // Busca tipos de inscrição
     const tiposLimpos = dedupeTipos(tiposApi);
@@ -687,7 +689,21 @@ export default function InscricaoPublicaPage() {
     ? (typeof configCM.valor_esposa === 'number' ? configCM.valor_esposa : parseFloat(String(configCM.valor_esposa)) || 0)
     : 0;
 
-  const podeHospedagem = !!evento?.permite_hospedagem && (tipoSelecionado ? !!tipoSelecionado.inclui_hospedagem : !evento.usar_tipos_inscricao);
+  const podeHospedagem = !!evento?.permite_hospedagem && (
+    evento.departamento === 'AGO'
+      ? true
+      : (tipoSelecionado ? !!tipoSelecionado.inclui_hospedagem : !evento.usar_tipos_inscricao)
+  );
+
+  const mainGroup = tipoSelecionado ? resolveGrupoHospedagemAGO({
+    sexo: form.sexo || null,
+    data_nascimento: form.data_nascimento || null,
+    tipo_inscricao: tipoSelecionado.nome,
+    hosp_necessidade_especial: !!form.hosp_necessidade_especial,
+    hosp_possui_comorbidade: !!form.hosp_possui_comorbidade,
+  }) : null;
+  const mainVagasGrupo = mainGroup ? (vagasPorGrupo[mainGroup] ?? 0) : 0;
+  const mainGrupoEsgotado = evento?.departamento === 'AGO' && mainGroup && mainVagasGrupo <= 0;
 
 
   const cupomTipo = cupomMeta?.tipo ?? null;
@@ -1836,8 +1852,13 @@ export default function InscricaoPublicaPage() {
                       <span className="text-sm font-semibold text-gray-700">🛏️ Desejo solicitar hospedagem</span>
                       <p className="text-xs text-gray-500 mt-0.5">
                         A solicitação não garante alocação. A organização fará a distribuição conforme disponibilidade.
-                        {vagasHospedagem !== null && ` (${vagasHospedagem} vagas restantes)`}
+                        {evento.departamento === 'AGO' && mainGroup ? ` (Grupo: ${mainGroup} - ${mainVagasGrupo} vagas restantes)` : (vagasHospedagem !== null && ` (${vagasHospedagem} vagas restantes)`)}
                       </p>
+                      {mainGrupoEsgotado && (
+                        <p className="text-xs text-red-600 font-bold mt-1.5">
+                          ⚠️ Não há mais vagas de hospedagem disponíveis para seu grupo. Você ainda pode concluir a inscrição sem hospedagem.
+                        </p>
+                      )}
                     </div>
                   </label>
                 </div>
@@ -1981,60 +2002,72 @@ export default function InscricaoPublicaPage() {
                     </div>
 
                     {/* Hospedagem da esposa */}
-                    {evento.permite_hospedagem && (
-                      <div className="mt-3 p-3 bg-white border border-purple-200 rounded-lg">
-                        <label className="flex items-start gap-3 cursor-pointer select-none">
-                          <input type="checkbox" checked={hospEsposa.solicitar}
-                            onChange={e => setHospEsposa(h => ({ ...h, solicitar: e.target.checked }))}
-                            className="mt-0.5 accent-purple-700" />
-                          <div>
-                            <span className="text-sm font-semibold text-gray-700">🛏️ Desejo solicitar hospedagem para a esposa</span>
-                            <p className="text-xs text-gray-500 mt-0.5">A hospedagem é independente — cada inscrição decide individualmente.</p>
-                          </div>
-                        </label>
-
-                        {hospEsposa.solicitar && (
-                          <div className="mt-3 space-y-3">
-                            <div className="flex items-start gap-3">
-                              <input type="checkbox" id="hosp_esp_nec_especial" checked={hospEsposa.hosp_necessidade_especial}
-                                onChange={e => setHospEsposa(h => ({ ...h, hosp_necessidade_especial: e.target.checked }))}
-                                className="mt-0.5 accent-amber-600" />
-                              <label htmlFor="hosp_esp_nec_especial" className="text-sm text-gray-700 cursor-pointer">
-                                Possui <strong>necessidade especial</strong> de acessibilidade
-                              </label>
-                            </div>
-                            {hospEsposa.hosp_necessidade_especial && (
-                              <input value={hospEsposa.hosp_descricao_necessidade}
-                                onChange={e => setHospEsposa(h => ({ ...h, hosp_descricao_necessidade: e.target.value }))}
-                                placeholder="Descreva a necessidade..." className={INP} />
-                            )}
-                            <div className="flex items-start gap-3">
-                              <input type="checkbox" id="hosp_esp_comorbidade" checked={hospEsposa.hosp_possui_comorbidade}
-                                onChange={e => setHospEsposa(h => ({ ...h, hosp_possui_comorbidade: e.target.checked }))}
-                                className="mt-0.5 accent-amber-600" />
-                              <label htmlFor="hosp_esp_comorbidade" className="text-sm text-gray-700 cursor-pointer">
-                                Possui <strong>comorbidade</strong> relevante
-                              </label>
-                            </div>
-                            {hospEsposa.hosp_possui_comorbidade && (
-                              <input value={hospEsposa.hosp_descricao_comorbidade}
-                                onChange={e => setHospEsposa(h => ({ ...h, hosp_descricao_comorbidade: e.target.value }))}
-                                placeholder="Descreva a comorbidade..." className={INP} />
-                            )}
-                            <div className="p-3 bg-white border border-amber-300 rounded-lg">
-                              <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Grupo previsto</p>
-                              <p className="text-sm text-gray-700 mt-1">{grupoHospedagemEsposaPrevisto}</p>
-                              <p className="text-xs text-gray-500 mt-1">
-                                A cama inferior e o grupo final da esposa tambem sao definidos automaticamente pela organizacao.
+                    {evento.permite_hospedagem && (() => {
+                      const esposaVagasGrupo = grupoHospedagemEsposaPrevisto ? (vagasPorGrupo[grupoHospedagemEsposaPrevisto] ?? 0) : 0;
+                      const esposaGrupoEsgotado = evento.departamento === 'AGO' && grupoHospedagemEsposaPrevisto && esposaVagasGrupo <= 0;
+                      return (
+                        <div className="mt-3 p-3 bg-white border border-purple-200 rounded-lg">
+                          <label className="flex items-start gap-3 cursor-pointer select-none">
+                            <input type="checkbox" checked={hospEsposa.solicitar}
+                              onChange={e => setHospEsposa(h => ({ ...h, solicitar: e.target.checked }))}
+                              className="mt-0.5 accent-purple-700" />
+                            <div>
+                              <span className="text-sm font-semibold text-gray-700">🛏️ Desejo solicitar hospedagem para a esposa</span>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                A hospedagem é independente — cada inscrição decide individualmente.
+                                {evento.departamento === 'AGO' && grupoHospedagemEsposaPrevisto && ` (Grupo: ${grupoHospedagemEsposaPrevisto} - ${esposaVagasGrupo} vagas restantes)`}
                               </p>
+                              {esposaGrupoEsgotado && (
+                                <p className="text-xs text-red-600 font-bold mt-1.5">
+                                  ⚠️ Não há mais vagas de hospedagem disponíveis para seu grupo. Você ainda pode concluir a inscrição sem hospedagem.
+                                </p>
+                              )}
                             </div>
-                            <textarea value={hospEsposa.hosp_observacoes}
-                              onChange={e => setHospEsposa(h => ({ ...h, hosp_observacoes: e.target.value }))}
-                              rows={2} placeholder="Observações de hospedagem (opcional)" className={INP + ' resize-none'} />
-                          </div>
-                        )}
-                      </div>
-                    )}
+                          </label>
+
+                          {hospEsposa.solicitar && (
+                            <div className="mt-3 space-y-3">
+                              <div className="flex items-start gap-3">
+                                <input type="checkbox" id="hosp_esp_nec_especial" checked={hospEsposa.hosp_necessidade_especial}
+                                  onChange={e => setHospEsposa(h => ({ ...h, hosp_necessidade_especial: e.target.checked }))}
+                                  className="mt-0.5 accent-amber-600" />
+                                <label htmlFor="hosp_esp_nec_especial" className="text-sm text-gray-700 cursor-pointer">
+                                  Possui <strong>necessidade especial</strong> de acessibilidade
+                                </label>
+                              </div>
+                              {hospEsposa.hosp_necessidade_especial && (
+                                <input value={hospEsposa.hosp_descricao_necessidade}
+                                  onChange={e => setHospEsposa(h => ({ ...h, hosp_descricao_necessidade: e.target.value }))}
+                                  placeholder="Descreva a necessidade..." className={INP} />
+                              )}
+                              <div className="flex items-start gap-3">
+                                <input type="checkbox" id="hosp_esp_comorbidade" checked={hospEsposa.hosp_possui_comorbidade}
+                                  onChange={e => setHospEsposa(h => ({ ...h, hosp_possui_comorbidade: e.target.checked }))}
+                                  className="mt-0.5 accent-amber-600" />
+                                <label htmlFor="hosp_esp_comorbidade" className="text-sm text-gray-700 cursor-pointer">
+                                  Possui <strong>comorbidade</strong> relevante
+                                </label>
+                              </div>
+                              {hospEsposa.hosp_possui_comorbidade && (
+                                <input value={hospEsposa.hosp_descricao_comorbidade}
+                                  onChange={e => setHospEsposa(h => ({ ...h, hosp_descricao_comorbidade: e.target.value }))}
+                                  placeholder="Descreva a comorbidade..." className={INP} />
+                              )}
+                              <div className="p-3 bg-white border border-amber-300 rounded-lg">
+                                <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Grupo previsto</p>
+                                <p className="text-sm text-gray-700 mt-1">{grupoHospedagemEsposaPrevisto}</p>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  A cama inferior e o grupo final da esposa tambem sao definidos automaticamente pela organizacao.
+                                </p>
+                              </div>
+                              <textarea value={hospEsposa.hosp_observacoes}
+                                onChange={e => setHospEsposa(h => ({ ...h, hosp_observacoes: e.target.value }))}
+                                rows={2} placeholder="Observações de hospedagem (opcional)" className={INP + ' resize-none'} />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
@@ -2239,19 +2272,44 @@ export default function InscricaoPublicaPage() {
 
                       {(() => {
                         const tipoExtra = tipos.find(t => t.nome === p.tipo_inscricao);
-                        const podeHospedagemExtra = !!evento.permite_hospedagem && (tipoExtra ? !!tipoExtra.inclui_hospedagem : !evento.usar_tipos_inscricao);
+                        const podeHospedagemExtra = !!evento.permite_hospedagem && (
+                          evento.departamento === 'AGO'
+                            ? true
+                            : (tipoExtra ? !!tipoExtra.inclui_hospedagem : !evento.usar_tipos_inscricao)
+                        );
                         if (!podeHospedagemExtra) return null;
+
+                        const extraGroup = resolveGrupoHospedagemAGO({
+                          sexo: p.sexo || null,
+                          data_nascimento: p.data_nascimento || null,
+                          tipo_inscricao: p.tipo_inscricao || null,
+                          hosp_necessidade_especial: !!p.hosp_necessidade_especial,
+                          hosp_possui_comorbidade: !!p.hosp_possui_comorbidade,
+                        });
+                        const extraVagasGrupo = extraGroup ? (vagasPorGrupo[extraGroup] ?? 0) : 0;
+                        const extraGrupoEsgotado = evento.departamento === 'AGO' && extraGroup && extraVagasGrupo <= 0;
 
                         return (
                           <div className="sm:col-span-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                            <label className="inline-flex items-center gap-2 text-sm font-semibold text-gray-700">
+                            <label className="flex items-start gap-3 cursor-pointer select-none">
                               <input
                                 type="checkbox"
                                 checked={!!p.hospedagem}
                                 onChange={e => atualizarParticipante(idx, 'hospedagem', e.target.checked)}
-                                className="accent-[#123b63]"
+                                className="mt-0.5 accent-[#123b63]"
                               />
-                              🛏️ Desejo solicitar hospedagem
+                              <div>
+                                <span className="text-sm font-semibold text-gray-700">🛏️ Desejo solicitar hospedagem</span>
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                  A solicitação não garante alocação. A organização fará a distribuição conforme disponibilidade.
+                                  {evento.departamento === 'AGO' && extraGroup ? ` (Grupo: ${extraGroup} - ${extraVagasGrupo} vagas restantes)` : (vagasHospedagem !== null && ` (${vagasHospedagem} vagas restantes)`)}
+                                </p>
+                                {extraGrupoEsgotado && (
+                                  <p className="text-xs text-red-600 font-bold mt-1.5">
+                                    ⚠️ Não há mais vagas de hospedagem disponíveis para seu grupo. Você ainda pode concluir a inscrição sem hospedagem.
+                                  </p>
+                                )}
+                              </div>
                             </label>
 
                             {evento.departamento === 'AGO' && p.hospedagem && (

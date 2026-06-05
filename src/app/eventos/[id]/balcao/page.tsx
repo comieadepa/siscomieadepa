@@ -165,6 +165,7 @@ export default function BalcaoPage() {
   const [supervisoes, setSupervisoes] = useState<Supervisao[]>([]);
   const [campos,      setCampos]      = useState<Campo[]>([]);
   const [tipos,       setTipos]       = useState<TipoInscricao[]>([]);
+  const [vagasPorGrupo, setVagasPorGrupo] = useState<Record<string, number>>({});
   const [loadingInit, setLoadingInit] = useState(true);
   const [acessoNegado, setAcessoNegado] = useState(false);
   const [activeTab, setActiveTab] = useState<BalcaoTab>('nova');
@@ -381,6 +382,17 @@ export default function BalcaoPage() {
           setCampos((estrutura?.campos as Campo[]) || []);
         }
         setTipos((tps ?? []) as TipoInscricao[]);
+
+        if (ev) {
+          fetch(`/api/public/evento?slug=${(ev as Evento).slug}`)
+            .then(r => r.json())
+            .then(data => {
+              if (data?.vagasPorGrupo) {
+                setVagasPorGrupo(data.vagasPorGrupo);
+              }
+            })
+            .catch(() => {});
+        }
 
         // Se há exatamente um tipo, pré-selecionar (somente quando evento usa tipos)
         if (ev && (ev as Evento).usar_tipos_inscricao && tps && tps.length === 1) {
@@ -1327,6 +1339,13 @@ export default function BalcaoPage() {
   // Formulário principal
   // ─────────────────────────────────────────────────────────
   const temTipos = (evento?.usar_tipos_inscricao ?? false) && tiposParaExibir.length > 0;
+  const podeHospedagem = useMemo(() => {
+    return !!evento?.permite_hospedagem && (
+      evento.departamento === 'AGO'
+        ? true
+        : (tipoSel ? !!tipoSel.inclui_hospedagem : !temTipos)
+    );
+  }, [evento, tipoSel, temTipos]);
 
   return (
     <div className="min-h-screen bg-[#0D2B4E] flex flex-col">
@@ -1639,23 +1658,29 @@ export default function BalcaoPage() {
               </div>
             )}
 
-            {/* Serviços avulsos (se não tem tipo OU nenhum tipo selecionado) */}
-            {(!temTipos || !tipoSel) && (
-              <div className="flex flex-wrap gap-3 mb-1">
-                {evento.permite_hospedagem && (
-                  <ToggleService
-                    label="🏨 Hospedagem"
-                    active={form.hospedagem}
-                    onClick={() => setField('hospedagem', !form.hospedagem)}
+            {/* Opcionais da inscrição */}
+            {podeHospedagem && (
+              <div className="mt-3 p-3 bg-white/5 border border-white/10 rounded-xl">
+                <label className="flex items-start gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={form.hospedagem}
+                    onChange={e => setField('hospedagem', e.target.checked)}
+                    className="mt-0.5 accent-amber-400 w-4 h-4"
                   />
-                )}
-                {evento.permite_brinde && (
-                  <ToggleService
-                    label="🎁 Brinde"
-                    active={form.brinde}
-                    onClick={() => setField('brinde', !form.brinde)}
-                  />
-                )}
+                  <div>
+                    <span className="text-sm font-semibold text-white/80">🏨 Desejo solicitar hospedagem</span>
+                    <p className="text-xs text-white/40 mt-0.5">
+                      A solicitação não garante alocação. A organização fará a distribuição conforme disponibilidade.
+                      {evento.departamento === 'AGO' && grupoHospedagemPrevisto ? ` (Grupo: ${grupoHospedagemPrevisto} - ${(vagasPorGrupo[grupoHospedagemPrevisto] ?? 0)} vagas restantes)` : (evento.limite_hospedagem !== null && ` (${evento.limite_hospedagem} vagas totais)`)}
+                    </p>
+                    {evento.departamento === 'AGO' && grupoHospedagemPrevisto && (vagasPorGrupo[grupoHospedagemPrevisto] ?? 0) <= 0 && (
+                      <p className="text-xs text-red-400 font-bold mt-1.5">
+                        ⚠️ Não há mais vagas de hospedagem disponíveis para seu grupo. Você ainda pode concluir a inscrição sem hospedagem.
+                      </p>
+                    )}
+                  </div>
+                </label>
               </div>
             )}
 
@@ -1672,8 +1697,8 @@ export default function BalcaoPage() {
               </div>
             )}
 
-            {/* Brinde avulso quando tipo está selecionado (brinde não entra no tipo) */}
-            {tipoSel && evento.permite_brinde && (
+            {/* Brinde avulso */}
+            {evento.permite_brinde && (
               <div className="mt-2 flex gap-3">
                 <ToggleService
                   label="🎁 Brinde"
@@ -1681,19 +1706,6 @@ export default function BalcaoPage() {
                   onClick={() => setField('brinde', !form.brinde)}
                 />
               </div>
-            )}
-
-            {/* AGO: checkbox explícito de hospedagem quando tipo está selecionado */}
-            {evento.departamento === 'AGO' && evento.permite_hospedagem && temTipos && !!tipoSel && (
-              <label className="flex items-center gap-2.5 cursor-pointer select-none mt-3">
-                <input
-                  type="checkbox"
-                  checked={form.hospedagem}
-                  onChange={e => setField('hospedagem', e.target.checked)}
-                  className="accent-amber-400 w-4 h-4"
-                />
-                <span className="text-sm text-white/80">🏨 Desejo solicitar hospedagem</span>
-              </label>
             )}
 
             {/* Campos AGO — aparecem SOMENTE quando AGO + checkbox hospedagem marcado */}
@@ -1817,39 +1829,54 @@ export default function BalcaoPage() {
                   </div>
 
                   {/* Hospedagem da esposa */}
-                  {evento.permite_hospedagem && (
-                    <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/40 rounded-xl space-y-2">
-                      <label className="flex items-center gap-2.5 cursor-pointer">
-                        <input type="checkbox" checked={hospEsposa.solicitar}
-                          onChange={e => setHospEsposa(h => ({ ...h, solicitar: e.target.checked }))}
-                          className="accent-amber-400" />
-                        <span className="text-sm text-white/80">🛏️ Solicitar hospedagem para a esposa</span>
-                      </label>
-                      {hospEsposa.solicitar && (
-                        <>
-                          <label className="flex items-start gap-2.5 cursor-pointer">
-                            <input type="checkbox" checked={hospEsposa.hosp_necessidade_especial}
-                              onChange={e => setHospEsposa(h => ({ ...h, hosp_necessidade_especial: e.target.checked }))}
-                              className="mt-0.5 accent-amber-400" />
-                            <span className="text-sm text-white/80">Necessidade especial de acessibilidade</span>
-                          </label>
-                          {hospEsposa.hosp_necessidade_especial && (
-                            <input value={hospEsposa.hosp_descricao_necessidade}
-                              onChange={e => setHospEsposa(h => ({ ...h, hosp_descricao_necessidade: e.target.value }))}
-                              placeholder="Descreva a necessidade..." className={inputCls + ' border-amber-500/50'} />
-                          )}
-                          <div className="rounded-xl border border-amber-500/40 bg-black/10 px-3 py-2">
-                            <p className="text-xs font-bold uppercase tracking-wide text-amber-300">Grupo previsto da esposa</p>
-                            <p className="text-sm text-white mt-1">{grupoHospedagemEsposaPrevisto}</p>
-                            <p className="text-xs text-white/60 mt-1">A cama inferior final sera definida automaticamente pela organizacao.</p>
+                  {evento.permite_hospedagem && (() => {
+                    const esposaVagasGrupo = grupoHospedagemEsposaPrevisto ? (vagasPorGrupo[grupoHospedagemEsposaPrevisto] ?? 0) : 0;
+                    const esposaGrupoEsgotado = evento.departamento === 'AGO' && grupoHospedagemEsposaPrevisto && esposaVagasGrupo <= 0;
+                    return (
+                      <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/40 rounded-xl space-y-2">
+                        <label className="flex items-start gap-3 cursor-pointer select-none">
+                          <input type="checkbox" checked={hospEsposa.solicitar}
+                            onChange={e => setHospEsposa(h => ({ ...h, solicitar: e.target.checked }))}
+                            className="mt-0.5 accent-amber-400 w-4 h-4" />
+                          <div>
+                            <span className="text-sm text-white/80">🛏️ Solicitar hospedagem para a esposa</span>
+                            <p className="text-xs text-white/40 mt-0.5">
+                              A hospedagem é independente — cada inscrição decide individualmente.
+                              {evento.departamento === 'AGO' && grupoHospedagemEsposaPrevisto && ` (Grupo: ${grupoHospedagemEsposaPrevisto} - ${esposaVagasGrupo} vagas restantes)`}
+                            </p>
+                            {esposaGrupoEsgotado && (
+                              <p className="text-xs text-red-400 font-bold mt-1.5">
+                                ⚠️ Não há mais vagas de hospedagem disponíveis para seu grupo. Você ainda pode concluir a inscrição sem hospedagem.
+                              </p>
+                            )}
                           </div>
-                          <textarea value={hospEsposa.hosp_observacoes}
-                            onChange={e => setHospEsposa(h => ({ ...h, hosp_observacoes: e.target.value }))}
-                            rows={2} placeholder="Observações de hospedagem..." className={inputCls + ' resize-none border-amber-500/50'} />
-                        </>
-                      )}
-                    </div>
-                  )}
+                        </label>
+                        {hospEsposa.solicitar && (
+                          <>
+                            <label className="flex items-start gap-2.5 cursor-pointer">
+                              <input type="checkbox" checked={hospEsposa.hosp_necessidade_especial}
+                                onChange={e => setHospEsposa(h => ({ ...h, hosp_necessidade_especial: e.target.checked }))}
+                                className="mt-0.5 accent-amber-400" />
+                              <span className="text-sm text-white/80">Necessidade especial de acessibilidade</span>
+                            </label>
+                            {hospEsposa.hosp_necessidade_especial && (
+                              <input value={hospEsposa.hosp_descricao_necessidade}
+                                onChange={e => setHospEsposa(h => ({ ...h, hosp_descricao_necessidade: e.target.value }))}
+                                placeholder="Descreva a necessidade..." className={inputCls + ' border-amber-500/50'} />
+                            )}
+                            <div className="rounded-xl border border-amber-500/40 bg-black/10 px-3 py-2">
+                              <p className="text-xs font-bold uppercase tracking-wide text-amber-300">Grupo previsto da esposa</p>
+                              <p className="text-sm text-white mt-1">{grupoHospedagemEsposaPrevisto}</p>
+                              <p className="text-xs text-white/60 mt-1">A cama inferior final sera definida automaticamente pela organizacao.</p>
+                            </div>
+                            <textarea value={hospEsposa.hosp_observacoes}
+                              onChange={e => setHospEsposa(h => ({ ...h, hosp_observacoes: e.target.value }))}
+                              rows={2} placeholder="Observações de hospedagem..." className={inputCls + ' resize-none border-amber-500/50'} />
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </section>

@@ -5,6 +5,7 @@ import { sendEmail } from '@/services/email';
 import { registrarHistoricoMinisterial } from '@/lib/historico-ministerial';
 import { cleanCpf } from '@/lib/cpf';
 import { logDB } from '@/lib/audit';
+import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
 
 const ASAAS_WEBHOOK_TOKEN = process.env.ASAAS_WEBHOOK_TOKEN;
 
@@ -228,6 +229,10 @@ export async function POST(request: NextRequest) {
             .select('id, nome_inscrito, email, qr_code, evento_id, ministro_id, cpf, tipo_inscricao')
             .eq('lote_id', loteId);
           if (loteIns && loteIns.length > 0) {
+            // Executa autoalocação automática para os participantes do lote
+            for (const li of loteIns) {
+              await alocarLeitoParaInscricao(supabase, li.id);
+            }
             const firstRow = loteIns[0] as unknown as Record<string, unknown>;
             const { data: evData } = await supabase
               .from('eventos')
@@ -335,6 +340,10 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('[EVENTOS WEBHOOK] Inscrição atualizada:', ins.id, '→', novoStatus);
+
+    if (novoStatus === 'pago') {
+      await alocarLeitoParaInscricao(supabase, ins.id);
+    }
 
     // E-mail de confirmação quando pago (com deduplicação)
     if (novoStatus === 'pago') {

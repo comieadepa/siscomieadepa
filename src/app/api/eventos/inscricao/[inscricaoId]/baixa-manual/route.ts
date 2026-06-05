@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient, createServerClientFromCookies } from '@/lib/supabase-server';
 import { normalizeEventoRole, resolveEventoPermissoes, type EventoRole } from '@/lib/evento-permissions';
 import { normalizeRole } from '@/lib/auth/roles';
+import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
 
 export async function POST(
   _request: NextRequest,
@@ -88,6 +89,16 @@ export async function POST(
     if (loteError) {
       return NextResponse.json({ error: loteError.message }, { status: 500 });
     }
+
+    // Executa autoalocacao de hospedagem para todos do lote
+    const { data: loteInscs } = await supabaseAdmin
+      .from('evento_inscricoes')
+      .select('id')
+      .eq('lote_id', ins.lote_id);
+
+    for (const li of loteInscs ?? []) {
+      await alocarLeitoParaInscricao(supabaseAdmin, li.id);
+    }
   } else {
     const { error: updateError } = await supabaseAdmin
       .from('evento_inscricoes')
@@ -97,6 +108,9 @@ export async function POST(
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
+
+    // Executa autoalocacao de hospedagem para a inscricao individual
+    await alocarLeitoParaInscricao(supabaseAdmin, inscricaoId);
   }
 
   return NextResponse.json({ success: true });

@@ -14,6 +14,7 @@ import {
   resolveCamaInferiorAutomatica,
   resolveGrupoHospedagemAGO,
 } from '@/lib/hospedagem-helpers';
+import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
 
 type ErrorJson = {
   error: string;
@@ -911,10 +912,10 @@ export async function POST(request: NextRequest) {
         .eq('ativo', true)
         .maybeSingle();
 
-      const refeicoesPastor = tipoInclui.alimentacao ? tipoRefeicoes : 0;
-      const refeicoesEsposa = tipoEsposa?.inclui_alimentacao
+      const refeicoesPastor = evento.departamento === 'AGO' ? 12 : (tipoInclui.alimentacao ? tipoRefeicoes : 0);
+      const refeicoesEsposa = evento.departamento === 'AGO' ? 12 : (tipoEsposa?.inclui_alimentacao
         ? Math.max(0, Number(tipoEsposa?.quantidade_refeicoes ?? 0))
-        : 0;
+        : 0);
 
       const valorTotal2 = valorFinal + valorEsposaBase;
       const codigoLote2 = gerarCodigoLote();
@@ -961,7 +962,7 @@ export async function POST(request: NextRequest) {
         supervisao_id:    supervisao_id || null,
         campo_id:         campo_id || null,
         hospedagem:       !!hospedagem,
-        alimentacao:      tipoInclui.alimentacao,
+        alimentacao:      evento.departamento === 'AGO' ? true : tipoInclui.alimentacao,
         brinde:           !!brinde,
         tipo_inscricao:   tipoNome,
         valor_original:   valorBase,
@@ -1015,7 +1016,7 @@ export async function POST(request: NextRequest) {
         supervisao_id:    supervisao_id || null,
         campo_id:         campo_id || null,
         hospedagem:       !!esposaData.hospedagem,
-        alimentacao:      !!(tipoEsposa?.inclui_alimentacao),
+        alimentacao:      evento.departamento === 'AGO' ? true : !!(tipoEsposa?.inclui_alimentacao),
         brinde:           false,
         tipo_inscricao:   tipoEsposa?.nome ?? 'Esposa de Pastor Presidente Campo Missionário',
         valor_original:   valorEsposaBase,
@@ -1088,6 +1089,14 @@ export async function POST(request: NextRequest) {
       if (cupomUsado) await incrementarCupom(supabase, evento.id, cupomUsado);
 
       if (isGratuito2) {
+        if (evento.departamento === 'AGO') {
+          if (!!hospedagem) {
+            await alocarLeitoParaInscricao(supabase, insPastor.id);
+          }
+          if (!!esposaData.hospedagem) {
+            await alocarLeitoParaInscricao(supabase, insEsposa.id);
+          }
+        }
         return NextResponse.json({ inscricaoId: insPastor.id, loteId: lote2.id, inscricoes: 2, statusPagamento: 'isento', pagamento: null });
       }
 
@@ -1358,10 +1367,10 @@ export async function POST(request: NextRequest) {
         }
 
         const valorFinalParticipante = Math.max(0, valorBaseParticipante - descontoParticipante);
-        const alimentacaoParticipante = !!(tipoEvento?.inclui_alimentacao ?? false);
-        const refeicoesParticipante = alimentacaoParticipante
-          ? Math.max(0, Number(tipoEvento?.quantidade_refeicoes ?? 0))
-          : 0;
+        const alimentacaoParticipante = evento.departamento === 'AGO' ? true : !!(tipoEvento?.inclui_alimentacao ?? false);
+        const refeicoesParticipante = evento.departamento === 'AGO'
+          ? 12
+          : (alimentacaoParticipante ? Math.max(0, Number(tipoEvento?.quantidade_refeicoes ?? 0)) : 0);
         const hospedagemParticipante = evento.departamento === 'AGO'
           ? !!p.hospedagem
           : (!!(tipoEvento?.inclui_hospedagem ?? false) || !!p.hospedagem);
@@ -1575,7 +1584,7 @@ export async function POST(request: NextRequest) {
       supervisao_id:    supervisao_id || null,
       campo_id:         campo_id || null,
       hospedagem:       querHospedagem,
-      alimentacao:      tipoInclui.alimentacao,
+      alimentacao:      evento.departamento === 'AGO' ? true : tipoInclui.alimentacao,
       brinde:           !!brinde,
       tipo_inscricao:   tipoNome,
       valor_original:   valorBase,
@@ -1586,11 +1595,11 @@ export async function POST(request: NextRequest) {
       status_pagamento: isGratuito ? 'isento' : 'pendente',
       forma_pagamento:  isGratuito ? null : 'pix',
       qr_code:          qr_code || null,
-      refeicoes_total:  tipoInclui.alimentacao ? tipoRefeicoes : 0,
+      refeicoes_total:  evento.departamento === 'AGO' ? 12 : (tipoInclui.alimentacao ? tipoRefeicoes : 0),
       refeicoes_utilizadas: 0,
-      quantidade_refeicoes_total: tipoInclui.alimentacao ? tipoRefeicoes : 0,
+      quantidade_refeicoes_total: evento.departamento === 'AGO' ? 12 : (tipoInclui.alimentacao ? tipoRefeicoes : 0),
       quantidade_refeicoes_usadas: 0,
-      quantidade_refeicoes_saldo: tipoInclui.alimentacao ? tipoRefeicoes : 0,
+      quantidade_refeicoes_saldo: evento.departamento === 'AGO' ? 12 : (tipoInclui.alimentacao ? tipoRefeicoes : 0),
       ministro_snapshot: ministroSnapshot,
       // Campos hospedagem AGO
       hosp_necessidade_especial:  !!hosp_necessidade_especial,
@@ -1692,7 +1701,12 @@ export async function POST(request: NextRequest) {
         entidadeId: inscricao.id,
         descricao: `[Público] Nova inscrição: ${nome_inscrito} — ${evento.nome}`,
         request,
-      })
+      });
+
+      if (evento.departamento === 'AGO' && querHospedagem) {
+        await alocarLeitoParaInscricao(supabase, inscricao.id);
+      }
+
       return NextResponse.json({ inscricaoId: inscricao.id, statusPagamento: 'isento', pagamento: null });
     }
 

@@ -11,6 +11,7 @@ import { createOrFindAsaasCustomer, createEventoPayment } from '@/lib/asaas';
 import { cleanCpf } from '@/lib/cpf';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
+import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
 
 const VENCIMENTO_DIAS = 3;
 
@@ -226,6 +227,11 @@ export async function POST(
         incluiAlimentacao = !!tipo.inclui_alimentacao;
         quantidadeRefeicoes = incluiAlimentacao ? Math.max(0, Number(tipo.quantidade_refeicoes ?? 0)) : 0;
       }
+    }
+
+    if ((evento as any).departamento === 'AGO') {
+      incluiAlimentacao = true;
+      quantidadeRefeicoes = 12;
     }
 
     if ((evento as any).departamento === 'AGO') {
@@ -509,9 +515,9 @@ export async function POST(
         .eq('ativo', true)
         .maybeSingle();
 
-      const refeicoesEsposa = tipoEsposa?.inclui_alimentacao
-        ? Math.max(0, Number(tipoEsposa?.quantidade_refeicoes ?? 0))
-        : 0;
+      const refeicoesEsposa = (evento as any).departamento === 'AGO'
+        ? 12
+        : (tipoEsposa?.inclui_alimentacao ? Math.max(0, Number(tipoEsposa?.quantidade_refeicoes ?? 0)) : 0);
 
       const esposaData = esposa as Record<string, unknown>;
       const esposaComorbidade = !!esposaData.hosp_possui_comorbidade;
@@ -587,7 +593,7 @@ export async function POST(
         whatsapp: esposaData.whatsapp ? String(esposaData.whatsapp).trim() : null,
         sexo: 'F', data_nascimento: esposaData.data_nascimento || null,
         supervisao_id: supervisao_id || null, campo_id: campo_id || null,
-        hospedagem: !!esposaData.hospedagem, alimentacao: !!(tipoEsposa?.inclui_alimentacao), brinde: false,
+        hospedagem: !!esposaData.hospedagem, alimentacao: (evento as any).departamento === 'AGO' ? true : !!(tipoEsposa?.inclui_alimentacao), brinde: false,
         tipo_inscricao: tipoEsposa?.nome ?? 'Esposa de Pastor Presidente Campo Missionário',
         valor_original: valorEsposaBase, cupom_codigo: null, desconto_valor: 0,
         valor_final: valorEsposaBase, valor_pago: isGratuito2 ? 0 : isPresencial ? valorEsposaBase : 0,
@@ -655,6 +661,17 @@ export async function POST(
         } catch (asaasErr2) {
           console.error('[BALCAO CASAL ASAAS]', (asaasErr2 as Error).message);
           return NextResponse.json({ inscricaoId: insPastor.id, loteId: lote2.id, inscricoes: 2, inscricao: insRows[0], statusPagamento: 'pendente', pagamento: null, asaasError: 'Cobrança ASAAS não gerada.' });
+        }
+      }
+
+      if ((statusPag as string) === 'pago' || (statusPag as string) === 'isento') {
+        if ((evento as any).departamento === 'AGO') {
+          if (!!hospedagem) {
+            await alocarLeitoParaInscricao(supabase, insPastor.id);
+          }
+          if (!!esposaData.hospedagem) {
+            await alocarLeitoParaInscricao(supabase, insEsposa.id);
+          }
         }
       }
 
@@ -864,6 +881,12 @@ export async function POST(
           pagamento:       null,
           asaasError:      'Cobrança ASAAS não gerada. Use outra forma de pagamento.',
         });
+      }
+    }
+
+    if ((statusPag as string) === 'pago' || (statusPag as string) === 'isento') {
+      if ((evento as any).departamento === 'AGO' && !!hospedagem) {
+        await alocarLeitoParaInscricao(supabase, inscricaoId);
       }
     }
 

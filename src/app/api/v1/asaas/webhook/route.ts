@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { logDB } from '@/lib/audit';
+import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
 
 const ASAAS_WEBHOOK_TOKEN = process.env.ASAAS_WEBHOOK_TOKEN;
 
@@ -73,6 +74,16 @@ export async function POST(request: NextRequest) {
           .from('evento_lotes_inscricao')
           .update({ status_pagamento: 'pago', asaas_payment_id: asaasPaymentId })
           .eq('id', loteId);
+
+        // Executa autoalocação automática para os participantes do lote
+        const { data: loteIns } = await supabase
+          .from('evento_inscricoes')
+          .select('id')
+          .eq('lote_id', loteId);
+
+        for (const li of loteIns ?? []) {
+          await alocarLeitoParaInscricao(supabase, li.id);
+        }
       }
       return NextResponse.json({ received: true });
     }

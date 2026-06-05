@@ -2017,23 +2017,86 @@ function SecaoPainelAgo({
     return (configuracoes?.setores as SetorAgo[] | undefined) ?? [];
   }, [configuracoes]);
 
-  // Estatísticas por grupo (baseado no alojamento do inscrito)
+  // Estatísticas por grupo
   const statsPorGrupo = useMemo(() => {
-    const map = new Map<string, { total: number; confirmados: number; listaEspera: number; solicitados: number }>();
-    grupos.forEach(g => map.set(g, { total: 0, confirmados: 0, listaEspera: 0, solicitados: 0 }));
-    map.set('Sem grupo', { total: 0, confirmados: 0, listaEspera: 0, solicitados: 0 });
+    const map = new Map<string, {
+      totalVagas: number;
+      ocupadas: number;
+      disponiveis: number;
+      listaEspera: number;
+      pagaAlocada: number;
+      pagaListaEspera: number;
+      solicitadaSemPagamento: number;
+      total: number;
+    }>();
 
+    grupos.forEach(g => map.set(g, {
+      totalVagas: 0,
+      ocupadas: 0,
+      disponiveis: 0,
+      listaEspera: 0,
+      pagaAlocada: 0,
+      pagaListaEspera: 0,
+      solicitadaSemPagamento: 0,
+      total: 0,
+    }));
+    map.set('Sem grupo', {
+      totalVagas: 0,
+      ocupadas: 0,
+      disponiveis: 0,
+      listaEspera: 0,
+      pagaAlocada: 0,
+      pagaListaEspera: 0,
+      solicitadaSemPagamento: 0,
+      total: 0,
+    });
+
+    // 1. Calcular totalVagas por grupo
+    alojamentos.forEach(a => {
+      if (a.ativo) {
+        const gp = PUBLICO_GRUPO[a.publico] ?? 'Misto';
+        const cur = map.get(gp) ?? map.get('Sem grupo')!;
+        cur.totalVagas += (a.total_vagas ?? 0);
+      }
+    });
+
+    // 2. Acumular estatísticas dos inscritos
     hospedagens.forEach(h => {
       const aloj = h.alojamento_id ? alojMap.get(h.alojamento_id) : null;
-      const grupo = aloj ? (PUBLICO_GRUPO[aloj.publico] ?? 'Sem grupo') : 'Sem grupo';
+      const grupo = aloj 
+        ? (PUBLICO_GRUPO[aloj.publico] ?? h.grupo_hospedagem ?? 'Sem grupo') 
+        : (h.grupo_hospedagem ?? 'Sem grupo');
+      
       const cur = map.get(grupo) ?? map.get('Sem grupo')!;
       cur.total++;
-      if (h.status === 'confirmada')   cur.confirmados++;
-      if (h.status === 'lista_espera') cur.listaEspera++;
-      if (h.status === 'solicitada')   cur.solicitados++;
+
+      const isOcupada = ['alocada', 'confirmada', 'checkin_realizado'].includes(h.status);
+      const isPagoConfirmado = h.status_pagamento === 'pago' || h.status_pagamento === 'isento';
+
+      if (isOcupada) {
+        cur.ocupadas++;
+      }
+      if (h.status === 'lista_espera') {
+        cur.listaEspera++;
+      }
+      if (isPagoConfirmado && isOcupada) {
+        cur.pagaAlocada++;
+      }
+      if (isPagoConfirmado && h.status === 'lista_espera') {
+        cur.pagaListaEspera++;
+      }
+      if (!isPagoConfirmado) {
+        cur.solicitadaSemPagamento++;
+      }
     });
+
+    // 3. Calcular vagas disponíveis
+    map.forEach((val) => {
+      val.disponiveis = Math.max(0, val.totalVagas - val.ocupadas);
+    });
+
     return map;
-  }, [hospedagens, alojMap, grupos]);
+  }, [hospedagens, alojMap, alojamentos, grupos]);
 
   // Estatísticas por alojamento com tipo público
   const statsAloj = useMemo(() => {
@@ -2145,29 +2208,48 @@ function SecaoPainelAgo({
           <h3 className="font-bold text-[#123b63] text-sm">👥 Resumo por Grupo de Alocação</h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px]">
+          <table className="w-full min-w-[900px]">
             <thead><tr>
               <th className={thP}>Grupo</th>
-              <th className={thP + ' text-right'}>Total</th>
-              <th className={thP + ' text-right'}>Confirmados</th>
-              <th className={thP + ' text-right'}>Lista Espera</th>
-              <th className={thP + ' text-right'}>Solicitados</th>
+              <th className={thP + ' text-right'}>Vagas Totais</th>
+              <th className={thP + ' text-right'}>Ocupadas (Leitos)</th>
+              <th className={thP + ' text-right'}>Disponíveis</th>
+              <th className={thP + ' text-right'}>Lista de Espera</th>
+              <th className={thP + ' text-right'}>Paga Alocada</th>
+              <th className={thP + ' text-right'}>Paga Lista Espera</th>
+              <th className={thP + ' text-right'}>Sol. Sem Pagto</th>
+              <th className={thP + ' text-right'}>Total Solicit.</th>
               <th className={thP + ' text-right'}>Ações</th>
             </tr></thead>
             <tbody>
               {grupos.map(g => {
-                const s = statsPorGrupo.get(g) ?? { total: 0, confirmados: 0, listaEspera: 0, solicitados: 0 };
+                const s = statsPorGrupo.get(g) ?? {
+                  totalVagas: 0,
+                  ocupadas: 0,
+                  disponiveis: 0,
+                  listaEspera: 0,
+                  pagaAlocada: 0,
+                  pagaListaEspera: 0,
+                  solicitadaSemPagamento: 0,
+                  total: 0,
+                };
                 const listaGrupo = hospedagens.filter(h => {
                   const aloj = h.alojamento_id ? alojMap.get(h.alojamento_id) : null;
-                  return aloj ? PUBLICO_GRUPO[aloj.publico] === g : false;
+                  return aloj 
+                    ? (PUBLICO_GRUPO[aloj.publico] === g || h.grupo_hospedagem === g) 
+                    : h.grupo_hospedagem === g;
                 });
                 return (
                   <tr key={g} className="hover:bg-gray-50 transition">
                     <td className={tdP + ' font-semibold text-gray-900'}>{g}</td>
-                    <td className={tdPn + ' font-bold text-[#123b63]'}>{s.total}</td>
-                    <td className={tdPn + ' text-emerald-700 font-semibold'}>{s.confirmados}</td>
+                    <td className={tdPn}>{s.totalVagas}</td>
+                    <td className={tdPn + ' text-indigo-700 font-semibold'}>{s.ocupadas}</td>
+                    <td className={tdPn + (s.disponiveis === 0 ? ' text-red-600 font-bold' : ' text-teal-700')}>{s.disponiveis}</td>
                     <td className={tdPn + ' text-orange-600'}>{s.listaEspera}</td>
-                    <td className={tdPn + ' text-yellow-600'}>{s.solicitados}</td>
+                    <td className={tdPn + ' text-emerald-700 font-semibold'}>{s.pagaAlocada}</td>
+                    <td className={tdPn + ' text-amber-600 font-semibold'}>{s.pagaListaEspera}</td>
+                    <td className={tdPn + ' text-yellow-600'}>{s.solicitadaSemPagamento}</td>
+                    <td className={tdPn + ' font-bold text-[#123b63]'}>{s.total}</td>
                     <td className={tdPn}>
                       {listaGrupo.length > 0 && (
                         <button
@@ -2185,10 +2267,14 @@ function SecaoPainelAgo({
                 return (
                   <tr className="hover:bg-gray-50 transition bg-gray-50/50">
                     <td className={tdP + ' text-gray-400 italic'}>Sem alojamento definido</td>
-                    <td className={tdPn + ' text-gray-400'}>{s.total}</td>
-                    <td className={tdPn + ' text-gray-400'}>{s.confirmados}</td>
+                    <td className={tdPn + ' text-gray-400'}>{s.totalVagas}</td>
+                    <td className={tdPn + ' text-gray-400'}>{s.ocupadas}</td>
+                    <td className={tdPn + ' text-gray-400'}>{s.disponiveis}</td>
                     <td className={tdPn + ' text-gray-400'}>{s.listaEspera}</td>
-                    <td className={tdPn + ' text-gray-400'}>{s.solicitados}</td>
+                    <td className={tdPn + ' text-gray-400'}>{s.pagaAlocada}</td>
+                    <td className={tdPn + ' text-gray-400'}>{s.pagaListaEspera}</td>
+                    <td className={tdPn + ' text-gray-400'}>{s.solicitadaSemPagamento}</td>
+                    <td className={tdPn + ' text-gray-400 font-semibold'}>{s.total}</td>
                     <td className={tdPn}></td>
                   </tr>
                 );
