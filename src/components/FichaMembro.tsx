@@ -106,7 +106,7 @@ const fmtDate = (v?: string | null) => {
 
 const cell: React.CSSProperties = {
   border: '1px solid #bbb',
-  padding: '3px 6px',
+  padding: '1px 6px 5px 6px',
   fontSize: '10px',
   verticalAlign: 'middle',
 };
@@ -122,7 +122,7 @@ const secHead = (color = '#003d7a'): React.CSSProperties => ({
   color: '#fff',
   fontWeight: 'bold',
   fontSize: '10px',
-  padding: '3px 8px',
+  padding: '1px 8px 5px 8px',
   textAlign: 'right',
   letterSpacing: '0.5px',
 });
