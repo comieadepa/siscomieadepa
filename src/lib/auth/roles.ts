@@ -40,11 +40,6 @@ const ROLE_ALIASES: Record<string, CanonicalRole> = {
   superintendent: 'administrador',
   coordenador: 'administrador',
   coordinator: 'administrador',
-  secretaria: 'administrador',
-  secretario: 'administrador',
-  secretariado: 'administrador',
-  consagracao_admin: 'administrador',
-  consagracao: 'administrador',
   operator: 'administrador',
   viewer: 'administrador',
   cgadb: 'cgadb',
@@ -130,17 +125,4 @@ export function canAccessModule(role: CanonicalRole | null, moduleKey: ModuleKey
 export function canAccessApi(role: CanonicalRole | null, apiKey: ApiKey): boolean {
   if (!role) return false;
   return hasRole(role, API_ACCESS[apiKey]);
-}
-
-/** Roles que não podem executar deleções no sistema */
-const ROLES_NO_DELETE = new Set<CanonicalRole>(['comissao']);
-
-/**
- * Retorna true se o role tem permissão para deletar registros.
- * O role 'comissao' não pode deletar.
- */
-export function canDelete(role: CanonicalRole | null): boolean {
-  if (!role) return false;
-  if (role === 'super') return true;
-  return !ROLES_NO_DELETE.has(role);
 }

@@ -18,8 +18,6 @@ import { getMensagemSemTemplate } from '@/lib/cartoes-utils';
 import { createClient } from '@/lib/supabase-client';
 import { loadOrgNomenclaturasFromSupabaseOrMigrate } from '@/lib/org-nomenclaturas';
 import { loadTemplatesForCurrentUser } from '@/lib/cartoes-templates-sync';
-import { loadCertificadosTemplatesForCurrentUser } from '@/lib/certificados-templates-sync';
-import { gerarCertificadoMembroPDF, encontrarTemplatePorCargo, type TemplateCertificado } from '@/lib/gerar-certificado-membro';
 import { authenticatedFetch } from '@/lib/api-client';
 import { useMembers } from '@/hooks/useMembers';
 import type { Member, CreateMemberRequest, UpdateMemberRequest } from '@/types/supabase';
@@ -35,7 +33,7 @@ interface Membro {
   supervisao: string;
   campo: string;
   congregacao: string;
-  status: 'ativo' | 'inativo' | 'desligado' | 'jubilado' | 'em_processo' | 'falecido';
+  status: 'ativo' | 'inativo' | 'desligado' | 'em_processo' | 'falecido';
   jubilado?: boolean;
   // Dados pessoais
   dataNascimento?: string;
@@ -86,14 +84,6 @@ interface Membro {
   dataConsagracao?: string;
   dataEmissao?: string;
   dataValidadeCredencial?: string;
-  evAutorizadoData?: string;
-  evAutorizadoLocal?: string;
-  evConsagradoData?: string;
-  evConsagradoLocal?: string;
-  consMissionarioData?: string;
-  consMissionarioLocal?: string;
-  ordenPastorData?: string;
-  ordenPastorLocal?: string;
   dadosCargos?: {
     [key: string]: {
       dataConsagracaoRecebimento: string;
@@ -122,16 +112,12 @@ export default function MembrosPage() {
   const [anivMes, setAnivMes] = useState<number>(new Date().getMonth() + 1);
   const [anivPage, setAnivPage] = useState<number>(1);
   const ANIV_POR_PAGINA = 25;
-  const ANIV_TEXTO_DEFAULT = 'Feliz Aniversário, {nome}! 🎉\n\nA COMIEADEPA deseja que Deus te abençoe grandemente neste dia tão especial!\n\nCom carinho,\nSecretaria COMIEADEPA';
-  const [anivTexto, setAnivTexto] = useState<string>(() =>
-    typeof window !== 'undefined' ? (localStorage.getItem('aniv_mensagem_texto') ?? ANIV_TEXTO_DEFAULT) : ANIV_TEXTO_DEFAULT
+  const [anivTexto, setAnivTexto] = useState<string>(
+    'Feliz Aniversário, {nome}! 🎉\n\nA COMIEADEPA deseja que Deus te abençoe grandemente neste dia tão especial!\n\nCom carinho,\nSecretaria COMIEADEPA'
   );
-  const [anivImagemUrl, setAnivImagemUrl] = useState<string>(() =>
-    typeof window !== 'undefined' ? (localStorage.getItem('aniv_mensagem_imagem') ?? '') : ''
-  );
+  const [anivImagemUrl, setAnivImagemUrl] = useState<string>('');
   const [_anivImagemFile, setAnivImagemFile] = useState<File | null>(null); void _anivImagemFile;
   const [anivEnviando, setAnivEnviando] = useState<string | null>(null);
-  const [anivSoHoje, setAnivSoHoje] = useState<boolean>(false);
   const anivFileRef = useRef<HTMLInputElement>(null);
   const [templatesSnapshot, setTemplatesSnapshot] = useState<any[]>([]);
   const [configIgreja, setConfigIgreja] = useState({
@@ -180,7 +166,6 @@ export default function MembrosPage() {
     if (status === 'active' || status === 'ativo') return 'ativo';
     if (status === 'falecido' || status === 'deceased') return 'falecido';
     if (status === 'desligado') return 'desligado';
-    if (status === 'jubilado') return 'jubilado';
     if (status === 'em_processo') return 'em_processo';
     return 'inativo'; // inactive e qualquer outro
   };
@@ -199,7 +184,6 @@ export default function MembrosPage() {
   const uiStatusToDb = (status: Membro['status']): string => {
     if (status === 'ativo') return 'active';
     if (status === 'desligado') return 'desligado';
-    if (status === 'jubilado') return 'jubilado';
     if (status === 'em_processo') return 'em_processo';
     if (status === 'falecido') return 'deceased';
     return 'inactive';
@@ -374,18 +358,6 @@ export default function MembrosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem('aniv_mensagem_texto', anivTexto);
-  }, [anivTexto]);
-
-  useEffect(() => {
-    if (anivImagemUrl) {
-      try { localStorage.setItem('aniv_mensagem_imagem', anivImagemUrl); } catch { localStorage.removeItem('aniv_mensagem_imagem'); }
-    } else {
-      localStorage.removeItem('aniv_mensagem_imagem');
-    }
-  }, [anivImagemUrl]);
-
   const ensureTemplatesSnapshot = async () => {
     if (templatesSnapshot.length > 0) return templatesSnapshot;
 
@@ -418,71 +390,6 @@ export default function MembrosPage() {
 
   const [maxMembros] = useState<number>(0); // 0 = sem limite
   const _limiteMembrosAtingido = maxMembros > 0 && membros.length >= maxMembros; void _limiteMembrosAtingido;
-
-  /* ---------- certificados ---------- */
-  const [certTemplates, setCertTemplates] = useState<TemplateCertificado[]>([]);
-  const [certTemplatesCarregados, setCertTemplatesCarregados] = useState(false);
-  const [gerandoCertificado, setGerandoCertificado] = useState<string | null>(null);
-
-  const ensureCertTemplates = async (): Promise<TemplateCertificado[]> => {
-    if (certTemplatesCarregados) return certTemplates;
-    const { templates } = await loadCertificadosTemplatesForCurrentUser(supabase);
-    const list = templates as TemplateCertificado[];
-    setCertTemplates(list);
-    setCertTemplatesCarregados(true);
-    return list;
-  };
-
-  const gerarCertificadoParaMembro = async (membro: Membro) => {
-    const cargo = membro.cargoMinisterial?.trim();
-    if (!cargo) {
-      setNotification({ isOpen: true, title: 'Cargo não definido', message: 'Este membro não possui cargo ministerial definido.', type: 'warning', autoClose: 4000, showButton: false });
-      return;
-    }
-    setGerandoCertificado(membro.id);
-    try {
-      const templates = await ensureCertTemplates();
-      const tmpl = encontrarTemplatePorCargo(templates, cargo);
-      if (!tmpl) {
-        setNotification({ isOpen: true, title: 'Modelo não encontrado', message: `Nenhum modelo de certificado com o nome "${cargo}" foi encontrado. Crie um modelo com esse nome em Configurações → Certificados.`, type: 'warning', autoClose: 6000, showButton: false });
-        return;
-      }
-      // Busca presidente: primeiro membro com pastorPresidente = true
-      const presidente = membros.find((m) => m.pastorPresidente);
-
-      // Seleciona a data de consagração correta conforme o cargo
-      const cargoNorm = cargo.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      const dataConsagracao =
-        cargoNorm === 'pastor'
-          ? membro.ordenPastorData || membro.dataConsagracao || ''
-          : cargoNorm === 'missionario' || cargoNorm === 'missionaria'
-          ? membro.consMissionarioData || membro.dataConsagracao || ''
-          : cargoNorm === 'evangelista'
-          ? membro.evConsagradoData || membro.dataConsagracao || ''
-          : membro.evAutorizadoData
-            || membro.evConsagradoData
-            || membro.dataConsagracao
-            || '';
-
-      const dados = {
-        ministro_nome: membro.nome || '',
-        matricula: membro.matricula || '',
-        cargo_ministerial: cargo,
-        congregacao: membro.congregacao || '',
-        data_consagracao: dataConsagracao,
-        presidente_nome: presidente?.nome || '',
-        nome_igreja: configIgreja.nome || '',
-        uniqueId: membro.uniqueId || undefined,
-        memberId: membro.id,
-      };
-      await gerarCertificadoMembroPDF(tmpl, dados);
-    } catch (err) {
-      console.error('Erro ao gerar certificado:', err);
-      setNotification({ isOpen: true, title: 'Erro', message: 'Não foi possível gerar o certificado. Tente novamente.', type: 'error', autoClose: 4000, showButton: false });
-    } finally {
-      setGerandoCertificado(null);
-    }
-  };
 
   const [showForm, setShowForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -1226,10 +1133,7 @@ useEffect(() => {
     yPos += 8;
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    const tituloPDF = pastorPresidenteFilter
-      ? 'Listagem de Ministros - Pastores Presidente'
-      : 'Listagem de Ministros';
-    doc.text(tituloPDF, pageWidth / 2, yPos, { align: 'center' });
+    doc.text('Listagem de Ministros', pageWidth / 2, yPos, { align: 'center' });
 
     // Informações do relatório
     doc.setFontSize(9);
@@ -1240,39 +1144,23 @@ useEffect(() => {
     doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')}`, pageWidth - 14, yPos, { align: 'right' });
 
     // Preparar dados da tabela
-    const isPastorPresidente = pastorPresidenteFilter;
-
-    const tableData = membrosFiltrados.map(membro => {
-      const row: (string | number)[] = [
-        membro.matricula,
-        membro.nome,
-        membro.cpf,
-        membro.cargoMinisterial || '-',
-        isPastorPresidente
-          ? (membro.campo || '-')
-          : ((membro as any).dadosCargos?.dataConsagracao
-              ? new Date((membro as any).dadosCargos.dataConsagracao).toLocaleDateString('pt-BR')
-              : (membro as any).dataConsagracao
-                ? new Date((membro as any).dataConsagracao).toLocaleDateString('pt-BR')
-                : '-'),
-        membro.status === 'ativo' ? 'Ativo' : 'Inativo',
-      ];
-      if (isPastorPresidente) {
-        const partes: string[] = [];
-        if (membro.celular) partes.push(membro.celular);
-        if (membro.email) partes.push(membro.email);
-        row.push(partes.join('\n') || '-');
-      }
-      return row;
-    });
-
-    const cabecalho = ['Matrícula', 'Nome', 'CPF', 'Cargo', isPastorPresidente ? 'Campo' : 'Dt. Consagração', 'Status'];
-    if (isPastorPresidente) cabecalho.push('Contato');
+    const tableData = membrosFiltrados.map(membro => [
+      membro.matricula,
+      membro.nome,
+      membro.cpf,
+      membro.cargoMinisterial || '-',
+      (membro as any).dadosCargos?.dataConsagracao
+        ? new Date((membro as any).dadosCargos.dataConsagracao).toLocaleDateString('pt-BR')
+        : (membro as any).dataConsagracao
+          ? new Date((membro as any).dataConsagracao).toLocaleDateString('pt-BR')
+          : '-',
+      membro.status === 'ativo' ? 'Ativo' : 'Inativo'
+    ]);
 
     // Gerar tabela
     autoTable(doc, {
       startY: yPos + 5,
-      head: [cabecalho],
+      head: [['Matrícula', 'Nome', 'CPF', 'Cargo', 'Dt. Consagração', 'Status']],
       body: tableData,
       theme: 'grid',
       headStyles: {
@@ -1291,8 +1179,7 @@ useEffect(() => {
         2: { halign: 'center', cellWidth: 35 },
         3: { halign: 'left', cellWidth: 35 },
         4: { halign: 'center', cellWidth: 30 },
-        5: { halign: 'center', cellWidth: 20 },
-        ...(isPastorPresidente ? { 6: { halign: 'left', cellWidth: 50 } } : {})
+        5: { halign: 'center', cellWidth: 20 }
       },
       alternateRowStyles: {
         fillColor: [245, 245, 245]
@@ -1416,20 +1303,7 @@ useEffect(() => {
     });
     setCargoSelecionado(resolveCargoValue(membro.cargoMinisterial));
     setDadosCargos(membro.dadosCargos || {});
-    setDadosConsagracao({
-      ev_autorizado_data:    (membro as any).evAutorizadoData    || '',
-      ev_autorizado_local:   (membro as any).evAutorizadoLocal   || '',
-      ev_consagrado_data:    (membro as any).evConsagradoData    || '',
-      ev_consagrado_local:   (membro as any).evConsagradoLocal   || '',
-      cons_missionario_data: (membro as any).consMissionarioData || '',
-      cons_missionario_local:(membro as any).consMissionarioLocal|| '',
-      orden_pastor_data:     (membro as any).ordenPastorData     || '',
-      orden_pastor_local:    (membro as any).ordenPastorLocal    || '',
-      diretoria:             membro.diretoria     || false,
-      local_batismo:         (membro as any).localBatismo  || '',
-      data_filiacao:         (membro as any).dataFiliacao  || '',
-      cargo_diretoria:       membro.diretoriaCargo || '',
-    });
+    setDadosConsagracao(prev => ({ ...prev, diretoria: membro.diretoria || false, cargo_diretoria: membro.diretoriaCargo || '' }));
     setIsEditando(false);
     setIsAdminMode(true); // Modo admin ativado para edição
     setShowForm(true);
@@ -2202,160 +2076,98 @@ useEffect(() => {
       )}
 
       {/* Modal Alterar Status */}
-      {membroAlterandoStatus && (() => {
-        const statusOriginal = membroAlterandoStatus.status || 'ativo';
-        const jubiladoOriginal = membroAlterandoStatus.jubilado ?? false;
-        const motivoObrigatorio = novoStatus === 'desligado' || novoStatus === 'jubilado';
-        const semAlteracao = novoStatus === statusOriginal && isJubilado === jubiladoOriginal;
-        const podeAlterar = !semAlteracao && (!motivoObrigatorio || motivoStatus.trim().length > 0);
-        return (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
-              <div className="bg-blue-900 text-white px-6 py-4 rounded-t-xl flex justify-between items-center">
-                <h2 className="text-lg font-bold">Alterar Status do Membro</h2>
-                <button onClick={() => setMembroAlterandoStatus(null)} className="text-white hover:text-gray-300 text-2xl leading-none">&times;</button>
-              </div>
-              <div className="p-6 flex flex-col gap-4">
-                <p className="text-sm text-gray-600">Membro: <strong>{membroAlterandoStatus.nome}</strong></p>
-                <p className="text-xs text-gray-400">Status atual: <strong>{statusOriginal.toUpperCase()}</strong>{jubiladoOriginal ? ' · JUBILADO' : ''}</p>
+      {membroAlterandoStatus && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="bg-blue-900 text-white px-6 py-4 rounded-t-xl flex justify-between items-center">
+              <h2 className="text-lg font-bold">Alterar Status do Membro</h2>
+              <button onClick={() => setMembroAlterandoStatus(null)} className="text-white hover:text-gray-300 text-2xl leading-none">&times;</button>
+            </div>
+            <div className="p-6 flex flex-col gap-4">
+              <p className="text-sm text-gray-600">Membro: <strong>{membroAlterandoStatus.nome}</strong></p>
 
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">NOVA SITUAÇÃO:</label>
-                  <select
-                    value={novoStatus}
-                    onChange={(e) => {
-                      const s = e.target.value;
-                      setNovoStatus(s);
-                      if (s === 'jubilado') setIsJubilado(true);
-                      if (s === 'desligado') setIsJubilado(false);
-                    }}
-                    className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="ativo">ATIVO</option>
-                    <option value="desligado">DESLIGADO</option>
-                    <option value="jubilado">JUBILADO</option>
-                    <option value="em_processo">EM PROCESSO</option>
-                    <option value="falecido">FALECIDO</option>
-                    <option value="inativo">INATIVO</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <label className="text-sm font-semibold text-gray-700">JUBILADO?</label>
-                  <button
-                    type="button"
-                    disabled={novoStatus === 'jubilado' || novoStatus === 'desligado'}
-                    onClick={() => setIsJubilado(v => !v)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
-                      isJubilado ? 'bg-blue-600' : 'bg-gray-300'
-                    }`}
-                  >
-                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                      isJubilado ? 'translate-x-6' : 'translate-x-1'
-                    }`} />
-                  </button>
-                  {isJubilado && <span className="text-xs text-blue-600 font-semibold">Membro está jubilado</span>}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">
-                    OBSERVAÇÃO / MOTIVO:{motivoObrigatorio && <span className="text-red-500 ml-1">*</span>}
-                  </label>
-                  <textarea
-                    value={motivoStatus}
-                    onChange={(e) => setMotivoStatus(e.target.value)}
-                    placeholder={motivoObrigatorio ? 'Motivo obrigatório para este status...' : 'Escreva aqui as Observações...'}
-                    rows={4}
-                    className={`w-full border-2 rounded-lg px-3 py-2 text-sm focus:outline-none resize-none ${
-                      motivoObrigatorio && motivoStatus.trim().length === 0
-                        ? 'border-red-400 focus:border-red-500'
-                        : 'border-gray-300 focus:border-blue-500'
-                    }`}
-                  />
-                  {motivoObrigatorio && motivoStatus.trim().length === 0 && (
-                    <p className="text-xs text-red-500 mt-1">O motivo é obrigatório para status DESLIGADO ou JUBILADO.</p>
-                  )}
-                </div>
-
-                <button
-                  disabled={salvandoStatus || !podeAlterar}
-                  onClick={async () => {
-                    setSalvandoStatus(true);
-                    try {
-                      const dbStatus = uiStatusToDb(novoStatus as Membro['status']);
-                      const statusAnterior = uiStatusToDb(statusOriginal as Membro['status']);
-                      const payload: Record<string, unknown> = {
-                        status: dbStatus,
-                        jubilado: isJubilado,
-                        observacoes: motivoStatus.trim() || null,
-                        _status_anterior: statusAnterior,
-                        _motivo: motivoStatus.trim() || null,
-                      };
-                      const res = await authenticatedFetch(`/api/v1/members/${membroAlterandoStatus.id}`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload),
-                      });
-                      if (!res.ok) {
-                        const errJson = await res.json().catch(() => null as any);
-                        throw new Error(errJson?.error || 'Erro ao salvar.');
-                      }
-
-                      // Registrar no Histórico do Ministro
-                      const novoStatusLabel = novoStatus.toUpperCase();
-                      const statusAnteriorLabel = statusOriginal.toUpperCase();
-                      const descricaoHistorico = `Status alterado de ${statusAnteriorLabel} para ${novoStatusLabel}.${
-                        motivoStatus.trim() ? ` Motivo: ${motivoStatus.trim()}` : ''
-                      }${
-                        isJubilado !== jubiladoOriginal
-                          ? ` Jubilado: ${isJubilado ? 'Sim' : 'Não'}.`
-                          : ''
-                      }`;
-                      void authenticatedFetch(`/api/membros/${membroAlterandoStatus.id}/historico`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          tipo: 'alteracao_status',
-                          titulo: 'Alteração de status ministerial',
-                          descricao: descricaoHistorico,
-                          origem: 'secretaria/membros',
-                          referencia_id: `status_${Date.now()}`,
-                        }),
-                      });
-
-                      setMembros(prev => prev.map(m =>
-                        m.id === membroAlterandoStatus.id
-                          ? { ...m, status: novoStatus as Membro['status'], jubilado: isJubilado }
-                          : m
-                      ));
-                      setMembroAlterandoStatus(null);
-                      setNotification({
-                        isOpen: true,
-                        title: 'Status Alterado',
-                        message: `Status de ${membroAlterandoStatus.nome} alterado para ${novoStatusLabel} com sucesso.`,
-                        type: 'success',
-                        autoClose: 4000,
-                      });
-                    } catch (e) {
-                      setNotification({
-                        isOpen: true,
-                        title: 'Erro ao Alterar Status',
-                        message: e instanceof Error ? e.message : String(e),
-                        type: 'error',
-                      });
-                    } finally {
-                      setSalvandoStatus(false);
-                    }
-                  }}
-                  className="w-full py-2 bg-blue-900 hover:bg-blue-800 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold rounded-lg transition text-sm tracking-widest"
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">SITUAÇÃO:</label>
+                <select
+                  value={novoStatus}
+                  onChange={(e) => setNovoStatus(e.target.value)}
+                  className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
                 >
-                  {salvandoStatus ? 'SALVANDO...' : 'ALTERAR'}
-                </button>
+                  <option value="ativo">ATIVO</option>
+                  <option value="desligado">DESLIGADO</option>
+                  <option value="em_processo">EM PROCESSO</option>
+                  <option value="falecido">FALECIDO</option>
+                  <option value="inativo">INATIVO</option>
+                </select>
               </div>
+
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-semibold text-gray-700">JUBILADO?</label>
+                <button
+                  type="button"
+                  onClick={() => setIsJubilado(v => !v)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    isJubilado ? 'bg-blue-600' : 'bg-gray-300'
+                  }`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    isJubilado ? 'translate-x-6' : 'translate-x-1'
+                  }`} />
+                </button>
+                {isJubilado && <span className="text-xs text-blue-600 font-semibold">Status permanece ATIVO</span>}
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">OBSERVAÇÃO / MOTIVO:</label>
+                <textarea
+                  value={motivoStatus}
+                  onChange={(e) => setMotivoStatus(e.target.value)}
+                  placeholder="Escreva aqui as Observações..."
+                  rows={4}
+                  className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none"
+                />
+              </div>
+
+              <button
+                disabled={salvandoStatus}
+                onClick={async () => {
+                  setSalvandoStatus(true);
+                  try {
+                    const dbStatus = uiStatusToDb(novoStatus as Membro['status']);
+                    const payload: Record<string, unknown> = {
+                      status: dbStatus,
+                      jubilado: isJubilado,
+                      observacoes: motivoStatus || null,
+                    };
+                    const res = await authenticatedFetch(`/api/v1/members/${membroAlterandoStatus.id}`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(payload),
+                    });
+                    if (!res.ok) {
+                      const errJson = await res.json().catch(() => null as any);
+                      throw new Error(errJson?.error || 'Erro ao salvar.');
+                    }
+                    setMembros(prev => prev.map(m =>
+                      m.id === membroAlterandoStatus.id
+                        ? { ...m, status: novoStatus as Membro['status'], jubilado: isJubilado }
+                        : m
+                    ));
+                    setMembroAlterandoStatus(null);
+                  } catch (e) {
+                    alert('Erro ao salvar: ' + (e instanceof Error ? e.message : String(e)));
+                  } finally {
+                    setSalvandoStatus(false);
+                  }
+                }}
+                className="w-full py-2 bg-gray-400 hover:bg-gray-500 disabled:opacity-60 text-white font-bold rounded-lg transition text-sm tracking-widest"
+              >
+                {salvandoStatus ? 'SALVANDO...' : 'ALTERAR'}
+              </button>
             </div>
           </div>
-        );
-      })()}
+        </div>
+      )}
 
       {/* Modal: Histórico do Ministro */}
       {membroHistorico && (
@@ -2363,10 +2175,6 @@ useEffect(() => {
           memberId={membroHistorico.id}
           memberName={membroHistorico.nome}
           matricula={membroHistorico.matricula}
-          cargo={membroHistorico.cargoMinisterial}
-          cpf={membroHistorico.cpf}
-          campo={membroHistorico.campo}
-          supervisao={membroHistorico.supervisao}
           onClose={() => setMembroHistorico(null)}
         />
       )}
@@ -2923,23 +2731,11 @@ useEffect(() => {
           <div className="bg-white rounded-lg px-4 py-3 shadow-md mb-4">
             <div className="flex flex-wrap gap-2 items-center">
 
-              {/* BUSCA */}
-              <div className="flex-1 min-w-[180px] relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
-                <input
-                  type="text"
-                  placeholder="DIGITE SUA BUSCA..."
-                  value={searchTerm}
-                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                  className="w-full h-9 pl-9 pr-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#0D2B4E]"
-                />
-              </div>
-
               {/* SUPERVISÃO */}
               <select
                 value={supervisaoFilter}
                 onChange={(e) => { setSupervisaoFilter(e.target.value); setCurrentPage(1); }}
-                className="h-9 px-3 border border-gray-300 rounded-lg text-sm font-semibold text-[#0D2B4E] bg-white focus:outline-none focus:border-[#0D2B4E] w-[180px]"
+                className="h-9 px-3 border border-gray-300 rounded-lg text-sm font-semibold text-[#0D2B4E] bg-white focus:outline-none focus:border-[#0D2B4E] min-w-[140px]"
               >
                 <option value="TODOS">SUPERVISÃO: TODAS</option>
                 {supervisoesOptions.map(s => (
@@ -2951,7 +2747,7 @@ useEffect(() => {
               <select
                 value={campoFilter}
                 onChange={(e) => { setCampoFilter(e.target.value); setCurrentPage(1); }}
-                className="h-9 px-3 border border-gray-300 rounded-lg text-sm font-semibold text-[#0D2B4E] bg-white focus:outline-none focus:border-[#0D2B4E] w-[180px]"
+                className="h-9 px-3 border border-gray-300 rounded-lg text-sm font-semibold text-[#0D2B4E] bg-white focus:outline-none focus:border-[#0D2B4E] min-w-[140px]"
               >
                 <option value="TODOS">CAMPO: TODOS</option>
                 {camposOptions
@@ -2987,6 +2783,18 @@ useEffect(() => {
                 <option value="inativo">INATIVO</option>
                 <option value="JUBILADO">JUBILADO</option>
               </select>
+
+              {/* BUSCA */}
+              <div className="flex-1 min-w-[180px] relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
+                <input
+                  type="text"
+                  placeholder="DIGITE SUA BUSCA..."
+                  value={searchTerm}
+                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                  className="w-full h-9 pl-9 pr-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#0D2B4E]"
+                />
+              </div>
 
               {/* PASTOR PRESIDENTE */}
               <label className="flex flex-col items-center gap-0.5 cursor-pointer shrink-0">
@@ -3170,20 +2978,15 @@ useEffect(() => {
                       </td>
                       <td className="border border-gray-300 px-4 py-3">
                         <div className="flex justify-center gap-0">
-                          {/* Imprimir Ficha */}
-                          <div className="relative group">
                           <button
                             onClick={() => setMembroSelecionandoImpressao(membro)}
                             className="p-1.5 text-gray-600 hover:bg-gray-200 rounded-lg transition"
+                            title="Imprimir Ficha"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                             </svg>
                           </button>
-                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity z-50">Imprimir Ficha</span>
-                          </div>
-                          {/* Credencial */}
-                          <div className="relative group">
                           <button
                             onClick={async () => {
                               const templatesBase = await ensureTemplatesSnapshot();
@@ -3199,42 +3002,21 @@ useEffect(() => {
                               setMembroImprimindoCartao(membro);
                             }}
                             className="p-1.5 text-purple-600 hover:bg-purple-100 rounded-lg transition"
+                            title="Imprimir Credencial"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
                             </svg>
                           </button>
-                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity z-50">Imprimir Credencial</span>
-                          </div>
-                          {/* Certificado */}
-                          <div className="relative group">
-                          <button
-                            onClick={() => gerarCertificadoParaMembro(membro)}
-                            disabled={gerandoCertificado === membro.id}
-                            className="p-1.5 text-emerald-700 hover:bg-emerald-100 rounded-lg transition disabled:opacity-50"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16v12H4z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h8M8 14h5" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 3v3M17 3v3" />
-                            </svg>
-                          </button>
-                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity z-50">Imprimir Certificado</span>
-                          </div>
-                          {/* Editar */}
-                          <div className="relative group">
                           <button
                             onClick={() => abrirEdicao(membro)}
                             className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition"
+                            title="Editar"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                             </svg>
                           </button>
-                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity z-50">Editar</span>
-                          </div>
-                          {/* Alterar Status */}
-                          <div className="relative group">
                           <button
                             onClick={() => {
                               setMembroAlterandoStatus(membro);
@@ -3243,49 +3025,39 @@ useEffect(() => {
                               setMotivoStatus('');
                             }}
                             className="p-1.5 text-amber-600 hover:bg-amber-100 rounded-lg transition"
+                            title="Alterar Status"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                           </button>
-                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity z-50">Alterar Status</span>
-                          </div>
-                          {/* Cartas Convencionais */}
-                          <div className="relative group">
                           <button
                             onClick={() => setMembroSelecionandoCarta(membro)}
                             className="p-1.5 text-green-700 hover:bg-green-100 rounded-lg transition"
+                            title="Cartas Convencionais"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                             </svg>
                           </button>
-                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity z-50">Cartas Convencionais</span>
-                          </div>
-                          {/* Documentos */}
-                          <div className="relative group">
                           <button
                             onClick={() => setMembroDocumentos(membro)}
                             className="p-1.5 text-indigo-600 hover:bg-indigo-100 rounded-lg transition"
+                            title="Documentos"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
                             </svg>
                           </button>
-                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity z-50">Documentos</span>
-                          </div>
-                          {/* Histórico */}
-                          <div className="relative group">
                           <button
                             onClick={() => setMembroHistorico(membro)}
                             className="p-1.5 text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                            title="Histórico"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                           </button>
-                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity z-50">Histórico</span>
-                          </div>
 
                         </div>
                       </td>
@@ -3485,43 +3257,41 @@ useEffect(() => {
                         <h4 className="text-xs font-semibold text-sky-800 mb-3">🏢 Organização Eclesiástica</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Campo</label>
+                            <select
+                              value={dadosPessoais.campo}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                const campoSelecionado = camposOptions.find((opt) => opt.nome === value) || null;
+                                const supervisaoRelacionada = campoSelecionado?.supervisao_id
+                                  ? supervisoesOptions.find((opt) => opt.id === campoSelecionado.supervisao_id) || null
+                                  : null;
+                                setDadosPessoais({
+                                  ...dadosPessoais,
+                                  supervisao: '',
+                                  campo: value,
+                                  congregacao: supervisaoRelacionada?.nome || '',
+                                });
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                            >
+                              <option value="">Selecione</option>
+                              {camposOptions.map((opt) => (
+                                <option key={opt.id} value={opt.nome}>{opt.nome}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1">Supervisão</label>
                             <select
                               value={dadosPessoais.supervisao}
-                              onChange={(e) => {
-                                setDadosPessoais({
-                                  ...dadosPessoais,
-                                  supervisao: e.target.value,
-                                  campo: '',
-                                });
-                              }}
+                              onChange={(e) => setDadosPessoais({ ...dadosPessoais, supervisao: e.target.value })}
                               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                             >
                               <option value="">Selecione</option>
                               {supervisoesOptions.map((opt) => (
                                 <option key={opt.id} value={opt.nome}>{opt.nome}</option>
                               ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1">Campo</label>
-                            <select
-                              value={dadosPessoais.campo}
-                              onChange={(e) => {
-                                setDadosPessoais({ ...dadosPessoais, campo: e.target.value });
-                              }}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                            >
-                              <option value="">Selecione</option>
-                              {camposOptions
-                                .filter((opt) => {
-                                  if (!dadosPessoais.supervisao) return true;
-                                  const sup = supervisoesOptions.find((s) => s.nome === dadosPessoais.supervisao);
-                                  return sup ? opt.supervisao_id === sup.id : true;
-                                })
-                                .map((opt) => (
-                                  <option key={opt.id} value={opt.nome}>{opt.nome}</option>
-                                ))}
                             </select>
                           </div>
                         </div>
@@ -4707,22 +4477,16 @@ useEffect(() => {
           {/* Vista - Aniversariantes */}
           {dashboardView === 'aniversariantes' && (() => {
             const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-            const hoje = new Date();
-            const hojeMes = hoje.getMonth() + 1;
-            const hojeDia = hoje.getDate();
-            const aniversariantesDoMes = membros.filter(m => {
+            const aniversariantes = membros.filter(m => {
               if (!m.dataNascimento) return false;
-              if (m.status !== 'ativo') return false;
               const parts = m.dataNascimento.split('-');
               if (parts.length < 2) return false;
               return parseInt(parts[1], 10) === anivMes;
-            }).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }));
-            const aniversariantes = anivSoHoje
-              ? aniversariantesDoMes.filter(m => {
-                  const dia = parseInt((m.dataNascimento || '').split('-')[2] || '0', 10);
-                  return anivMes === hojeMes && dia === hojeDia;
-                })
-              : aniversariantesDoMes;
+            }).sort((a, b) => {
+              const dayA = parseInt((a.dataNascimento || '').split('-')[2] || '0', 10);
+              const dayB = parseInt((b.dataNascimento || '').split('-')[2] || '0', 10);
+              return dayA - dayB;
+            });
 
             const totalPaginas = Math.max(1, Math.ceil(aniversariantes.length / ANIV_POR_PAGINA));
             const paginaAtual = Math.min(anivPage, totalPaginas);
@@ -4790,43 +4554,10 @@ useEffect(() => {
 
                 {/* Lista de aniversariantes */}
                 <div className="bg-white rounded-lg shadow-md p-6">
-                  <div className="flex items-center gap-2 justify-between mb-4">
+                  <div className="flex items-center justify-between mb-4">
                     <h3 className="font-bold text-gray-800 text-base">
                       🎂 Aniversariantes de {MESES[anivMes - 1]} ({aniversariantes.length})
                     </h3>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => { setAnivSoHoje(v => !v); setAnivPage(1); }}
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border transition ${
-                          anivSoHoje
-                            ? 'bg-teal-500 border-teal-500 text-white'
-                            : 'bg-white border-gray-300 text-gray-600 hover:border-teal-400 hover:text-teal-600'
-                        }`}
-                        title={anivSoHoje ? 'Mostrar todos do mês' : 'Mostrar só os de hoje'}
-                      >
-                        <span className={`w-3 h-3 rounded-full ${anivSoHoje ? 'bg-white' : 'bg-gray-300'}`} />
-                        Só hoje
-                      </button>
-                      <button
-                        onClick={() => {
-                          const dataEmissao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
-                          const titulo = anivSoHoje ? `Aniversariantes do Dia — ${hojeDia} de ${MESES[anivMes - 1]}` : `Aniversariantes de ${MESES[anivMes - 1]}`;
-                          const linhas = aniversariantes.map(m => {
-                            const dia = (m.dataNascimento || '').split('-')[2] || '—';
-                            return `<tr><td style="text-align:center;font-weight:bold">${dia}</td><td>${m.nome}</td><td>${m.supervisao || '—'}</td><td>${m.campo || '—'}</td><td>${m.celular || m.whatsapp || '—'}</td><td>${m.email || '—'}</td></tr>`;
-                          }).join('');
-                          const logoUrl = configIgreja.logo || (window.location.origin + '/img/logo_comieadepa.png');
-                          const logoHtml = `<img src="${logoUrl}" alt="Logo" style="width:70px;height:70px;object-fit:contain;border-radius:8px" />`;
-                          const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#333;padding:30px}header{border-bottom:3px solid #123b63;padding-bottom:16px;margin-bottom:20px;display:flex;align-items:center;gap:20px}.logo-box{width:70px;height:70px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.org{flex:1}.org h1{font-size:18px;font-weight:bold;color:#123b63}.org p{font-size:10px;color:#666;margin-top:2px}.badge{background:#F39C12;color:#fff;padding:4px 12px;border-radius:20px;font-size:10px;font-weight:bold;align-self:flex-start}h2{font-size:13px;font-weight:bold;color:#123b63;margin:16px 0 10px;border-bottom:1px solid #e2e8f0;padding-bottom:4px}table{width:100%;border-collapse:collapse;margin-bottom:16px}th{background:#123b63;color:#fff;font-size:10px;padding:6px 8px;text-align:left}td{padding:5px 8px;border-bottom:1px solid #f1f5f9;font-size:10px}tr:nth-child(even) td{background:#f8fafc}footer{margin-top:24px;border-top:1px solid #e2e8f0;padding-top:10px;font-size:9px;color:#94a3b8;text-align:center}@media print{button{display:none}}</style></head><body><header><div class="logo-box">${logoHtml}</div><div class="org"><h1>COMIEADEPA</h1><p>Convenção das Assembleias de Deus no Estado do Pará</p><p>Secretária Geral — Lista de Aniversariantes</p></div><div class="badge">${MESES[anivMes - 1].toUpperCase()}</div></header><h2>${titulo} (${aniversariantes.length} ministros ativos)</h2><table><thead><tr><th>Dia</th><th>Nome</th><th>Supervisão</th><th>Campo</th><th>Telefone</th><th>E-mail</th></tr></thead><tbody>${linhas}</tbody></table><footer>Emitido em ${dataEmissao} | COMIEADEPA — Sistema de Gestão</footer><script>window.onload=function(){window.print();}<\/script></body></html>`;
-                          const w = window.open('', '', 'height=900,width=1100');
-                          if (w) { w.document.write(html); w.document.close(); }
-                        }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-gray-300 bg-white text-gray-600 hover:border-blue-400 hover:text-blue-600 transition"
-                        title="Imprimir lista de aniversariantes"
-                      >
-                        🖨️ Imprimir
-                      </button>
-                    </div>
                   </div>
 
                   {aniversariantes.length === 0 ? (
@@ -4845,51 +4576,44 @@ useEffect(() => {
                         </thead>
                         <tbody>
                           {anivPagina.map(m => {
-                              const partes = (m.dataNascimento || '').split('-');
-                              const dia = partes[2] || '—';
-                              const diaNasc = parseInt(partes[2] || '0', 10);
-                              const isHoje = anivMes === hojeMes && diaNasc === hojeDia;
-                              const temWhatsapp = !!(m.whatsapp || m.celular);
-                              const temEmail = !!m.email;
-                              const whatsappAtivo = isHoje && temWhatsapp && anivEnviando !== m.id;
-                              const emailAtivo = isHoje && temEmail && anivEnviando !== m.id;
-                              return (
-                                <tr key={m.id} className="border-b border-gray-200 hover:bg-gray-50">
-                                  <td className="px-3 py-2 text-center">
-                                    <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${isHoje ? 'bg-teal-500 text-white ring-2 ring-teal-300' : 'bg-teal-100 text-teal-700'}`}>{dia}</span>
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    <p className="text-xs font-semibold text-gray-800 uppercase">{m.nome}</p>
-                                    <p className="text-[10px] text-gray-500">{m.tipoCadastro}</p>
-                                  </td>
-                                  <td className="px-3 py-2 text-xs text-gray-600">{m.campo || '—'}</td>
-                                  <td className="px-3 py-2">
-                                    <p className="text-xs text-gray-600">{m.celular || m.whatsapp || '—'}</p>
-                                    <p className="text-[10px] text-gray-400 truncate max-w-[140px]">{m.email || ''}</p>
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    <div className="flex items-center justify-center gap-2">
-                                      <button
-                                        onClick={() => handleWhatsApp(m)}
-                                        disabled={!whatsappAtivo}
-                                        className={`px-2 py-1 text-white text-xs font-semibold rounded transition ${whatsappAtivo ? 'bg-green-500 hover:bg-green-600 cursor-pointer' : 'bg-gray-300 cursor-not-allowed opacity-50'}`}
-                                        title={!isHoje ? 'Disponível apenas no dia do aniversário' : !temWhatsapp ? 'WhatsApp não cadastrado' : 'Enviar via WhatsApp'}
-                                      >
-                                        WhatsApp
-                                      </button>
-                                      <button
-                                        onClick={() => handleEmail(m)}
-                                        disabled={!emailAtivo}
-                                        className={`px-2 py-1 text-white text-xs font-semibold rounded transition ${emailAtivo ? 'bg-blue-500 hover:bg-blue-600 cursor-pointer' : 'bg-gray-300 cursor-not-allowed opacity-50'}`}
-                                        title={!isHoje ? 'Disponível apenas no dia do aniversário' : !temEmail ? 'E-mail não cadastrado' : 'Enviar via E-mail'}
-                                      >
-                                        E-mail
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
+                            const dia = (m.dataNascimento || '').split('-')[2] || '—';
+                            return (
+                              <tr key={m.id} className="border-b border-gray-200 hover:bg-gray-50">
+                                <td className="px-3 py-2 text-center">
+                                  <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-teal-100 text-teal-700 font-bold text-sm">{dia}</span>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <p className="text-xs font-semibold text-gray-800 uppercase">{m.nome}</p>
+                                  <p className="text-[10px] text-gray-500">{m.tipoCadastro}</p>
+                                </td>
+                                <td className="px-3 py-2 text-xs text-gray-600">{m.campo || '—'}</td>
+                                <td className="px-3 py-2">
+                                  <p className="text-xs text-gray-600">{m.celular || m.whatsapp || '—'}</p>
+                                  <p className="text-[10px] text-gray-400 truncate max-w-[140px]">{m.email || ''}</p>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <div className="flex items-center justify-center gap-2">
+                                    <button
+                                      onClick={() => handleWhatsApp(m)}
+                                      disabled={anivEnviando === m.id}
+                                      className="px-2 py-1 bg-green-500 hover:bg-green-600 text-white text-xs font-semibold rounded transition"
+                                      title="Enviar via WhatsApp"
+                                    >
+                                      WhatsApp
+                                    </button>
+                                    <button
+                                      onClick={() => handleEmail(m)}
+                                      disabled={anivEnviando === m.id}
+                                      className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs font-semibold rounded transition"
+                                      title="Enviar via E-mail"
+                                    >
+                                      E-mail
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
 

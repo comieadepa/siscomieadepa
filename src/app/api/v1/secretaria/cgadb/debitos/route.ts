@@ -47,23 +47,11 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createServerClient();
-
-  // Separar rows com e sem CPF — upsert só funciona com conflict target não-nulo
-  const rowsComCpf = rows.filter((r: any) => r.cpf && String(r.cpf).replace(/\D/g, '').length >= 3);
-  const rowsSemCpf = rows.filter((r: any) => !r.cpf || String(r.cpf).replace(/\D/g, '').length < 3);
-
-  if (rowsComCpf.length > 0) {
-    const { error } = await supabase
-      .from('cgadb_debitos')
-      .upsert(rowsComCpf, { onConflict: 'cpf,ano', ignoreDuplicates: false });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  if (rowsSemCpf.length > 0) {
-    const { error } = await supabase
-      .from('cgadb_debitos')
-      .insert(rowsSemCpf);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const { error } = await supabase
+    .from('cgadb_debitos')
+    .upsert(rows, { onConflict: 'cpf,ano', ignoreDuplicates: false });
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   return NextResponse.json({ success: true, count: rows.length });

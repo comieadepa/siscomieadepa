@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { requireModuleAccess } from '@/lib/auth/require-auth';
-import { canDelete } from '@/lib/auth/roles';
 
 export async function GET(request: NextRequest) {
   const auth = await requireModuleAccess(request, 'secretaria');
@@ -45,10 +44,6 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const auth = await requireModuleAccess(request, 'secretaria');
   if (!auth.ok) return auth.response;
-
-  if (!canDelete(auth.ctx.role)) {
-    return NextResponse.json({ error: 'Acesso Negado!' }, { status: 403 });
-  }
 
   const body = await request.json().catch(() => null as any);
   const id = body?.id as string | undefined;

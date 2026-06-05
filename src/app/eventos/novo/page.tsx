@@ -47,87 +47,13 @@ interface TipoDraft {
   valor: string;
   inclui_alimentacao: boolean;
   inclui_hospedagem: boolean;
-  quantidade_refeicoes_str: string;
   ativo: boolean;
 }
-
-interface CupomInicialDraft {
-  habilitado: boolean;
-  codigo: string;
-  valor_final: string;
-}
-
-// ─── Tipos AGO ───────────────────────────────────────────────
-interface AgoCategoriaDraft {
-  key: string;
-  nome: string;
-  valor_str: string;
-  cortesia: boolean;
-  ativo: boolean;
-  limite_vagas_str: string;
-  inclui_alimentacao: boolean;
-  quantidade_refeicoes_str: string;
-  administrativo?: boolean; // uso interno — não aparece no seletor público
-}
-
-interface SetorHospedagem {
-  id: string;
-  nome: string;
-  grupo: string;
-  tipos_leito: ('beliche' | 'colchonete' | 'rede')[];
-  quantidade_leitos: number;
-  quantidade_leitos_inferiores: number;
-  observacoes: string;
-  ativo: boolean;
-}
-
-interface AgoHospedagemConfig {
-  enabled: boolean;
-  grupos: string[];
-  leitos_inferiores_preferenciais: boolean;
-  preferencia_60_mais: boolean;
-  preferencia_necessidade_especial: boolean;
-  observacoes: string;
-  habilitar_controle_plenarias: boolean;
-  plenarias_datas: string[];
-  habilitar_desconto_campo_missionario: boolean;
-  valor_pastor_presidente_campo_missionario: string;
-  valor_esposa_campo_missionario: string;
-  setores: SetorHospedagem[];
-}
-
-const AGO_CATEGORIAS_DEFAULT: AgoCategoriaDraft[] = [
-  { key: 'pastor_presidente',           nome: 'Pastor Presidente',                              valor_str: '470.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
-  { key: 'esposa_pastor_presidente',    nome: 'Esposa de Pastor Presidente',                    valor_str: '210.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
-  { key: 'esposa_pp_campo_missionario', nome: 'Esposa de Pastor Presidente Campo Missionário', valor_str: '0.00',   cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15', administrativo: true },
-  { key: 'pastor_auxiliar',             nome: 'Pastor Auxiliar',                               valor_str: '210.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
-  { key: 'esposa_pastor_auxiliar',      nome: 'Esposa de Pastor Auxiliar',                     valor_str: '130.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
-  { key: 'visitante',                   nome: 'Visitante',                                     valor_str: '210.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
-  { key: 'juventude_comieadepa',        nome: 'Juventude COMIEADEPA',                          valor_str: '130.00', cortesia: false, ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
-  { key: 'pastor_jubilado',             nome: 'Pastor Jubilado',                               valor_str: '0.00',   cortesia: true,  ativo: true, limite_vagas_str: '', inclui_alimentacao: true,  quantidade_refeicoes_str: '15' },
-  { key: 'viuva',                       nome: 'Viúva',                                         valor_str: '0.00',   cortesia: true,  ativo: true, limite_vagas_str: '', inclui_alimentacao: false, quantidade_refeicoes_str: '0'  },
-  { key: 'esposa_pastor_jubilado',      nome: 'Esposa de Pastor Jubilado',                     valor_str: '0.00',   cortesia: true,  ativo: true, limite_vagas_str: '', inclui_alimentacao: false, quantidade_refeicoes_str: '0'  },
-];
-
-const AGO_HOSP_DEFAULT: AgoHospedagemConfig = {
-  enabled: false,
-  grupos: ['Pastor Presidente / Pastor Jubilado', 'Pastor Auxiliar / Juventude', 'Mulheres'],
-  leitos_inferiores_preferenciais: true,
-  preferencia_60_mais: true,
-  preferencia_necessidade_especial: true,
-  observacoes: '',
-  habilitar_controle_plenarias: true,
-  plenarias_datas: [],
-  habilitar_desconto_campo_missionario: false,
-  valor_pastor_presidente_campo_missionario: '210.00',
-  valor_esposa_campo_missionario: '210.00',
-  setores: [],
-};
 
 const TIPOS_PADRAO: TipoDraft[] = [
-  { nome: 'Só Plenárias',                         valor: '', inclui_alimentacao: false, inclui_hospedagem: false, quantidade_refeicoes_str: '0',  ativo: true },
-  { nome: 'Plenárias + Alimentação',              valor: '', inclui_alimentacao: true,  inclui_hospedagem: false, quantidade_refeicoes_str: '15', ativo: true },
-  { nome: 'Plenárias + Alimentação + Hospedagem', valor: '', inclui_alimentacao: true,  inclui_hospedagem: true,  quantidade_refeicoes_str: '15', ativo: true },
+  { nome: 'Só Plenárias',                         valor: '', inclui_alimentacao: false, inclui_hospedagem: false, ativo: true },
+  { nome: 'Plenárias + Alimentação',              valor: '', inclui_alimentacao: true,  inclui_hospedagem: false, ativo: true },
+  { nome: 'Plenárias + Alimentação + Hospedagem', valor: '', inclui_alimentacao: true,  inclui_hospedagem: true,  ativo: true },
 ];
 
 const DEPARTAMENTOS = ['AGO', 'COADESPA', 'UMADESPA', 'SEIADEPA', 'AVULSO'];
@@ -234,20 +160,11 @@ export default function NovoEventoPage() {
 
   const [form, setForm] = useState<FormData>(FORM_INICIAL);
   const [tiposDraft, setTiposDraft] = useState<TipoDraft[]>(TIPOS_PADRAO.map(t => ({ ...t })));
-  const [agoCategorias, setAgoCategorias] = useState<AgoCategoriaDraft[]>(AGO_CATEGORIAS_DEFAULT.map(c => ({ ...c })));
-  const [agoHospConfig, setAgoHospConfig] = useState<AgoHospedagemConfig>({ ...AGO_HOSP_DEFAULT });
-  const [savedSetorSnapshots, setSavedSetorSnapshots] = useState<Record<string, string>>({});
-  const isAGO = form.departamento === 'AGO';
   const [supervisoes, setSupervisoes] = useState<Supervisao[]>([]);
   const [campos, setCampos]           = useState<Campo[]>([]);
   const [camposFiltrados, setCamposFiltrados] = useState<Campo[]>([]);
   const [salvando, setSalvando]       = useState(false);
   const [erro, setErro]               = useState<string | null>(null);
-  const [cupomInicial, setCupomInicial] = useState<CupomInicialDraft>({
-    habilitado: false,
-    codigo: '',
-    valor_final: '',
-  });
   const [bannerPreview, setBannerPreview] = useState('');
   const [bannerUploading, setBannerUploading] = useState(false);
   const [bannerUploadErro, setBannerUploadErro] = useState<string | null>(null);
@@ -285,15 +202,6 @@ export default function NovoEventoPage() {
       setForm(f => ({ ...f, departamento: perfil.departamentoUsuario! }));
     }
   }, [perfil.loading, perfil.isDeptAdmin, perfil.departamentoUsuario]);
-
-  // Reset das configs AGO ao trocar departamento
-  useEffect(() => {
-    if (form.departamento !== 'AGO') {
-      setAgoCategorias(AGO_CATEGORIAS_DEFAULT.map(c => ({ ...c })));
-      setAgoHospConfig({ ...AGO_HOSP_DEFAULT });
-      setSavedSetorSnapshots({});
-    }
-  }, [form.departamento]);
 
   // Filtra campos pela supervisão selecionada
   useEffect(() => {
@@ -396,23 +304,6 @@ export default function NovoEventoPage() {
     if (perfil.isDeptAdmin && perfil.departamentoUsuario && form.departamento !== perfil.departamentoUsuario)
       return setErro(`Você só pode criar eventos para o departamento ${perfil.departamentoUsuario}.`);
 
-    const valorBaseCupom = parseFloat(form.valor_inscricao) || 0;
-    const valorFinalCupom = parseFloat(cupomInicial.valor_final) || 0;
-    if (cupomInicial.habilitado) {
-      if (isAGO || form.usar_tipos_inscricao) {
-        return setErro('Cupom inicial com valor final só está disponível para evento com valor único de inscrição.');
-      }
-      if (valorBaseCupom <= 0) {
-        return setErro('Defina um valor de inscrição maior que zero para usar cupom inicial.');
-      }
-      if (!cupomInicial.codigo.trim()) {
-        return setErro('Informe o código do cupom inicial.');
-      }
-      if (valorFinalCupom < 0 || valorFinalCupom >= valorBaseCupom) {
-        return setErro('O valor com cupom deve ser menor que o valor da inscrição e não pode ser negativo.');
-      }
-    }
-
     setSalvando(true);
     try {
       const payload = normalizePayloadUppercase({
@@ -427,9 +318,9 @@ export default function NovoEventoPage() {
         cidade:                 form.cidade.trim()    || null,
         supervisao_id:          form.supervisao_id    || null,
         campo_id:               form.campo_id         || null,
-        valor_inscricao:        (form.usar_tipos_inscricao || isAGO) ? 0 : (parseFloat(form.valor_inscricao) || 0),
-        usar_tipos_inscricao:   form.usar_tipos_inscricao || isAGO,
-        permite_hospedagem:     isAGO ? true : form.permite_hospedagem,
+        valor_inscricao:        form.usar_tipos_inscricao ? 0 : (parseFloat(form.valor_inscricao) || 0),
+        usar_tipos_inscricao:   form.usar_tipos_inscricao,
+        permite_hospedagem:     form.permite_hospedagem,
         permite_alimentacao:    form.permite_alimentacao,
         permite_brinde:         form.permite_brinde,
         gerar_certificado:      form.gerar_certificado,
@@ -443,7 +334,6 @@ export default function NovoEventoPage() {
         limite_brindes:         form.limite_brindes ? parseInt(form.limite_brindes) : null,
         publico_alvo:           form.publico_alvo.trim() || null,
         status:                 form.status,
-        configuracoes_ago:      isAGO ? { ...agoHospConfig, enabled: true, campo_missionario: agoHospConfig.habilitar_desconto_campo_missionario ? { enabled: true, valor_pastor_presidente: parseFloat(agoHospConfig.valor_pastor_presidente_campo_missionario) || 0, valor_esposa: parseFloat(agoHospConfig.valor_esposa_campo_missionario) || 0 } : null } : null,
       });
 
       const { data: novoEvento, error } = await supabase
@@ -453,31 +343,8 @@ export default function NovoEventoPage() {
         .single();
       if (error) throw error;
 
-      // Salva tipos AGO
-      if (isAGO && novoEvento) {
-        const tiposAGO = agoCategorias
-          .filter(c => c.ativo)
-          .map((c, i) => ({
-            nome: c.nome.trim() || `Categoria ${i + 1}`,
-            valor: c.cortesia ? 0 : (parseFloat(c.valor_str) || 0),
-            inclui_alimentacao: c.inclui_alimentacao,
-            inclui_hospedagem: true,
-            cortesia: c.cortesia,
-            limite_vagas: c.limite_vagas_str ? parseInt(c.limite_vagas_str) : null,
-            quantidade_refeicoes: c.inclui_alimentacao ? (parseInt(c.quantidade_refeicoes_str) || 0) : 0,
-            administrativo: !!c.administrativo,
-            ativo: true,
-            ordem: i + 1,
-          }));
-        await fetch(`/api/eventos/${novoEvento.id}/tipos-inscricao`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tipos: tiposAGO }),
-        });
-      }
-
-      // Salva tipos de inscrição genéricos se a opção estiver ativa (e não for AGO)
-      if (!isAGO && form.usar_tipos_inscricao && novoEvento) {
+      // Salva tipos de inscrição se a opção estiver ativa
+      if (form.usar_tipos_inscricao && novoEvento) {
         const unique = new Map<string, TipoDraft>();
         for (const t of tiposDraft.filter(tp => tp.ativo)) {
           const key = `${t.nome.trim().toLowerCase()}|${t.inclui_alimentacao ? 1 : 0}|${t.inclui_hospedagem ? 1 : 0}`;
@@ -488,7 +355,6 @@ export default function NovoEventoPage() {
             valor: parseFloat(t.valor) || 0,
             inclui_alimentacao: t.inclui_alimentacao,
             inclui_hospedagem:  t.inclui_hospedagem,
-            quantidade_refeicoes: t.inclui_alimentacao ? (parseInt(t.quantidade_refeicoes_str) || 0) : 0,
             ativo: t.ativo,
             ordem: i + 1,
           }));
@@ -497,29 +363,6 @@ export default function NovoEventoPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tipos: tiposPayload }),
         });
-      }
-
-      // Salva cupom inicial (valor final informado -> desconto em R$ fixo)
-      if (novoEvento && cupomInicial.habilitado) {
-        const valorBase = parseFloat(form.valor_inscricao) || 0;
-        const valorFinal = parseFloat(cupomInicial.valor_final) || 0;
-        const desconto = Math.max(0, Math.round((valorBase - valorFinal) * 100) / 100);
-
-        const cupomRes = await fetch(`/api/eventos/${novoEvento.id}/cupons`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            codigo: cupomInicial.codigo.trim().toUpperCase(),
-            tipo: 'valor_fixo',
-            valor: desconto,
-            ativo: true,
-          }),
-        });
-
-        if (!cupomRes.ok) {
-          const cupomJson = await cupomRes.json().catch(() => null as any);
-          throw new Error(cupomJson?.error || 'Evento criado, mas não foi possível salvar o cupom inicial.');
-        }
       }
 
       router.push('/eventos');
@@ -791,303 +634,111 @@ export default function NovoEventoPage() {
           <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
             <span className="text-[#F39C12] text-xl">🎟️</span>
             <h2 className="text-base font-bold text-[#123b63]">Inscrições</h2>
-            {isAGO && (
-              <span className="ml-auto text-xs font-bold bg-amber-100 text-amber-700 border border-amber-300 px-2 py-0.5 rounded-full">
-                Formato AGO
-              </span>
-            )}
           </div>
           <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
 
-            {/* ── Categorias AGO ────────────────────────────────── */}
-            {isAGO ? (
+            {/* Toggle: valor único ou tipos */}
+            <div className="md:col-span-2">
+              <CheckboxField
+                name="usar_tipos_inscricao"
+                label="Usar tipos de inscrição (Plenárias, Alimentação, Hospedagem)"
+                checked={form.usar_tipos_inscricao}
+              />
+              <p className="mt-1 text-xs text-gray-400 ml-7">
+                {form.usar_tipos_inscricao
+                  ? 'Configure abaixo os tipos disponíveis para os inscritos escolherem.'
+                  : 'Todos os inscritos pagam o mesmo valor.'}
+              </p>
+            </div>
+
+            {/* Valor único — exibido quando NÃO usa tipos */}
+            {!form.usar_tipos_inscricao && (
+              <div>
+                <label className={labelClass} htmlFor="valor_inscricao">Valor da Inscrição (R$)</label>
+                <input
+                  id="valor_inscricao" name="valor_inscricao" type="number"
+                  min="0" step="0.01"
+                  value={form.valor_inscricao} onChange={handleText}
+                  className={inputClass}
+                />
+              </div>
+            )}
+
+            {/* Editor de tipos — exibido quando usa tipos */}
+            {form.usar_tipos_inscricao && (
               <div className="md:col-span-2">
-                <div className="flex items-center justify-between mb-3">
-                  <p className={labelClass}>Categorias de Inscrição (AGO)</p>
-                  <button
-                    type="button"
-                    onClick={() => setAgoCategorias(AGO_CATEGORIAS_DEFAULT.map(c => ({ ...c })))}
-                    className="text-xs text-[#123b63] underline hover:no-underline"
-                  >
-                    Restaurar padrões
-                  </button>
-                </div>
-                <div className="border border-gray-200 rounded-xl overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 text-xs font-semibold text-gray-500 uppercase">
-                      <tr>
-                        <th className="px-3 py-2 text-left">Ativo</th>
-                        <th className="px-3 py-2 text-left">Categoria</th>
-                        <th className="px-3 py-2 text-left">Valor (R$)</th>
-                        <th className="px-3 py-2 text-left">Cortesia</th>
-                        <th className="px-3 py-2 text-left">Limite Vagas</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {agoCategorias.map((cat, i) => (
-                        <tr key={cat.key} className={`${cat.ativo ? 'bg-white' : 'bg-gray-50 opacity-60'} ${cat.administrativo ? 'bg-purple-50' : ''}`}>
-                          <td className="px-3 py-2">
-                            <input
-                              type="checkbox"
-                              checked={cat.ativo}
-                              onChange={e => setAgoCategorias(prev => prev.map((c, j) => j === i ? { ...c, ativo: e.target.checked } : c))}
-                              className="w-4 h-4 accent-[#123b63]"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            {cat.administrativo ? (
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm text-gray-700">{cat.nome}</span>
-                                <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 border border-purple-300 rounded-full whitespace-nowrap">🔒 Automática</span>
-                              </div>
-                            ) : (
-                              <input
-                                value={cat.nome}
-                                onChange={e => setAgoCategorias(prev => prev.map((c, j) => j === i ? { ...c, nome: e.target.value } : c))}
-                                className="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
-                                disabled={!cat.ativo}
-                              />
-                            )}
-                          </td>
-                          <td className="px-3 py-2 w-28">
-                            {cat.administrativo ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-bold rounded-full border border-purple-300 whitespace-nowrap">
-                                config. CM
-                              </span>
-                            ) : cat.cortesia ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-bold rounded-full border border-green-300">
-                                🎁 Cortesia
-                              </span>
-                            ) : (
-                              <input
-                                type="number" min="0" step="0.01"
-                                value={cat.valor_str}
-                                onChange={e => setAgoCategorias(prev => prev.map((c, j) => j === i ? { ...c, valor_str: e.target.value } : c))}
-                                className="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
-                                disabled={!cat.ativo}
-                              />
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            <input
-                              type="checkbox"
-                              checked={cat.cortesia}
-                              onChange={e => setAgoCategorias(prev => prev.map((c, j) => j === i ? { ...c, cortesia: e.target.checked, valor_str: e.target.checked ? '0.00' : c.valor_str } : c))}
-                              className="w-4 h-4 accent-green-600"
-                              disabled={!cat.ativo || !!cat.administrativo}
-                            />
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            <input
-                              type="checkbox"
-                              checked={cat.inclui_alimentacao}
-                              onChange={e => setAgoCategorias(prev => prev.map((c, j) => j === i ? { ...c, inclui_alimentacao: e.target.checked, quantidade_refeicoes_str: e.target.checked ? (c.quantidade_refeicoes_str || '15') : '0' } : c))}
-                              className="w-4 h-4 accent-orange-500"
-                              disabled={!cat.ativo}
-                            />
-                          </td>
-                          <td className="px-3 py-2 w-20">
-                            {cat.inclui_alimentacao ? (
-                              <input
-                                type="number" min="1" step="1"
-                                value={cat.quantidade_refeicoes_str}
-                                onChange={e => setAgoCategorias(prev => prev.map((c, j) => j === i ? { ...c, quantidade_refeicoes_str: e.target.value } : c))}
-                                className="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
-                                disabled={!cat.ativo}
-                                placeholder="15"
-                              />
-                            ) : (
-                              <span className="text-gray-300 text-xs">—</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 w-28">
-                            <input
-                              type="number" min="1" step="1"
-                              value={cat.limite_vagas_str}
-                              onChange={e => setAgoCategorias(prev => prev.map((c, j) => j === i ? { ...c, limite_vagas_str: e.target.value } : c))}
-                              placeholder="∞"
-                              className="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
-                              disabled={!cat.ativo}
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <p className={labelClass}>Tipos de Inscrição</p>
+                <div className="space-y-3 mt-2">
+                  {tiposDraft.map((tipo, i) => (
+                    <div
+                      key={i}
+                      className={`border rounded-xl p-4 transition ${tipo.ativo ? 'border-gray-200 bg-white' : 'border-gray-100 bg-gray-50 opacity-60'}`}
+                    >
+                      <div className="flex flex-wrap items-center gap-3">
+                        {/* Ativo */}
+                        <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+                          <input
+                            type="checkbox"
+                            checked={tipo.ativo}
+                            onChange={e => setTiposDraft(prev => prev.map((t, j) => j === i ? { ...t, ativo: e.target.checked } : t))}
+                            className="w-4 h-4 accent-[#123b63]"
+                          />
+                          <span className="text-xs font-semibold text-gray-600">Ativo</span>
+                        </label>
+
+                        {/* Nome */}
+                        <input
+                          value={tipo.nome}
+                          onChange={e => setTiposDraft(prev => prev.map((t, j) => j === i ? { ...t, nome: e.target.value } : t))}
+                          className="flex-1 min-w-[180px] border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                          placeholder="Nome do tipo"
+                          disabled={!tipo.ativo}
+                        />
+
+                        {/* Valor */}
+                        <div className="flex items-center gap-1 w-32">
+                          <span className="text-xs text-gray-400 shrink-0">R$</span>
+                          <input
+                            type="number" min="0" step="0.01"
+                            value={tipo.valor}
+                            onChange={e => setTiposDraft(prev => prev.map((t, j) => j === i ? { ...t, valor: e.target.value } : t))}
+                            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                            placeholder="0.00"
+                            disabled={!tipo.ativo}
+                          />
+                        </div>
+
+                        {/* Inclui Alimentação */}
+                        <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+                          <input
+                            type="checkbox"
+                            checked={tipo.inclui_alimentacao}
+                            onChange={e => setTiposDraft(prev => prev.map((t, j) => j === i ? { ...t, inclui_alimentacao: e.target.checked } : t))}
+                            className="w-4 h-4 accent-[#123b63]"
+                            disabled={!tipo.ativo}
+                          />
+                          <span className="text-xs text-gray-600">🍽️ Alimentação</span>
+                        </label>
+
+                        {/* Inclui Hospedagem */}
+                        <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+                          <input
+                            type="checkbox"
+                            checked={tipo.inclui_hospedagem}
+                            onChange={e => setTiposDraft(prev => prev.map((t, j) => j === i ? { ...t, inclui_hospedagem: e.target.checked } : t))}
+                            className="w-4 h-4 accent-[#123b63]"
+                            disabled={!tipo.ativo}
+                          />
+                          <span className="text-xs text-gray-600">🏨 Hospedagem</span>
+                        </label>
+                      </div>
+                    </div>
+                  ))}
                 </div>
                 <p className="mt-2 text-xs text-gray-400">
-                  Categorias com <strong>Cortesia</strong> são inscrições gratuitas (Jubilado, Viúva, etc.). Deixe Limite de Vagas vazio para ilimitado.
+                  Ative apenas os tipos que o evento oferece. Hospedagem e alimentação são marcadas automaticamente na inscrição conforme o tipo escolhido.
                 </p>
               </div>
-            ) : (
-              <>
-                {/* Toggle: valor único ou tipos */}
-                <div className="md:col-span-2">
-                  <CheckboxField
-                    name="usar_tipos_inscricao"
-                    label="Usar tipos de inscrição (Plenárias, Alimentação, Hospedagem)"
-                    checked={form.usar_tipos_inscricao}
-                  />
-                  <p className="mt-1 text-xs text-gray-400 ml-7">
-                    {form.usar_tipos_inscricao
-                      ? 'Configure abaixo os tipos disponíveis para os inscritos escolherem.'
-                      : 'Todos os inscritos pagam o mesmo valor.'}
-                  </p>
-                </div>
-
-                {/* Valor único — exibido quando NÃO usa tipos */}
-                {!form.usar_tipos_inscricao && (
-                  <div>
-                    <label className={labelClass} htmlFor="valor_inscricao">Valor da Inscrição (R$)</label>
-                    <input
-                      id="valor_inscricao" name="valor_inscricao" type="number"
-                      min="0" step="0.01"
-                      value={form.valor_inscricao} onChange={handleText}
-                      className={inputClass}
-                    />
-                  </div>
-                )}
-
-                {!isAGO && !form.usar_tipos_inscricao && (
-                  <div className="md:col-span-2 border border-gray-200 rounded-xl p-4 bg-gray-50">
-                    <label className="flex items-center gap-2 mb-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={cupomInicial.habilitado}
-                        onChange={e => setCupomInicial(prev => ({
-                          ...prev,
-                          habilitado: e.target.checked,
-                          codigo: e.target.checked ? prev.codigo : '',
-                          valor_final: e.target.checked ? prev.valor_final : '',
-                        }))}
-                        className="w-4 h-4 accent-[#123b63]"
-                      />
-                      <span className="text-sm font-semibold text-gray-700">Configurar cupom inicial para inscrição pública</span>
-                    </label>
-
-                    {cupomInicial.habilitado && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                          <label className={labelClass}>Código do cupom</label>
-                          <input
-                            value={cupomInicial.codigo}
-                            onChange={e => setCupomInicial(prev => ({ ...prev, codigo: e.target.value.toUpperCase() }))}
-                            placeholder="EX: ABERTURA2026"
-                            className={inputClass + ' uppercase'}
-                          />
-                        </div>
-                        <div>
-                          <label className={labelClass}>Valor da inscrição com cupom (R$)</label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={cupomInicial.valor_final}
-                            onChange={e => setCupomInicial(prev => ({ ...prev, valor_final: e.target.value }))}
-                            placeholder="Ex: 120.00"
-                            className={inputClass}
-                          />
-                        </div>
-                        <p className="md:col-span-2 text-xs text-gray-500">
-                          Se não configurar este cupom inicial, o card de cupom não será exibido na página pública do evento.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Editor de tipos — exibido quando usa tipos */}
-                {form.usar_tipos_inscricao && (
-                  <div className="md:col-span-2">
-                    <p className={labelClass}>Tipos de Inscrição</p>
-                    <div className="space-y-3 mt-2">
-                      {tiposDraft.map((tipo, i) => (
-                        <div
-                          key={i}
-                          className={`border rounded-xl p-4 transition ${tipo.ativo ? 'border-gray-200 bg-white' : 'border-gray-100 bg-gray-50 opacity-60'}`}
-                        >
-                          <div className="flex flex-wrap items-center gap-3">
-                            {/* Ativo */}
-                            <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
-                              <input
-                                type="checkbox"
-                                checked={tipo.ativo}
-                                onChange={e => setTiposDraft(prev => prev.map((t, j) => j === i ? { ...t, ativo: e.target.checked } : t))}
-                                className="w-4 h-4 accent-[#123b63]"
-                              />
-                              <span className="text-xs font-semibold text-gray-600">Ativo</span>
-                            </label>
-
-                            {/* Nome */}
-                            <input
-                              value={tipo.nome}
-                              onChange={e => setTiposDraft(prev => prev.map((t, j) => j === i ? { ...t, nome: e.target.value } : t))}
-                              className="flex-1 min-w-[180px] border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
-                              placeholder="Nome do tipo"
-                              disabled={!tipo.ativo}
-                            />
-
-                            {/* Valor */}
-                            <div className="flex items-center gap-1 w-32">
-                              <span className="text-xs text-gray-400 shrink-0">R$</span>
-                              <input
-                                type="number" min="0" step="0.01"
-                                value={tipo.valor}
-                                onChange={e => setTiposDraft(prev => prev.map((t, j) => j === i ? { ...t, valor: e.target.value } : t))}
-                                className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
-                                placeholder="0.00"
-                                disabled={!tipo.ativo}
-                              />
-                            </div>
-
-                            {/* Inclui Alimentação */}
-                            <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
-                              <input
-                                type="checkbox"
-                                checked={tipo.inclui_alimentacao}
-                                onChange={e => setTiposDraft(prev => prev.map((t, j) => j === i ? { ...t, inclui_alimentacao: e.target.checked } : t))}
-                                className="w-4 h-4 accent-[#123b63]"
-                                disabled={!tipo.ativo}
-                              />
-                              <span className="text-xs text-gray-600">🍽️ Alimentação</span>
-                            </label>
-
-                            {/* Quantidade refeições */}
-                            {tipo.inclui_alimentacao && (
-                              <div className="flex items-center gap-1 w-28 shrink-0">
-                                <span className="text-xs text-gray-400 shrink-0">Ref.:</span>
-                                <input
-                                  type="number" min="1" step="1"
-                                  value={tipo.quantidade_refeicoes_str}
-                                  onChange={e => setTiposDraft(prev => prev.map((t, j) => j === i ? { ...t, quantidade_refeicoes_str: e.target.value } : t))}
-                                  className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]"
-                                  placeholder="15"
-                                  disabled={!tipo.ativo}
-                                />
-                              </div>
-                            )}
-
-                            {/* Inclui Hospedagem */}
-                            <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
-                              <input
-                                type="checkbox"
-                                checked={tipo.inclui_hospedagem}
-                                onChange={e => setTiposDraft(prev => prev.map((t, j) => j === i ? { ...t, inclui_hospedagem: e.target.checked } : t))}
-                                className="w-4 h-4 accent-[#123b63]"
-                                disabled={!tipo.ativo}
-                              />
-                              <span className="text-xs text-gray-600">🏨 Hospedagem</span>
-                            </label>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <p className="mt-2 text-xs text-gray-400">
-                      Ative apenas os tipos que o evento oferece. Hospedagem e alimentação são marcadas automaticamente na inscrição conforme o tipo escolhido.
-                    </p>
-                  </div>
-                )}
-              </>
             )}
 
             <div>
@@ -1101,7 +752,7 @@ export default function NovoEventoPage() {
               />
             </div>
 
-            {(form.permite_hospedagem || isAGO) && (
+            {form.permite_hospedagem && (
               <div>
                 <label className={labelClass} htmlFor="limite_hospedagem">Limite de Vagas — Hospedagem</label>
                 <input
@@ -1131,399 +782,20 @@ export default function NovoEventoPage() {
             <div className="md:col-span-2">
               <p className={labelClass}>Serviços incluídos</p>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-2">
-                {!isAGO && !form.usar_tipos_inscricao && (
-                  <CheckboxField name="permite_hospedagem"  label="Hospedagem"  checked={form.permite_hospedagem}  />
-                )}
+                <CheckboxField name="permite_hospedagem"  label="Hospedagem"  checked={form.permite_hospedagem}  />
                 <CheckboxField name="permite_alimentacao" label="Alimentação"  checked={form.permite_alimentacao} />
                 <CheckboxField name="permite_brinde"      label="Brinde"       checked={form.permite_brinde}      />
                 <CheckboxField name="gerar_certificado"   label="Certificado"  checked={form.gerar_certificado}   />
               </div>
             </div>
 
+            {/* Inscrições abertas */}
+            <div className="md:col-span-2">
+              <CheckboxField name="inscricoes_abertas" label="Inscrições abertas ao público" checked={form.inscricoes_abertas} />
+            </div>
+
           </div>
         </div>
-
-        {/* ── SEÇÃO 4.5: Configurações de Hospedagem AGO ──────── */}
-        {isAGO && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl shadow-sm mb-6">
-            <div className="px-6 py-4 border-b border-amber-200 flex items-center gap-3">
-              <span className="text-amber-600 text-xl">🏨</span>
-              <h2 className="text-base font-bold text-amber-800">Configurações de Hospedagem (AGO)</h2>
-            </div>
-            <div className="p-6 space-y-5">
-
-              {/* Grupos de hospedagem */}
-              <div>
-                <p className="text-sm font-semibold text-amber-800 mb-2">Grupos de Alocação</p>
-                <div className="space-y-2">
-                  {agoHospConfig.grupos.map((grupo, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <input
-                        value={grupo}
-                        onChange={e => setAgoHospConfig(c => {
-                          const grupos = [...c.grupos];
-                          grupos[i] = e.target.value;
-                          return { ...c, grupos };
-                        })}
-                        className="flex-1 border border-amber-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                        placeholder={`Grupo ${i + 1}`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setAgoHospConfig(c => ({ ...c, grupos: c.grupos.filter((_, j) => j !== i) }))}
-                        className="text-red-400 hover:text-red-600 text-lg leading-none px-1"
-                        title="Remover grupo"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setAgoHospConfig(c => ({ ...c, grupos: [...c.grupos, ''] }))}
-                  className="mt-2 text-xs text-amber-700 underline hover:no-underline"
-                >
-                  + Adicionar grupo
-                </button>
-              </div>
-
-              {/* Preferências de leito */}
-              <div>
-                <p className="text-sm font-semibold text-amber-800 mb-2">Preferências de Alocação</p>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={agoHospConfig.leitos_inferiores_preferenciais}
-                      onChange={e => setAgoHospConfig(c => ({ ...c, leitos_inferiores_preferenciais: e.target.checked }))}
-                      className="w-4 h-4 accent-amber-600"
-                    />
-                    <span className="text-sm text-amber-800">Permitir solicitação de <strong>cama inferior</strong> (beliche de baixo)</span>
-                  </label>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={agoHospConfig.preferencia_60_mais}
-                      onChange={e => setAgoHospConfig(c => ({ ...c, preferencia_60_mais: e.target.checked }))}
-                      className="w-4 h-4 accent-amber-600"
-                    />
-                    <span className="text-sm text-amber-800">Dar preferência de leito para <strong>60+ anos</strong></span>
-                  </label>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={agoHospConfig.preferencia_necessidade_especial}
-                      onChange={e => setAgoHospConfig(c => ({ ...c, preferencia_necessidade_especial: e.target.checked }))}
-                      className="w-4 h-4 accent-amber-600"
-                    />
-                    <span className="text-sm text-amber-800">Dar preferência para <strong>necessidades especiais de acessibilidade</strong></span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Observações */}
-              <div>
-                <label className="block text-sm font-semibold text-amber-800 mb-1">
-                  Observações / Regras de Hospedagem (exibido ao inscrito)
-                </label>
-                <textarea
-                  value={agoHospConfig.observacoes}
-                  onChange={e => setAgoHospConfig(c => ({ ...c, observacoes: e.target.value }))}
-                  rows={3}
-                  placeholder="Ex: A alocação definitiva será informada após o preenchimento de todos os inscritos. Solicitações não garantem atendimento."
-                  className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white resize-y"
-                />
-              </div>
-
-              {/* Setores de Hospedagem */}
-              <div className="border border-blue-200 rounded-xl p-4 bg-blue-50">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-sm font-bold text-blue-900">🏠 Setores de Hospedagem</p>
-                  <button
-                    type="button"
-                    onClick={() => setAgoHospConfig(c => ({
-                      ...c,
-                      setores: [...(c.setores || []), {
-                        id: `s_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-                        nome: '',
-                        grupo: 'Todos',
-                        tipos_leito: ['beliche'],
-                        quantidade_leitos: 0,
-                        quantidade_leitos_inferiores: 0,
-                        observacoes: '',
-                        ativo: true,
-                      }],
-                    }))}
-                    className="text-xs bg-blue-700 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-blue-800 transition"
-                  >
-                    + Adicionar Setor
-                  </button>
-                </div>
-
-                {/* Aviso confirmação */}
-                {(agoHospConfig.setores || []).length > 0 && (
-                  <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3 text-xs text-amber-800">
-                    <span>💡</span>
-                    <span>Confirme cada setor individualmente. Os setores serão <strong>gravados definitivamente ao clicar em &quot;Salvar Evento&quot;</strong>.</span>
-                  </div>
-                )}
-
-                {/* Resumo de leitos */}
-                {(agoHospConfig.setores || []).filter(s => s.ativo).length > 0 && (() => {
-                  const atv = (agoHospConfig.setores || []).filter(s => s.ativo);
-                  const t = {
-                    leitos:     atv.reduce((n, s) => n + (s.quantidade_leitos || 0), 0),
-                    beliche:    atv.filter(s => (s.tipos_leito||[]).includes('beliche')).reduce((n, s) => n + (s.quantidade_leitos || 0), 0),
-                    colchonete: atv.filter(s => (s.tipos_leito||[]).includes('colchonete')).reduce((n, s) => n + (s.quantidade_leitos || 0), 0),
-                    rede:       atv.filter(s => (s.tipos_leito||[]).includes('rede')).reduce((n, s) => n + (s.quantidade_leitos || 0), 0),
-                    inferiores: atv.filter(s => (s.tipos_leito||[]).includes('beliche')).reduce((n, s) => n + (s.quantidade_leitos_inferiores || 0), 0),
-                  };
-                  return (
-                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-4">
-                      {([
-                        { label: 'Setores ativos', v: atv.length,   bg: 'bg-blue-100 text-blue-900'      },
-                        { label: 'Total leitos',   v: t.leitos,     bg: 'bg-indigo-100 text-indigo-900'  },
-                        { label: 'Beliches',       v: t.beliche,    bg: 'bg-purple-100 text-purple-900'  },
-                        { label: 'Colchonetes',    v: t.colchonete, bg: 'bg-orange-100 text-orange-900'  },
-                        { label: 'Redes',          v: t.rede,       bg: 'bg-emerald-100 text-emerald-900'},
-                        { label: 'L. inferiores',  v: t.inferiores, bg: 'bg-pink-100 text-pink-900'      },
-                      ] as { label: string; v: number; bg: string }[]).map(card => (
-                        <div key={card.label} className={`rounded-lg p-2 text-center ${card.bg}`}>
-                          <div className="text-xl font-bold leading-tight">{card.v}</div>
-                          <div className="text-xs leading-tight mt-0.5">{card.label}</div>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
-
-                {(agoHospConfig.setores || []).length === 0 && (
-                  <p className="text-xs text-blue-600 text-center py-4 italic">Nenhum setor cadastrado. Clique em "+ Adicionar Setor" para iniciar.</p>
-                )}
-
-                <div className="space-y-3">
-                  {(agoHospConfig.setores || []).map((setor, idx) => (
-                    <div key={setor.id} className={`rounded-xl border p-4 bg-white transition-colors${!setor.ativo ? ' opacity-60' : ''}${(() => { const snap = savedSetorSnapshots[setor.id]; return (!snap || snap !== JSON.stringify(setor)) ? ' border-yellow-400' : ' border-green-400'; })()}`}>
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">
-                            Setor #{idx + 1}{!setor.ativo && <span className="text-red-400 ml-2 normal-case">(inativo)</span>}
-                          </span>
-                          {(() => { const snap = savedSetorSnapshots[setor.id]; return (!snap || snap !== JSON.stringify(setor)) ? (
-                            <span className="text-xs bg-yellow-100 text-yellow-800 border border-yellow-300 px-2 py-0.5 rounded-full font-semibold">⚠ Não confirmado</span>
-                          ) : (
-                            <span className="text-xs bg-green-100 text-green-800 border border-green-300 px-2 py-0.5 rounded-full font-semibold">✓ Confirmado</span>
-                          ); })()}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSavedSetorSnapshots(snaps => { const n = { ...snaps }; delete n[setor.id]; return n; });
-                            setAgoHospConfig(c => ({ ...c, setores: (c.setores || []).filter((_, j) => j !== idx) }));
-                          }}
-                          className="text-xs text-red-500 hover:text-red-700 font-semibold"
-                        >✕ Remover</button>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="sm:col-span-2">
-                          <label className="block text-xs font-semibold text-gray-700 mb-1">Nome do Setor *</label>
-                          <input
-                            type="text"
-                            value={setor.nome}
-                            onChange={e => setAgoHospConfig(c => { const s = [...(c.setores||[])]; s[idx] = { ...s[idx], nome: e.target.value }; return { ...c, setores: s }; })}
-                            placeholder="Ex: Alojamento Masculino 01, Ginásio, Sala 03"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-1">Grupo Permitido</label>
-                          <select
-                            value={setor.grupo}
-                            onChange={e => setAgoHospConfig(c => { const s = [...(c.setores||[])]; s[idx] = { ...s[idx], grupo: e.target.value }; return { ...c, setores: s }; })}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                          >
-                            <option value="Todos">Todos</option>
-                            {agoHospConfig.grupos.map(g => <option key={g} value={g}>{g}</option>)}
-                          </select>
-                        </div>
-                        <div className="sm:col-span-2">
-                          <label className="block text-xs font-semibold text-gray-700 mb-1">Tipos de Leito</label>
-                          <div className="flex flex-wrap gap-4 mt-1">
-                            {(['beliche', 'colchonete', 'rede'] as const).map(tipo => (
-                              <label key={tipo} className="flex items-center gap-2 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={(setor.tipos_leito || []).includes(tipo)}
-                                  onChange={e => {
-                                    const atual = setor.tipos_leito || [];
-                                    const novo = e.target.checked ? [...atual, tipo] : atual.filter(t => t !== tipo);
-                                    setAgoHospConfig(c => { const s = [...(c.setores||[])]; s[idx] = { ...s[idx], tipos_leito: novo, quantidade_leitos_inferiores: !novo.includes('beliche') ? 0 : s[idx].quantidade_leitos_inferiores }; return { ...c, setores: s }; });
-                                  }}
-                                  className="w-4 h-4 accent-blue-700"
-                                />
-                                <span className="text-sm text-gray-700 capitalize">{tipo}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-1">Quantidade de Leitos *</label>
-                          <input
-                            type="number"
-                            min="1"
-                            value={setor.quantidade_leitos || ''}
-                            onChange={e => {
-                              const v = Math.max(0, parseInt(e.target.value) || 0);
-                              setAgoHospConfig(c => { const s = [...(c.setores||[])]; s[idx] = { ...s[idx], quantidade_leitos: v, quantidade_leitos_inferiores: Math.min(s[idx].quantidade_leitos_inferiores, v) }; return { ...c, setores: s }; });
-                            }}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                          />
-                        </div>
-                        {(setor.tipos_leito || []).includes('beliche') ? (
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1">Leitos Inferiores (beliches de baixo)</label>
-                            <input
-                              type="number"
-                              min="0"
-                              max={setor.quantidade_leitos}
-                              value={setor.quantidade_leitos_inferiores || ''}
-                              onChange={e => {
-                                const v = Math.min(Math.max(0, parseInt(e.target.value) || 0), setor.quantidade_leitos);
-                                setAgoHospConfig(c => { const s = [...(c.setores||[])]; s[idx] = { ...s[idx], quantidade_leitos_inferiores: v }; return { ...c, setores: s }; });
-                              }}
-                              className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                            />
-                          </div>
-                        ) : <div />}
-                        <div className="sm:col-span-2">
-                          <label className="block text-xs font-semibold text-gray-700 mb-1">Observações internas</label>
-                          <input
-                            type="text"
-                            value={setor.observacoes}
-                            onChange={e => setAgoHospConfig(c => { const s = [...(c.setores||[])]; s[idx] = { ...s[idx], observacoes: e.target.value }; return { ...c, setores: s }; })}
-                            placeholder="Ex: Sem ventilação, acesso por rampa..."
-                            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                          />
-                        </div>
-                        <div className="sm:col-span-2 flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            id={`ativo-${setor.id}`}
-                            checked={setor.ativo}
-                            onChange={e => setAgoHospConfig(c => { const s = [...(c.setores||[])]; s[idx] = { ...s[idx], ativo: e.target.checked }; return { ...c, setores: s }; })}
-                            className="w-4 h-4 accent-blue-700"
-                          />
-                          <label htmlFor={`ativo-${setor.id}`} className="text-xs text-gray-700 cursor-pointer">Setor ativo (participa da alocação)</label>
-                        </div>
-                        <div className="sm:col-span-2 flex items-center justify-between pt-3 border-t border-gray-100 mt-1">
-                          <p className="text-xs text-gray-400 italic">Confirme o setor; os dados serão gravados ao salvar o evento.</p>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!setor.nome.trim()) { alert('O Nome do Setor é obrigatório.'); return; }
-                              if (!setor.quantidade_leitos || setor.quantidade_leitos < 1) { alert('Informe a Quantidade de Leitos (mínimo 1).'); return; }
-                              setSavedSetorSnapshots(snaps => ({ ...snaps, [setor.id]: JSON.stringify(setor) }));
-                            }}
-                            className="text-xs bg-blue-700 hover:bg-blue-800 text-white px-4 py-1.5 rounded-lg font-bold transition"
-                          >✔ Confirmar setor</button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Controle de Plenárias */}
-              <div>
-                <p className="block text-sm font-semibold text-amber-800 mb-2">Controle de Plenárias AGO</p>
-                <label className="flex items-center gap-3 cursor-pointer mb-3">
-                  <input
-                    type="checkbox"
-                    checked={agoHospConfig.habilitar_controle_plenarias}
-                    onChange={e => setAgoHospConfig(c => ({ ...c, habilitar_controle_plenarias: e.target.checked }))}
-                    className="w-4 h-4 accent-[#123b63]"
-                  />
-                  <span className="text-sm text-gray-700">Habilitar controle de frequência nas plenárias</span>
-                </label>
-                {agoHospConfig.habilitar_controle_plenarias && (
-                  <div className="pl-2 space-y-2">
-                    <p className="text-xs text-gray-500 mb-1">Datas das sessões plenárias (para registro de presença):</p>
-                    {agoHospConfig.plenarias_datas.map((d, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <input
-                          type="date"
-                          value={d}
-                          onChange={e => setAgoHospConfig(c => {
-                            const arr = [...c.plenarias_datas];
-                            arr[i] = e.target.value;
-                            return { ...c, plenarias_datas: arr };
-                          })}
-                          className="border border-amber-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setAgoHospConfig(c => ({ ...c, plenarias_datas: c.plenarias_datas.filter((_, j) => j !== i) }))}
-                          className="text-red-400 hover:text-red-600 text-lg leading-none"
-                        >×</button>
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setAgoHospConfig(c => ({ ...c, plenarias_datas: [...c.plenarias_datas, ''] }))}
-                      className="text-xs text-[#123b63] underline hover:no-underline"
-                    >+ Adicionar data de plenária</button>
-                  </div>
-                )}
-              </div>
-
-              {/* Desconto Campo Missionário */}
-              <div className="border border-green-200 rounded-xl p-4 bg-green-50">
-                <p className="block text-sm font-semibold text-green-800 mb-2">🏷 Desconto — Campo Missionário</p>
-                <p className="text-xs text-green-700 mb-3">Quando habilitado, Pastores Presidentes pertencentes a um Campo Missionário recebem um valor diferenciado automaticamente.</p>
-                <label className="flex items-center gap-3 cursor-pointer mb-3">
-                  <input
-                    type="checkbox"
-                    checked={agoHospConfig.habilitar_desconto_campo_missionario}
-                    onChange={e => setAgoHospConfig(c => ({ ...c, habilitar_desconto_campo_missionario: e.target.checked }))}
-                    className="w-4 h-4 accent-green-700"
-                  />
-                  <span className="text-sm text-gray-700">Habilitar desconto para Pastor Presidente de Campo Missionário</span>
-                </label>
-                {agoHospConfig.habilitar_desconto_campo_missionario && (
-                  <div className="pl-2 space-y-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">Valor especial — Pastor Presidente (R$)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={agoHospConfig.valor_pastor_presidente_campo_missionario}
-                        onChange={e => setAgoHospConfig(c => ({ ...c, valor_pastor_presidente_campo_missionario: e.target.value }))}
-                        className="border border-green-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-600 bg-white w-40"
-                        placeholder="210.00"
-                      />
-                      <p className="mt-1 text-xs text-green-700">Substitui o valor padrão de Pastor Presidente quando o campo é missionário.</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">Valor especial — Esposa de Pastor Presidente (R$)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={agoHospConfig.valor_esposa_campo_missionario}
-                        onChange={e => setAgoHospConfig(c => ({ ...c, valor_esposa_campo_missionario: e.target.value }))}
-                        className="border border-green-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-600 bg-white w-40"
-                        placeholder="210.00"
-                      />
-                      <p className="mt-1 text-xs text-green-700">Quando o pastor inclui a esposa, este é o valor cobrado por ela.</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* ── SEÇÃO 5: Comunicação ───────────────────────────── */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">

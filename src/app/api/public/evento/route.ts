@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   const supabase = createServerClient();
   const { data: evento, error } = await supabase
     .from('eventos')
-    .select('id,nome,slug,descricao,departamento,data_inicio,data_fim,local,cidade,banner_url,valor_inscricao,permite_hospedagem,permite_alimentacao,permite_brinde,gerar_certificado,link_whatsapp,mensagem_confirmacao,inscricoes_abertas,limite_vagas,limite_hospedagem,limite_brindes,publico_alvo,usar_tipos_inscricao,status,suporte_nome,suporte_whatsapp,configuracoes_ago')
+    .select('id,nome,slug,descricao,departamento,data_inicio,data_fim,local,cidade,banner_url,valor_inscricao,permite_hospedagem,permite_alimentacao,permite_brinde,gerar_certificado,link_whatsapp,mensagem_confirmacao,inscricoes_abertas,limite_vagas,limite_hospedagem,limite_brindes,publico_alvo,usar_tipos_inscricao,status,suporte_nome,suporte_whatsapp')
     .eq('slug', slug)
     .single();
 
@@ -22,17 +22,10 @@ export async function GET(request: NextRequest) {
 
   const { data: tipos } = await supabase
     .from('evento_tipos_inscricao')
-    .select('id,nome,valor,inclui_alimentacao,inclui_hospedagem,cortesia,limite_vagas,ordem')
+    .select('id,nome,valor,inclui_alimentacao,inclui_hospedagem,ordem')
     .eq('evento_id', evento.id)
     .eq('ativo', true)
     .order('ordem');
-
-  const { data: cuponsAtivos } = await supabase
-    .from('evento_cupons')
-    .select('id')
-    .eq('evento_id', evento.id)
-    .eq('ativo', true)
-    .limit(1);
 
   let totalInscritos: number | null = null;
   if (evento.limite_vagas) {
@@ -59,6 +52,5 @@ export async function GET(request: NextRequest) {
     tipos: tipos ?? [],
     totalInscritos,
     vagasHospedagem,
-    possuiCupomAtivo: (cuponsAtivos ?? []).length > 0,
   });
 }

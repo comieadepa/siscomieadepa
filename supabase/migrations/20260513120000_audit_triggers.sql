@@ -51,34 +51,34 @@ BEGIN
     v_old := to_jsonb(OLD) - 'password' - 'senha' - 'token' - 'cpf' - 'rg';
     v_new := NULL;
     v_email := COALESCE(
-      (to_jsonb(OLD) ->> 'email'),
-      (to_jsonb(OLD) ->> 'usuario_email')
+      (OLD::jsonb ->> 'email'),
+      (OLD::jsonb ->> 'usuario_email')
     );
     v_id := COALESCE(
-      (to_jsonb(OLD) ->> 'id'),
-      (to_jsonb(OLD) ->> 'uuid')
+      (OLD::jsonb ->> 'id'),
+      (OLD::jsonb ->> 'uuid')
     );
   ELSIF TG_OP = 'UPDATE' THEN
     v_old := to_jsonb(OLD) - 'password' - 'senha' - 'token' - 'cpf' - 'rg';
     v_new := to_jsonb(NEW) - 'password' - 'senha' - 'token' - 'cpf' - 'rg';
     v_email := COALESCE(
-      (to_jsonb(NEW) ->> 'email'),
-      (to_jsonb(NEW) ->> 'usuario_email')
+      (NEW::jsonb ->> 'email'),
+      (NEW::jsonb ->> 'usuario_email')
     );
     v_id := COALESCE(
-      (to_jsonb(NEW) ->> 'id'),
-      (to_jsonb(NEW) ->> 'uuid')
+      (NEW::jsonb ->> 'id'),
+      (NEW::jsonb ->> 'uuid')
     );
   ELSE -- INSERT
     v_old := NULL;
     v_new := to_jsonb(NEW) - 'password' - 'senha' - 'token' - 'cpf' - 'rg';
     v_email := COALESCE(
-      (to_jsonb(NEW) ->> 'email'),
-      (to_jsonb(NEW) ->> 'usuario_email')
+      (NEW::jsonb ->> 'email'),
+      (NEW::jsonb ->> 'usuario_email')
     );
     v_id := COALESCE(
-      (to_jsonb(NEW) ->> 'id'),
-      (to_jsonb(NEW) ->> 'uuid')
+      (NEW::jsonb ->> 'id'),
+      (NEW::jsonb ->> 'uuid')
     );
   END IF;
 
@@ -117,7 +117,7 @@ BEGIN
     v_email,
     v_acao,
     TG_TABLE_NAME,
-    CASE WHEN v_id IS NOT NULL THEN v_id::uuid ELSE NULL END,
+    v_id,
     v_acao,
     v_modulo,
     TG_TABLE_NAME,

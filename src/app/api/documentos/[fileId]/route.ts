@@ -1,31 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { deleteFileFromDrive, getDriveStream } from '@/lib/google-drive';
-import { requireUser } from '@/lib/auth/require-auth';
-import { canAccessModule, hasRole } from '@/lib/auth/roles';
-import { createServerClient } from '@/lib/supabase-server';
+import { requireRole } from '@/lib/auth/require-auth';
 
 export const dynamic = 'force-dynamic';
 
 const DOCUMENTOS_ROLES = ['super', 'administrador'] as const;
-
-async function requireDriveFileAccess(request: NextRequest) {
-  const auth = await requireUser(request);
-  if (!auth.ok) return auth;
-
-  const isAdmin = hasRole(auth.ctx.role, DOCUMENTOS_ROLES);
-  const secretariaAccess = canAccessModule(auth.ctx.role, 'secretaria');
-  const rawRole = String(auth.ctx.rawRole || '').toLowerCase();
-  const isConsagracaoAdmin = rawRole === 'consagracao_admin';
-
-  if (!isAdmin && !secretariaAccess && !isConsagracaoAdmin) {
-    return {
-      ok: false as const,
-      response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }),
-    };
-  }
-
-  return auth;
-}
 
 /**
  * GET /api/documentos/[fileId]
@@ -37,7 +16,7 @@ export async function GET(
   { params }: { params: Promise<{ fileId: string }> },
 ) {
   try {
-    const auth = await requireDriveFileAccess(request);
+    const auth = await requireRole(request, DOCUMENTOS_ROLES);
     if (!auth.ok) return auth.response;
     const { fileId } = await params;
 
@@ -74,26 +53,15 @@ export async function DELETE(
   { params }: { params: Promise<{ fileId: string }> },
 ) {
   try {
-    const auth = await requireDriveFileAccess(request);
+    const auth = await requireRole(request, DOCUMENTOS_ROLES);
     if (!auth.ok) return auth.response;
     const { fileId } = await params;
-    const { searchParams } = new URL(request.url);
-    const entityType = searchParams.get('entityType') || 'ministro';
-    const entityId = searchParams.get('entityId') || '';
 
     if (!fileId) {
       return NextResponse.json({ error: 'fileId obrigatório' }, { status: 400 });
     }
 
     await deleteFileFromDrive(fileId);
-
-    if (entityType === 'candidato_consagracao') {
-      const db = createServerClient();
-      let query = db.from('candidato_documentos').delete().eq('drive_file_id', fileId);
-      if (entityId) query = query.eq('candidato_id', entityId);
-      await query;
-    }
-
     return NextResponse.json({ success: true });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

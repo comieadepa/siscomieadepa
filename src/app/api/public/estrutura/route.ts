@@ -4,10 +4,6 @@ import { createServerClient } from '@/lib/supabase-server';
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const includeCongregacoes = searchParams.get('includeCongregacoes') === 'true';
-  const includeCamposInactive = searchParams.get('includeCamposInactive') === 'true';
-  // supervisao_id: quando fornecido, retorna apenas campos daquela supervisão
-  // (evita o limite de 1000 linhas do Supabase/PostgREST ao buscar on-demand)
-  const supervisaoId = searchParams.get('supervisao_id');
 
   const supabase = createServerClient();
 
@@ -15,23 +11,13 @@ export async function GET(request: NextRequest) {
     .from('supervisoes')
     .select('id,nome')
     .neq('is_active', false)
-    .order('nome')
-    .limit(9999);
+    .order('nome');
 
-  let camposBase = supabase
+  const camposQuery = supabase
     .from('campos')
-    .select('id,nome,supervisao_id,is_campo_missionario')
-    .order('nome')
-    .limit(9999);
-
-  if (supervisaoId) {
-    camposBase = camposBase.eq('supervisao_id', supervisaoId);
-  }
-  if (!includeCamposInactive) {
-    camposBase = camposBase.neq('is_active', false);
-  }
-
-  const camposQuery = camposBase;
+    .select('id,nome,supervisao_id')
+    .neq('is_active', false)
+    .order('nome');
 
   const congregacoesQuery = includeCongregacoes
     ? supabase

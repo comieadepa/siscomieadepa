@@ -41,8 +41,6 @@ export async function GET(
     return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
   }
 
-  const tipoEquipe = (equipe as { tipo?: string | null }).tipo ?? null;
-
   if (tipo === 'evento') {
     const { data: evento, error } = await supabase
       .from('eventos')
@@ -54,32 +52,10 @@ export async function GET(
       return NextResponse.json({ error: 'Evento nao encontrado.' }, { status: 404 });
     }
 
-    if ((evento as { status?: string | null }).status !== 'programado') {
-      return NextResponse.json({ error: 'Evento encerrado ou cancelado.' }, { status: 403 });
-    }
-
     return NextResponse.json({ evento });
   }
 
   if (tipo === 'inscricoes') {
-    if (tipoEquipe === 'checkin' || tipoEquipe === 'checkin_hospedagem' || tipoEquipe === 'hospedagem') {
-      return NextResponse.json({ error: 'Acesso não autorizado para esta função.' }, { status: 403 });
-    }
-
-    const { data: evento } = await supabase
-      .from('eventos')
-      .select('id,status')
-      .eq('id', eventoId)
-      .single();
-
-    if (!evento) {
-      return NextResponse.json({ error: 'Evento nao encontrado.' }, { status: 404 });
-    }
-
-    if ((evento as { status?: string | null }).status !== 'programado') {
-      return NextResponse.json({ error: 'Evento encerrado ou cancelado.' }, { status: 403 });
-    }
-
     const { data: inscricoes } = await supabase
       .from('evento_inscricoes')
       .select('*')

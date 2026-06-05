@@ -687,6 +687,9 @@ export default function InscricaoPublicaPage() {
     ? (typeof configCM.valor_esposa === 'number' ? configCM.valor_esposa : parseFloat(String(configCM.valor_esposa)) || 0)
     : 0;
 
+  const podeHospedagem = !!evento?.permite_hospedagem && (tipoSelecionado ? !!tipoSelecionado.inclui_hospedagem : !evento.usar_tipos_inscricao);
+
+
   const cupomTipo = cupomMeta?.tipo ?? null;
   const cupomValor = cupomMeta?.valor ?? 0;
   const tiposReferenciaLote = tipos;
@@ -1108,8 +1111,8 @@ export default function InscricaoPublicaPage() {
         data_nascimento: form.data_nascimento || null,
         supervisao_id:   form.supervisao_id || null,
         campo_id:        form.campo_id || null,
-        // Regra 8: AGO — hospedagem é sempre opt-in (nunca automática pelo tipo)
-        hospedagem:      evento.departamento === 'AGO' ? solicitaHospedagem : (tipoSelecionado?.inclui_hospedagem ?? form.hospedagem),
+        // Regra 8: Hospedagem é opt-in quando o evento/tipo permitir
+        hospedagem:      evento.usar_tipos_inscricao ? solicitaHospedagem : form.hospedagem,
         alimentacao:     !!tipoSelecionado?.inclui_alimentacao,
         brinde:          form.brinde,
         qr_code:         qr,
@@ -1805,29 +1808,42 @@ export default function InscricaoPublicaPage() {
               </div>
             )}
 
-            {/* Campos de hospedagem AGO */}
-            {evento.departamento === 'AGO' && evento.permite_hospedagem && (
-              <div className="mb-6">
-                {tipoSelecionado && (
-                  <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input type="checkbox" id="solicita_hospedagem"
-                        checked={solicitaHospedagem}
-                        onChange={e => setSolicitaHospedagem(e.target.checked)}
-                        className="accent-[#123b63]" />
-                      <div>
-                        <span className="text-sm font-semibold text-gray-700">🛏️ Desejo solicitar hospedagem</span>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          A solicitação não garante alocação. A organização fará a distribuição conforme disponibilidade.
-                          {vagasHospedagem !== null && ` (${vagasHospedagem} vagas restantes)`}
-                        </p>
-                      </div>
-                    </label>
-                  </div>
+            {/* Informação sobre Alimentação */}
+            {evento.usar_tipos_inscricao && tipoSelecionado && (
+              <div className="mb-5 p-3.5 bg-gray-50 rounded-xl border border-gray-200 text-xs">
+                {tipoSelecionado.inclui_alimentacao ? (
+                  <p className="text-emerald-700 font-bold flex items-center gap-1.5">
+                    🍽️ Alimentação inclusa: {tipoSelecionado.quantidade_refeicoes && tipoSelecionado.quantidade_refeicoes > 0 ? `${tipoSelecionado.quantidade_refeicoes} refeições.` : 'Alimentação inclusa nesta inscrição.'}
+                  </p>
+                ) : (
+                  <p className="text-gray-500 font-semibold flex items-center gap-1.5">
+                    🍽️ Esta categoria não inclui alimentação.
+                  </p>
                 )}
+              </div>
+            )}
 
-                {/* Detalhes de hospedagem: aparece somente quando o usuário solicitar */}
-                {solicitaHospedagem && (
+            {/* Campos de hospedagem (opt-in) */}
+            {podeHospedagem && (
+              <div className="mb-6">
+                <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" id="solicita_hospedagem"
+                      checked={solicitaHospedagem}
+                      onChange={e => setSolicitaHospedagem(e.target.checked)}
+                      className="accent-[#123b63]" />
+                    <div>
+                      <span className="text-sm font-semibold text-gray-700">🛏️ Desejo solicitar hospedagem</span>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        A solicitação não garante alocação. A organização fará a distribuição conforme disponibilidade.
+                        {vagasHospedagem !== null && ` (${vagasHospedagem} vagas restantes)`}
+                      </p>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Detalhes de hospedagem: aparece somente quando o usuário solicitar e for evento AGO */}
+                {evento.departamento === 'AGO' && solicitaHospedagem && (
                   <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
                     <p className="text-sm font-bold text-amber-800 mb-3">🏨 Informações de Hospedagem (AGO)</p>
 
@@ -2201,69 +2217,95 @@ export default function InscricaoPublicaPage() {
                           <p className="mt-1 text-xs text-amber-700">Sem tipos disponíveis para este campo com as seleções atuais.</p>
                         )}
                       </div>
-                      {evento.permite_hospedagem && (
-                        <div className="sm:col-span-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                          <label className="inline-flex items-center gap-2 text-sm font-semibold text-gray-700">
-                            <input
-                              type="checkbox"
-                              checked={!!p.hospedagem}
-                              onChange={e => atualizarParticipante(idx, 'hospedagem', e.target.checked)}
-                              className="accent-[#123b63]"
-                            />
-                            🛏️ Desejo solicitar hospedagem
-                          </label>
 
-                          {p.hospedagem && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-                              <label className="inline-flex items-center gap-2 text-xs text-gray-700">
-                                <input
-                                  type="checkbox"
-                                  checked={!!p.hosp_necessidade_especial}
-                                  onChange={e => atualizarParticipante(idx, 'hosp_necessidade_especial', e.target.checked)}
-                                  className="accent-[#123b63]"
-                                />
-                                Necessidade especial
-                              </label>
-                              <label className="inline-flex items-center gap-2 text-xs text-gray-700">
-                                <input
-                                  type="checkbox"
-                                  checked={!!p.hosp_possui_comorbidade}
-                                  onChange={e => atualizarParticipante(idx, 'hosp_possui_comorbidade', e.target.checked)}
-                                  className="accent-[#123b63]"
-                                />
-                                Comorbidade
-                              </label>
-                              <div className="sm:col-span-2">
-                                <label className={LBL}>Descrição da necessidade (opcional)</label>
-                                <textarea
-                                  value={p.hosp_descricao_necessidade}
-                                  onChange={e => atualizarParticipante(idx, 'hosp_descricao_necessidade', e.target.value)}
-                                  rows={2}
-                                  className={INP + ' resize-none'}
-                                />
+                      {/* Informação sobre Alimentação do Participante Extra */}
+                      {evento.usar_tipos_inscricao && p.tipo_inscricao && (() => {
+                        const tipoExtra = tipos.find(t => t.nome === p.tipo_inscricao);
+                        if (!tipoExtra) return null;
+                        return (
+                          <div className="sm:col-span-2 mt-1.5 p-3.5 bg-white rounded-xl border border-gray-200 text-xs">
+                            {tipoExtra.inclui_alimentacao ? (
+                              <p className="text-emerald-700 font-bold flex items-center gap-1.5">
+                                🍽️ Alimentação inclusa: {tipoExtra.quantidade_refeicoes && tipoExtra.quantidade_refeicoes > 0 ? `${tipoExtra.quantidade_refeicoes} refeições.` : 'Alimentação inclusa nesta inscrição.'}
+                              </p>
+                            ) : (
+                              <p className="text-gray-500 font-semibold flex items-center gap-1.5">
+                                🍽️ Esta categoria não inclui alimentação.
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {(() => {
+                        const tipoExtra = tipos.find(t => t.nome === p.tipo_inscricao);
+                        const podeHospedagemExtra = !!evento.permite_hospedagem && (tipoExtra ? !!tipoExtra.inclui_hospedagem : !evento.usar_tipos_inscricao);
+                        if (!podeHospedagemExtra) return null;
+
+                        return (
+                          <div className="sm:col-span-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                            <label className="inline-flex items-center gap-2 text-sm font-semibold text-gray-700">
+                              <input
+                                type="checkbox"
+                                checked={!!p.hospedagem}
+                                onChange={e => atualizarParticipante(idx, 'hospedagem', e.target.checked)}
+                                className="accent-[#123b63]"
+                              />
+                              🛏️ Desejo solicitar hospedagem
+                            </label>
+
+                            {evento.departamento === 'AGO' && p.hospedagem && (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                                <label className="inline-flex items-center gap-2 text-xs text-gray-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={!!p.hosp_necessidade_especial}
+                                    onChange={e => atualizarParticipante(idx, 'hosp_necessidade_especial', e.target.checked)}
+                                    className="accent-[#123b63]"
+                                  />
+                                  Necessidade especial
+                                </label>
+                                <label className="inline-flex items-center gap-2 text-xs text-gray-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={!!p.hosp_possui_comorbidade}
+                                    onChange={e => atualizarParticipante(idx, 'hosp_possui_comorbidade', e.target.checked)}
+                                    className="accent-[#123b63]"
+                                  />
+                                  Comorbidade
+                                </label>
+                                <div className="sm:col-span-2">
+                                  <label className={LBL}>Descrição da necessidade (opcional)</label>
+                                  <textarea
+                                    value={p.hosp_descricao_necessidade}
+                                    onChange={e => atualizarParticipante(idx, 'hosp_descricao_necessidade', e.target.value)}
+                                    rows={2}
+                                    className={INP + ' resize-none'}
+                                  />
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <label className={LBL}>Descrição da comorbidade (opcional)</label>
+                                  <textarea
+                                    value={p.hosp_descricao_comorbidade}
+                                    onChange={e => atualizarParticipante(idx, 'hosp_descricao_comorbidade', e.target.value)}
+                                    rows={2}
+                                    className={INP + ' resize-none'}
+                                  />
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <label className={LBL}>Observações de hospedagem (opcional)</label>
+                                  <textarea
+                                    value={p.hosp_observacoes}
+                                    onChange={e => atualizarParticipante(idx, 'hosp_observacoes', e.target.value)}
+                                    rows={2}
+                                    className={INP + ' resize-none'}
+                                  />
+                                </div>
                               </div>
-                              <div className="sm:col-span-2">
-                                <label className={LBL}>Descrição da comorbidade (opcional)</label>
-                                <textarea
-                                  value={p.hosp_descricao_comorbidade}
-                                  onChange={e => atualizarParticipante(idx, 'hosp_descricao_comorbidade', e.target.value)}
-                                  rows={2}
-                                  className={INP + ' resize-none'}
-                                />
-                              </div>
-                              <div className="sm:col-span-2">
-                                <label className={LBL}>Observações de hospedagem (opcional)</label>
-                                <textarea
-                                  value={p.hosp_observacoes}
-                                  onChange={e => atualizarParticipante(idx, 'hosp_observacoes', e.target.value)}
-                                  rows={2}
-                                  className={INP + ' resize-none'}
-                                />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}

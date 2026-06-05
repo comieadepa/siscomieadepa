@@ -24,15 +24,14 @@ export default function PageLayout({
 
   useEffect(() => {
     const supabase = createClient();
-    (async () => {
-      const { data } = await supabase.auth.getSession();
+    supabase.auth.getSession().then(({ data }: any) => {
       const user = data.session?.user;
       if (!user) return;
       setUsuarioEmail(user.email ?? null);
       const meta = user.user_metadata as Record<string, string> | undefined;
       setUsuarioNome(meta?.nome || meta?.name || meta?.full_name || null);
       setUsuarioNivel(meta?.nivel || meta?.role || null);
-    })();
+    });
   }, []);
 
   return (

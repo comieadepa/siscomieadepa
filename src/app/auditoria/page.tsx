@@ -38,7 +38,7 @@ type Stats = {
   usuarioMaisAtivo: string | null
 }
 
-const ACOES = ['criar','editar','deletar','visualizar','exportar','importar','login','logout','checkin','enviar_certificado','baixa_financeira','alterar_permissoes','upload','download','erro_critico','cadastrar_membro_equipe','editar_membro_equipe','desativar_membro_equipe','enviar_acesso_equipe','reenviar_acesso_equipe','copiar_link_equipe','login_operador_evento','acesso_checkin_liberado','acesso_checkin_negado']
+const ACOES = ['criar','editar','deletar','visualizar','exportar','importar','login','logout','checkin','enviar_certificado','baixa_financeira','alterar_permissoes','upload','download','erro_critico']
 const MODULOS = ['eventos','inscricoes','financeiro','membros','secretaria','usuarios','configuracoes','certificados','checkin','etiquetas','auth','auditoria','publico']
 
 const ACAO_ICONS: Record<string, string> = {
@@ -46,9 +46,6 @@ const ACAO_ICONS: Record<string, string> = {
   exportar: '📤', importar: '📥', login: '🔓', logout: '🔒',
   checkin: '✅', enviar_certificado: '🎓', baixa_financeira: '💰',
   alterar_permissoes: '🔑', upload: '⬆️', download: '⬇️', erro_critico: '🚨',
-  cadastrar_membro_equipe: '👤', editar_membro_equipe: '✏️', desativar_membro_equipe: '⛔',
-  enviar_acesso_equipe: '📧', reenviar_acesso_equipe: '📨', copiar_link_equipe: '🔗',
-  login_operador_evento: '🔓', acesso_checkin_liberado: '✅', acesso_checkin_negado: '🚫',
 }
 
 const PERIODO_DIAS: Record<string, number | null> = {

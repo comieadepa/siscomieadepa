@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('contribuicoes_estatutarias')
-      .select('id,campo_id,campo_nome,supervisao_id,supervisao_nome,pastor_nome,mes,ano,valor,forma_pagamento,contato,created_at')
+      .select('*')
       .order('ano', { ascending: false })
       .order('campo_nome');
 
@@ -87,13 +87,13 @@ export async function POST(request: NextRequest) {
           .select()
           .single();
         if (error) {
-          await logDB({ userId: auth.ctx.user.id, userEmail: auth.ctx.user.email, acao: 'editar_lancamento', modulo: 'financeiro', entidade: 'contribuicoes_estatutarias', entidadeId: existing.id, descricao: `Falha ao atualizar contribuição: ${campo_nome} ${mes}/${ano}`, status: 'erro', mensagemErro: error.message, request });
+          await logDB({ userId: auth.ctx.user.id, userEmail: auth.ctx.user.email, acao: 'editar', modulo: 'financeiro', entidade: 'contribuicoes_estatutarias', entidadeId: existing.id, descricao: `Falha ao atualizar contribuição: ${campo_nome} ${mes}/${ano}`, status: 'erro', mensagemErro: error.message, request });
           return NextResponse.json(
             { error: `Falha ao atualizar contribuicao: ${error.message}` },
             { status: 500 }
           );
         }
-        await logDB({ userId: auth.ctx.user.id, userEmail: auth.ctx.user.email, acao: 'editar_lancamento', modulo: 'financeiro', entidade: 'contribuicoes_estatutarias', entidadeId: data.id, descricao: `Contribuição atualizada (upsert): ${campo_nome} — ${mes}/${ano}`, detalhes: { campo_nome, mes, ano, valor, forma_pagamento }, request });
+        await logDB({ userId: auth.ctx.user.id, userEmail: auth.ctx.user.email, acao: 'editar', modulo: 'financeiro', entidade: 'contribuicoes_estatutarias', entidadeId: data.id, descricao: `Contribuição atualizada (upsert): ${campo_nome} — ${mes}/${ano}`, detalhes: { campo_nome, mes, ano, valor, forma_pagamento }, request });
         return NextResponse.json({ data, updated: true });
       }
     }
@@ -108,14 +108,14 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
     if (error) {
-      await logDB({ userId: auth.ctx.user.id, userEmail: auth.ctx.user.email, acao: 'criar_lancamento', modulo: 'financeiro', entidade: 'contribuicoes_estatutarias', descricao: `Falha ao registrar contribuição: ${campo_nome} ${mes}/${ano}`, status: 'erro', mensagemErro: error.message, request });
+      await logDB({ userId: auth.ctx.user.id, userEmail: auth.ctx.user.email, acao: 'criar', modulo: 'financeiro', entidade: 'contribuicoes_estatutarias', descricao: `Falha ao registrar contribuição: ${campo_nome} ${mes}/${ano}`, status: 'erro', mensagemErro: error.message, request });
       return NextResponse.json(
         { error: `Falha ao registrar contribuicao: ${error.message}` },
         { status: 500 }
       );
     }
 
-    await logDB({ userId: auth.ctx.user.id, userEmail: auth.ctx.user.email, acao: 'criar_lancamento', modulo: 'financeiro', entidade: 'contribuicoes_estatutarias', entidadeId: data.id, descricao: `Contribuição registrada: ${campo_nome} — ${mes}/${ano} — R$ ${valor}`, detalhes: { campo_nome, supervisao_nome, mes, ano, valor, forma_pagamento, pastor_nome }, request });
+    await logDB({ userId: auth.ctx.user.id, userEmail: auth.ctx.user.email, acao: 'criar', modulo: 'financeiro', entidade: 'contribuicoes_estatutarias', entidadeId: data.id, descricao: `Contribuição registrada: ${campo_nome} — ${mes}/${ano} — R$ ${valor}`, detalhes: { campo_nome, supervisao_nome, mes, ano, valor, forma_pagamento, pastor_nome }, request });
     return NextResponse.json({ data, updated: false }, { status: 201 });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Erro interno';
@@ -154,10 +154,10 @@ export async function PUT(request: NextRequest) {
       .single();
 
     if (error) {
-      await logDB({ userId: auth.ctx.user.id, userEmail: auth.ctx.user.email, acao: 'editar_lancamento', modulo: 'financeiro', entidade: 'contribuicoes_estatutarias', entidadeId: id, descricao: `Falha ao editar contribuição id=${id}`, status: 'erro', mensagemErro: error.message, request });
+      await logDB({ userId: auth.ctx.user.id, userEmail: auth.ctx.user.email, acao: 'editar', modulo: 'financeiro', entidade: 'contribuicoes_estatutarias', entidadeId: id, descricao: `Falha ao editar contribuição id=${id}`, status: 'erro', mensagemErro: error.message, request });
       return NextResponse.json({ error: `Falha ao editar: ${error.message}` }, { status: 500 });
     }
-    await logDB({ userId: auth.ctx.user.id, userEmail: auth.ctx.user.email, acao: 'editar_lancamento', modulo: 'financeiro', entidade: 'contribuicoes_estatutarias', entidadeId: id, descricao: `Contribuição editada: ${data.campo_nome} — ${data.mes}/${data.ano}`, detalhes: { anterior: anterior ?? undefined, novo: updatePayload }, request });
+    await logDB({ userId: auth.ctx.user.id, userEmail: auth.ctx.user.email, acao: 'editar', modulo: 'financeiro', entidade: 'contribuicoes_estatutarias', entidadeId: id, descricao: `Contribuição editada: ${data.campo_nome} — ${data.mes}/${data.ano}`, detalhes: { anterior: anterior ?? undefined, novo: updatePayload }, request });
     return NextResponse.json({ data });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Erro interno' }, { status: 500 });
@@ -189,14 +189,14 @@ export async function DELETE(request: NextRequest) {
       .eq('id', id);
 
     if (error) {
-      await logDB({ userId: auth.ctx.user.id, userEmail: auth.ctx.user.email, acao: 'excluir_lancamento', modulo: 'financeiro', entidade: 'contribuicoes_estatutarias', entidadeId: id, descricao: `Falha ao excluir contribuição id=${id}`, status: 'erro', mensagemErro: error.message, request });
+      await logDB({ userId: auth.ctx.user.id, userEmail: auth.ctx.user.email, acao: 'deletar', modulo: 'financeiro', entidade: 'contribuicoes_estatutarias', entidadeId: id, descricao: `Falha ao excluir contribuição id=${id}`, status: 'erro', mensagemErro: error.message, request });
       return NextResponse.json(
         { error: `Falha ao excluir contribuicao: ${error.message}` },
         { status: 500 }
       );
     }
 
-    await logDB({ userId: auth.ctx.user.id, userEmail: auth.ctx.user.email, acao: 'excluir_lancamento', modulo: 'financeiro', entidade: 'contribuicoes_estatutarias', entidadeId: id, descricao: `Contribuição excluída: ${registro?.campo_nome ?? id} — ${registro?.mes}/${registro?.ano} — R$ ${registro?.valor}`, detalhes: registro ?? undefined, request });
+    await logDB({ userId: auth.ctx.user.id, userEmail: auth.ctx.user.email, acao: 'deletar', modulo: 'financeiro', entidade: 'contribuicoes_estatutarias', entidadeId: id, descricao: `Contribuição excluída: ${registro?.campo_nome ?? id} — ${registro?.mes}/${registro?.ano} — R$ ${registro?.valor}`, detalhes: registro ?? undefined, request });
     return NextResponse.json({ ok: true });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Erro interno';

@@ -10,17 +10,13 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const includeInactive = searchParams.get('includeInactive') === 'true';
-  // includeCamposInactive=true: retorna todos os campos independente de is_active
-  // (usado em Permutas para mostrar o mesmo conjunto que o módulo Campos)
-  const includeCamposInactive = includeInactive || searchParams.get('includeCamposInactive') === 'true';
 
   const supabase = createServerClient();
 
   let supervisoesQuery = supabase
     .from('supervisoes')
     .select('id,nome,is_active')
-    .order('nome')
-    .limit(9999);
+    .order('nome');
 
   let camposQuery = supabase
     .from('campos')
@@ -30,46 +26,35 @@ export async function GET(request: NextRequest) {
   let congregacoesQuery = supabase
     .from('congregacoes')
     .select('id,nome,supervisao_id,campo_id,is_active')
-    .order('nome')
-    .limit(10000);
+    .order('nome');
 
   if (!includeInactive) {
     supervisoesQuery = supervisoesQuery.neq('is_active', false);
-    congregacoesQuery = congregacoesQuery.or('is_active.eq.true,is_active.is.null');
-  }
-  if (!includeCamposInactive) {
-    // neq exclui NULLs em SQL; usar or() para incluir linhas sem is_active definido
-    camposQuery = camposQuery.or('is_active.eq.true,is_active.is.null');
+    camposQuery = camposQuery.neq('is_active', false);
+    congregacoesQuery = congregacoesQuery.neq('is_active', false);
   }
 
-  // Supervisoes e congregacoes: busca unica (geralmente < 1000)
-  const [supRes, congRes] = await Promise.all([supervisoesQuery, congregacoesQuery]);
+  const [supRes, camRes, congRes] = await Promise.all([
+    supervisoesQuery,
+    camposQuery,
+    congregacoesQuery,
+  ]);
 
   if (supRes.error) {
     return NextResponse.json({ error: supRes.error.message }, { status: 500 });
   }
+
+  if (camRes.error) {
+    return NextResponse.json({ error: camRes.error.message }, { status: 500 });
+  }
+
   if (congRes.error) {
     return NextResponse.json({ error: congRes.error.message }, { status: 500 });
   }
 
-  // Campos: pagina em loop para ultrapassar o limite de 1000 linhas do PostgREST
-  const pageSize = 1000;
-  let from = 0;
-  let allCampos: any[] = [];
-  while (true) {
-    const { data, error } = await camposQuery.range(from, from + pageSize - 1);
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-    const chunk = (data || []) as any[];
-    allCampos = allCampos.concat(chunk);
-    if (chunk.length < pageSize) break;
-    from += pageSize;
-  }
-
   return NextResponse.json({
     supervisoes: supRes.data ?? [],
-    campos: allCampos,
+    campos: camRes.data ?? [],
     congregacoes: congRes.data ?? [],
   });
 }
