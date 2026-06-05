@@ -1493,9 +1493,7 @@ export default function InscricaoPublicaPage() {
               {cpfStatus === 'encontrado' && ministroInativo && (
                 <p className="mt-1 text-xs text-orange-600 font-semibold">⚠️ Registro ministerial localizado, mas não está ativo.</p>
               )}
-              {cpfStatus === 'nao_encontrado' && evento.departamento === 'AGO' && (
-                <p className="mt-1 text-xs text-yellow-600">⚠️ CPF não localizado. Você pode continuar preenchendo manualmente. Para Esposa de Pastor Jubilado sem validação por CPF, procure o Balcão/Secretaria.</p>
-              )}
+
             </div>
 
             {/* Card do ministro — AGO: exibe dados ministeriais após CPF encontrado */}
@@ -1595,12 +1593,7 @@ export default function InscricaoPublicaPage() {
               </div>
             )}
 
-            {/* Aviso AGO quando CPF não localizado */}
-            {evento.departamento === 'AGO' && cpfStatus === 'nao_encontrado' && (
-              <div className="mb-5 p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-sm text-yellow-800">
-                ⚠️ CPF não localizado no cadastro ministerial. Continue normalmente selecionando a categoria correspondente ao seu vínculo com o evento. Se for Esposa de Pastor Jubilado sem validação por CPF, procure o Balcão/Secretaria.
-              </div>
-            )}
+
 
             {/* Nome */}
             <div className="mb-5">
@@ -1678,12 +1671,7 @@ export default function InscricaoPublicaPage() {
                       ℹ️ Selecione o <strong>sexo</strong> para ver as categorias de inscrição disponíveis.
                     </div>
                   )}
-                  {/* CPF não encontrado — continue com categorias não ministeriais */}
-                  {cpfStatus === 'nao_encontrado' && (
-                    <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-xs text-yellow-800">
-                      ⚠️ CPF não localizado no cadastro ministerial. Continue normalmente — selecione a categoria correspondente abaixo.
-                    </div>
-                  )}
+
                   {/* Dica: informar CPF para categorias ministeriais (sexo M, CPF ainda não verificado) */}
                   {sexoTitularNorm === 'M' && cpfStatus === 'idle' && (
                     <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-700">

@@ -142,7 +142,13 @@ export function filtrarTiposAgo<T extends TipoComNome>(tipos: T[], options: Filt
       return true;
     })
     .filter((t) => {
-      if (!(cpfFoiLocalizado && ministerioAtivo)) return true;
+      if (!(cpfFoiLocalizado && ministerioAtivo)) {
+        // Se o CPF não foi localizado ou não está ativo no cadastro, ele NÃO pode se inscrever como Ministro
+        if (ehTipoPastorPresidente(t.nome) || ehTipoPastorAuxiliar(t.nome) || ehTipoPastorJubilado(t.nome)) {
+          return false;
+        }
+        return true;
+      }
 
       if (ehTipoVisitante(t.nome)) return false;
 
