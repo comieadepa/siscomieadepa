@@ -1,7 +1,9 @@
-﻿﻿'use client';
+'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import PageLayout from '@/components/PageLayout';
+import FichaMembro from '@/components/FichaMembro';
+import { fetchConfiguracaoIgrejaFromSupabase } from '@/lib/igreja-config-utils';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useMembers } from '@/hooks/useMembers';
 import { createClient } from '@/lib/supabase-client';
@@ -117,6 +119,50 @@ export default function ConsagracaoPage() {
   const [memberResults, setMemberResults] = useState<Member[]>([]);
   const [memberOpen, setMemberOpen] = useState(false);
   const [fotoBloqueada, setFotoBloqueada] = useState(false);
+
+  // Estados para Impressão da Ficha
+  const [configIgreja, setConfigIgreja] = useState({
+    nome: 'Igreja/Ministério',
+    endereco: '',
+    cnpj: '',
+    telefone: '',
+    email: '',
+    logo: ''
+  });
+  const [membroImprimindo, setMembroImprimindo] = useState<any | null>(null);
+  const [fichaAcpStatus, setFichaAcpStatus] = useState<string>('');
+  const [fichaAcpLoading, setFichaAcpLoading] = useState(false);
+
+  useEffect(() => {
+    fetchConfiguracaoIgrejaFromSupabase(supabase)
+      .then(setConfigIgreja)
+      .catch(() => null);
+  }, [supabase]);
+
+  const handleImprimirFicha = async (reg: any) => {
+    setFichaAcpStatus('carregando');
+    setFichaAcpLoading(true);
+    setMembroImprimindo(reg);
+    if (reg.cpf) {
+      const cpfLimpo = reg.cpf.replace(/\D/g, '');
+      try {
+        const res = await fetch(`/api/integracao/casa-do-pastor?cpf=${cpfLimpo}`);
+        const data = await res.json();
+        if (res.ok && data?.status) {
+          setFichaAcpStatus(data.status);
+        } else {
+          setFichaAcpStatus('erro');
+        }
+      } catch {
+        setFichaAcpStatus('erro');
+      } finally {
+        setFichaAcpLoading(false);
+      }
+    } else {
+      setFichaAcpStatus('sem_cpf');
+      setFichaAcpLoading(false);
+    }
+  };
 
   // Regiões customizadas
   const REGIOES_PADRAO = ['COMIEADEPA', 'MARABÁ', 'SANTARÉM', 'SEGUNDA CHAMADA'];
@@ -2286,6 +2332,19 @@ export default function ConsagracaoPage() {
                           </div>
                           <div className="relative group">
                             <button
+                              className="px-2 py-1 bg-teal-50 text-teal-700 rounded hover:bg-teal-100 transition text-xs font-semibold"
+                              onClick={() => handleImprimirFicha(reg)}
+                              title="Imprimir Ficha"
+                              aria-label="Imprimir Ficha"
+                            >
+                              🖨️
+                            </button>
+                            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-[10px] font-medium text-white opacity-0 group-hover:opacity-100 transition">
+                              Imprimir Ficha
+                            </span>
+                          </div>
+                          <div className="relative group">
+                            <button
                               className="px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition text-xs font-semibold"
                               onClick={() => {
                               setEditingRegistro(reg);
@@ -2604,6 +2663,118 @@ export default function ConsagracaoPage() {
                 onClick={() => handleUpdateStatus('homologar')}
               >
                 Homologar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Impressão - Ficha do Ministro */}
+      {membroImprimindo && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full my-8 flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="flex justify-between items-center px-6 py-4 border-b-2 border-teal-500 bg-gradient-to-r from-teal-600 to-teal-700 flex-shrink-0">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <span>🖨️</span> Ficha do Ministro
+              </h2>
+              <button
+                onClick={() => setMembroImprimindo(null)}
+                className="text-white hover:text-gray-100 text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Conteúdo da Ficha com scroll */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <FichaMembro
+                membro={{
+                  matricula: membroImprimindo.matricula || '',
+                  id: membroImprimindo.member_id || membroImprimindo.id,
+                  uniqueId: membroImprimindo.unique_id || '',
+                  nome: membroImprimindo.nome || '',
+                  cpf: formatCpf(membroImprimindo.cpf || ''),
+                  tipoCadastro: 'ministro',
+                  dataNascimento: membroImprimindo.data_nascimento || '',
+                  sexo: membroImprimindo.sexo || '',
+                  tipoSanguineo: membroImprimindo.tipo_sanguineo || '',
+                  escolaridade: membroImprimindo.escolaridade || '',
+                  estadoCivil: membroImprimindo.estado_civil || '',
+                  rg: membroImprimindo.rg || '',
+                  nacionalidade: membroImprimindo.nacionalidade || '',
+                  naturalidade: membroImprimindo.naturalidade || '',
+                  uf: membroImprimindo.uf || '',
+                  cep: membroImprimindo.cep || '',
+                  logradouro: membroImprimindo.endereco || '',
+                  numero: membroImprimindo.numero_endereco || '',
+                  bairro: membroImprimindo.bairro || '',
+                  complemento: membroImprimindo.complemento || '',
+                  cidade: membroImprimindo.cidade || '',
+                  nomeConjuge: membroImprimindo.nome_conjuge || '',
+                  cpfConjuge: membroImprimindo.cpf_conjuge || '',
+                  dataNascimentoConjuge: membroImprimindo.data_nascimento_conjuge || '',
+                  nomePai: membroImprimindo.nome_pai || '',
+                  nomeMae: membroImprimindo.nome_mae || '',
+                  email: membroImprimindo.email || '',
+                  celular: membroImprimindo.telefone || '',
+                  whatsapp: membroImprimindo.whatsapp || '',
+                  qualFuncao: membroImprimindo.qual_funcao || '',
+                  setorDepartamento: membroImprimindo.setor_departamento || '',
+                  cargo: membroImprimindo.cargo_pretendido || membroImprimindo.cargo_ocupa || '',
+                  numero_cgadb: (membroImprimindo as any).numero_cgadb || '',
+                  posicaoNoCampo: (membroImprimindo as any).posicaoNoCampo || '',
+                  casaDoPastorAcp: fichaAcpLoading ? 'carregando' : (fichaAcpStatus || undefined),
+                  supervisao: supervisoes.find(s => s.id === membroImprimindo.supervisao_id)?.nome || '',
+                  campo: campos.find(c => c.id === membroImprimindo.campo_id)?.nome || '',
+                  cursoTeologico: membroImprimindo.curso_teologico || '',
+                  instituicaoTeologica: (membroImprimindo as any).instituicaoTeologica || '',
+                  profissao: (membroImprimindo as any).profissao || '',
+                  dataBatismoAguas: membroImprimindo.data_batismo_aguas || '',
+                  dataConsagracao: membroImprimindo.data_consagracao || '',
+                  data_filiacao: (membroImprimindo as any).data_filiacao || '',
+                  ev_autorizado_data: (membroImprimindo as any).ev_autorizado_data || '',
+                  ev_autorizado_local: (membroImprimindo as any).ev_autorizado_local || '',
+                  ev_consagrado_data: (membroImprimindo as any).ev_consagrado_data || '',
+                  ev_consagrado_local: (membroImprimindo as any).ev_consagrado_local || '',
+                  cons_missionario_data: (membroImprimindo as any).cons_missionario_data || '',
+                  cons_missionario_local: (membroImprimindo as any).cons_missionario_local || '',
+                  orden_pastor_data: (membroImprimindo as any).orden_pastor_data || '',
+                  orden_pastor_local: (membroImprimindo as any).orden_pastor_local || '',
+                  conjuge_rg: (membroImprimindo as any).conjuge_rg || '',
+                  conjuge_naturalidade: (membroImprimindo as any).conjuge_naturalidade || '',
+                  conjuge_nome_pai: (membroImprimindo as any).conjuge_nome_pai || '',
+                  conjuge_nome_mae: (membroImprimindo as any).conjuge_nome_mae || '',
+                  conjuge_tipo_sanguineo: (membroImprimindo as any).conjuge_tipo_sanguineo || '',
+                  conjuge_titulo_eleitoral: (membroImprimindo as any).conjuge_titulo_eleitoral || '',
+                  conjuge_fone: (membroImprimindo as any).conjuge_fone || '',
+                  conjuge_email: (membroImprimindo as any).conjuge_email || '',
+                  qtd_filhos: (membroImprimindo as any).qtd_filhos ?? 0,
+                  observacoes: (membroImprimindo as any).observacoes || '',
+                  orgaoEmissor: membroImprimindo.orgao_emissor || '',
+                  uf_rg: (membroImprimindo as any).uf_rg || '',
+                }}
+                dadosIgreja={(() => {
+                  return {
+                    nomeIgreja: configIgreja.nome || 'Igreja',
+                    endereco: configIgreja.endereco || '',
+                    telefone: configIgreja.telefone || '',
+                    email: configIgreja.email || '',
+                    cnpj: (configIgreja as any).cnpj || '',
+                    logoUrl: configIgreja.logo || undefined
+                  };
+                })()}
+                fotoUrl={membroImprimindo.foto_url || undefined}
+              />
+            </div>
+
+            {/* Botão de Fechar */}
+            <div className="flex gap-4 px-6 py-4 border-t border-gray-300 bg-gray-50 flex-shrink-0">
+              <button
+                onClick={() => setMembroImprimindo(null)}
+                className="flex-1 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition font-semibold text-sm"
+              >
+                ✕ Fechar
               </button>
             </div>
           </div>
