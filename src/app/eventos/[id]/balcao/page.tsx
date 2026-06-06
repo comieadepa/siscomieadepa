@@ -327,6 +327,15 @@ export default function BalcaoPage() {
     hosp_possui_comorbidade: hospEsposa.hosp_possui_comorbidade,
   });
 
+  const temTipos = (evento?.usar_tipos_inscricao ?? false) && tiposParaExibir.length > 0;
+  const podeHospedagem = useMemo(() => {
+    return !!evento?.permite_hospedagem && (
+      evento.departamento === 'AGO'
+        ? true
+        : (tipoSel ? !!tipoSel.inclui_hospedagem : !temTipos)
+    );
+  }, [evento, tipoSel, temTipos]);
+
   // ── Estado pós-inscrição ──────────────────────────────────
   const [salvando,      setSalvando]      = useState(false);
   const [erroSave,      setErroSave]      = useState<string | null>(null);
@@ -1338,14 +1347,6 @@ export default function BalcaoPage() {
   // ─────────────────────────────────────────────────────────
   // Formulário principal
   // ─────────────────────────────────────────────────────────
-  const temTipos = (evento?.usar_tipos_inscricao ?? false) && tiposParaExibir.length > 0;
-  const podeHospedagem = useMemo(() => {
-    return !!evento?.permite_hospedagem && (
-      evento.departamento === 'AGO'
-        ? true
-        : (tipoSel ? !!tipoSel.inclui_hospedagem : !temTipos)
-    );
-  }, [evento, tipoSel, temTipos]);
 
   return (
     <div className="min-h-screen bg-[#0D2B4E] flex flex-col">
