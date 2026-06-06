@@ -181,7 +181,13 @@ export async function GET(request: NextRequest) {
 
   // Normaliza sexo: aceita "MASCULINO"/"M" → "M" e "FEMININO"/"F" → "F"
   const sexoRaw = (row.sexo || '').toUpperCase();
-  const sexoNorm = sexoRaw.startsWith('M') ? 'M' : sexoRaw.startsWith('F') ? 'F' : null;
+  let sexoNorm = sexoRaw.startsWith('M') ? 'M' : sexoRaw.startsWith('F') ? 'F' : null;
+  if (!sexoNorm) {
+    // Se não tiver sexo no cadastro, mas for ministro (tem cargo ou matrícula), assume-se Masculino
+    if (row.cargo_ministerial || row.matricula) {
+      sexoNorm = 'M';
+    }
+  }
 
   // campo_id pode vir via congregacao (FK) ou do custom_fields (texto histórico)
   const campoIdViaFk = row.congregacoes?.campo_id || null;

@@ -638,11 +638,14 @@ export default function BalcaoPage() {
           setHospEsposa({ ...HOSP_ESPOSA_VAZIO });
         }
 
+        const sexoLookupRaw = String(payload.sexo || '').trim().toUpperCase();
+        const sexoLookup = sexoLookupRaw.startsWith('M') ? 'M' : (sexoLookupRaw.startsWith('F') ? 'F' : 'M');
+
         setForm(f => ({
           ...f,
           nome:            nome || f.nome,
           cpf:             cpfBusca,
-          sexo:            payload.sexo || f.sexo,
+          sexo:            sexoLookup,
           data_nascimento: payload.data_nascimento || f.data_nascimento,
           supervisao_id:   sup?.id || f.supervisao_id,
           campo_id:        campoEncontrado?.id || payload.campo_id || f.campo_id,

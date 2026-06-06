@@ -473,7 +473,7 @@ export default function InscricaoPublicaPage() {
       const statusMinistro = payload.status ?? null;
       const ministerioAtivo = ['active', 'ativo'].includes((statusMinistro ?? '').toLowerCase());
       const sexoLookupRaw = String(payload.sexo || '').trim().toUpperCase();
-      const sexoLookup = sexoLookupRaw.startsWith('M') ? 'M' : sexoLookupRaw.startsWith('F') ? 'F' : '';
+      const sexoLookup = sexoLookupRaw.startsWith('M') ? 'M' : (sexoLookupRaw.startsWith('F') ? 'F' : 'M');
 
       setMinistroInfo({
         nome,
@@ -513,7 +513,7 @@ export default function InscricaoPublicaPage() {
         whatsapp: whatsappLookup || f.whatsapp,
         supervisao_id: sup?.id || payload.supervisao_id || f.supervisao_id,
         campo_id: campoSelecionado?.id || payload.campo_id || '',
-        sexo: sexoLookup || f.sexo,
+        sexo: sexoLookup,
         data_nascimento: payload.data_nascimento || f.data_nascimento,
       }));
     } else {
@@ -1675,7 +1675,7 @@ export default function InscricaoPublicaPage() {
                 <option value="">
                   {carregandoCampos ? 'Carregando...' : !form.supervisao_id ? 'Selecione a supervisão primeiro' : 'Selecione o campo...'}
                 </option>
-                {campos.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                {campos.filter(c => !form.supervisao_id || c.supervisao_id === form.supervisao_id).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
               </select>
             </div>
 

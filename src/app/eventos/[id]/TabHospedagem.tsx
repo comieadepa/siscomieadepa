@@ -81,6 +81,14 @@ interface Hospedagem {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+function normalizarTexto(val: string | null | undefined): string {
+  return String(val ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 const STATUS_HOSP_CFG: Record<string, { label: string; cls: string }> = {
   solicitada:           { label: 'Solicitada',            cls: 'bg-yellow-100 text-yellow-700' },
   aguardando_pagamento: { label: 'Aguardando pagamento',  cls: 'bg-amber-100 text-amber-800' },
@@ -270,11 +278,13 @@ export default function TabHospedagem({
     if (filtroGrupo)   list = list.filter(h => h.grupo_hospedagem === filtroGrupo);
     if (filtroPend)    list = list.filter(h => (h.pendencias ?? []).includes(filtroPend));
     if (busca.trim()) {
-      const q = busca.trim().toLowerCase();
-      list = list.filter(h =>
-        (h.nome_inscrito?.toLowerCase().includes(q)) ||
-        (h.cpf?.replace(/\D/g, '').includes(q.replace(/\D/g, '')))
-      );
+      const q = normalizarTexto(busca);
+      const qCPF = busca.replace(/\D/g, '');
+      list = list.filter(h => {
+        const nomeNorm = normalizarTexto(h.nome_inscrito);
+        const cpfNorm = String(h.cpf ?? '').replace(/\D/g, '');
+        return nomeNorm.includes(q) || (qCPF !== '' && cpfNorm.includes(qCPF));
+      });
     }
     return list;
   }, [hospedagens, filtroStatus, filtroAloj, filtroSup, filtroNecEsp, filtroGrupo, filtroPend, busca]);
