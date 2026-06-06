@@ -197,12 +197,17 @@ export function sugerirAlojamento(
   const precisaCamaInferior = inscricao.hosp_cama_inferior || inscricao.hosp_necessidade_especial;
 
   // Filtra alojamentos ativos com vagas livres
+  // Filtra alojamentos ativos com vagas livres
   const candidatos = alojamentos
     .filter(a => a.ativo && (a.vagas_livres ?? 0) > 0)
     .filter(a => {
       // Compatibilidade de publico
       if (a.publico === 'misto') return true;
       if (a.publico === perfil)  return true;
+
+      // AGO: Presidentes e Jubilados compartilham os mesmos alojamentos
+      if (perfil === 'presidentes' && a.publico === 'jubilados') return true;
+      if (perfil === 'jubilados' && a.publico === 'presidentes') return true;
 
       // Fallback: alojamentos por sexo
       const sexo = inscricao.sexo?.toUpperCase();
@@ -216,11 +221,18 @@ export function sugerirAlojamento(
     return { alojamento_id: null, tipo_cama: null, status: 'lista_espera', prioridade };
   }
 
-  // Prefere alojamento do perfil exato, depois misto
+  // Prefere alojamento do perfil exato, depois relacionados, depois misto
   const ordenados = [...candidatos].sort((a, b) => {
-    const aExato = a.publico === perfil ? 0 : 1;
-    const bExato = b.publico === perfil ? 0 : 1;
-    return aExato - bExato;
+    const getScore = (pub: string) => {
+      if (pub === perfil) return 0;
+      if (
+        (perfil === 'presidentes' && pub === 'jubilados') ||
+        (perfil === 'jubilados' && pub === 'presidentes')
+      ) return 1;
+      if (pub === 'misto') return 2;
+      return 3;
+    };
+    return getScore(a.publico) - getScore(b.publico);
   });
 
   for (const aloj of ordenados) {

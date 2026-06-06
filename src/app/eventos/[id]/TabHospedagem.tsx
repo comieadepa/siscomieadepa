@@ -234,13 +234,17 @@ export default function TabHospedagem({
     if (!confirm('Executar alocação automática para todas as hospedagens solicitadas?')) return;
     setAutoalocando(true);
     setAutoalocResult(null);
+    setQuickErro(null);
     try {
       const res = await fetch(`/api/eventos/${eventoId}/hospedagens/alocar`, { method: 'POST' });
       const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error ?? 'Erro inesperado na autoalocação');
+      }
       setAutoalocResult({ alocadas: json.confirmados ?? 0, listaEspera: json.lista_espera ?? 0, erros: 0, leitos: json.leitos_atribuidos ?? 0 });
       fetchHospedagens();
-    } catch {
-      setAutoalocResult({ alocadas: 0, listaEspera: 0, erros: 1, leitos: 0 });
+    } catch (err) {
+      setQuickErro(err instanceof Error ? err.message : 'Erro ao executar autoalocação');
     } finally {
       setAutoalocando(false);
     }

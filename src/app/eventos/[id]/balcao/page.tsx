@@ -190,6 +190,7 @@ export default function BalcaoPage() {
   const [salvandoEdit, setSalvandoEdit] = useState(false);
   const [erroEdit, setErroEdit] = useState<string | null>(null);
   const [precisaAtualizar, setPrecisaAtualizar] = useState(false);
+  const ignorarProximoClearRef = useRef(false);
 
   // ── Estado do formulário ──────────────────────────────────
   const [form,       setForm]       = useState<FormState>(FORM_VAZIO);
@@ -966,6 +967,10 @@ export default function BalcaoPage() {
 
   useEffect(() => {
     if (!destacarId) return;
+    if (ignorarProximoClearRef.current) {
+      ignorarProximoClearRef.current = false;
+      return;
+    }
     setDestacarId(null);
   }, [buscaLista, filtroPag, filtroSup, filtroCampo]);
 
@@ -1476,14 +1481,21 @@ export default function BalcaoPage() {
                     Confirme antes de criar uma nova.
                   </p>
                 </div>
-                <a
-                  href={`/eventos/${id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
+                  onClick={() => {
+                    ignorarProximoClearRef.current = true;
+                    setFiltroPag('');
+                    setFiltroSup('');
+                    setFiltroCampo('');
+                    setBuscaLista(cpfBusca.replace(/\D/g, ''));
+                    setDestacarId(inscricaoDuplicada.id);
+                    setActiveTab('inscritos');
+                  }}
                   className="flex-shrink-0 text-xs bg-amber-500/20 hover:bg-amber-500/40 border border-amber-500/50 text-amber-300 px-3 py-1.5 rounded-lg font-bold transition whitespace-nowrap"
                 >
                   Ver inscrição ↗
-                </a>
+                </button>
               </div>
             )}
           </section>
