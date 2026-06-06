@@ -1853,7 +1853,9 @@ function SecaoSetores({
     if (alojamentos.length === 0) return [];
     return alojamentos.map(a => {
       const todos       = hospedagens.filter(h => h.alojamento_id === a.id);
-      const confirmados = todos.filter(h => h.status === 'confirmada' || h.status === 'checkin_realizado').length;
+      const confirmados = todos.filter(h =>
+        h.tem_leito_ocupado || ['alocada', 'confirmada', 'checkin_realizado'].includes(h.status_operacional ?? h.status)
+      ).length;
       const solicitados = todos.filter(h => h.status === 'solicitada').length;
       const taxa        = a.total_vagas > 0 ? Math.round(confirmados / a.total_vagas * 100) : 0;
       const livres      = Math.max(0, a.total_vagas - confirmados);
@@ -1866,11 +1868,16 @@ function SecaoSetores({
   const statsSetores = useMemo(() => {
     return setoresConfig.map(s => {
       const porGrupo    = hospedagens.filter(h => h.grupo_hospedagem === s.grupo);
-      const confirmados = porGrupo.filter(h => h.status === 'confirmada' || h.status === 'checkin_realizado').length;
+      const confirmados = porGrupo.filter(h =>
+        h.tem_leito_ocupado || ['alocada', 'confirmada', 'checkin_realizado'].includes(h.status_operacional ?? h.status)
+      ).length;
       const solicitados = porGrupo.filter(h => h.status === 'solicitada').length;
       const taxa        = s.quantidade_leitos > 0 ? Math.round(confirmados / s.quantidade_leitos * 100) : 0;
       const livres      = Math.max(0, s.quantidade_leitos - confirmados);
-      const infOcup     = porGrupo.filter(h => (h.status === 'confirmada' || h.status === 'checkin_realizado') && h.tipo_cama === 'inferior').length;
+      const infOcup     = porGrupo.filter(h =>
+        (h.tem_leito_ocupado || ['alocada', 'confirmada', 'checkin_realizado'].includes(h.status_operacional ?? h.status)) &&
+        h.tipo_cama === 'inferior'
+      ).length;
       const infLivres   = Math.max(0, s.quantidade_leitos_inferiores - infOcup);
       return { ...s, confirmados, solicitados, taxa, livres, infLivres };
     });
@@ -1887,7 +1894,9 @@ function SecaoSetores({
     ? setoresConfig.filter(s => s.ativo).length
     : alojamentos.filter(a => a.ativo).length;
 
-  const totalOcupados = hospedagens.filter(h => h.status === 'confirmada' || h.status === 'checkin_realizado').length;
+  const totalOcupados = hospedagens.filter(h =>
+    h.tem_leito_ocupado || ['alocada', 'confirmada', 'checkin_realizado'].includes(h.status_operacional ?? h.status)
+  ).length;
   const totalLivres   = Math.max(0, totalCapacidade - totalOcupados);
   const taxaGlobal    = totalCapacidade > 0 ? Math.round(totalOcupados / totalCapacidade * 100) : 0;
 
