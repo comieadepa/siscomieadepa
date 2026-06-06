@@ -1673,11 +1673,19 @@ export default function BalcaoPage() {
                     <span className="text-sm font-semibold text-white/80">🏨 Desejo solicitar hospedagem</span>
                     <p className="text-xs text-white/40 mt-0.5">
                       A solicitação não garante alocação. A organização fará a distribuição conforme disponibilidade.
-                      {evento.departamento === 'AGO' && grupoHospedagemPrevisto ? ` (Grupo: ${grupoHospedagemPrevisto} - ${(vagasPorGrupo[grupoHospedagemPrevisto] ?? 0)} vagas restantes)` : (evento.limite_hospedagem !== null && ` (${evento.limite_hospedagem} vagas totais)`)}
+                      {evento.departamento === 'AGO' && grupoHospedagemPrevisto ? (
+                        grupoHospedagemPrevisto === 'Misto' ? (
+                          ' (Informe sexo/data/perfil para verificar vagas de hospedagem.)'
+                        ) : (
+                          ` (Grupo: ${grupoHospedagemPrevisto} - ${(vagasPorGrupo[grupoHospedagemPrevisto] ?? 0)} vagas restantes)`
+                        )
+                      ) : (
+                        evento.limite_hospedagem !== null && ` (${evento.limite_hospedagem} vagas totais)`
+                      )}
                     </p>
-                    {evento.departamento === 'AGO' && grupoHospedagemPrevisto && (vagasPorGrupo[grupoHospedagemPrevisto] ?? 0) <= 0 && (
+                    {evento.departamento === 'AGO' && grupoHospedagemPrevisto && grupoHospedagemPrevisto !== 'Misto' && (vagasPorGrupo[grupoHospedagemPrevisto] ?? 0) <= 0 && (
                       <p className="text-xs text-red-400 font-bold mt-1.5">
-                        ⚠️ Não há mais vagas de hospedagem disponíveis para seu grupo. Você ainda pode concluir a inscrição sem hospedagem.
+                        ⚠️ Não há mais vagas de hospedagem disponíveis para o grupo {grupoHospedagemPrevisto}. Você ainda pode concluir a inscrição sem hospedagem.
                       </p>
                     )}
                   </div>
@@ -1689,11 +1697,13 @@ export default function BalcaoPage() {
               <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
                 <p className="text-xs font-semibold text-amber-300 uppercase tracking-wide">Alimentação</p>
                 <p className="text-sm text-amber-100 mt-1">
-                  {tipoSel
-                    ? (tipoSel.inclui_alimentacao
-                      ? 'Incluída automaticamente pela categoria selecionada.'
-                      : 'Não incluída para a categoria selecionada.')
-                    : 'Definida automaticamente pela categoria de inscrição.'}
+                  {evento.departamento === 'AGO'
+                    ? 'Alimentação inclusa automaticamente para todos os inscritos da AGO — 12 refeições.'
+                    : tipoSel
+                      ? (tipoSel.inclui_alimentacao
+                        ? 'Incluída automaticamente pela categoria selecionada.'
+                        : 'Não incluída para a categoria selecionada.')
+                      : 'Definida automaticamente pela categoria de inscrição.'}
                 </p>
               </div>
             )}
@@ -1761,7 +1771,11 @@ export default function BalcaoPage() {
 
                 <div className="rounded-xl border border-amber-500/40 bg-black/10 px-3 py-2">
                   <p className="text-xs font-bold uppercase tracking-wide text-amber-300">Grupo previsto</p>
-                  <p className="text-sm text-white mt-1">{grupoHospedagemPrevisto}</p>
+                  <p className="text-sm text-white mt-1">
+                    {evento.departamento === 'AGO' && grupoHospedagemPrevisto === 'Misto'
+                      ? 'Informe sexo/data/perfil para verificar vagas de hospedagem.'
+                      : grupoHospedagemPrevisto}
+                  </p>
                   <p className="text-xs text-white/60 mt-1">
                     Cama inferior e grupo final sao definidos automaticamente pela organizacao conforme idade, necessidade especial e categoria.
                   </p>
@@ -1843,11 +1857,17 @@ export default function BalcaoPage() {
                             <span className="text-sm text-white/80">🛏️ Solicitar hospedagem para a esposa</span>
                             <p className="text-xs text-white/40 mt-0.5">
                               A hospedagem é independente — cada inscrição decide individualmente.
-                              {evento.departamento === 'AGO' && grupoHospedagemEsposaPrevisto && ` (Grupo: ${grupoHospedagemEsposaPrevisto} - ${esposaVagasGrupo} vagas restantes)`}
+                              {evento.departamento === 'AGO' && grupoHospedagemEsposaPrevisto && (
+                                grupoHospedagemEsposaPrevisto === 'Misto' ? (
+                                  ' (Informe sexo/data/perfil para verificar vagas de hospedagem.)'
+                                ) : (
+                                  ` (Grupo: ${grupoHospedagemEsposaPrevisto} - ${esposaVagasGrupo} vagas restantes)`
+                                )
+                              )}
                             </p>
-                            {esposaGrupoEsgotado && (
+                            {esposaGrupoEsgotado && grupoHospedagemEsposaPrevisto !== 'Misto' && (
                               <p className="text-xs text-red-400 font-bold mt-1.5">
-                                ⚠️ Não há mais vagas de hospedagem disponíveis para seu grupo. Você ainda pode concluir a inscrição sem hospedagem.
+                                ⚠️ Não há mais vagas de hospedagem disponíveis para o grupo {grupoHospedagemEsposaPrevisto}. Você ainda pode concluir a inscrição sem hospedagem.
                               </p>
                             )}
                           </div>
@@ -1867,7 +1887,11 @@ export default function BalcaoPage() {
                             )}
                             <div className="rounded-xl border border-amber-500/40 bg-black/10 px-3 py-2">
                               <p className="text-xs font-bold uppercase tracking-wide text-amber-300">Grupo previsto da esposa</p>
-                              <p className="text-sm text-white mt-1">{grupoHospedagemEsposaPrevisto}</p>
+                              <p className="text-sm text-white mt-1">
+                                {evento.departamento === 'AGO' && grupoHospedagemEsposaPrevisto === 'Misto'
+                                  ? 'Informe sexo/data/perfil para verificar vagas de hospedagem.'
+                                  : grupoHospedagemEsposaPrevisto}
+                              </p>
                               <p className="text-xs text-white/60 mt-1">A cama inferior final sera definida automaticamente pela organizacao.</p>
                             </div>
                             <textarea value={hospEsposa.hosp_observacoes}

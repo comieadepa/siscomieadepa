@@ -1827,7 +1827,11 @@ export default function InscricaoPublicaPage() {
             {/* Informação sobre Alimentação */}
             {evento.usar_tipos_inscricao && tipoSelecionado && (
               <div className="mb-5 p-3.5 bg-gray-50 rounded-xl border border-gray-200 text-xs">
-                {tipoSelecionado.inclui_alimentacao ? (
+                {evento.departamento === 'AGO' ? (
+                  <p className="text-emerald-700 font-bold flex items-center gap-1.5">
+                    🍽️ Alimentação inclusa automaticamente para todos os inscritos da AGO — 12 refeições.
+                  </p>
+                ) : tipoSelecionado.inclui_alimentacao ? (
                   <p className="text-emerald-700 font-bold flex items-center gap-1.5">
                     🍽️ Alimentação inclusa: {tipoSelecionado.quantidade_refeicoes && tipoSelecionado.quantidade_refeicoes > 0 ? `${tipoSelecionado.quantidade_refeicoes} refeições.` : 'Alimentação inclusa nesta inscrição.'}
                   </p>
@@ -1852,11 +1856,11 @@ export default function InscricaoPublicaPage() {
                       <span className="text-sm font-semibold text-gray-700">🛏️ Desejo solicitar hospedagem</span>
                       <p className="text-xs text-gray-500 mt-0.5">
                         A solicitação não garante alocação. A organização fará a distribuição conforme disponibilidade.
-                        {evento.departamento === 'AGO' && mainGroup ? ` (Grupo: ${mainGroup} - ${mainVagasGrupo} vagas restantes)` : (vagasHospedagem !== null && ` (${vagasHospedagem} vagas restantes)`)}
+                        {evento.departamento === 'AGO' && mainGroup ? (mainGroup === 'Misto' ? ' (Informe sexo/data/perfil para verificar vagas de hospedagem.)' : ` (Grupo: ${mainGroup} - ${mainVagasGrupo} vagas restantes)`) : (vagasHospedagem !== null && ` (${vagasHospedagem} vagas restantes)`)}
                       </p>
-                      {mainGrupoEsgotado && (
+                      {mainGrupoEsgotado && mainGroup !== 'Misto' && (
                         <p className="text-xs text-red-600 font-bold mt-1.5">
-                          ⚠️ Não há mais vagas de hospedagem disponíveis para seu grupo. Você ainda pode concluir a inscrição sem hospedagem.
+                          ⚠️ Não há mais vagas de hospedagem disponíveis para o grupo {mainGroup}. Você ainda pode concluir a inscrição sem hospedagem.
                         </p>
                       )}
                     </div>
@@ -1927,7 +1931,11 @@ export default function InscricaoPublicaPage() {
 
                     <div className="mb-3 p-3 bg-white border border-amber-300 rounded-lg">
                       <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Grupo previsto</p>
-                      <p className="text-sm text-gray-700 mt-1">{grupoHospedagemPrevisto}</p>
+                      <p className="text-sm text-gray-700 mt-1">
+                        {evento.departamento === 'AGO' && grupoHospedagemPrevisto === 'Misto'
+                          ? 'Informe sexo/data/perfil para verificar vagas de hospedagem.'
+                          : grupoHospedagemPrevisto}
+                      </p>
                       <p className="text-xs text-gray-500 mt-1">
                         A cama inferior e o grupo final sao definidos automaticamente pela organizacao conforme idade, necessidade especial, comorbidades e categoria.
                       </p>
@@ -2019,7 +2027,7 @@ export default function InscricaoPublicaPage() {
                               </p>
                               {esposaGrupoEsgotado && (
                                 <p className="text-xs text-red-600 font-bold mt-1.5">
-                                  ⚠️ Não há mais vagas de hospedagem disponíveis para seu grupo. Você ainda pode concluir a inscrição sem hospedagem.
+                                  ⚠️ Não há mais vagas de hospedagem disponíveis para o grupo {grupoHospedagemEsposaPrevisto}. Você ainda pode concluir a inscrição sem hospedagem.
                                 </p>
                               )}
                             </div>
@@ -2055,7 +2063,11 @@ export default function InscricaoPublicaPage() {
                               )}
                               <div className="p-3 bg-white border border-amber-300 rounded-lg">
                                 <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Grupo previsto</p>
-                                <p className="text-sm text-gray-700 mt-1">{grupoHospedagemEsposaPrevisto}</p>
+                                <p className="text-sm text-gray-700 mt-1">
+                                  {evento.departamento === 'AGO' && grupoHospedagemEsposaPrevisto === 'Misto'
+                                    ? 'Informe sexo/data/perfil para verificar vagas de hospedagem.'
+                                    : grupoHospedagemEsposaPrevisto}
+                                </p>
                                 <p className="text-xs text-gray-500 mt-1">
                                   A cama inferior e o grupo final da esposa tambem sao definidos automaticamente pela organizacao.
                                 </p>
@@ -2257,7 +2269,11 @@ export default function InscricaoPublicaPage() {
                         if (!tipoExtra) return null;
                         return (
                           <div className="sm:col-span-2 mt-1.5 p-3.5 bg-white rounded-xl border border-gray-200 text-xs">
-                            {tipoExtra.inclui_alimentacao ? (
+                            {evento.departamento === 'AGO' ? (
+                              <p className="text-emerald-700 font-bold flex items-center gap-1.5">
+                                🍽️ Alimentação inclusa automaticamente para todos os inscritos da AGO — 12 refeições.
+                              </p>
+                            ) : tipoExtra.inclui_alimentacao ? (
                               <p className="text-emerald-700 font-bold flex items-center gap-1.5">
                                 🍽️ Alimentação inclusa: {tipoExtra.quantidade_refeicoes && tipoExtra.quantidade_refeicoes > 0 ? `${tipoExtra.quantidade_refeicoes} refeições.` : 'Alimentação inclusa nesta inscrição.'}
                               </p>
@@ -2302,11 +2318,11 @@ export default function InscricaoPublicaPage() {
                                 <span className="text-sm font-semibold text-gray-700">🛏️ Desejo solicitar hospedagem</span>
                                 <p className="text-xs text-gray-500 mt-0.5">
                                   A solicitação não garante alocação. A organização fará a distribuição conforme disponibilidade.
-                                  {evento.departamento === 'AGO' && extraGroup ? ` (Grupo: ${extraGroup} - ${extraVagasGrupo} vagas restantes)` : (vagasHospedagem !== null && ` (${vagasHospedagem} vagas restantes)`)}
+                                  {evento.departamento === 'AGO' && extraGroup ? (extraGroup === 'Misto' ? ' (Informe sexo/data/perfil para verificar vagas de hospedagem.)' : ` (Grupo: ${extraGroup} - ${extraVagasGrupo} vagas restantes)`) : (vagasHospedagem !== null && ` (${vagasHospedagem} vagas restantes)`)}
                                 </p>
-                                {extraGrupoEsgotado && (
+                                {extraGrupoEsgotado && extraGroup !== 'Misto' && (
                                   <p className="text-xs text-red-600 font-bold mt-1.5">
-                                    ⚠️ Não há mais vagas de hospedagem disponíveis para seu grupo. Você ainda pode concluir a inscrição sem hospedagem.
+                                    ⚠️ Não há mais vagas de hospedagem disponíveis para o grupo {extraGroup}. Você ainda pode concluir a inscrição sem hospedagem.
                                   </p>
                                 )}
                               </div>
