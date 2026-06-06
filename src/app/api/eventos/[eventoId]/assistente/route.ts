@@ -184,12 +184,101 @@ function respostaSegundaVia(
   return msg;
 }
 
+function formatarHospedagemMsg(
+  inscricao: Record<string, unknown>,
+  hospedagemInfo: Record<string, unknown> | null
+): string {
+  if (!inscricao.hospedagem) {
+    return `Sua inscrição foi localizada.
+
+Consta em nosso sistema que não foi solicitada hospedagem para esta inscrição.
+
+Se precisar de outras informações sobre o evento, estou à disposição.`;
+  }
+
+  const status = (hospedagemInfo?.status as string) || (inscricao.status_pagamento === 'pendente' ? 'aguardando_pagamento' : 'aguardando_alocacao');
+  const alojamento = (hospedagemInfo?.evento_alojamentos as any)?.nome || 'não definido';
+  const leitoNum = hospedagemInfo?.numero_cama ? String(hospedagemInfo.numero_cama) : 'não definido';
+  const leitoTipo = hospedagemInfo?.tipo_cama === 'inferior' ? 'Inferior' : hospedagemInfo?.tipo_cama === 'superior' ? 'Superior' : 'não definido';
+  const grupo = (hospedagemInfo?.grupo_hospedagem as string) || 'não definido';
+
+  if (status === 'alocada') {
+    return `👋 Encontrei sua hospedagem!
+
+🏨 **Alojamento:** ${alojamento}
+
+🛏 **Leito:** ${leitoNum} (${leitoTipo})
+
+👥 **Grupo:** ${grupo}
+
+✅ **Situação:** Alocada (leito reservado)`;
+  }
+
+  if (status === 'confirmada') {
+    return `👋 Sua hospedagem está confirmada.
+
+🏨 Alojamento: ${alojamento}
+
+🛏 Leito: ${leitoNum}
+
+Desejamos uma excelente participação no evento!`;
+  }
+
+  if (status === 'checkin_realizado') {
+    return `👋 Seu check-in de hospedagem já foi registrado com sucesso.
+
+🏨 Alojamento: ${alojamento}
+
+🛏 Leito: ${leitoNum}
+
+Tenha um excelente evento!`;
+  }
+
+  if (status === 'lista_espera') {
+    return `👋 Localizei sua solicitação de hospedagem.
+
+No momento seu grupo está em lista de espera.
+
+Assim que surgirem novas vagas compatíveis, o sistema poderá realizar automaticamente uma nova alocação.
+
+Sua inscrição permanece válida.`;
+  }
+
+  // Default / aguardando_pagamento
+  return `👋 Sua solicitação de hospedagem já foi registrada.
+
+A distribuição do leito acontece automaticamente após a confirmação do pagamento da inscrição, respeitando a disponibilidade do grupo correspondente.`;
+}
+
+function formatarAlimentacaoMsg(
+  inscricao: Record<string, unknown>,
+  evento: Record<string, unknown>
+): string {
+  const ativa = !!(inscricao.alimentacao || evento.departamento === 'AGO');
+  const statusText = ativa ? 'Ativa' : 'Inativa';
+
+  const totalRef = Number(inscricao.quantidade_refeicoes_total ?? inscricao.refeicoes_total ?? (evento.departamento === 'AGO' ? 12 : 0));
+  const usadasRef = Number(inscricao.quantidade_refeicoes_usadas ?? inscricao.refeicoes_utilizadas ?? 0);
+  const saldoRef = Number(inscricao.quantidade_refeicoes_saldo ?? Math.max(0, totalRef - usadasRef));
+
+  return `🍽 **Alimentação**
+
+Status: ${statusText}
+
+Total de refeições: ${totalRef}
+
+Utilizadas: ${usadasRef}
+
+Saldo disponível: ${saldoRef}`;
+}
+
 // ── Resposta estruturada para consulta de CPF ─────────────────
 function respostaCpfConsulta(
   nomeEvento: string,
   cpfDigits: string,
   inscricao: Record<string, unknown> | null,
-  evento: Record<string, unknown>
+  evento: Record<string, unknown>,
+  hospedagemInfo: Record<string, unknown> | null = null
 ): string {
   const cpfFormatado = formatarCpf(cpfDigits);
   if (!inscricao) {
@@ -206,9 +295,16 @@ function respostaCpfConsulta(
                     : status === 'pendente' ? '⏳ Pendente'
                     : status;
   let msg = `✅ Encontrei sua inscrição em *${nomeEvento}*!\n\n👤 Nome: ${nome}\n💳 Pagamento: ${statusLabel}`;
-  if (inscricao.hospedagem)  msg += '\n🛏️ Hospedagem: incluída';
-  if (inscricao.brinde)      msg += '\n🎁 Brinde: incluído';
-  if (inscricao.alimentacao) msg += '\n🍽️ Alimentação: incluída';
+  if (inscricao.brinde) msg += '\n🎁 Brinde: incluído';
+
+  msg += `\n\n${formatarHospedagemMsg(inscricao, hospedagemInfo)}`;
+
+  if (inscricao.alimentacao || evento.departamento === 'AGO') {
+    msg += `\n\n${formatarAlimentacaoMsg(inscricao, evento)}`;
+  } else {
+    msg += `\n\n🍽 **Alimentação**\nStatus: Inativa`;
+  }
+
   if (status === 'pendente')  msg += '\n\n⏳ Seu pagamento ainda não foi confirmado. O código de check-in será disponibilizado após a confirmação.';
   return msg;
 }
@@ -218,7 +314,8 @@ function respostaFallback(
   pergunta: string,
   evento: Record<string, unknown>,
   programacao: Record<string, unknown>[],
-  inscricao: Record<string, unknown> | null
+  inscricao: Record<string, unknown> | null,
+  hospedagemInfo: Record<string, unknown> | null = null
 ): string {
   const p = normalizeTexto(pergunta);
   const pNoSpace = p.replace(/\s+/g, '');
@@ -243,7 +340,8 @@ function respostaFallback(
       evento.nome as string,
       cpfDetectado,
       inscricao,
-      evento
+      evento,
+      hospedagemInfo
     );
   }
 
@@ -254,7 +352,8 @@ function respostaFallback(
       evento.nome as string,
       pTrim.replace(/\D/g, ''),
       inscricao,
-      evento
+      evento,
+      hospedagemInfo
     );
   }
 
@@ -289,15 +388,7 @@ function respostaFallback(
     if (!inscricao) {
       return 'Para consultar sua inscrição, informe seu CPF na caixa de texto (ex: "CPF: 000.000.000-00"). Assim posso verificar sua situação no evento.';
     }
-    const status = inscricao.status_pagamento as string;
-    const nome   = inscricao.nome_inscrito as string;
-    const statusLabel = status === 'pago' ? '✅ Pago' : status === 'isento' ? '🎁 Isento' : status === 'pendente' ? '⏳ Pendente' : status;
-    let msg = `Sua inscrição está registrada!\n\n👤 Nome: ${nome}\n💳 Pagamento: ${statusLabel}`;
-    if (inscricao.hospedagem) msg += '\n🛏️ Hospedagem: incluída';
-    if (inscricao.brinde)     msg += '\n🎁 Brinde: incluído';
-    if (inscricao.alimentacao) msg += '\n🍽️ Alimentação: incluída';
-    if (status === 'pendente') msg += '\n\n⏳ Após a confirmação do pagamento você receberá o código de check-in e as instruções de acesso ao evento.';
-    return msg;
+    return respostaCpfConsulta(evento.nome as string, String(inscricao.cpf || '').replace(/\D/g, ''), inscricao, evento, hospedagemInfo);
   }
 
   // ── Pagamento ────────────────────────────────────────────────
@@ -315,14 +406,23 @@ function respostaFallback(
   // ── Hospedagem ───────────────────────────────────────────────
   if (hasAny(p, ['hospedagem', 'alojamento', 'dormir', 'pernoite', 'cama', 'leito'])) {
     if (inscricao) {
-      return inscricao.hospedagem
-        ? '🛏️ Sua inscrição inclui hospedagem!'
-        : '❌ Sua inscrição atual não inclui hospedagem. Entre em contato com a organização para verificar disponibilidade.';
+      return formatarHospedagemMsg(inscricao, hospedagemInfo);
     }
     const permiteHosp = evento.permite_hospedagem as boolean;
     return permiteHosp
       ? '🛏️ Este evento oferece hospedagem. Ao se inscrever, você pode solicitar hospedagem conforme disponibilidade.'
       : '❌ Este evento não oferece hospedagem.';
+  }
+
+  // ── Alimentação ──────────────────────────────────────────────
+  if (hasAny(p, ['alimentacao', 'refeicao', 'refeicoes', 'almoco', 'jantar', 'saldo', 'saldo de refeicoes'])) {
+    if (inscricao) {
+      return formatarAlimentacaoMsg(inscricao, evento);
+    }
+    const permiteAlim = (evento.permite_alimentacao || evento.departamento === 'AGO') as boolean;
+    return permiteAlim
+      ? '🍽️ Este evento oferece alimentação. Nos eventos AGO, todos os inscritos possuem alimentação incluída (12 refeições).'
+      : '❌ Este evento não oferece alimentação.';
   }
 
   // ── Brinde ───────────────────────────────────────────────────
@@ -460,16 +560,32 @@ export async function POST(
 
     // ── Busca inscrição pelo CPF (se informado) ────────────────
     let inscricao: Record<string, unknown> | null = null;
+    let hospedagemInfo: Record<string, unknown> | null = null;
     if (cpf.length === 11) {
       const { data: insData } = await supabase
         .from('evento_inscricoes')
-        .select('id,nome_inscrito,status_pagamento,hospedagem,alimentacao,brinde,created_at,forma_pagamento,valor_final,invoice_url,pix_copia_cola,pix_qr_code,asaas_due_date')
+        .select('id,nome_inscrito,cpf,status_pagamento,hospedagem,alimentacao,brinde,created_at,forma_pagamento,valor_final,invoice_url,pix_copia_cola,pix_qr_code,asaas_due_date,refeicoes_total,refeicoes_utilizadas,quantidade_refeicoes_total,quantidade_refeicoes_usadas,quantidade_refeicoes_saldo')
         .eq('evento_id', eventoId)
         .eq('cpf', cpf)
         .order('created_at', { ascending: false })
         .limit(1)
         .single();
-      if (insData) inscricao = insData as Record<string, unknown>;
+      if (insData) {
+        inscricao = insData as Record<string, unknown>;
+
+        // Busca hospedagem/alojamento
+        const { data: hospData } = await supabase
+          .from('evento_hospedagens')
+          .select(`
+            id, status, tipo_cama, numero_cama, grupo_hospedagem,
+            evento_alojamentos ( id, nome, publico )
+          `)
+          .eq('inscricao_id', inscricao.id)
+          .maybeSingle();
+        if (hospData) {
+          hospedagemInfo = hospData as unknown as Record<string, unknown>;
+        }
+      }
     }
 
     if ((intentFinal === 'segunda_via' || intentFinal === 'consulta_inscricao') && cpf.length !== 11) {
@@ -488,7 +604,7 @@ export async function POST(
     if (intentFinal === 'segunda_via' && cpf.length === 11) {
       const respostaDireta = inscricao
         ? respostaSegundaVia(inscricao, evento)
-        : respostaCpfConsulta(evento.nome as string, cpf, inscricao, evento);
+        : respostaCpfConsulta(evento.nome as string, cpf, inscricao, evento, hospedagemInfo);
       supabase
         .from('evento_assistente_logs')
         .insert([{ evento_id: eventoId, pergunta, resposta: respostaDireta, cpf, modo: 'fallback' }])
@@ -498,7 +614,7 @@ export async function POST(
     }
 
     if (intentFinal === 'consulta_inscricao' && cpf.length === 11) {
-      const respostaDireta = respostaCpfConsulta(evento.nome as string, cpf, inscricao, evento);
+      const respostaDireta = respostaCpfConsulta(evento.nome as string, cpf, inscricao, evento, hospedagemInfo);
       supabase
         .from('evento_assistente_logs')
         .insert([{ evento_id: eventoId, pergunta, resposta: respostaDireta, cpf, modo: 'fallback' }])
@@ -506,9 +622,8 @@ export async function POST(
         .then(undefined, () => {/* ignora erro */});
       return NextResponse.json({ resposta: respostaDireta, modo: 'fallback' });
     }
-
     if ((cpfEncontradoNaPergunta || perguntaIsCpf) && cpf.length === 11 && !intentFinal) {
-      const respostaDireta = respostaCpfConsulta(evento.nome as string, cpf, inscricao, evento);
+      const respostaDireta = respostaCpfConsulta(evento.nome as string, cpf, inscricao, evento, hospedagemInfo);
       supabase
         .from('evento_assistente_logs')
         .insert([{ evento_id: eventoId, pergunta, resposta: respostaDireta, cpf, modo: 'fallback' }])
@@ -549,7 +664,23 @@ export async function POST(
               ).join('\n')}`
             : 'Programação: não cadastrada',
           inscricao
-            ? `\nDados desta inscrição (CPF informado):\n- Nome: ${inscricao.nome_inscrito}\n- Status pagamento: ${inscricao.status_pagamento}\n- Hospedagem: ${inscricao.hospedagem ? 'sim' : 'não'}\n- Brinde: ${inscricao.brinde ? 'sim' : 'não'}\n- Alimentação: ${inscricao.alimentacao ? 'sim' : 'não'}`
+            ? `\nDados desta inscrição (CPF informado):
+- Nome: ${inscricao.nome_inscrito}
+- Status pagamento: ${inscricao.status_pagamento}
+- Hospedagem contratada: ${inscricao.hospedagem ? 'sim' : 'não'}
+- Brinde contratado: ${inscricao.brinde ? 'sim' : 'não'}
+- Alimentação contratada: ${inscricao.alimentacao ? 'sim' : 'não'}
+${hospedagemInfo ? `\nDados de Hospedagem:
+- Status da hospedagem: ${hospedagemInfo.status}
+- Alojamento: ${(hospedagemInfo.evento_alojamentos as any)?.nome || 'não definido'}
+- Tipo de leito: ${hospedagemInfo.tipo_cama === 'inferior' ? 'Inferior' : hospedagemInfo.tipo_cama === 'superior' ? 'Superior' : 'não definido'}
+- Número do leito: ${hospedagemInfo.numero_cama || 'não definido'}
+- Grupo de hospedagem: ${hospedagemInfo.grupo_hospedagem || 'não definido'}` : ''}
+${inscricao.alimentacao || evento.departamento === 'AGO' ? `\nDados de Alimentação:
+- Disponível: sim
+- Total refeições: ${Number(inscricao.quantidade_refeicoes_total ?? inscricao.refeicoes_total ?? (evento.departamento === 'AGO' ? 12 : 0))}
+- Utilizadas: ${Number(inscricao.quantidade_refeicoes_usadas ?? inscricao.refeicoes_utilizadas ?? 0)}
+- Saldo disponível: ${Number(inscricao.quantidade_refeicoes_saldo ?? Math.max(0, Number(inscricao.quantidade_refeicoes_total ?? inscricao.refeicoes_total ?? (evento.departamento === 'AGO' ? 12 : 0)) - Number(inscricao.quantidade_refeicoes_usadas ?? inscricao.refeicoes_utilizadas ?? 0)))}` : ''}`
             : cpf.length === 11
               ? `\nO CPF informado (${cpfRaw || cpf}) não possui inscrição neste evento.`
               : 'CPF não informado — não consulte dados de inscrição.',
@@ -564,12 +695,51 @@ REGRAS OBRIGATÓRIAS:
 4. Para consultar inscrição individual, o CPF deve ter sido fornecido pelo usuário.
 5. Nunca exponha dados de outros inscritos.
 6. Use emojis com moderação para deixar a resposta mais amigável.
-      7. Máximo 200 palavras por resposta e evite tom corporativo ou robótico.
+7. Máximo 200 palavras por resposta e evite tom corporativo ou robótico.
 8. Se o status_pagamento for 'pendente', informe que o pagamento aguarda confirmação e NÃO mencione código de check-in.
 9. Para pedidos de segunda via / boleto / link PIX / "perdi o pagamento": use os campos invoice_url, pix_copia_cola, valor_final e asaas_due_date da inscrição para responder. NUNCA consulte a API ASAAS.
-      10. Quando encaminhar ao suporte, use a frase: "Nossa equipe pode te ajudar rapidamente 🙏".
-      11. Evite repetir o nome "Maia" em toda resposta; use apenas quando fizer sentido.
-      12. A assinatura "— Maia 💙" pode aparecer apenas em algumas respostas importantes.
+10. Quando encaminhar ao suporte, use a frase: "Nossa equipe pode te ajudar rapidamente 🙏".
+11. Evite repetir o nome "Maia" em toda resposta; use apenas quando fizer sentido.
+12. A assinatura "— Maia 💙" pode aparecer apenas em algumas respostas importantes.
+13. Sempre que a consulta envolver hospedagem (alojamento, leito), utilize estritamente estes formatos/regras:
+    - Se a hospedagem estiver alocada (status 'alocada'):
+      👋 Encontrei sua hospedagem!
+      🏨 **Alojamento:** {nome do alojamento}
+      🛏 **Leito:** {número} ({posição/tipo})
+      👥 **Grupo:** {grupo}
+      ✅ **Situação:** Alocada (leito reservado)
+    - Se a hospedagem estiver confirmada (status 'confirmada'):
+      👋 Sua hospedagem está confirmada.
+      🏨 Alojamento: {nome do alojamento}
+      🛏 Leito: {número}
+      Desejamos uma excelente participação no evento!
+    - Se check-in realizado (status 'checkin_realizado'):
+      👋 Seu check-in de hospedagem já foi registrado com sucesso.
+      🏨 Alojamento: {nome do alojamento}
+      🛏 Leito: {número}
+      Tenha um excelente evento!
+    - Se em lista de espera (status 'lista_espera'):
+      👋 Localizei sua solicitação de hospedagem.
+      No momento seu grupo está em lista de espera.
+      Assim que surgirem novas vagas compatíveis, o sistema poderá realizar automaticamente uma nova alocação.
+      Sua inscrição permanece válida.
+      *ATENÇÃO:* Nunca informe previsão de vagas e nunca prometa hospedagem.
+    - Se aguardando pagamento (status 'aguardando_pagamento' ou inscrição pendente):
+      👋 Sua solicitação de hospedagem já foi registrada.
+      A distribuição do leito acontece automaticamente após a confirmação do pagamento da inscrição, respeitando a disponibilidade do grupo correspondente.
+    - Se não solicitou hospedagem:
+      Sua inscrição foi localizada.
+      Consta em nosso sistema que não foi solicitada hospedagem para esta inscrição.
+      Se precisar de outras informações sobre o evento, estou à disposição.
+14. Sempre que perguntarem sobre alimentação, responda no formato:
+    🍽 **Alimentação**
+    Status: {Ativa/Inativa}
+    Total de refeições: {total}
+    Utilizadas: {utilizadas}
+    Saldo disponível: {saldo}
+    *ATENÇÃO:* Considere 12 refeições por padrão para eventos AGO se o sistema não indicar outro valor.
+15. TOM DAS RESPOSTAS: responder em linguagem natural, utilizar poucas informações por bloco, poucos emojis (👋🏨🛏🍽✅), ser acolhedora, objetiva e facilitar a leitura no WhatsApp.
+16. RESTRIÇÕES: Nunca informe ocupantes de um alojamento, dados pessoais de terceiros, prometa troca de leito/alojamento, prometa prioridade, reserve vagas ou altere hospedagem ou saldo de refeições.
 
 CONTEXTO DO EVENTO:
 ${contexto}`;
@@ -608,7 +778,7 @@ ${contexto}`;
 
     // ── Fallback local ─────────────────────────────────────────
     if (!resposta!) {
-      resposta = respostaFallback(pergunta, evento, programacao, inscricao);
+      resposta = respostaFallback(pergunta, evento, programacao, inscricao, hospedagemInfo);
       modo = 'fallback';
     }
 

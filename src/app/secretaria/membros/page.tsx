@@ -2731,6 +2731,18 @@ useEffect(() => {
           <div className="bg-white rounded-lg px-4 py-3 shadow-md mb-4">
             <div className="flex flex-wrap gap-2 items-center">
 
+              {/* BUSCA */}
+              <div className="flex-1 min-w-[180px] relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
+                <input
+                  type="text"
+                  placeholder="DIGITE SUA BUSCA..."
+                  value={searchTerm}
+                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                  className="w-full h-9 pl-9 pr-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#0D2B4E]"
+                />
+              </div>
+
               {/* SUPERVISÃO */}
               <select
                 value={supervisaoFilter}
@@ -2783,18 +2795,6 @@ useEffect(() => {
                 <option value="inativo">INATIVO</option>
                 <option value="JUBILADO">JUBILADO</option>
               </select>
-
-              {/* BUSCA */}
-              <div className="flex-1 min-w-[180px] relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
-                <input
-                  type="text"
-                  placeholder="DIGITE SUA BUSCA..."
-                  value={searchTerm}
-                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                  className="w-full h-9 pl-9 pr-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#0D2B4E]"
-                />
-              </div>
 
               {/* PASTOR PRESIDENTE */}
               <label className="flex flex-col items-center gap-0.5 cursor-pointer shrink-0">

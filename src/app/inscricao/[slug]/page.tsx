@@ -1080,6 +1080,25 @@ export default function InscricaoPublicaPage() {
     if (ministroSemPerfil)
       return setErroForm('Ministro localizado, mas o perfil ministerial não está definido para esta AGO. Verifique o cargo/cadastro do ministro e selecione uma categoria autorizada.');
 
+    // Validação de descrições obrigatórias para hospedagem (necessidades especiais e comorbidades)
+    if (form.hospedagem) {
+      if (form.hosp_necessidade_especial && !form.hosp_descricao_necessidade.trim()) {
+        return setErroForm('A descrição da necessidade especial é obrigatória.');
+      }
+      if (form.hosp_possui_comorbidade && !form.hosp_descricao_comorbidade.trim()) {
+        return setErroForm('A descrição da comorbidade é obrigatória.');
+      }
+    }
+
+    if (hospEsposa.solicitar) {
+      if (hospEsposa.hosp_necessidade_especial && !hospEsposa.hosp_descricao_necessidade.trim()) {
+        return setErroForm('A descrição da necessidade especial da cônjuge é obrigatória.');
+      }
+      if (hospEsposa.hosp_possui_comorbidade && !hospEsposa.hosp_descricao_comorbidade.trim()) {
+        return setErroForm('A descrição da comorbidade da cônjuge é obrigatória.');
+      }
+    }
+
     // Valida participantes extras se modo lote
     if (modoLote) {
       if (fluxoCampoMissionarioEspecial) {
@@ -1096,18 +1115,28 @@ export default function InscricaoPublicaPage() {
       somaPP(form.campo_id, tipoSelecionado?.nome ?? null);
 
       for (let i = 0; i < participantesExtra.length; i++) {
-        if (!participantesExtra[i].nome_inscrito.trim()) {
+        const pExtra = participantesExtra[i];
+        if (!pExtra.nome_inscrito.trim()) {
           return setErroForm(`Nome do participante ${i + 2} é obrigatório.`);
         }
-        if (!participantesExtra[i].supervisao_id) {
+        if (!pExtra.supervisao_id) {
           return setErroForm(`Supervisão do participante ${i + 2} é obrigatória.`);
         }
-        if (evento.usar_tipos_inscricao && !participantesExtra[i].tipo_inscricao) {
+        if (evento.usar_tipos_inscricao && !pExtra.tipo_inscricao) {
           return setErroForm(`Tipo de inscrição do participante ${i + 2} é obrigatório.`);
         }
 
-        somaPP(participantesExtra[i].campo_id, participantesExtra[i].tipo_inscricao);
-        const campoKey = String(participantesExtra[i].campo_id || '').trim();
+        if (pExtra.hospedagem) {
+          if (pExtra.hosp_necessidade_especial && !pExtra.hosp_descricao_necessidade.trim()) {
+            return setErroForm(`A descrição da necessidade especial do participante ${i + 2} é obrigatória.`);
+          }
+          if (pExtra.hosp_possui_comorbidade && !pExtra.hosp_descricao_comorbidade.trim()) {
+            return setErroForm(`A descrição da comorbidade do participante ${i + 2} é obrigatória.`);
+          }
+        }
+
+        somaPP(pExtra.campo_id, pExtra.tipo_inscricao);
+        const campoKey = String(pExtra.campo_id || '').trim();
         if (campoKey && (ppPorCampo.get(campoKey) || 0) > 1) {
           return setErroForm(`Pastor Presidente só pode ter 1 inscrição por campo no lote (campo do participante ${i + 2}).`);
         }
@@ -2044,9 +2073,12 @@ export default function InscricaoPublicaPage() {
                                 </label>
                               </div>
                               {hospEsposa.hosp_necessidade_especial && (
-                                <input value={hospEsposa.hosp_descricao_necessidade}
-                                  onChange={e => setHospEsposa(h => ({ ...h, hosp_descricao_necessidade: e.target.value }))}
-                                  placeholder="Descreva a necessidade..." className={INP} />
+                                <div className="space-y-1">
+                                  <label className={LBL}>Descreva a necessidade *</label>
+                                  <input value={hospEsposa.hosp_descricao_necessidade}
+                                    onChange={e => setHospEsposa(h => ({ ...h, hosp_descricao_necessidade: e.target.value }))}
+                                    placeholder="Ex: mobilidade reduzida..." className={INP} />
+                                </div>
                               )}
                               <div className="flex items-start gap-3">
                                 <input type="checkbox" id="hosp_esp_comorbidade" checked={hospEsposa.hosp_possui_comorbidade}
@@ -2057,9 +2089,12 @@ export default function InscricaoPublicaPage() {
                                 </label>
                               </div>
                               {hospEsposa.hosp_possui_comorbidade && (
-                                <input value={hospEsposa.hosp_descricao_comorbidade}
-                                  onChange={e => setHospEsposa(h => ({ ...h, hosp_descricao_comorbidade: e.target.value }))}
-                                  placeholder="Descreva a comorbidade..." className={INP} />
+                                <div className="space-y-1">
+                                  <label className={LBL}>Descreva a comorbidade *</label>
+                                  <input value={hospEsposa.hosp_descricao_comorbidade}
+                                    onChange={e => setHospEsposa(h => ({ ...h, hosp_descricao_comorbidade: e.target.value }))}
+                                    placeholder="Ex: diabetes..." className={INP} />
+                                </div>
                               )}
                               <div className="p-3 bg-white border border-amber-300 rounded-lg">
                                 <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Grupo previsto</p>
@@ -2349,20 +2384,22 @@ export default function InscricaoPublicaPage() {
                                   Comorbidade
                                 </label>
                                 <div className="sm:col-span-2">
-                                  <label className={LBL}>Descrição da necessidade (opcional)</label>
+                                  <label className={LBL}>Descrição da necessidade {p.hosp_necessidade_especial ? '*' : '(opcional)'}</label>
                                   <textarea
                                     value={p.hosp_descricao_necessidade}
                                     onChange={e => atualizarParticipante(idx, 'hosp_descricao_necessidade', e.target.value)}
                                     rows={2}
+                                    placeholder={p.hosp_necessidade_especial ? "Descreva a necessidade especial..." : ""}
                                     className={INP + ' resize-none'}
                                   />
                                 </div>
                                 <div className="sm:col-span-2">
-                                  <label className={LBL}>Descrição da comorbidade (opcional)</label>
+                                  <label className={LBL}>Descrição da comorbidade {p.hosp_possui_comorbidade ? '*' : '(opcional)'}</label>
                                   <textarea
                                     value={p.hosp_descricao_comorbidade}
                                     onChange={e => atualizarParticipante(idx, 'hosp_descricao_comorbidade', e.target.value)}
                                     rows={2}
+                                    placeholder={p.hosp_possui_comorbidade ? "Descreva a comorbidade..." : ""}
                                     className={INP + ' resize-none'}
                                   />
                                 </div>
