@@ -25,7 +25,7 @@ export async function POST(
   if (!guard.ok) return guard.response;
   const supabase = guard.ctx.supabaseAdmin;
 
-  const lockTipo = 'autoalocacao_hospedagem';
+  const lockTipo = 'hospedagem_autoalocacao';
   const lockOwnerToken = crypto.randomUUID();
   let lockAdquirido = false;
 
@@ -33,15 +33,15 @@ export async function POST(
     .from('evento_autoalocacao_locks')
     .delete()
     .eq('evento_id', eventoId)
-    .eq('tipo', lockTipo)
+    .eq('operacao', lockTipo)
     .lt('expires_at', new Date().toISOString());
 
   const { error: errLock } = await supabase
     .from('evento_autoalocacao_locks')
     .insert({
       evento_id: eventoId,
-      tipo: lockTipo,
-      owner_token: lockOwnerToken,
+      operacao: lockTipo,
+      locked_by: lockOwnerToken,
       expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
     });
 
@@ -54,7 +54,7 @@ export async function POST(
     }
     if (errLock.code === '42P01') {
       return NextResponse.json(
-        { error: 'Infra de lock da autoalocacao nao configurada. Aplique a migracao 20260602_hospedagem_concorrencia_e_integridade.sql.' },
+        { error: 'Infra de lock da autoalocacao nao configurada. Aplique a migracao 20260606120000_create_evento_autoalocacao_locks.sql.' },
         { status: 500 },
       );
     }
@@ -544,8 +544,8 @@ export async function POST(
         .from('evento_autoalocacao_locks')
         .delete()
         .eq('evento_id', eventoId)
-        .eq('tipo', lockTipo)
-        .eq('owner_token', lockOwnerToken);
+        .eq('operacao', lockTipo)
+        .eq('locked_by', lockOwnerToken);
     }
   }
 }
