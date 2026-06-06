@@ -189,6 +189,8 @@ export default function BalcaoPage() {
   const [editForm, setEditForm] = useState<EditFormBalcao | null>(null);
   const [salvandoEdit, setSalvandoEdit] = useState(false);
   const [erroEdit, setErroEdit] = useState<string | null>(null);
+  const [dadosOperacionais, setDadosOperacionais] = useState<any | null>(null);
+  const [carregandoDadosOperacionais, setCarregandoDadosOperacionais] = useState(false);
   const [precisaAtualizar, setPrecisaAtualizar] = useState(false);
   const ignorarProximoClearRef = useRef(false);
 
@@ -1222,10 +1224,85 @@ export default function BalcaoPage() {
     }
   }
 
+  const fmtDT = (d: string | null) => d ? new Date(d).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+
+  async function carregarDadosOperacionais(inscricaoId: string) {
+    setCarregandoDadosOperacionais(true);
+    setDadosOperacionais(null);
+    try {
+      const { data: insc, error: errInsc } = await supabase
+        .from('evento_inscricoes')
+        .select('hospedagem, alimentacao, quantidade_refeicoes_total, quantidade_refeicoes_usadas, quantidade_refeicoes_saldo, refeicoes_total, refeicoes_utilizadas, grupo_hospedagem')
+        .eq('id', inscricaoId)
+        .single();
+
+      if (errInsc || !insc) {
+        console.error('Erro ao buscar inscricao para dados operacionais:', errInsc);
+        return;
+      }
+
+      const { data: hosp } = await supabase
+        .from('evento_hospedagens')
+        .select(`
+          status, grupo_hospedagem, checkin_at, checkout_at,
+          evento_alojamentos ( nome )
+        `)
+        .eq('inscricao_id', inscricaoId)
+        .maybeSingle();
+
+      const { data: leito } = await supabase
+        .from('evento_hospedagem_leitos')
+        .select(`
+          numero, tipo_leito, posicao,
+          evento_alojamentos ( nome )
+        `)
+        .eq('inscricao_id', inscricaoId)
+        .maybeSingle();
+
+      let total = insc.quantidade_refeicoes_total ?? insc.refeicoes_total ?? null;
+      let usadas = insc.quantidade_refeicoes_usadas ?? insc.refeicoes_utilizadas ?? null;
+      let saldo = insc.quantidade_refeicoes_saldo ?? null;
+
+      if (evento?.departamento === 'AGO' && insc.alimentacao) {
+        if (total === null || total === 0) {
+          total = 12;
+        }
+        if (usadas === null) {
+          usadas = 0;
+        }
+        if (saldo === null) {
+          saldo = Math.max(0, total - usadas);
+        }
+      }
+
+      setDadosOperacionais({
+        hospedagem: !!insc.hospedagem,
+        statusHospedagem: hosp?.status || 'solicitada',
+        grupoHospedagem: hosp?.grupo_hospedagem || insc.grupo_hospedagem || '—',
+        alojamentoNome: leito?.evento_alojamentos?.nome || hosp?.evento_alojamentos?.nome || null,
+        tipoLeito: leito?.tipo_leito || null,
+        posicaoLeito: leito?.posicao || null,
+        numeroLeito: leito?.numero || null,
+        checkinAt: hosp?.checkin_at || null,
+        checkoutAt: hosp?.checkout_at || null,
+
+        alimentacao: !!insc.alimentacao,
+        refeicoesTotal: total,
+        refeicoesUsadas: usadas,
+        refeicoesSaldo: saldo,
+      });
+    } catch (err) {
+      console.error('Erro ao carregar dados operacionais:', err);
+    } finally {
+      setCarregandoDadosOperacionais(false);
+    }
+  }
+
   function abrirEdicao(ins: InscricaoResumo) {
     if (!perfil.podeEditarInscricoes) return;
     setErroEdit(null);
     setEditando(ins);
+    carregarDadosOperacionais(ins.id);
     setEditForm({
       nome_inscrito: ins.nome_inscrito,
       cpf: ins.cpf ?? '',
@@ -2295,14 +2372,14 @@ export default function BalcaoPage() {
           )}
 
           {editando && editForm && (
-            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => { setEditando(null); setEditForm(null); }}>
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => { setEditando(null); setEditForm(null); setDadosOperacionais(null); }}>
               <div className="bg-[#123b63] border border-white/10 rounded-2xl w-full max-w-lg p-5" onClick={e => e.stopPropagation()}>
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <h3 className="text-white font-bold text-sm">✏️ Editar inscrição</h3>
                     <p className="text-white/50 text-xs">{editando.nome_inscrito}</p>
                   </div>
-                  <button className="text-white/60 hover:text-white text-lg" onClick={() => { setEditando(null); setEditForm(null); }}>×</button>
+                  <button className="text-white/60 hover:text-white text-lg" onClick={() => { setEditando(null); setEditForm(null); setDadosOperacionais(null); }}>×</button>
                 </div>
 
                 {erroEdit && (
@@ -2370,10 +2447,104 @@ export default function BalcaoPage() {
                   </div>
                 </div>
 
+                {/* Dados operacionais */}
+                <div className="mt-4 pt-4 border-t border-white/10">
+                  <h4 className="text-white font-bold text-xs uppercase tracking-wider mb-3">💼 Dados operacionais</h4>
+                  {carregandoDadosOperacionais ? (
+                    <div className="text-xs text-white/60 flex items-center gap-1.5">
+                      <span className="animate-spin">⏳</span> Carregando...
+                    </div>
+                  ) : dadosOperacionais ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-white/5 border border-white/10 p-3.5 rounded-xl text-xs">
+                      {/* Hospedagem */}
+                      <div>
+                        <h5 className="font-bold text-emerald-400 mb-2 flex items-center gap-1">
+                          🏨 Hospedagem
+                        </h5>
+                        <div className="space-y-2 text-white/80">
+                          <div>
+                            <span className="text-white/50 block">Hospedagem contratada</span>
+                            <span className="text-white font-medium">{dadosOperacionais.hospedagem ? 'Sim' : 'Não'}</span>
+                          </div>
+                          {dadosOperacionais.hospedagem && (
+                            <>
+                              <div>
+                                <span className="text-white/50 block">Status</span>
+                                <span className="text-white font-medium capitalize">{dadosOperacionais.statusHospedagem || 'solicitada'}</span>
+                              </div>
+                              <div>
+                                <span className="text-white/50 block">Grupo</span>
+                                <span className="text-white font-medium">{dadosOperacionais.grupoHospedagem || '—'}</span>
+                              </div>
+                              <div>
+                                <span className="text-white/50 block">Setor/Alojamento</span>
+                                <span className="text-white font-medium">{dadosOperacionais.alojamentoNome || 'Não alocado'}</span>
+                              </div>
+                              <div>
+                                <span className="text-white/50 block">Tipo/Posição leito</span>
+                                <span className="text-white font-medium">
+                                  {dadosOperacionais.tipoLeito 
+                                    ? `${dadosOperacionais.tipoLeito}${dadosOperacionais.posicaoLeito && dadosOperacionais.posicaoLeito !== 'unico' ? ` (${dadosOperacionais.posicaoLeito})` : ''}`
+                                    : 'Não alocado'}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-white/50 block">Número do leito</span>
+                                <span className="text-white font-medium">{dadosOperacionais.numeroLeito || 'Não alocado'}</span>
+                              </div>
+                              <div>
+                                <span className="text-white/50 block">Check-in</span>
+                                <span className="text-white font-medium">{dadosOperacionais.checkinAt ? fmtDT(dadosOperacionais.checkinAt) : '—'}</span>
+                              </div>
+                              <div>
+                                <span className="text-white/50 block">Check-out</span>
+                                <span className="text-white font-medium">{dadosOperacionais.checkoutAt ? fmtDT(dadosOperacionais.checkoutAt) : '—'}</span>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Alimentação */}
+                      <div>
+                        <h5 className="font-bold text-emerald-400 mb-2 flex items-center gap-1">
+                          🍽️ Alimentação
+                        </h5>
+                        <div className="space-y-2 text-white/80">
+                          <div>
+                            <span className="text-white/50 block">Alimentação inclusa</span>
+                            <span className="text-white font-medium">{dadosOperacionais.alimentacao ? 'Sim' : 'Não'}</span>
+                          </div>
+                          {dadosOperacionais.alimentacao && (
+                            <>
+                              <div>
+                                <span className="text-white/50 block">Total de refeições</span>
+                                <span className="text-white font-medium">{dadosOperacionais.refeicoesTotal !== null ? dadosOperacionais.refeicoesTotal : '—'}</span>
+                              </div>
+                              <div>
+                                <span className="text-white/50 block">Refeições utilizadas</span>
+                                <span className="text-white font-medium">{dadosOperacionais.refeicoesUsadas !== null ? dadosOperacionais.refeicoesUsadas : '—'}</span>
+                              </div>
+                              <div>
+                                <span className="text-white/50 block">Saldo de refeições</span>
+                                <span className={`font-bold ${dadosOperacionais.refeicoesSaldo && dadosOperacionais.refeicoesSaldo > 0 ? 'text-emerald-300' : 'text-white'}`}>
+                                  {dadosOperacionais.refeicoesSaldo !== null ? dadosOperacionais.refeicoesSaldo : '—'}
+                                </span>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-red-300">Erro ao carregar dados operacionais.</div>
+                  )}
+                </div>
+
                 <div className="flex gap-2 mt-4">
                   <button
                     type="button"
-                    onClick={() => { setEditando(null); setEditForm(null); }}
+                    onClick={() => { setEditando(null); setEditForm(null); setDadosOperacionais(null); }}
                     className="flex-1 border border-white/20 text-white/70 hover:text-white hover:border-white/40 py-2.5 rounded-lg text-sm font-bold transition"
                   >
                     Cancelar

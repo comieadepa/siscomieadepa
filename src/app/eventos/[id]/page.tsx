@@ -959,6 +959,8 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   const [salvandoEdit,  setSalvandoEdit]  = useState(false);
   const [erroEdit,      setErroEdit]      = useState<string | null>(null);
   const [confirmExcluir, setConfirmExcluir] = useState<Inscricao | null>(null);
+  const [dadosOperacionais, setDadosOperacionais] = useState<any | null>(null);
+  const [carregandoDadosOperacionais, setCarregandoDadosOperacionais] = useState(false);
   const timeoutsRef = useRef<number[]>([]);
   const POR_PAG = 20;
 
@@ -1087,10 +1089,83 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
     }
   }
 
+  async function carregarDadosOperacionais(inscricaoId: string) {
+    setCarregandoDadosOperacionais(true);
+    setDadosOperacionais(null);
+    try {
+      const { data: insc, error: errInsc } = await supabase
+        .from('evento_inscricoes')
+        .select('hospedagem, alimentacao, quantidade_refeicoes_total, quantidade_refeicoes_usadas, quantidade_refeicoes_saldo, refeicoes_total, refeicoes_utilizadas, grupo_hospedagem')
+        .eq('id', inscricaoId)
+        .single();
+
+      if (errInsc || !insc) {
+        console.error('Erro ao buscar inscricao para dados operacionais:', errInsc);
+        return;
+      }
+
+      const { data: hosp } = await supabase
+        .from('evento_hospedagens')
+        .select(`
+          status, grupo_hospedagem, checkin_at, checkout_at,
+          evento_alojamentos ( nome )
+        `)
+        .eq('inscricao_id', inscricaoId)
+        .maybeSingle();
+
+      const { data: leito } = await supabase
+        .from('evento_hospedagem_leitos')
+        .select(`
+          numero, tipo_leito, posicao,
+          evento_alojamentos ( nome )
+        `)
+        .eq('inscricao_id', inscricaoId)
+        .maybeSingle();
+
+      let total = insc.quantidade_refeicoes_total ?? insc.refeicoes_total ?? null;
+      let usadas = insc.quantidade_refeicoes_usadas ?? insc.refeicoes_utilizadas ?? null;
+      let saldo = insc.quantidade_refeicoes_saldo ?? null;
+
+      if (evento?.departamento === 'AGO' && insc.alimentacao) {
+        if (total === null || total === 0) {
+          total = 12;
+        }
+        if (usadas === null) {
+          usadas = 0;
+        }
+        if (saldo === null) {
+          saldo = Math.max(0, total - usadas);
+        }
+      }
+
+      setDadosOperacionais({
+        hospedagem: !!insc.hospedagem,
+        statusHospedagem: hosp?.status || 'solicitada',
+        grupoHospedagem: hosp?.grupo_hospedagem || insc.grupo_hospedagem || '—',
+        alojamentoNome: leito?.evento_alojamentos?.nome || hosp?.evento_alojamentos?.nome || null,
+        tipoLeito: leito?.tipo_leito || null,
+        posicaoLeito: leito?.posicao || null,
+        numeroLeito: leito?.numero || null,
+        checkinAt: hosp?.checkin_at || null,
+        checkoutAt: hosp?.checkout_at || null,
+
+        alimentacao: !!insc.alimentacao,
+        refeicoesTotal: total,
+        refeicoesUsadas: usadas,
+        refeicoesSaldo: saldo,
+      });
+    } catch (err) {
+      console.error('Erro ao carregar dados operacionais:', err);
+    } finally {
+      setCarregandoDadosOperacionais(false);
+    }
+  }
+
   function abrirEdicao(ins: Inscricao) {
     if (!podeEditar) return;
     setErroEdit(null);
     setEditando(ins);
+    carregarDadosOperacionais(ins.id);
     setEditForm({
       evento_id: ins.evento_id,
       nome_inscrito: ins.nome_inscrito,
@@ -1732,7 +1807,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
       )}
 
       {editando && editForm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto" onClick={() => { setEditando(null); setEditForm(null); }}>
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto" onClick={() => { setEditando(null); setEditForm(null); setDadosOperacionais(null); }}>
           <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col max-h-[95dvh] sm:max-h-[90vh] my-auto" onClick={e => e.stopPropagation()}>
             {/* Cabeçalho fixo */}
             <div className="flex items-start justify-between px-4 sm:px-6 pt-4 sm:pt-6 pb-3 border-b border-gray-100 shrink-0">
@@ -1740,7 +1815,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                 <h3 className="font-bold text-[#123b63] text-base">✏️ Editar Inscrição</h3>
                 <p className="text-xs text-gray-500 mt-0.5">{editando.nome_inscrito}</p>
               </div>
-              <button onClick={() => { setEditando(null); setEditForm(null); }} className="text-gray-400 hover:text-gray-700 text-xl font-bold leading-none ml-4">×</button>
+              <button onClick={() => { setEditando(null); setEditForm(null); setDadosOperacionais(null); }} className="text-gray-400 hover:text-gray-700 text-xl font-bold leading-none ml-4">×</button>
             </div>
             {/* Conteúdo com scroll */}
             <div className="overflow-y-auto flex-1 px-4 sm:px-6 py-4">
@@ -1907,6 +1982,100 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
               </div>
             </div>
 
+            {/* Dados operacionais */}
+            <div className="mt-6 border-t border-gray-100 pt-6">
+              <h4 className="font-bold text-[#123b63] text-sm mb-4">💼 Dados operacionais</h4>
+              {carregandoDadosOperacionais ? (
+                <div className="text-sm text-gray-500 flex items-center gap-2">
+                  <span className="animate-spin">⏳</span> Carregando informações operacionais...
+                </div>
+              ) : dadosOperacionais ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                  {/* Hospedagem */}
+                  <div>
+                    <h5 className="font-semibold text-gray-700 text-xs uppercase tracking-wider mb-3 flex items-center gap-1">
+                      🏨 Hospedagem
+                    </h5>
+                    <div className="space-y-2.5">
+                      <div>
+                        <span className="text-xs text-gray-500 block">Hospedagem contratada</span>
+                        <span className="text-sm font-medium text-gray-800">{dadosOperacionais.hospedagem ? 'Sim' : 'Não'}</span>
+                      </div>
+                      {dadosOperacionais.hospedagem && (
+                        <>
+                          <div>
+                            <span className="text-xs text-gray-500 block">Status da hospedagem</span>
+                            <span className="text-sm font-medium text-gray-800 capitalize">{dadosOperacionais.statusHospedagem || 'solicitada'}</span>
+                          </div>
+                          <div>
+                            <span className="text-xs text-gray-500 block">Grupo de hospedagem</span>
+                            <span className="text-sm font-medium text-gray-800">{dadosOperacionais.grupoHospedagem || '—'}</span>
+                          </div>
+                          <div>
+                            <span className="text-xs text-gray-500 block">Setor/Alojamento</span>
+                            <span className="text-sm font-medium text-gray-800">{dadosOperacionais.alojamentoNome || 'Não alocado'}</span>
+                          </div>
+                          <div>
+                            <span className="text-xs text-gray-500 block">Tipo de leito</span>
+                            <span className="text-sm font-medium text-gray-800">
+                              {dadosOperacionais.tipoLeito 
+                                ? `${dadosOperacionais.tipoLeito}${dadosOperacionais.posicaoLeito && dadosOperacionais.posicaoLeito !== 'unico' ? ` (${dadosOperacionais.posicaoLeito})` : ''}`
+                                : 'Não alocado'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-xs text-gray-500 block">Número do leito</span>
+                            <span className="text-sm font-medium text-gray-800">{dadosOperacionais.numeroLeito || 'Não alocado'}</span>
+                          </div>
+                          <div>
+                            <span className="text-xs text-gray-500 block">Check-in</span>
+                            <span className="text-sm font-medium text-gray-800">{dadosOperacionais.checkinAt ? fmtDT(dadosOperacionais.checkinAt) : '—'}</span>
+                          </div>
+                          <div>
+                            <span className="text-xs text-gray-500 block">Check-out</span>
+                            <span className="text-sm font-medium text-gray-800">{dadosOperacionais.checkoutAt ? fmtDT(dadosOperacionais.checkoutAt) : '—'}</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Alimentação */}
+                  <div>
+                    <h5 className="font-semibold text-gray-700 text-xs uppercase tracking-wider mb-3 flex items-center gap-1">
+                      🍽️ Alimentação
+                    </h5>
+                    <div className="space-y-2.5">
+                      <div>
+                        <span className="text-xs text-gray-500 block">Alimentação inclusa</span>
+                        <span className="text-sm font-medium text-gray-800">{dadosOperacionais.alimentacao ? 'Sim' : 'Não'}</span>
+                      </div>
+                      {dadosOperacionais.alimentacao && (
+                        <>
+                          <div>
+                            <span className="text-xs text-gray-500 block">Total de refeições</span>
+                            <span className="text-sm font-medium text-gray-800">{dadosOperacionais.refeicoesTotal !== null ? dadosOperacionais.refeicoesTotal : '—'}</span>
+                          </div>
+                          <div>
+                            <span className="text-xs text-gray-500 block">Refeições utilizadas</span>
+                            <span className="text-sm font-medium text-gray-800">{dadosOperacionais.refeicoesUsadas !== null ? dadosOperacionais.refeicoesUsadas : '—'}</span>
+                          </div>
+                          <div>
+                            <span className="text-xs text-gray-500 block">Saldo de refeições</span>
+                            <span className={`text-sm font-bold ${dadosOperacionais.refeicoesSaldo && dadosOperacionais.refeicoesSaldo > 0 ? 'text-emerald-700' : 'text-gray-800'}`}>
+                              {dadosOperacionais.refeicoesSaldo !== null ? dadosOperacionais.refeicoesSaldo : '—'}
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-red-500">Erro ao carregar informações operacionais.</div>
+              )}
+            </div>
+
             {valorNovo !== null && (
               <div className="mt-4 text-xs text-gray-600">
                 <div>Valor atual pago: {fmtMoeda(valorPagoAtual)}</div>
@@ -1926,7 +2095,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
             {/* Rodapé fixo */}
             <div className="flex items-center justify-end gap-2 px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-100 shrink-0">
               <button
-                onClick={() => { setEditando(null); setEditForm(null); }}
+                onClick={() => { setEditando(null); setEditForm(null); setDadosOperacionais(null); }}
                 className="px-4 py-2 text-sm rounded-lg border border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100 transition"
               >
                 Cancelar
