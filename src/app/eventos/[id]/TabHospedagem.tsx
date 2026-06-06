@@ -1368,6 +1368,85 @@ function SecaoAlojamentos({
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
 
+  // Modal de edição de alojamento
+  const [modalEditar, setModalEditar] = useState<Alojamento | null>(null);
+  const [editForm, setEditForm] = useState({
+    nome: '', publico: 'masculino_geral' as string, total_vagas: 20,
+    camas_inferiores: 10, camas_superiores: 10, ativo: true,
+  });
+  const [salvandoEdit, setSalvandoEdit] = useState(false);
+  const [erroEdit, setErroEdit] = useState<string | null>(null);
+
+  function abrirModalEdicao(aloj: Alojamento) {
+    setModalEditar(aloj);
+    setEditForm({
+      nome: aloj.nome,
+      publico: aloj.publico,
+      total_vagas: aloj.total_vagas,
+      camas_inferiores: aloj.camas_inferiores,
+      camas_superiores: aloj.camas_superiores,
+      ativo: aloj.ativo,
+    });
+    setErroEdit(null);
+  }
+
+  async function salvarAlojamento(e: React.FormEvent) {
+    e.preventDefault();
+    if (!modalEditar) return;
+    setErroEdit(null);
+
+    const ocupados = modalEditar.total_vagas - (modalEditar.vagas_livres ?? 0);
+    if (editForm.total_vagas < ocupados) {
+      setErroEdit(`Não é possível reduzir a capacidade abaixo da quantidade de leitos ocupados (${ocupados} ocupados).`);
+      return;
+    }
+
+    if (editForm.camas_inferiores + editForm.camas_superiores !== editForm.total_vagas) {
+      setErroEdit("A soma das camas inferiores e superiores deve ser igual ao total de vagas.");
+      return;
+    }
+
+    if (editForm.publico !== modalEditar.publico && ocupados > 0) {
+      setErroEdit("Não é possível alterar o público/grupo de um alojamento com hóspedes alocados.");
+      return;
+    }
+
+    if (!editForm.ativo && ocupados > 0) {
+      setErroEdit("Não é possível desativar o alojamento porque existem hospedagens alocadas nele. Realoque os ocupantes primeiro.");
+      return;
+    }
+
+    setSalvandoEdit(true);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/alojamentos`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: modalEditar.id,
+          nome: editForm.nome.trim(),
+          publico: editForm.publico,
+          sexo: editForm.publico === 'feminino' ? 'F' : editForm.publico === 'misto' ? null : 'M',
+          total_vagas: editForm.total_vagas,
+          camas_inferiores: editForm.camas_inferiores,
+          camas_superiores: editForm.camas_superiores,
+          ativo: editForm.ativo,
+        }),
+      });
+
+      if (!res.ok) {
+        const j = await res.json();
+        throw new Error(j.error ?? 'Erro ao salvar alterações');
+      }
+
+      setModalEditar(null);
+      onRefresh();
+    } catch (err) {
+      setErroEdit(err instanceof Error ? err.message : 'Erro ao salvar');
+    } finally {
+      setSalvandoEdit(false);
+    }
+  }
+
   async function criarAlojamento(e: React.FormEvent) {
     e.preventDefault();
     setErro(null);
@@ -1398,11 +1477,16 @@ function SecaoAlojamentos({
   }
 
   async function toggleAtivo(aloj: Alojamento) {
-    await fetch(`/api/eventos/${eventoId}/alojamentos`, {
+    const res = await fetch(`/api/eventos/${eventoId}/alojamentos`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: aloj.id, ativo: !aloj.ativo }),
     });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      alert(json.error || 'Erro ao alterar status do alojamento.');
+      return;
+    }
     onRefresh();
   }
 
@@ -1433,17 +1517,38 @@ function SecaoAlojamentos({
             <div>
               <label className={labelCls}>Total de vagas</label>
               <input type="number" min="1" value={form.total_vagas}
-                onChange={e => setForm(f => ({ ...f, total_vagas: e.target.value }))} className={inputCls} />
+                onChange={e => {
+                  const val = parseInt(e.target.value) || 0;
+                  setForm(f => ({
+                    ...f,
+                    total_vagas: e.target.value,
+                    camas_superiores: String(Math.max(0, val - (parseInt(f.camas_inferiores) || 0)))
+                  }));
+                }} className={inputCls} />
             </div>
             <div>
               <label className={labelCls}>Camas inferiores</label>
               <input type="number" min="0" value={form.camas_inferiores}
-                onChange={e => setForm(f => ({ ...f, camas_inferiores: e.target.value }))} className={inputCls} />
+                onChange={e => {
+                  const val = parseInt(e.target.value) || 0;
+                  setForm(f => ({
+                    ...f,
+                    camas_inferiores: e.target.value,
+                    camas_superiores: String(Math.max(0, (parseInt(f.total_vagas) || 0) - val))
+                  }));
+                }} className={inputCls} />
             </div>
             <div>
               <label className={labelCls}>Camas superiores</label>
               <input type="number" min="0" value={form.camas_superiores}
-                onChange={e => setForm(f => ({ ...f, camas_superiores: e.target.value }))} className={inputCls} />
+                onChange={e => {
+                  const val = parseInt(e.target.value) || 0;
+                  setForm(f => ({
+                    ...f,
+                    camas_superiores: e.target.value,
+                    camas_inferiores: String(Math.max(0, (parseInt(f.total_vagas) || 0) - val))
+                  }));
+                }} className={inputCls} />
             </div>
           </div>
           <button type="submit" disabled={salvando}
@@ -1503,13 +1608,153 @@ function SecaoAlojamentos({
                   <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">⬆ {aloj.camas_superiores} sup.</span>
                 </div>
 
-                <button onClick={() => toggleAtivo(aloj)}
-                  className="w-full text-xs py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition font-semibold">
-                  {aloj.ativo ? 'Desativar' : 'Ativar'}
-                </button>
+                <div className="flex gap-1.5 mt-2">
+                  <button onClick={() => abrirModalEdicao(aloj)}
+                    className="flex-1 text-xs py-1.5 rounded-lg border border-gray-200 text-[#0D2B4E] hover:bg-gray-50 transition font-semibold">
+                    ✏️ Editar
+                  </button>
+                  <button onClick={() => toggleAtivo(aloj)}
+                    className="flex-1 text-xs py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition font-semibold">
+                    {aloj.ativo ? 'Desativar' : 'Ativar'}
+                  </button>
+                </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Modal de Edição de Alojamento */}
+      {modalEditar && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setModalEditar(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-5">
+              <div>
+                <h3 className="font-bold text-[#123b63] text-base">✏️ Editar Alojamento</h3>
+                <p className="text-xs text-gray-500 mt-0.5">{modalEditar.nome}</p>
+              </div>
+              <button onClick={() => setModalEditar(null)} className="text-gray-400 hover:text-gray-700 text-xl font-bold leading-none">×</button>
+            </div>
+
+            {erroEdit && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{erroEdit}</div>
+            )}
+
+            <form onSubmit={salvarAlojamento} className="space-y-4">
+              <div>
+                <label className={labelCls}>Nome do alojamento *</label>
+                <input
+                  type="text"
+                  value={editForm.nome}
+                  onChange={e => setEditForm(f => ({ ...f, nome: e.target.value }))}
+                  className={inputCls}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className={labelCls}>Público</label>
+                <select
+                  value={editForm.publico}
+                  onChange={e => setEditForm(f => ({ ...f, publico: e.target.value }))}
+                  className={inputCls}
+                >
+                  <option value="masculino_geral">👨 Masculino (Geral)</option>
+                  <option value="feminino">👩 Feminino</option>
+                  <option value="presidentes">👨 Presidentes</option>
+                  <option value="jubilados">👨 Jubilados</option>
+                  <option value="misto">👥 Misto</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className={labelCls}>Total vagas</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editForm.total_vagas}
+                    onChange={e => {
+                      const val = parseInt(e.target.value) || 0;
+                      setEditForm(f => ({
+                        ...f,
+                        total_vagas: val,
+                        camas_superiores: Math.max(0, val - f.camas_inferiores)
+                      }));
+                    }}
+                    className={inputCls}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Inferiores</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={editForm.camas_inferiores}
+                    onChange={e => {
+                      const val = parseInt(e.target.value) || 0;
+                      setEditForm(f => ({
+                        ...f,
+                        camas_inferiores: val,
+                        camas_superiores: Math.max(0, f.total_vagas - val)
+                      }));
+                    }}
+                    className={inputCls}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Superiores</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={editForm.camas_superiores}
+                    onChange={e => {
+                      const val = parseInt(e.target.value) || 0;
+                      setEditForm(f => ({
+                        ...f,
+                        camas_superiores: val,
+                        camas_inferiores: Math.max(0, f.total_vagas - val)
+                      }));
+                    }}
+                    className={inputCls}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 py-2">
+                <input
+                  type="checkbox"
+                  id="edit-ativo"
+                  checked={editForm.ativo}
+                  onChange={e => setEditForm(f => ({ ...f, ativo: e.target.checked }))}
+                  className="rounded border-gray-300 text-[#123b63] focus:ring-[#123b63]"
+                />
+                <label htmlFor="edit-ativo" className="text-sm font-semibold text-gray-700 select-none cursor-pointer">
+                  Alojamento ativo para alocação
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setModalEditar(null)}
+                  className="px-4 py-2 rounded-lg text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 transition font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={salvandoEdit}
+                  className="px-5 py-2 rounded-lg text-sm bg-[#123b63] text-white font-bold hover:bg-[#0f2a45] transition disabled:opacity-50"
+                >
+                  {salvandoEdit ? 'Salvando...' : 'Salvar alterações'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

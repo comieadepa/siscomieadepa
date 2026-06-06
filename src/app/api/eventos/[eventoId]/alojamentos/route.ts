@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireEventoPermission } from '@/lib/evento-guard';
 import { normalizePayloadUppercase } from '@/lib/text';
+import { logDB } from '@/lib/audit';
 
 // GET /api/eventos/[eventoId]/alojamentos
 export async function GET(
@@ -19,22 +20,40 @@ export async function GET(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Contagem de ocupados via hospedagens confirmadas
-  const { data: ocupados } = await supabase
-    .from('evento_hospedagens')
-    .select('alojamento_id, tipo_cama, status')
+  // Contagem de ocupados via hospedagem leitos (ocupado = true)
+  const { data: leitosOcupados } = await supabase
+    .from('evento_hospedagem_leitos')
+    .select('alojamento_id, posicao')
     .eq('evento_id', eventoId)
-    .eq('status', 'confirmada');
+    .eq('ocupado', true);
+
+  const { data: hospOcupadas } = await supabase
+    .from('evento_hospedagens')
+    .select('alojamento_id, tipo_cama')
+    .eq('evento_id', eventoId)
+    .in('status', ['alocada', 'confirmada', 'checkin_realizado']);
 
   const ocupadosPorAlojamento: Record<string, { total: number; inferiores: number; superiores: number }> = {};
-  for (const h of ocupados ?? []) {
-    if (!h.alojamento_id) continue;
-    if (!ocupadosPorAlojamento[h.alojamento_id]) {
-      ocupadosPorAlojamento[h.alojamento_id] = { total: 0, inferiores: 0, superiores: 0 };
+
+  const processOcupante = (alojId: string, tipoCama: string | null) => {
+    if (!alojId) return;
+    if (!ocupadosPorAlojamento[alojId]) {
+      ocupadosPorAlojamento[alojId] = { total: 0, inferiores: 0, superiores: 0 };
     }
-    ocupadosPorAlojamento[h.alojamento_id].total++;
-    if (h.tipo_cama === 'inferior') ocupadosPorAlojamento[h.alojamento_id].inferiores++;
-    if (h.tipo_cama === 'superior') ocupadosPorAlojamento[h.alojamento_id].superiores++;
+    ocupadosPorAlojamento[alojId].total++;
+    if (tipoCama === 'inferior') ocupadosPorAlojamento[alojId].inferiores++;
+    if (tipoCama === 'superior') ocupadosPorAlojamento[alojId].superiores++;
+  };
+
+  // Se houver leitos reais ocupados, usá-los prioritariamente
+  if ((leitosOcupados ?? []).length > 0) {
+    for (const l of leitosOcupados!) {
+      processOcupante(l.alojamento_id, l.posicao === 'unico' ? null : l.posicao);
+    }
+  } else {
+    for (const h of hospOcupadas ?? []) {
+      processOcupante(h.alojamento_id, h.tipo_cama);
+    }
   }
 
   const result = (data ?? []).map(a => {
@@ -102,15 +121,105 @@ export async function PATCH(
   if (!id) return NextResponse.json({ error: 'id obrigatório' }, { status: 400 });
 
   const supabase = guard.ctx.supabaseAdmin;
-  const updatesNormalized = normalizePayloadUppercase(updates);
 
-  const { error } = await supabase
+  // 1. Buscar alojamento atual
+  const { data: currentAloj, error: errFetch } = await supabase
+    .from('evento_alojamentos')
+    .select('nome, publico, total_vagas, camas_inferiores, camas_superiores, ativo')
+    .eq('id', id)
+    .eq('evento_id', eventoId)
+    .single();
+
+  if (errFetch || !currentAloj) {
+    return NextResponse.json({ error: 'Alojamento não encontrado.' }, { status: 404 });
+  }
+
+  // 2. Calcular ocupação atual
+  const { count: leitosCount } = await supabase
+    .from('evento_hospedagem_leitos')
+    .select('id', { count: 'exact', head: true })
+    .eq('alojamento_id', id)
+    .eq('ocupado', true);
+
+  let totalOcupados = leitosCount ?? 0;
+  if (totalOcupados === 0) {
+    const { count: hospCount } = await supabase
+      .from('evento_hospedagens')
+      .select('id', { count: 'exact', head: true })
+      .eq('alojamento_id', id)
+      .in('status', ['alocada', 'confirmada', 'checkin_realizado']);
+    totalOcupados = hospCount ?? 0;
+  }
+
+  // 3. Validar nova capacidade >= ocupados
+  const newTotal = updates.total_vagas !== undefined ? Number(updates.total_vagas) : currentAloj.total_vagas;
+  if (newTotal < totalOcupados) {
+    return NextResponse.json(
+      { error: `Não é possível reduzir a capacidade abaixo da quantidade de leitos ocupados (${totalOcupados} ocupados).` },
+      { status: 400 }
+    );
+  }
+
+  // 4. Validar inferiores + superiores = total
+  const newInferiores = updates.camas_inferiores !== undefined ? Number(updates.camas_inferiores) : currentAloj.camas_inferiores;
+  const newSuperiores = updates.camas_superiores !== undefined ? Number(updates.camas_superiores) : currentAloj.camas_superiores;
+  if (newInferiores + newSuperiores !== newTotal) {
+    return NextResponse.json(
+      { error: 'A soma das camas inferiores e superiores deve ser igual ao total de vagas.' },
+      { status: 400 }
+    );
+  }
+
+  // 5. Validar se tenta alterar grupo/público com hóspedes alocados
+  const newPublico = updates.publico !== undefined ? String(updates.publico) : currentAloj.publico;
+  if (newPublico !== currentAloj.publico && totalOcupados > 0) {
+    return NextResponse.json(
+      { error: 'Não é possível alterar o público/grupo de um alojamento com hóspedes alocados.' },
+      { status: 400 }
+    );
+  }
+
+  // 6. Validar desativação de alojamento com hóspedes alocados
+  const newAtivo = updates.ativo !== undefined ? !!updates.ativo : currentAloj.ativo;
+  if (!newAtivo && totalOcupados > 0) {
+    return NextResponse.json(
+      { error: 'Não é possível desativar o alojamento porque existem hospedagens alocadas nele. Realoque os ocupantes primeiro.' },
+      { status: 400 }
+    );
+  }
+
+  // 7. Atualizar registro
+  const updatesNormalized = normalizePayloadUppercase(updates);
+  const { error: errUpdate } = await supabase
     .from('evento_alojamentos')
     .update(updatesNormalized)
     .eq('id', id)
     .eq('evento_id', eventoId);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (errUpdate) return NextResponse.json({ error: errUpdate.message }, { status: 500 });
+
+  // 8. Registrar auditoria
+  await logDB({
+    userId: guard.ctx.user?.id,
+    userEmail: guard.ctx.user?.email ?? undefined,
+    acao: 'alojamento_editado',
+    modulo: 'hospedagem',
+    entidade: 'evento_alojamentos',
+    entidadeId: id,
+    descricao: `[Hospedagem] Alojamento "${updates.nome || currentAloj.nome}" editado. Capacidade: ${currentAloj.total_vagas} -> ${newTotal}.`,
+    detalhes: {
+      alojamento_id: id,
+      capacidade_anterior: currentAloj.total_vagas,
+      capacidade_nova: newTotal,
+      leitos_inferiores_anterior: currentAloj.camas_inferiores,
+      leitos_inferiores_novo: newInferiores,
+      leitos_superiores_anterior: currentAloj.camas_superiores,
+      leitos_superiores_novo: newSuperiores,
+      operador: guard.ctx.user?.email ?? 'desconhecido'
+    },
+    request,
+  });
+
   return NextResponse.json({ ok: true });
 }
 
@@ -128,16 +237,26 @@ export async function DELETE(
 
   const supabase = guard.ctx.supabaseAdmin;
 
-  // Verifica se há hospedagens confirmadas neste alojamento
-  const { count } = await supabase
-    .from('evento_hospedagens')
+  // Verifica se há hospedagens ocupadas neste alojamento
+  const { count: leitosCount } = await supabase
+    .from('evento_hospedagem_leitos')
     .select('id', { count: 'exact', head: true })
     .eq('alojamento_id', id)
-    .eq('status', 'confirmada');
+    .eq('ocupado', true);
 
-  if ((count ?? 0) > 0) {
+  let totalOcupados = leitosCount ?? 0;
+  if (totalOcupados === 0) {
+    const { count: hospCount } = await supabase
+      .from('evento_hospedagens')
+      .select('id', { count: 'exact', head: true })
+      .eq('alojamento_id', id)
+      .in('status', ['alocada', 'confirmada', 'checkin_realizado']);
+    totalOcupados = hospCount ?? 0;
+  }
+
+  if (totalOcupados > 0) {
     return NextResponse.json(
-      { error: 'Não é possível excluir: há hospedagens confirmadas neste alojamento.' },
+      { error: 'Não é possível excluir: há hospedagens ocupadas neste alojamento.' },
       { status: 409 }
     );
   }
