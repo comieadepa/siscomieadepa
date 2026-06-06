@@ -76,6 +76,7 @@ interface Hospedagem {
     | 'checkin_realizado'
     | 'lista_espera';
   elegivel_autoalocacao?: boolean;
+  tem_leito_ocupado?: boolean;
   pendencias?: string[];
 }
 
@@ -632,9 +633,10 @@ export default function TabHospedagem({
             <button
               onClick={autoalocar}
               disabled={autoalocando || stats.elegiveis === 0}
+              title="Reprocessa hospedagens pagas que ainda não receberam leito. O fluxo normal já aloca automaticamente após pagamento."
               className="w-full sm:w-auto flex items-center gap-2 bg-[#0D2B4E] text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-[#0a1e38] transition disabled:opacity-50"
             >
-              {autoalocando ? '⏳ Alocando...' : '🤖 Autoalocar'}
+              {autoalocando ? '⏳ Alocando...' : '🤖 Processar pendências'}
             </button>
 
             <a
@@ -1559,18 +1561,106 @@ function SecaoRelatorios({
   }, [hospedagens, relTipo, filtroAloj]);
 
   const porAlojamento = useMemo(() => {
-    const map = new Map<string, { nome: string; total: number; confirmadas: number; lista_espera: number }>();
-    hospedagens.forEach(h => {
-      const k = h.alojamento_id ?? '__sem__';
-      const nome = h.alojamento_nome ?? 'Sem alojamento';
-      const cur = map.get(k) ?? { nome, total: 0, confirmadas: 0, lista_espera: 0 };
-      cur.total++;
-      if (h.status === 'confirmada')   cur.confirmadas++;
-      if (h.status === 'lista_espera') cur.lista_espera++;
-      map.set(k, cur);
+    // 1. Mapeia os alojamentos cadastrados
+    const map = new Map<string, {
+      id: string;
+      nome: string;
+      vagas_totais: number | null;
+      ocupadas: number | null;
+      livres: number | null;
+      lista_espera: number | null;
+      taxa: number | null;
+      isSemAlojamento?: boolean;
+    }>();
+
+    alojamentos.forEach(aloj => {
+      const associated = hospedagens.filter(h => h.alojamento_id === aloj.id);
+      
+      // Regra de ocupação real: leito ocupado (ou status como fallback)
+      const ocupadas = associated.filter(h => 
+        h.tem_leito_ocupado || ['alocada', 'confirmada', 'checkin_realizado'].includes(h.status_operacional ?? h.status)
+      ).length;
+
+      const lista_espera = associated.filter(h => 
+        (h.status_operacional ?? h.status) === 'lista_espera'
+      ).length;
+
+      const totalVagas = aloj.total_vagas ?? 0;
+      const livres = Math.max(0, totalVagas - ocupadas);
+      const taxa = totalVagas > 0 ? Math.round((ocupadas / totalVagas) * 100) : 0;
+
+      map.set(aloj.id, {
+        id: aloj.id,
+        nome: aloj.nome,
+        vagas_totais: totalVagas,
+        ocupadas,
+        livres,
+        lista_espera,
+        taxa,
+      });
     });
-    return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome));
-  }, [hospedagens]);
+
+    const result = Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome));
+
+    // 2. Mapeia os sem alojamento
+    const semAloj = hospedagens.filter(h => !h.alojamento_id);
+
+    const aguardandoPagamento = semAloj.filter(h => (h.status_operacional ?? h.status) === 'aguardando_pagamento').length;
+    const listaEsperaSemAloj = semAloj.filter(h => (h.status_operacional ?? h.status) === 'lista_espera').length;
+    const pendenteAlocacao = semAloj.filter(h => (h.status_operacional ?? h.status) === 'elegivel').length;
+    const outrasSemAloj = semAloj.filter(h => !['aguardando_pagamento', 'lista_espera', 'elegivel'].includes(h.status_operacional ?? h.status)).length;
+
+    if (aguardandoPagamento > 0) {
+      result.push({
+        id: 'sem_aloj_pagamento',
+        nome: 'Sem alojamento (Aguardando pagamento)',
+        vagas_totais: null,
+        ocupadas: aguardandoPagamento,
+        livres: null,
+        lista_espera: null,
+        taxa: null,
+        isSemAlojamento: true,
+      });
+    }
+    if (listaEsperaSemAloj > 0) {
+      result.push({
+        id: 'sem_aloj_espera',
+        nome: 'Sem alojamento (Lista de espera)',
+        vagas_totais: null,
+        ocupadas: null,
+        livres: null,
+        lista_espera: listaEsperaSemAloj,
+        taxa: null,
+        isSemAlojamento: true,
+      });
+    }
+    if (pendenteAlocacao > 0) {
+      result.push({
+        id: 'sem_aloj_pendente',
+        nome: 'Sem alojamento (Pendente de alocação)',
+        vagas_totais: null,
+        ocupadas: pendenteAlocacao,
+        livres: null,
+        lista_espera: null,
+        taxa: null,
+        isSemAlojamento: true,
+      });
+    }
+    if (outrasSemAloj > 0) {
+      result.push({
+        id: 'sem_aloj_outras',
+        nome: 'Sem alojamento (Outros / Solicitados)',
+        vagas_totais: null,
+        ocupadas: outrasSemAloj,
+        livres: null,
+        lista_espera: null,
+        taxa: null,
+        isSemAlojamento: true,
+      });
+    }
+
+    return result;
+  }, [hospedagens, alojamentos]);
 
   function imprimir() {
     const params = new URLSearchParams({
@@ -1628,17 +1718,25 @@ function SecaoRelatorios({
           <table className="w-full min-w-[720px]">
             <thead><tr>
               <th className={thR}>Alojamento</th>
-              <th className={thR + ' text-right'}>Total</th>
-              <th className={thR + ' text-right'}>Confirmados</th>
+              <th className={thR + ' text-right'}>Vagas Totais</th>
+              <th className={thR + ' text-right'}>Alocados/Ocupados</th>
+              <th className={thR + ' text-right'}>Livres</th>
               <th className={thR + ' text-right'}>Lista Espera</th>
+              <th className={thR + ' text-right'}>Taxa Ocupação</th>
             </tr></thead>
             <tbody>
               {porAlojamento.map(r => (
                 <tr key={r.nome} className="hover:bg-gray-50 transition">
                   <td className={tdR + ' font-medium'}>{r.nome}</td>
-                  <td className={tdN}>{r.total}</td>
-                  <td className={tdN + ' text-emerald-700'}>{r.confirmadas}</td>
-                  <td className={tdN + ' text-orange-700'}>{r.lista_espera}</td>
+                  <td className={tdN}>{r.vagas_totais !== null ? r.vagas_totais : '—'}</td>
+                  <td className={tdN + (r.ocupadas !== null && r.ocupadas > 0 ? ' text-emerald-700' : '')}>
+                    {r.ocupadas !== null ? r.ocupadas : '—'}
+                  </td>
+                  <td className={tdN}>{r.livres !== null ? r.livres : '—'}</td>
+                  <td className={tdN + (r.lista_espera !== null && r.lista_espera > 0 ? ' text-orange-700' : '')}>
+                    {r.lista_espera !== null ? r.lista_espera : '—'}
+                  </td>
+                  <td className={tdN + ' font-semibold'}>{r.taxa !== null ? `${r.taxa}%` : '—'}</td>
                 </tr>
               ))}
             </tbody>

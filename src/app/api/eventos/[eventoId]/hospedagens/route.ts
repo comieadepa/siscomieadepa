@@ -38,6 +38,13 @@ export async function GET(
 
   if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
 
+  // 1.5. Leitos ocupados para checar ocupação real
+  const { data: leitosOcupados } = await supabase
+    .from('evento_hospedagem_leitos')
+    .select('inscricao_id')
+    .eq('evento_id', eventoId)
+    .eq('ocupado', true);
+
   // 2. Registros de alocação existentes
   const { data: alocacoes } = await supabase
     .from('evento_hospedagens')
@@ -136,6 +143,7 @@ export async function GET(
       status_pagamento:  insc.status_pagamento  ?? null,
       status_operacional: statusOperacional,
       elegivel_autoalocacao: elegivelAutoalocacao,
+      tem_leito_ocupado: (leitosOcupados ?? []).some(l => l.inscricao_id === insc.id),
       pendencias,
       // Alojamento
       alojamento_nome:   aloj?.nome             ?? null,
