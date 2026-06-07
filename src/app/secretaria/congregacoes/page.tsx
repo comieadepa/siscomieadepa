@@ -124,8 +124,8 @@ export default function CongregacoesPage() {
   // Limites do plano para divisões hierárquicas
   // -1 = ilimitado, 0 = bloqueado, N = máximo N registros
   const [planLimits, setPlanLimits] = useState({
-    max_divisao1: 999, // Supervisão
-    max_divisao2: 999, // Campo
+    max_divisao1: -1, // Supervisão
+    max_divisao2: -1, // Campo
     max_divisao3: -1,  // Igreja/Congregação
     planName: '',
   });
@@ -867,7 +867,7 @@ export default function CongregacoesPage() {
         setMinistryId(resolvedMinistryId);
 
         // Sem limites de plano no single-tenant
-        setPlanLimits({ max_divisao1: 999, max_divisao2: 999, max_divisao3: -1, planName: '' });
+        setPlanLimits({ max_divisao1: -1, max_divisao2: -1, max_divisao3: -1, planName: '' });
 
         // Carregar dados via API protegida
         await Promise.all([
@@ -3211,7 +3211,7 @@ export default function CongregacoesPage() {
                 <select
                   value={filterUfCampos}
                   onChange={(e) => { setFilterUfCampos(e.target.value); setPageCampos(0); }}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white w-[190px]"
                 >
                   <option value="">DEFINA O ESTADO:</option>
                   {Array.from(new Set(divisoes2.map(c => c.uf).filter((v): v is string => !!v))).sort().map(uf => (
@@ -3223,23 +3223,12 @@ export default function CongregacoesPage() {
                 <select
                   value={filterSupCampos}
                   onChange={(e) => { setFilterSupCampos(e.target.value); setPageCampos(0); }}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white w-[190px]"
                 >
                   <option value="">SUPERVISÃO:</option>
                   {divisoes1.slice().sort((a, b) => a.nome.localeCompare(b.nome)).map(s => (
                     <option key={s.id} value={s.id}>{s.nome}</option>
                   ))}
-                </select>
-
-                {/* CNPJ */}
-                <select
-                  value={filterCnpjCampos}
-                  onChange={(e) => { setFilterCnpjCampos(e.target.value); setPageCampos(0); }}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
-                >
-                  <option value="">CNPJ:</option>
-                  <option value="sim">Com CNPJ</option>
-                  <option value="nao">Sem CNPJ</option>
                 </select>
 
                 {/* Busca texto */}
@@ -3253,6 +3242,17 @@ export default function CongregacoesPage() {
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
                 </div>
+
+                {/* CNPJ */}
+                <select
+                  value={filterCnpjCampos}
+                  onChange={(e) => { setFilterCnpjCampos(e.target.value); setPageCampos(0); }}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
+                >
+                  <option value="">CNPJ:</option>
+                  <option value="sim">Com CNPJ</option>
+                  <option value="nao">Sem CNPJ</option>
+                </select>
 
                 {/* MISSIONÁRIOS toggle */}
                 <button
