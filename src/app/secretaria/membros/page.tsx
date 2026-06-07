@@ -2747,9 +2747,9 @@ useEffect(() => {
               <select
                 value={supervisaoFilter}
                 onChange={(e) => { setSupervisaoFilter(e.target.value); setCurrentPage(1); }}
-                className="h-9 px-3 border border-gray-300 rounded-lg text-sm font-semibold text-[#0D2B4E] bg-white focus:outline-none focus:border-[#0D2B4E] min-w-[140px]"
+                className="h-9 px-3 border border-gray-300 rounded-lg text-sm font-semibold text-[#0D2B4E] bg-white focus:outline-none focus:border-[#0D2B4E] w-[160px]"
               >
-                <option value="TODOS">SUPERVISÃO: TODAS</option>
+                <option value="TODOS">SUPERVISÃO</option>
                 {supervisoesOptions.map(s => (
                   <option key={s.id} value={s.nome}>{s.nome.toUpperCase()}</option>
                 ))}
@@ -2759,9 +2759,9 @@ useEffect(() => {
               <select
                 value={campoFilter}
                 onChange={(e) => { setCampoFilter(e.target.value); setCurrentPage(1); }}
-                className="h-9 px-3 border border-gray-300 rounded-lg text-sm font-semibold text-[#0D2B4E] bg-white focus:outline-none focus:border-[#0D2B4E] min-w-[140px]"
+                className="h-9 px-3 border border-gray-300 rounded-lg text-sm font-semibold text-[#0D2B4E] bg-white focus:outline-none focus:border-[#0D2B4E] w-[160px]"
               >
-                <option value="TODOS">CAMPO: TODOS</option>
+                <option value="TODOS">CAMPO</option>
                 {camposOptions
                   .filter(c => supervisaoFilter === 'TODOS' || (c as any).supervisao_id === supervisoesOptions.find(s => s.nome === supervisaoFilter)?.id)
                   .map(c => (
@@ -2775,7 +2775,7 @@ useEffect(() => {
                 onChange={(e) => { setCargoFilter(e.target.value); setCurrentPage(1); }}
                 className="h-9 px-3 border border-gray-300 rounded-lg text-sm font-semibold text-[#0D2B4E] bg-white focus:outline-none focus:border-[#0D2B4E] min-w-[120px]"
               >
-                <option value="TODOS">CARGO: TODOS</option>
+                <option value="TODOS">CARGO</option>
                 {getCargosMinisteriais().filter(c => c.ativo).map(c => (
                   <option key={c.id} value={c.nome}>{c.nome.toUpperCase()}</option>
                 ))}
@@ -2787,7 +2787,7 @@ useEffect(() => {
                 onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
                 className="h-9 px-3 border border-gray-300 rounded-lg text-sm font-semibold text-[#0D2B4E] bg-white focus:outline-none focus:border-[#0D2B4E] min-w-[130px]"
               >
-                <option value="TODOS">STATUS: TODOS</option>
+                <option value="TODOS">STATUS</option>
                 <option value="ativo">ATIVO</option>
                 <option value="desligado">DESLIGADO</option>
                 <option value="em_processo">EM PROCESSO</option>
