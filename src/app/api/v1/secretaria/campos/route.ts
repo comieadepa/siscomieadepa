@@ -11,14 +11,14 @@ export async function GET(request: NextRequest) {
   const id = searchParams.get('id');
 
   const supabase = createServerClient();
-  let query = supabase.from('campos').select('*').order('nome');
-
-  if (!includeInactive) {
-    query = query.neq('is_active', false);
-  }
 
   if (id) {
-    const { data, error } = await query.eq('id', id).maybeSingle();
+    const { data, error } = await supabase
+      .from('campos')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -26,12 +26,33 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ data });
   }
 
-  const { data, error } = await query;
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  let allData: any[] = [];
+  let from = 0;
+  const limit = 1000;
+  let hasMore = true;
+
+  while (hasMore) {
+    let q = supabase.from('campos').select('*').order('nome').range(from, from + limit - 1);
+    if (!includeInactive) {
+      q = q.neq('is_active', false);
+    }
+    const { data, error } = await q;
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    if (!data || data.length === 0) {
+      hasMore = false;
+    } else {
+      allData = [...allData, ...data];
+      if (data.length < limit) {
+        hasMore = false;
+      } else {
+        from += limit;
+      }
+    }
   }
 
-  return NextResponse.json({ data });
+  return NextResponse.json({ data: allData });
 }
 
 export async function POST(request: NextRequest) {

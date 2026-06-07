@@ -1403,10 +1403,6 @@ export default function CongregacoesPage() {
         await dialog.alert({ title: 'Atenção', type: 'warning', message: 'Selecione o Pastor do Campo a partir da busca por nome.' });
         return;
       }
-      if (!formD2.pastor_data_posse) {
-        await dialog.alert({ title: 'Atenção', type: 'warning', message: 'Informe a Data da posse.' });
-        return;
-      }
     }
 
     const payload: any = {
