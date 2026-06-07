@@ -4,6 +4,30 @@ import { requireRole } from '@/lib/auth/require-auth';
 
 const ESTRUTURA_ROLES = ['super', 'administrador', 'comissao', 'inscricao', 'financeiro', 'cgadb'] as const;
 
+async function getAllRows(
+  supabase: any,
+  table: string,
+  select: string,
+  isActiveOnly: boolean
+) {
+  let allData: any[] = [];
+  let from = 0;
+  const limit = 1000;
+  let hasMore = true;
+  while (hasMore) {
+    let query = supabase.from(table).select(select).order('nome').range(from, from + limit - 1);
+    if (isActiveOnly) {
+      query = query.neq('is_active', false);
+    }
+    const { data, error } = await query;
+    if (error) throw error;
+    allData = [...allData, ...(data || [])];
+    hasMore = data && data.length === limit;
+    from += limit;
+  }
+  return allData;
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireRole(request, ESTRUTURA_ROLES);
   if (!auth.ok) return auth.response;
@@ -13,48 +37,19 @@ export async function GET(request: NextRequest) {
 
   const supabase = createServerClient();
 
-  let supervisoesQuery = supabase
-    .from('supervisoes')
-    .select('id,nome,is_active')
-    .order('nome');
+  try {
+    const [supervisoes, campos, congregacoes] = await Promise.all([
+      getAllRows(supabase, 'supervisoes', 'id,nome,is_active', !includeInactive),
+      getAllRows(supabase, 'campos', 'id,nome,supervisao_id,is_active,pastor_member_id,presidente_nome,presidente_cpf,presidente_matricula,telefone', !includeInactive),
+      getAllRows(supabase, 'congregacoes', 'id,nome,supervisao_id,campo_id,is_active', !includeInactive),
+    ]);
 
-  let camposQuery = supabase
-    .from('campos')
-    .select('id,nome,supervisao_id,is_active,pastor_member_id,presidente_nome,presidente_cpf,presidente_matricula,telefone')
-    .order('nome');
-
-  let congregacoesQuery = supabase
-    .from('congregacoes')
-    .select('id,nome,supervisao_id,campo_id,is_active')
-    .order('nome');
-
-  if (!includeInactive) {
-    supervisoesQuery = supervisoesQuery.neq('is_active', false);
-    camposQuery = camposQuery.neq('is_active', false);
-    congregacoesQuery = congregacoesQuery.neq('is_active', false);
+    return NextResponse.json({
+      supervisoes,
+      campos,
+      congregacoes,
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message || 'Erro ao carregar estrutura.' }, { status: 500 });
   }
-
-  const [supRes, camRes, congRes] = await Promise.all([
-    supervisoesQuery,
-    camposQuery,
-    congregacoesQuery,
-  ]);
-
-  if (supRes.error) {
-    return NextResponse.json({ error: supRes.error.message }, { status: 500 });
-  }
-
-  if (camRes.error) {
-    return NextResponse.json({ error: camRes.error.message }, { status: 500 });
-  }
-
-  if (congRes.error) {
-    return NextResponse.json({ error: congRes.error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({
-    supervisoes: supRes.data ?? [],
-    campos: camRes.data ?? [],
-    congregacoes: congRes.data ?? [],
-  });
 }
