@@ -1278,11 +1278,33 @@ export default function BalcaoPage() {
       const { data: leito } = await supabase
         .from('evento_hospedagem_leitos')
         .select(`
-          numero, tipo_leito, posicao,
+          numero, tipo_leito, posicao, alojamento_id, ocupado,
           evento_alojamentos ( nome )
         `)
         .eq('inscricao_id', inscricaoId)
         .maybeSingle();
+
+      let hospedagemFonte = hosp as any;
+      let leitoFonte = leito as any;
+      try {
+        const [hospRes, leitosRes] = await Promise.all([
+          fetch(`/api/eventos/${id}/hospedagens`),
+          fetch(`/api/eventos/${id}/hospedagens/leitos`),
+        ]);
+        if (hospRes.ok) {
+          const json = await hospRes.json();
+          const apiHosp = (json.hospedagens ?? []).find((h: any) => h.inscricao_id === inscricaoId);
+          if (apiHosp) hospedagemFonte = apiHosp;
+        }
+        if (leitosRes.ok) {
+          const json = await leitosRes.json();
+          const apiLeito = (json.leitos ?? []).find((l: any) => l.inscricao_id === inscricaoId && l.ocupado !== false)
+            ?? (json.leitos ?? []).find((l: any) => l.inscricao_id === inscricaoId);
+          if (apiLeito) leitoFonte = apiLeito;
+        }
+      } catch {
+        // Mantem fallback direto via Supabase quando a API de hospedagem nao estiver acessivel.
+      }
 
       let total = insc.quantidade_refeicoes_total ?? insc.refeicoes_total ?? null;
       let usadas = insc.quantidade_refeicoes_usadas ?? insc.refeicoes_utilizadas ?? null;
@@ -1301,21 +1323,21 @@ export default function BalcaoPage() {
           saldo = Math.max(0, total - usadas);
         }
       }
-      const possuiLeito = !!leito?.numero || !!leito?.tipo_leito || !!leito?.evento_alojamentos?.nome;
+      const possuiLeito = !!leitoFonte?.numero || !!leitoFonte?.tipo_leito || !!leitoFonte?.alojamento_id || !!leitoFonte?.evento_alojamentos?.nome;
 
       setDadosOperacionais({
         tipoInscricao: insc.tipo_inscricao || null,
         valorInscricao: insc.valor_final ?? insc.valor_pago ?? null,
         statusPagamento: insc.status_pagamento,
         hospedagem: !!insc.hospedagem,
-        statusHospedagem: insc.hospedagem ? (hosp?.status || (possuiLeito ? 'Alocada' : 'Não alocada / Aguardando alocação')) : null,
-        grupoHospedagem: hosp?.grupo_hospedagem || insc.grupo_hospedagem || '—',
-        alojamentoNome: leito?.evento_alojamentos?.nome || hosp?.evento_alojamentos?.nome || null,
-        tipoLeito: leito?.tipo_leito || null,
-        posicaoLeito: leito?.posicao || null,
-        numeroLeito: leito?.numero || null,
-        checkinAt: hosp?.checkin_at || null,
-        checkoutAt: hosp?.checkout_at || null,
+        statusHospedagem: insc.hospedagem ? (possuiLeito ? (hospedagemFonte?.status || 'alocada') : (hospedagemFonte?.status_operacional || hospedagemFonte?.status || 'Não alocada / Aguardando alocação')) : null,
+        grupoHospedagem: hospedagemFonte?.grupo_hospedagem || insc.grupo_hospedagem || '—',
+        alojamentoNome: leitoFonte?.evento_alojamentos?.nome || hospedagemFonte?.alojamento_nome || hospedagemFonte?.evento_alojamentos?.nome || null,
+        tipoLeito: leitoFonte?.tipo_leito || hospedagemFonte?.tipo_cama || null,
+        posicaoLeito: leitoFonte?.posicao || null,
+        numeroLeito: leitoFonte?.numero || hospedagemFonte?.numero_cama || null,
+        checkinAt: hospedagemFonte?.checkin_at || null,
+        checkoutAt: hospedagemFonte?.checkout_at || null,
 
         alimentacao: alimentacaoInclusa,
         refeicoesTotal: total,
