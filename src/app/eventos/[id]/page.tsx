@@ -212,6 +212,22 @@ const STATUS_PAG_CFG: Record<string, { label: string; cls: string }> = {
   cancelado: { label: 'Cancelado', cls: 'bg-red-100   text-red-700'    },
 };
 
+const STATUS_HOSPEDAGEM_LABEL: Record<string, string> = {
+  solicitada: 'Solicitada',
+  aguardando_pagamento: 'Aguardando pagamento',
+  elegivel: 'Aguardando alocacao',
+  alocada: 'Alocada',
+  confirmada: 'Confirmada',
+  checkin_realizado: 'Check-in realizado',
+  checkout_realizado: 'Check-out realizado',
+  lista_espera: 'Lista de espera',
+};
+
+const fmtStatusHospedagem = (status: string | null) => {
+  if (!status) return 'Nao alocada / Aguardando alocacao';
+  return STATUS_HOSPEDAGEM_LABEL[status.toLowerCase()] ?? status;
+};
+
 const STATUS_EV_CFG = {
   programado: { label: 'Programado',    cls: 'bg-blue-100 text-blue-700'     },
   realizado:  { label: 'Realizado',     cls: 'bg-green-100 text-green-700'   },
@@ -1291,6 +1307,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
       }
 
       setEditForm(f => f ? { ...f, hospedagem: true } : f);
+      setEditando(e => e ? { ...e, hospedagem: true } : e);
       await carregarDadosOperacionais(editando.id, editando.evento_id);
       onRefresh();
     } catch {
@@ -2118,7 +2135,10 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                         <>
                           <div>
                             <span className="text-xs text-gray-500 block">Status da hospedagem</span>
-                            <span className="text-sm font-medium text-gray-800">{dadosOperacionais.statusHospedagem || 'Não alocada / Aguardando alocação'}</span>
+                            <span className="text-sm font-medium text-gray-800">{fmtStatusHospedagem(dadosOperacionais.statusHospedagem)}</span>
+                            {dadosOperacionais.statusHospedagem?.toLowerCase() === 'elegivel' && (
+                              <span className="mt-1 block text-xs text-gray-500">Disponivel para alocacao na aba Hospedagem.</span>
+                            )}
                           </div>
                           <div>
                             <span className="text-xs text-gray-500 block">Grupo de hospedagem</span>
