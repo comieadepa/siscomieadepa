@@ -1162,6 +1162,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
         .from('evento_hospedagens')
         .select(`
           status, grupo_hospedagem, checkin_at, checkout_at,
+          alojamento_id, tipo_cama, numero_cama,
           evento_alojamentos ( nome )
         `)
         .eq('inscricao_id', inscricaoId)
@@ -1215,17 +1216,25 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
           saldo = Math.max(0, total - usadas);
         }
       }
-      const possuiLeito = !!leitoFonte?.numero || !!leitoFonte?.tipo_leito || !!leitoFonte?.alojamento_id || !!leitoFonte?.evento_alojamentos?.nome;
+      const statusHospFonte = String(hospedagemFonte?.status_operacional || hospedagemFonte?.status || '').toLowerCase();
+      const statusIndicaHospedagem = ['alocada', 'confirmada', 'checkin_realizado', 'checkout_realizado', 'lista_espera', 'aguardando_pagamento', 'elegivel', 'solicitada'].includes(statusHospFonte);
+      const possuiHospedagem = !!hospedagemFonte?.id || !!hospedagemFonte?.inscricao_id || !!hospedagemFonte?.status || !!hospedagemFonte?.status_operacional || !!hospedagemFonte?.alojamento_id || !!hospedagemFonte?.evento_alojamentos?.nome || !!hospedagemFonte?.alojamento_nome || !!hospedagemFonte?.numero_cama || !!hospedagemFonte?.tipo_cama;
+      const possuiLeito = !!leitoFonte?.numero || !!leitoFonte?.tipo_leito || !!leitoFonte?.posicao || !!leitoFonte?.alojamento_id || !!leitoFonte?.evento_alojamentos?.nome;
+      const hospedagemSolicitada = !!insc.hospedagem || possuiHospedagem || possuiLeito || statusIndicaHospedagem;
+      const possuiAlocacao = possuiLeito || !!hospedagemFonte?.alojamento_id || !!hospedagemFonte?.evento_alojamentos?.nome || !!hospedagemFonte?.alojamento_nome || !!hospedagemFonte?.numero_cama || !!hospedagemFonte?.tipo_cama;
+      const statusHospedagem = hospedagemSolicitada
+        ? (possuiAlocacao ? (hospedagemFonte?.status || 'alocada') : (hospedagemFonte?.status_operacional || hospedagemFonte?.status || 'Não alocada / Aguardando alocação'))
+        : null;
 
       setDadosOperacionais({
         tipoInscricao: insc.tipo_inscricao || null,
         valorInscricao: insc.valor_final ?? insc.valor_pago ?? null,
         statusPagamento: insc.status_pagamento,
-        hospedagem: !!insc.hospedagem,
-        statusHospedagem: insc.hospedagem ? (possuiLeito ? (hospedagemFonte?.status || 'alocada') : (hospedagemFonte?.status_operacional || hospedagemFonte?.status || 'Não alocada / Aguardando alocação')) : null,
+        hospedagem: hospedagemSolicitada,
+        statusHospedagem,
         grupoHospedagem: hospedagemFonte?.grupo_hospedagem || insc.grupo_hospedagem || '—',
         alojamentoNome: leitoFonte?.evento_alojamentos?.nome || hospedagemFonte?.alojamento_nome || hospedagemFonte?.evento_alojamentos?.nome || null,
-        tipoLeito: leitoFonte?.tipo_leito || hospedagemFonte?.tipo_cama || null,
+        tipoLeito: leitoFonte?.posicao || hospedagemFonte?.tipo_cama || leitoFonte?.tipo_leito || null,
         posicaoLeito: leitoFonte?.posicao || null,
         numeroLeito: leitoFonte?.numero || hospedagemFonte?.numero_cama || null,
         checkinAt: hospedagemFonte?.checkin_at || null,
@@ -1734,13 +1743,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   const podeAcionarHospedagem = !!(
     dadosOperacionais
     && eventoDestino?.permite_hospedagem
-    && (
-      !dadosOperacionais.hospedagem
-      || (
-        !dadosOperacionais.numeroLeito
-        && ['solicitada', 'elegivel', 'lista_espera'].includes((dadosOperacionais.statusHospedagem ?? '').toLowerCase())
-      )
-    )
+    && !dadosOperacionais.hospedagem
   );
   const hospedagemJaSolicitada = !!dadosOperacionais?.hospedagem;
 
