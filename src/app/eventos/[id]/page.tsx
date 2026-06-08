@@ -1217,14 +1217,27 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
         }
       }
       const statusHospFonte = String(hospedagemFonte?.status_operacional || hospedagemFonte?.status || '').toLowerCase();
-      const statusIndicaHospedagem = ['alocada', 'confirmada', 'checkin_realizado', 'checkout_realizado', 'lista_espera', 'aguardando_pagamento', 'elegivel', 'solicitada'].includes(statusHospFonte);
       const possuiHospedagem = !!hospedagemFonte?.id || !!hospedagemFonte?.inscricao_id || !!hospedagemFonte?.status || !!hospedagemFonte?.status_operacional || !!hospedagemFonte?.alojamento_id || !!hospedagemFonte?.evento_alojamentos?.nome || !!hospedagemFonte?.alojamento_nome || !!hospedagemFonte?.numero_cama || !!hospedagemFonte?.tipo_cama;
       const possuiLeito = !!leitoFonte?.numero || !!leitoFonte?.tipo_leito || !!leitoFonte?.posicao || !!leitoFonte?.alojamento_id || !!leitoFonte?.evento_alojamentos?.nome;
-      const hospedagemSolicitada = !!insc.hospedagem || possuiHospedagem || possuiLeito || statusIndicaHospedagem;
+      
+      const hospedagemSolicitada = !!insc.hospedagem || possuiHospedagem || possuiLeito || ['alocada', 'confirmada', 'checkin_realizado', 'lista_espera', 'aguardando_pagamento'].includes(statusHospFonte);
       const possuiAlocacao = possuiLeito || !!hospedagemFonte?.alojamento_id || !!hospedagemFonte?.evento_alojamentos?.nome || !!hospedagemFonte?.alojamento_nome || !!hospedagemFonte?.numero_cama || !!hospedagemFonte?.tipo_cama;
-      const statusHospedagem = hospedagemSolicitada
-        ? (possuiAlocacao ? (hospedagemFonte?.status || 'alocada') : (hospedagemFonte?.status_operacional || hospedagemFonte?.status || 'Não alocada / Aguardando alocação'))
-        : null;
+
+      let statusHospedagem = null;
+      let alojamentoNome = 'Não alocado';
+      let numeroLeito = 'Não alocado';
+      let tipoLeito = 'Não alocado';
+
+      if (hospedagemSolicitada) {
+        if (possuiAlocacao) {
+          statusHospedagem = 'Alocada';
+          alojamentoNome = leitoFonte?.evento_alojamentos?.nome || hospedagemFonte?.alojamento_nome || hospedagemFonte?.evento_alojamentos?.nome || 'Não alocado';
+          numeroLeito = leitoFonte?.numero || hospedagemFonte?.numero_cama || 'Não alocado';
+          tipoLeito = leitoFonte?.posicao || hospedagemFonte?.tipo_cama || leitoFonte?.tipo_leito || 'Não alocado';
+        } else {
+          statusHospedagem = 'Não alocada / Aguardando alocação';
+        }
+      }
 
       setDadosOperacionais({
         tipoInscricao: insc.tipo_inscricao || null,
@@ -1233,10 +1246,10 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
         hospedagem: hospedagemSolicitada,
         statusHospedagem,
         grupoHospedagem: hospedagemFonte?.grupo_hospedagem || insc.grupo_hospedagem || '—',
-        alojamentoNome: leitoFonte?.evento_alojamentos?.nome || hospedagemFonte?.alojamento_nome || hospedagemFonte?.evento_alojamentos?.nome || null,
-        tipoLeito: leitoFonte?.posicao || hospedagemFonte?.tipo_cama || leitoFonte?.tipo_leito || null,
-        posicaoLeito: leitoFonte?.posicao || null,
-        numeroLeito: leitoFonte?.numero || hospedagemFonte?.numero_cama || null,
+        alojamentoNome,
+        tipoLeito,
+        posicaoLeito: possuiAlocacao ? (leitoFonte?.posicao || null) : 'Não alocado',
+        numeroLeito,
         checkinAt: hospedagemFonte?.checkin_at || null,
         checkoutAt: hospedagemFonte?.checkout_at || null,
 
@@ -1740,10 +1753,15 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
 
   const valorPagoAtual = editando?.valor_pago ?? 0;
   const diferencaValor = valorNovo !== null ? valorNovo - valorPagoAtual : null;
+  const statusHospLCase = String(dadosOperacionais?.statusHospedagem || '').toLowerCase();
+  const temQualquerHospedagemOuLeito = !!(
+    dadosOperacionais?.hospedagem ||
+    ['alocada', 'confirmada', 'checkin_realizado'].includes(statusHospLCase)
+  );
   const podeAcionarHospedagem = !!(
     dadosOperacionais
     && eventoDestino?.permite_hospedagem
-    && !dadosOperacionais.hospedagem
+    && !temQualquerHospedagemOuLeito
   );
   const hospedagemJaSolicitada = !!dadosOperacionais?.hospedagem;
 
