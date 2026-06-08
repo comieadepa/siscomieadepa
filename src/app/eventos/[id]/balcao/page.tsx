@@ -77,10 +77,13 @@ interface InscricaoResumo {
   email: string | null;
   supervisao_id: string | null;
   campo_id: string | null;
+  tipo_inscricao: string | null;
   valor_final: number | null;
   valor_pago: number | null;
   status_pagamento: string;
   forma_pagamento: string | null;
+  hospedagem: boolean;
+  alimentacao: boolean;
   asaas_payment_id: string | null;
   invoice_url: string | null;
   checkin_realizado: boolean;
@@ -88,6 +91,25 @@ interface InscricaoResumo {
   etiqueta_impressa: boolean;
   certificado_enviado: boolean;
   created_at: string;
+}
+
+interface DadosOperacionais {
+  tipoInscricao: string | null;
+  valorInscricao: number | null;
+  statusPagamento: string;
+  hospedagem: boolean;
+  statusHospedagem: string | null;
+  grupoHospedagem: string | null;
+  alojamentoNome: string | null;
+  tipoLeito: string | null;
+  posicaoLeito: string | null;
+  numeroLeito: string | null;
+  checkinAt: string | null;
+  checkoutAt: string | null;
+  alimentacao: boolean;
+  refeicoesTotal: number | null;
+  refeicoesUsadas: number | null;
+  refeicoesSaldo: number | null;
 }
 
 interface EditFormBalcao {
@@ -189,7 +211,7 @@ export default function BalcaoPage() {
   const [editForm, setEditForm] = useState<EditFormBalcao | null>(null);
   const [salvandoEdit, setSalvandoEdit] = useState(false);
   const [erroEdit, setErroEdit] = useState<string | null>(null);
-  const [dadosOperacionais, setDadosOperacionais] = useState<any | null>(null);
+  const [dadosOperacionais, setDadosOperacionais] = useState<DadosOperacionais | null>(null);
   const [carregandoDadosOperacionais, setCarregandoDadosOperacionais] = useState(false);
   const [precisaAtualizar, setPrecisaAtualizar] = useState(false);
   const ignorarProximoClearRef = useRef(false);
@@ -915,7 +937,7 @@ export default function BalcaoPage() {
     try {
       const { data, error } = await supabase
         .from('evento_inscricoes')
-        .select('id,lote_id,nome_inscrito,cpf,whatsapp,email,supervisao_id,campo_id,valor_final,valor_pago,status_pagamento,forma_pagamento,asaas_payment_id,invoice_url,checkin_realizado,checkin_at,etiqueta_impressa,certificado_enviado,created_at')
+        .select('id,lote_id,nome_inscrito,cpf,whatsapp,email,supervisao_id,campo_id,tipo_inscricao,valor_final,valor_pago,status_pagamento,forma_pagamento,hospedagem,alimentacao,asaas_payment_id,invoice_url,checkin_realizado,checkin_at,etiqueta_impressa,certificado_enviado,created_at')
         .eq('evento_id', id)
         .order('created_at', { ascending: false });
       if (error) {
@@ -1235,7 +1257,7 @@ export default function BalcaoPage() {
     try {
       const { data: insc, error: errInsc } = await supabase
         .from('evento_inscricoes')
-        .select('hospedagem, alimentacao, quantidade_refeicoes_total, quantidade_refeicoes_usadas, quantidade_refeicoes_saldo, refeicoes_total, refeicoes_utilizadas, grupo_hospedagem')
+        .select('tipo_inscricao, valor_final, valor_pago, status_pagamento, hospedagem, alimentacao, quantidade_refeicoes_total, quantidade_refeicoes_usadas, quantidade_refeicoes_saldo, refeicoes_total, refeicoes_utilizadas, grupo_hospedagem')
         .eq('id', inscricaoId)
         .single();
 
@@ -1265,8 +1287,10 @@ export default function BalcaoPage() {
       let total = insc.quantidade_refeicoes_total ?? insc.refeicoes_total ?? null;
       let usadas = insc.quantidade_refeicoes_usadas ?? insc.refeicoes_utilizadas ?? null;
       let saldo = insc.quantidade_refeicoes_saldo ?? null;
+      const isAgo = evento?.departamento === 'AGO';
+      const alimentacaoInclusa = isAgo ? true : !!insc.alimentacao;
 
-      if (evento?.departamento === 'AGO' && insc.alimentacao) {
+      if (isAgo) {
         if (total === null || total === 0) {
           total = 12;
         }
@@ -1277,10 +1301,14 @@ export default function BalcaoPage() {
           saldo = Math.max(0, total - usadas);
         }
       }
+      const possuiLeito = !!leito?.numero || !!leito?.tipo_leito || !!leito?.evento_alojamentos?.nome;
 
       setDadosOperacionais({
+        tipoInscricao: insc.tipo_inscricao || null,
+        valorInscricao: insc.valor_final ?? insc.valor_pago ?? null,
+        statusPagamento: insc.status_pagamento,
         hospedagem: !!insc.hospedagem,
-        statusHospedagem: hosp?.status || 'solicitada',
+        statusHospedagem: insc.hospedagem ? (hosp?.status || (possuiLeito ? 'Alocada' : 'Não alocada / Aguardando alocação')) : null,
         grupoHospedagem: hosp?.grupo_hospedagem || insc.grupo_hospedagem || '—',
         alojamentoNome: leito?.evento_alojamentos?.nome || hosp?.evento_alojamentos?.nome || null,
         tipoLeito: leito?.tipo_leito || null,
@@ -1289,7 +1317,7 @@ export default function BalcaoPage() {
         checkinAt: hosp?.checkin_at || null,
         checkoutAt: hosp?.checkout_at || null,
 
-        alimentacao: !!insc.alimentacao,
+        alimentacao: alimentacaoInclusa,
         refeicoesTotal: total,
         refeicoesUsadas: usadas,
         refeicoesSaldo: saldo,
@@ -2376,7 +2404,7 @@ export default function BalcaoPage() {
 
           {editando && editForm && (
             <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => { setEditando(null); setEditForm(null); setDadosOperacionais(null); }}>
-              <div className="bg-[#123b63] border border-white/10 rounded-2xl w-full max-w-lg p-5" onClick={e => e.stopPropagation()}>
+              <div className="bg-[#123b63] border border-white/10 rounded-2xl w-full max-w-4xl p-5" onClick={e => e.stopPropagation()}>
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <h3 className="text-white font-bold text-sm">✏️ Editar inscrição</h3>
@@ -2458,7 +2486,28 @@ export default function BalcaoPage() {
                       <span className="animate-spin">⏳</span> Carregando...
                     </div>
                   ) : dadosOperacionais ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-white/5 border border-white/10 p-3.5 rounded-xl text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-white/5 border border-white/10 p-3.5 rounded-xl text-xs">
+                      {/* Inscrição */}
+                      <div>
+                        <h5 className="font-bold text-emerald-400 mb-2 flex items-center gap-1">
+                          Inscrição
+                        </h5>
+                        <div className="space-y-2 text-white/80">
+                          <div>
+                            <span className="text-white/50 block">Tipo de inscrição</span>
+                            <span className="text-white font-medium">{dadosOperacionais.tipoInscricao || 'Não informado'}</span>
+                          </div>
+                          <div>
+                            <span className="text-white/50 block">Valor</span>
+                            <span className="text-white font-medium">{dadosOperacionais.valorInscricao !== null ? fmtMoeda(dadosOperacionais.valorInscricao) : '-'}</span>
+                          </div>
+                          <div>
+                            <span className="text-white/50 block">Pagamento</span>
+                            <span className="text-white font-medium">{PAGAMENTO_CFG[dadosOperacionais.statusPagamento]?.label ?? dadosOperacionais.statusPagamento}</span>
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Hospedagem */}
                       <div>
                         <h5 className="font-bold text-emerald-400 mb-2 flex items-center gap-1">
@@ -2466,14 +2515,14 @@ export default function BalcaoPage() {
                         </h5>
                         <div className="space-y-2 text-white/80">
                           <div>
-                            <span className="text-white/50 block">Hospedagem contratada</span>
+                            <span className="text-white/50 block">Hospedagem solicitada</span>
                             <span className="text-white font-medium">{dadosOperacionais.hospedagem ? 'Sim' : 'Não'}</span>
                           </div>
                           {dadosOperacionais.hospedagem && (
                             <>
                               <div>
                                 <span className="text-white/50 block">Status</span>
-                                <span className="text-white font-medium capitalize">{dadosOperacionais.statusHospedagem || 'solicitada'}</span>
+                                <span className="text-white font-medium">{dadosOperacionais.statusHospedagem || 'Não alocada / Aguardando alocação'}</span>
                               </div>
                               <div>
                                 <span className="text-white/50 block">Grupo</span>
@@ -2484,12 +2533,16 @@ export default function BalcaoPage() {
                                 <span className="text-white font-medium">{dadosOperacionais.alojamentoNome || 'Não alocado'}</span>
                               </div>
                               <div>
-                                <span className="text-white/50 block">Tipo/Posição leito</span>
+                                <span className="text-white/50 block">Tipo do leito</span>
                                 <span className="text-white font-medium">
                                   {dadosOperacionais.tipoLeito 
-                                    ? `${dadosOperacionais.tipoLeito}${dadosOperacionais.posicaoLeito && dadosOperacionais.posicaoLeito !== 'unico' ? ` (${dadosOperacionais.posicaoLeito})` : ''}`
+                                    ? dadosOperacionais.tipoLeito
                                     : 'Não alocado'}
                                 </span>
+                              </div>
+                              <div>
+                                <span className="text-white/50 block">Posição do leito</span>
+                                <span className="text-white font-medium">{dadosOperacionais.posicaoLeito || 'Não informada'}</span>
                               </div>
                               <div>
                                 <span className="text-white/50 block">Número do leito</span>

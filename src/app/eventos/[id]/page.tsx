@@ -115,6 +115,25 @@ interface EditForm {
   observacoes: string;
 }
 
+interface DadosOperacionais {
+  tipoInscricao: string | null;
+  valorInscricao: number | null;
+  statusPagamento: string;
+  hospedagem: boolean;
+  statusHospedagem: string | null;
+  grupoHospedagem: string | null;
+  alojamentoNome: string | null;
+  tipoLeito: string | null;
+  posicaoLeito: string | null;
+  numeroLeito: string | null;
+  checkinAt: string | null;
+  checkoutAt: string | null;
+  alimentacao: boolean;
+  refeicoesTotal: number | null;
+  refeicoesUsadas: number | null;
+  refeicoesSaldo: number | null;
+}
+
 interface Equipe {
   id: string;
   evento_id: string;
@@ -959,7 +978,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   const [salvandoEdit,  setSalvandoEdit]  = useState(false);
   const [erroEdit,      setErroEdit]      = useState<string | null>(null);
   const [confirmExcluir, setConfirmExcluir] = useState<Inscricao | null>(null);
-  const [dadosOperacionais, setDadosOperacionais] = useState<any | null>(null);
+  const [dadosOperacionais, setDadosOperacionais] = useState<DadosOperacionais | null>(null);
   const [carregandoDadosOperacionais, setCarregandoDadosOperacionais] = useState(false);
   const timeoutsRef = useRef<number[]>([]);
   const POR_PAG = 20;
@@ -1095,7 +1114,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
     try {
       const { data: insc, error: errInsc } = await supabase
         .from('evento_inscricoes')
-        .select('hospedagem, alimentacao, quantidade_refeicoes_total, quantidade_refeicoes_usadas, quantidade_refeicoes_saldo, refeicoes_total, refeicoes_utilizadas, grupo_hospedagem')
+        .select('tipo_inscricao, valor_final, valor_pago, status_pagamento, hospedagem, alimentacao, quantidade_refeicoes_total, quantidade_refeicoes_usadas, quantidade_refeicoes_saldo, refeicoes_total, refeicoes_utilizadas, grupo_hospedagem')
         .eq('id', inscricaoId)
         .single();
 
@@ -1125,8 +1144,10 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
       let total = insc.quantidade_refeicoes_total ?? insc.refeicoes_total ?? null;
       let usadas = insc.quantidade_refeicoes_usadas ?? insc.refeicoes_utilizadas ?? null;
       let saldo = insc.quantidade_refeicoes_saldo ?? null;
+      const isAgo = evento?.departamento === 'AGO';
+      const alimentacaoInclusa = isAgo ? true : !!insc.alimentacao;
 
-      if (evento?.departamento === 'AGO' && insc.alimentacao) {
+      if (isAgo) {
         if (total === null || total === 0) {
           total = 12;
         }
@@ -1137,10 +1158,14 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
           saldo = Math.max(0, total - usadas);
         }
       }
+      const possuiLeito = !!leito?.numero || !!leito?.tipo_leito || !!leito?.evento_alojamentos?.nome;
 
       setDadosOperacionais({
+        tipoInscricao: insc.tipo_inscricao || null,
+        valorInscricao: insc.valor_final ?? insc.valor_pago ?? null,
+        statusPagamento: insc.status_pagamento,
         hospedagem: !!insc.hospedagem,
-        statusHospedagem: hosp?.status || 'solicitada',
+        statusHospedagem: insc.hospedagem ? (hosp?.status || (possuiLeito ? 'Alocada' : 'Não alocada / Aguardando alocação')) : null,
         grupoHospedagem: hosp?.grupo_hospedagem || insc.grupo_hospedagem || '—',
         alojamentoNome: leito?.evento_alojamentos?.nome || hosp?.evento_alojamentos?.nome || null,
         tipoLeito: leito?.tipo_leito || null,
@@ -1149,7 +1174,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
         checkinAt: hosp?.checkin_at || null,
         checkoutAt: hosp?.checkout_at || null,
 
-        alimentacao: !!insc.alimentacao,
+        alimentacao: alimentacaoInclusa,
         refeicoesTotal: total,
         refeicoesUsadas: usadas,
         refeicoesSaldo: saldo,
@@ -1808,7 +1833,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
 
       {editando && editForm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto" onClick={() => { setEditando(null); setEditForm(null); setDadosOperacionais(null); }}>
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col max-h-[95dvh] sm:max-h-[90vh] my-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full flex flex-col max-h-[95dvh] sm:max-h-[90vh] my-auto" onClick={e => e.stopPropagation()}>
             {/* Cabeçalho fixo */}
             <div className="flex items-start justify-between px-4 sm:px-6 pt-4 sm:pt-6 pb-3 border-b border-gray-100 shrink-0">
               <div>
@@ -1990,7 +2015,27 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                   <span className="animate-spin">⏳</span> Carregando informações operacionais...
                 </div>
               ) : dadosOperacionais ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                  {/* Inscrição */}
+                  <div>
+                    <h5 className="font-semibold text-gray-700 text-xs uppercase tracking-wider mb-3 flex items-center gap-1">
+                      Inscrição
+                    </h5>
+                    <div className="space-y-2.5">
+                      <div>
+                        <span className="text-xs text-gray-500 block">Tipo de inscrição</span>
+                        <span className="text-sm font-medium text-gray-800">{dadosOperacionais.tipoInscricao || 'Não informado'}</span>
+                      </div>
+                      <div>
+                        <span className="text-xs text-gray-500 block">Valor</span>
+                        <span className="text-sm font-medium text-gray-800">{dadosOperacionais.valorInscricao !== null ? fmtMoeda(dadosOperacionais.valorInscricao) : '-'}</span>
+                      </div>
+                      <div>
+                        <span className="text-xs text-gray-500 block">Pagamento</span>
+                        <span className="text-sm font-medium text-gray-800">{STATUS_PAG_CFG[dadosOperacionais.statusPagamento]?.label ?? dadosOperacionais.statusPagamento}</span>
+                      </div>
+                    </div>
+                  </div>
                   {/* Hospedagem */}
                   <div>
                     <h5 className="font-semibold text-gray-700 text-xs uppercase tracking-wider mb-3 flex items-center gap-1">
@@ -1998,14 +2043,14 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                     </h5>
                     <div className="space-y-2.5">
                       <div>
-                        <span className="text-xs text-gray-500 block">Hospedagem contratada</span>
+                        <span className="text-xs text-gray-500 block">Hospedagem solicitada</span>
                         <span className="text-sm font-medium text-gray-800">{dadosOperacionais.hospedagem ? 'Sim' : 'Não'}</span>
                       </div>
                       {dadosOperacionais.hospedagem && (
                         <>
                           <div>
                             <span className="text-xs text-gray-500 block">Status da hospedagem</span>
-                            <span className="text-sm font-medium text-gray-800 capitalize">{dadosOperacionais.statusHospedagem || 'solicitada'}</span>
+                            <span className="text-sm font-medium text-gray-800">{dadosOperacionais.statusHospedagem || 'Não alocada / Aguardando alocação'}</span>
                           </div>
                           <div>
                             <span className="text-xs text-gray-500 block">Grupo de hospedagem</span>
@@ -2019,9 +2064,13 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                             <span className="text-xs text-gray-500 block">Tipo de leito</span>
                             <span className="text-sm font-medium text-gray-800">
                               {dadosOperacionais.tipoLeito 
-                                ? `${dadosOperacionais.tipoLeito}${dadosOperacionais.posicaoLeito && dadosOperacionais.posicaoLeito !== 'unico' ? ` (${dadosOperacionais.posicaoLeito})` : ''}`
+                                ? dadosOperacionais.tipoLeito
                                 : 'Não alocado'}
                             </span>
+                          </div>
+                          <div>
+                            <span className="text-xs text-gray-500 block">Posição do leito</span>
+                            <span className="text-sm font-medium text-gray-800">{dadosOperacionais.posicaoLeito || 'Não informada'}</span>
                           </div>
                           <div>
                             <span className="text-xs text-gray-500 block">Número do leito</span>
