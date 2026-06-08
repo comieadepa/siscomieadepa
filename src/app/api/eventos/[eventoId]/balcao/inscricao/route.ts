@@ -223,6 +223,13 @@ export async function POST(
         .eq('ativo', true)
         .maybeSingle();
       if (tipo) {
+        // Proteção: tipo encontrado mas valor NULL → erro explícito (não usar valor do corpo da requisição sem validar)
+        if (tipo.valor === null || tipo.valor === undefined) {
+          return NextResponse.json(
+            { error: `Tipo de inscrição sem valor configurado: "${tipo.nome}". Corrija a configuração do evento.` },
+            { status: 500 },
+          );
+        }
         tipoNome = tipo.nome;
         incluiAlimentacao = !!tipo.inclui_alimentacao;
         quantidadeRefeicoes = incluiAlimentacao ? Math.max(0, Number(tipo.quantidade_refeicoes ?? 0)) : 0;

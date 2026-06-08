@@ -1287,7 +1287,17 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        let valorBaseParticipante = tipoEvento?.valor ?? valorBase;
+        // Proteção: tipoEvento encontrado mas valor NULL → erro explícito (não herdar valor do titular)
+        if (tipoEvento && (tipoEvento.valor === null || tipoEvento.valor === undefined)) {
+          return buildErrorResponse(500, {
+            error: `Tipo de inscrição sem valor configurado: "${tipoEvento.nome}". Corrija a configuração do evento.`,
+            stage: 'validacao_valor_tipo_inscricao_lote',
+            code: 'TIPO_SEM_VALOR_CONFIGURADO',
+            details: `Participante ${idx + 1} — tipo "${tipoEvento.nome}" com valor NULL no banco.`,
+            payloadResumo: { ...payloadResumo, evento_id: evento.id },
+          });
+        }
+        let valorBaseParticipante = tipoEvento ? tipoEvento.valor : valorBase;
         if (ehTipoEsposaJubilado(tipoParticipante)) {
           valorBaseParticipante = 0;
         }
