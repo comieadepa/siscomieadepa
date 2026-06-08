@@ -197,6 +197,32 @@ export async function POST(
   }
 
   const supabase = guard.ctx.supabaseAdmin;
+  const { data: inscricao, error: insErr } = await supabase
+    .from('evento_inscricoes')
+    .select(`
+      id, evento_id, sexo, data_nascimento, tipo_inscricao,
+      hosp_necessidade_especial, hosp_possui_comorbidade,
+      grupo_hospedagem
+    `)
+    .eq('id', inscricao_id)
+    .eq('evento_id', eventoId)
+    .single();
+
+  if (insErr || !inscricao) {
+    return NextResponse.json({ error: 'Inscricao nao encontrada neste evento.' }, { status: 404 });
+  }
+
+  const grupoHospedagem =
+    (grupo_hospedagem as string)?.trim()
+    || inscricao.grupo_hospedagem
+    || resolveGrupoHospedagemAGO({
+      sexo: inscricao.sexo ?? null,
+      data_nascimento: inscricao.data_nascimento ?? null,
+      tipo_inscricao: inscricao.tipo_inscricao ?? null,
+      hosp_necessidade_especial: !!inscricao.hosp_necessidade_especial,
+      hosp_possui_comorbidade: !!inscricao.hosp_possui_comorbidade,
+    });
+
   const payload = normalizePayloadUppercase({
     evento_id:            eventoId,
     inscricao_id,
@@ -209,7 +235,7 @@ export async function POST(
     tipo_cama:            tipo_cama     || null,
     numero_cama:          numero_cama   || null,
     observacoes:          observacoes   || null,
-    grupo_hospedagem:     (grupo_hospedagem as string)?.trim() || null,
+    grupo_hospedagem:     grupoHospedagem || null,
     alocacao_automatica:  false, // Manual
   });
 
@@ -220,6 +246,18 @@ export async function POST(
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const { error: insUpdateErr } = await supabase
+    .from('evento_inscricoes')
+    .update(normalizePayloadUppercase({
+      hospedagem: true,
+      grupo_hospedagem: grupoHospedagem || null,
+    }))
+    .eq('id', inscricao_id)
+    .eq('evento_id', eventoId);
+
+  if (insUpdateErr) return NextResponse.json({ error: insUpdateErr.message }, { status: 500 });
+
   await logDB({
     userId: guard.ctx.user?.id,
     userEmail: guard.ctx.user?.email ?? undefined,

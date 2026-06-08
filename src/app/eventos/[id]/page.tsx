@@ -980,6 +980,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   const [confirmExcluir, setConfirmExcluir] = useState<Inscricao | null>(null);
   const [dadosOperacionais, setDadosOperacionais] = useState<DadosOperacionais | null>(null);
   const [carregandoDadosOperacionais, setCarregandoDadosOperacionais] = useState(false);
+  const [atribuindoHospedagem, setAtribuindoHospedagem] = useState(false);
   const timeoutsRef = useRef<number[]>([]);
   const POR_PAG = 20;
 
@@ -1258,6 +1259,45 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
       .eq('ativo', true)
       .order('ordem');
     setTiposPorEvento(p => ({ ...p, [eventoId]: (data as TipoInscricao[]) || [] }));
+  }
+
+  async function atribuirHospedagemInscrito() {
+    if (!editando || !editForm || !eventoDestino) return;
+    if (!eventoDestino.permite_hospedagem) {
+      setErroEdit('Este evento nao permite hospedagem.');
+      return;
+    }
+    if (editForm.evento_id !== editando.evento_id) {
+      setErroEdit('Salve a mudanca de evento antes de atribuir hospedagem.');
+      return;
+    }
+
+    setErroEdit(null);
+    setAtribuindoHospedagem(true);
+    try {
+      const res = await fetch(`/api/eventos/${editando.evento_id}/hospedagens`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          inscricao_id: editando.id,
+          status: 'solicitada',
+          observacoes: 'Hospedagem atribuida manualmente pelo administrador.',
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErroEdit(json.error || 'Erro ao atribuir hospedagem.');
+        return;
+      }
+
+      setEditForm(f => f ? { ...f, hospedagem: true } : f);
+      await carregarDadosOperacionais(editando.id, editando.evento_id);
+      onRefresh();
+    } catch {
+      setErroEdit('Erro ao atribuir hospedagem.');
+    } finally {
+      setAtribuindoHospedagem(false);
+    }
   }
 
   async function salvarEdicao() {
@@ -1610,7 +1650,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   const hospedagemEfetiva = !!(
     eventoDestino && (
       eventoDestino.usar_tipos_inscricao
-        ? tipoSelecionado?.inclui_hospedagem
+        ? (tipoSelecionado?.inclui_hospedagem || editForm?.hospedagem)
         : (eventoDestino.permite_hospedagem && editForm?.hospedagem)
     )
   );
@@ -1988,10 +2028,6 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                       <option key={t.id} value={t.nome}>{t.nome} — {t.valor === 0 ? 'Gratuito' : fmtMoeda(t.valor)}</option>
                     ))}
                   </select>
-                  <div className="mt-2 text-xs text-gray-500">
-                    Hospedagem: <span className="font-semibold text-gray-700">{hospedagemEfetiva ? 'Sim' : 'Nao'}</span>
-                    {' · '}Alimentacao: <span className="font-semibold text-gray-700">{alimentacaoEfetiva ? 'Sim' : 'Nao'}</span>
-                  </div>
                 </div>
               )}
 
@@ -2068,6 +2104,16 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                         <span className="text-xs text-gray-500 block">Hospedagem solicitada</span>
                         <span className="text-sm font-medium text-gray-800">{dadosOperacionais.hospedagem ? 'Sim' : 'Não'}</span>
                       </div>
+                      {!dadosOperacionais.hospedagem && eventoDestino?.permite_hospedagem && (
+                        <button
+                          type="button"
+                          onClick={atribuirHospedagemInscrito}
+                          disabled={atribuindoHospedagem || salvandoEdit}
+                          className="inline-flex items-center justify-center rounded-lg bg-[#0D2B4E] px-3 py-2 text-xs font-semibold text-white hover:bg-[#123b63] disabled:opacity-60"
+                        >
+                          {atribuindoHospedagem ? 'Atribuindo...' : 'Atribuir hospedagem'}
+                        </button>
+                      )}
                       {dadosOperacionais.hospedagem && (
                         <>
                           <div>
