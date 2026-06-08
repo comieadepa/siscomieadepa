@@ -56,6 +56,11 @@ interface Inscricao {
   data_nascimento: string | null;
   supervisao_id: string | null; campo_id: string | null;
   hospedagem: boolean; alimentacao: boolean; brinde: boolean;
+  hosp_necessidade_especial?: boolean | null;
+  hosp_descricao_necessidade?: string | null;
+  hosp_cama_inferior?: boolean | null;
+  hosp_possui_comorbidade?: boolean | null;
+  hosp_descricao_comorbidade?: string | null;
   // campos da evolução de inscrições
   tipo_inscricao: string | null;
   valor_original: number | null;
@@ -113,6 +118,13 @@ interface EditForm {
   alimentacao: boolean;
   brinde: boolean;
   observacoes: string;
+}
+
+interface HospedagemAtribuirForm {
+  necessidade_especial: boolean;
+  descricao_necessidade: string;
+  possui_comorbidade: boolean;
+  descricao_comorbidade: string;
 }
 
 interface DadosOperacionais {
@@ -997,6 +1009,12 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   const [dadosOperacionais, setDadosOperacionais] = useState<DadosOperacionais | null>(null);
   const [carregandoDadosOperacionais, setCarregandoDadosOperacionais] = useState(false);
   const [atribuindoHospedagem, setAtribuindoHospedagem] = useState(false);
+  const [hospAtribuirForm, setHospAtribuirForm] = useState<HospedagemAtribuirForm>({
+    necessidade_especial: false,
+    descricao_necessidade: '',
+    possui_comorbidade: false,
+    descricao_comorbidade: '',
+  });
   const timeoutsRef = useRef<number[]>([]);
   const POR_PAG = 20;
 
@@ -1246,6 +1264,12 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
       brinde: ins.brinde,
       observacoes: ins.observacoes ?? '',
     });
+    setHospAtribuirForm({
+      necessidade_especial: !!ins.hosp_necessidade_especial,
+      descricao_necessidade: ins.hosp_descricao_necessidade ?? '',
+      possui_comorbidade: !!ins.hosp_possui_comorbidade,
+      descricao_comorbidade: ins.hosp_descricao_comorbidade ?? '',
+    });
     if (eventosDept.length === 0) {
       carregarEventosDepartamento();
     }
@@ -1287,6 +1311,14 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
       setErroEdit('Salve a mudanca de evento antes de atribuir hospedagem.');
       return;
     }
+    if (hospAtribuirForm.necessidade_especial && !hospAtribuirForm.descricao_necessidade.trim()) {
+      setErroEdit('Informe a descricao da necessidade especial.');
+      return;
+    }
+    if (hospAtribuirForm.possui_comorbidade && !hospAtribuirForm.descricao_comorbidade.trim()) {
+      setErroEdit('Informe a descricao da comorbidade.');
+      return;
+    }
 
     setErroEdit(null);
     setAtribuindoHospedagem(true);
@@ -1297,6 +1329,10 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
         body: JSON.stringify({
           inscricao_id: editando.id,
           status: 'solicitada',
+          necessidade_especial: hospAtribuirForm.necessidade_especial,
+          descricao_necessidade: hospAtribuirForm.necessidade_especial ? hospAtribuirForm.descricao_necessidade.trim() : null,
+          possui_comorbidade: hospAtribuirForm.possui_comorbidade,
+          descricao_comorbidade: hospAtribuirForm.possui_comorbidade ? hospAtribuirForm.descricao_comorbidade.trim() : null,
           observacoes: 'Hospedagem atribuida manualmente pelo administrador.',
         }),
       });
@@ -1307,7 +1343,14 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
       }
 
       setEditForm(f => f ? { ...f, hospedagem: true } : f);
-      setEditando(e => e ? { ...e, hospedagem: true } : e);
+      setEditando(e => e ? {
+        ...e,
+        hospedagem: true,
+        hosp_necessidade_especial: hospAtribuirForm.necessidade_especial,
+        hosp_descricao_necessidade: hospAtribuirForm.necessidade_especial ? hospAtribuirForm.descricao_necessidade.trim() : null,
+        hosp_possui_comorbidade: hospAtribuirForm.possui_comorbidade,
+        hosp_descricao_comorbidade: hospAtribuirForm.possui_comorbidade ? hospAtribuirForm.descricao_comorbidade.trim() : null,
+      } : e);
       await carregarDadosOperacionais(editando.id, editando.evento_id);
       onRefresh();
     } catch {
@@ -1688,6 +1731,18 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
 
   const valorPagoAtual = editando?.valor_pago ?? 0;
   const diferencaValor = valorNovo !== null ? valorNovo - valorPagoAtual : null;
+  const podeAcionarHospedagem = !!(
+    dadosOperacionais
+    && eventoDestino?.permite_hospedagem
+    && (
+      !dadosOperacionais.hospedagem
+      || (
+        !dadosOperacionais.numeroLeito
+        && ['solicitada', 'elegivel', 'lista_espera'].includes((dadosOperacionais.statusHospedagem ?? '').toLowerCase())
+      )
+    )
+  );
+  const hospedagemJaSolicitada = !!dadosOperacionais?.hospedagem;
 
   const camposModal = useMemo(() => {
     if (!editForm?.supervisao_id) return campos;
@@ -2121,15 +2176,58 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                         <span className="text-xs text-gray-500 block">Hospedagem solicitada</span>
                         <span className="text-sm font-medium text-gray-800">{dadosOperacionais.hospedagem ? 'Sim' : 'Não'}</span>
                       </div>
-                      {!dadosOperacionais.hospedagem && eventoDestino?.permite_hospedagem && (
-                        <button
-                          type="button"
-                          onClick={atribuirHospedagemInscrito}
-                          disabled={atribuindoHospedagem || salvandoEdit}
-                          className="inline-flex items-center justify-center rounded-lg bg-[#0D2B4E] px-3 py-2 text-xs font-semibold text-white hover:bg-[#123b63] disabled:opacity-60"
-                        >
-                          {atribuindoHospedagem ? 'Atribuindo...' : 'Atribuir hospedagem'}
-                        </button>
+                      {podeAcionarHospedagem && (
+                        <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+                          <label className="flex items-start gap-2 text-xs font-medium text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={hospAtribuirForm.necessidade_especial}
+                              onChange={e => setHospAtribuirForm(f => ({ ...f, necessidade_especial: e.target.checked }))}
+                              className="mt-0.5"
+                            />
+                            Necessidade especial de acessibilidade
+                          </label>
+                          {hospAtribuirForm.necessidade_especial && (
+                            <textarea
+                              value={hospAtribuirForm.descricao_necessidade}
+                              onChange={e => setHospAtribuirForm(f => ({ ...f, descricao_necessidade: e.target.value }))}
+                              rows={2}
+                              placeholder="Descreva a necessidade especial"
+                              className="w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                            />
+                          )}
+                          <label className="flex items-start gap-2 text-xs font-medium text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={hospAtribuirForm.possui_comorbidade}
+                              onChange={e => setHospAtribuirForm(f => ({ ...f, possui_comorbidade: e.target.checked }))}
+                              className="mt-0.5"
+                            />
+                            Comorbidade relevante
+                          </label>
+                          {hospAtribuirForm.possui_comorbidade && (
+                            <textarea
+                              value={hospAtribuirForm.descricao_comorbidade}
+                              onChange={e => setHospAtribuirForm(f => ({ ...f, descricao_comorbidade: e.target.value }))}
+                              rows={2}
+                              placeholder="Descreva a comorbidade"
+                              className="w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                            />
+                          )}
+                          <p className="text-[11px] leading-relaxed text-gray-500">
+                            Idade a partir de 60 anos, necessidade especial e comorbidade entram na prioridade e na escolha de leito inferior.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={atribuirHospedagemInscrito}
+                            disabled={atribuindoHospedagem || salvandoEdit}
+                            className="inline-flex items-center justify-center rounded-lg bg-[#0D2B4E] px-3 py-2 text-xs font-semibold text-white hover:bg-[#123b63] disabled:opacity-60"
+                          >
+                            {atribuindoHospedagem
+                              ? (hospedagemJaSolicitada ? 'Alocando...' : 'Atribuindo e alocando...')
+                              : (hospedagemJaSolicitada ? 'Alocar agora' : 'Atribuir hospedagem')}
+                          </button>
+                        </div>
                       )}
                       {dadosOperacionais.hospedagem && (
                         <>

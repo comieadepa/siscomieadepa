@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireEventoPermission } from '@/lib/evento-guard';
 import { normalizePayloadUppercase } from '@/lib/text';
 import { logDB } from '@/lib/audit';
-import { grupoMatchesAlojamento, resolveGrupoHospedagemAGO } from '@/lib/hospedagem-helpers';
+import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
+import {
+  calcularPrioridadeHospedagem,
+  grupoMatchesAlojamento,
+  resolveCamaInferiorAutomatica,
+  resolveGrupoHospedagemAGO,
+} from '@/lib/hospedagem-helpers';
 import {
   isElegivelAutoalocacao,
   isPagamentoElegivel,
@@ -190,7 +196,8 @@ export async function POST(
   const body = await request.json();
   const { inscricao_id, alojamento_id, tipo_cama, status, prioridade,
           necessidade_especial, descricao_necessidade, cama_inferior,
-          numero_cama, observacoes, grupo_hospedagem } = body;
+          numero_cama, observacoes, grupo_hospedagem,
+          possui_comorbidade, descricao_comorbidade } = body;
 
   if (!inscricao_id) {
     return NextResponse.json({ error: 'inscricao_id obrigatório' }, { status: 400 });
@@ -223,15 +230,43 @@ export async function POST(
       hosp_possui_comorbidade: !!inscricao.hosp_possui_comorbidade,
     });
 
+  const temNecessidadeEspecial = necessidade_especial !== undefined
+    ? !!necessidade_especial
+    : !!inscricao.hosp_necessidade_especial;
+  const temComorbidade = possui_comorbidade !== undefined
+    ? !!possui_comorbidade
+    : !!inscricao.hosp_possui_comorbidade;
+  const camaInferiorAuto = resolveCamaInferiorAutomatica({
+    sexo: inscricao.sexo ?? null,
+    data_nascimento: inscricao.data_nascimento ?? null,
+    tipo_inscricao: inscricao.tipo_inscricao ?? null,
+    hosp_necessidade_especial: temNecessidadeEspecial,
+    hosp_possui_comorbidade: temComorbidade,
+  });
+  const precisaCamaInferior = cama_inferior !== undefined ? !!cama_inferior : camaInferiorAuto;
+  const prioridadeCalculada = calcularPrioridadeHospedagem({
+    id: inscricao.id,
+    nome_inscrito: '',
+    sexo: inscricao.sexo ?? null,
+    data_nascimento: inscricao.data_nascimento ?? null,
+    tipo_inscricao: inscricao.tipo_inscricao ?? null,
+    hosp_necessidade_especial: temNecessidadeEspecial,
+    hosp_descricao_necessidade: descricao_necessidade ?? null,
+    hosp_cama_inferior: precisaCamaInferior,
+    hosp_observacoes: observacoes ?? null,
+    hosp_possui_comorbidade: temComorbidade,
+    hosp_descricao_comorbidade: descricao_comorbidade ?? null,
+  });
+
   const payload = normalizePayloadUppercase({
     evento_id:            eventoId,
     inscricao_id,
     alojamento_id:        alojamento_id || null,
     status:               status        ?? 'solicitada',
-    prioridade:           prioridade    ?? 0,
-    necessidade_especial: necessidade_especial ?? false,
+    prioridade:           prioridade    ?? prioridadeCalculada,
+    necessidade_especial: temNecessidadeEspecial,
     descricao_necessidade: descricao_necessidade ?? null,
-    cama_inferior:        cama_inferior ?? false,
+    cama_inferior:        precisaCamaInferior,
     tipo_cama:            tipo_cama     || null,
     numero_cama:          numero_cama   || null,
     observacoes:          observacoes   || null,
@@ -252,11 +287,18 @@ export async function POST(
     .update(normalizePayloadUppercase({
       hospedagem: true,
       grupo_hospedagem: grupoHospedagem || null,
+      hosp_necessidade_especial: temNecessidadeEspecial,
+      hosp_descricao_necessidade: descricao_necessidade ?? null,
+      hosp_cama_inferior: precisaCamaInferior,
+      hosp_possui_comorbidade: temComorbidade,
+      hosp_descricao_comorbidade: descricao_comorbidade ?? null,
     }))
     .eq('id', inscricao_id)
     .eq('evento_id', eventoId);
 
   if (insUpdateErr) return NextResponse.json({ error: insUpdateErr.message }, { status: 500 });
+
+  await alocarLeitoParaInscricao(supabase, inscricao_id);
 
   await logDB({
     userId: guard.ctx.user?.id,
