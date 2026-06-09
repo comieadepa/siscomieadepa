@@ -92,6 +92,16 @@ interface Membro {
     }
   };
   observacoesMinisteriais?: string;
+  localBatismo?: string;
+  dataFiliacao?: string;
+  evAutorizadoData?: string;
+  evAutorizadoLocal?: string;
+  evConsagradoData?: string;
+  evConsagradoLocal?: string;
+  consMissionarioData?: string;
+  consMissionarioLocal?: string;
+  ordenPastorData?: string;
+  ordenPastorLocal?: string;
 }
 
 interface DivisaoOption {
