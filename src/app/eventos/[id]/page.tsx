@@ -425,12 +425,27 @@ export default function GerenciarEventoPage() {
       } catch { /* cai no fallback abaixo */ }
     }
 
-    const { data } = await supabase
-      .from('evento_inscricoes')
-      .select('*')
-      .eq('evento_id', id)
-      .order('created_at', { ascending: false });
-    setInscricoes((data as Inscricao[]) || []);
+    let allData: Inscricao[] = [];
+    let page = 0;
+    const limit = 1000;
+    while (true) {
+      const { data, error } = await supabase
+        .from('evento_inscricoes')
+        .select('*')
+        .eq('evento_id', id)
+        .order('created_at', { ascending: false })
+        .range(page * limit, (page + 1) * limit - 1);
+
+      if (error) {
+        console.error("Erro ao buscar inscrições do evento:", error);
+        break;
+      }
+      if (!data || data.length === 0) break;
+      allData = [...allData, ...(data as Inscricao[])];
+      if (data.length < limit) break;
+      page++;
+    }
+    setInscricoes(allData);
     setLoadingInsc(false);
   }, [id, supabase]);
 

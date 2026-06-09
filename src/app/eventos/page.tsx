@@ -299,11 +299,26 @@ export default function EventosPage() {
       // Carrega inscrições apenas dos eventos acessíveis
       if (evs.length > 0) {
         const ids = evs.map(e => e.id);
-        const { data: inData } = await supabase
-          .from('evento_inscricoes')
-          .select('evento_id, status_pagamento, valor_pago')
-          .in('evento_id', ids);
-        setInscricoes((inData as InscricaoResumo[]) || []);
+        let allInsc: InscricaoResumo[] = [];
+        let page = 0;
+        const limit = 1000;
+        while (true) {
+          const { data: inData, error } = await supabase
+            .from('evento_inscricoes')
+            .select('evento_id, status_pagamento, valor_pago')
+            .in('evento_id', ids)
+            .range(page * limit, (page + 1) * limit - 1);
+          
+          if (error) {
+            console.error("Erro ao buscar inscrições:", error);
+            break;
+          }
+          if (!inData || inData.length === 0) break;
+          allInsc = [...allInsc, ...(inData as InscricaoResumo[])];
+          if (inData.length < limit) break;
+          page++;
+        }
+        setInscricoes(allInsc);
       } else {
         setInscricoes([]);
       }

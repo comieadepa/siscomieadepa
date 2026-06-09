@@ -56,13 +56,27 @@ export async function GET(
   }
 
   if (tipo === 'inscricoes') {
-    const { data: inscricoes } = await supabase
-      .from('evento_inscricoes')
-      .select('*')
-      .eq('evento_id', eventoId)
-      .order('created_at', { ascending: false });
+    let allInsc = [];
+    let page = 0;
+    const limit = 1000;
+    while (true) {
+      const { data: chunk, error } = await supabase
+        .from('evento_inscricoes')
+        .select('*')
+        .eq('evento_id', eventoId)
+        .order('created_at', { ascending: false })
+        .range(page * limit, (page + 1) * limit - 1);
 
-    return NextResponse.json({ inscricoes: inscricoes || [] });
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      if (!chunk || chunk.length === 0) break;
+      allInsc.push(...chunk);
+      if (chunk.length < limit) break;
+      page++;
+    }
+
+    return NextResponse.json({ inscricoes: allInsc });
   }
 
   return NextResponse.json({ error: 'tipo invalido. Use: evento | inscricoes' }, { status: 400 });
