@@ -430,8 +430,6 @@ export default function MembrosPage() {
   const [membroHistorico, setMembroHistorico] = useState<Membro | null>(null);
   const [membroImprimindoCartao, setMembroImprimindoCartao] = useState<Membro | null>(null);
   const [membroSelecionandoCertificado, setMembroSelecionandoCertificado] = useState<Membro | null>(null);
-  const [templateMinistroSelecionado, setTemplateMinistroSelecionado] = useState<string>('');
-  const [templateEsposaSelecionado, setTemplateEsposaSelecionado] = useState<string>('');
   const [certificadoTemplates, setCertificadoTemplates] = useState<any[]>([]);
   const [_ultimoCadastro, setUltimoCadastro] = useState<Membro | null>(null);
   const [membrosSelecionados, setMembrosSelecionados] = useState<Set<string>>(new Set());
@@ -2237,132 +2235,124 @@ useEffect(() => {
       )}
 
       {/* Modal: Escolher Certificado */}
-      {membroSelecionandoCertificado && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl shadow-2xl overflow-hidden max-w-md w-full p-6 relative border border-gray-100">
-            <button
-              onClick={() => setMembroSelecionandoCertificado(null)}
-              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-700 font-bold transition"
-              title="Fechar"
-            >✕</button>
+      {membroSelecionandoCertificado && (() => {
+        const tempMin = encontrarTemplatePorCargo(certificadoTemplates, membroSelecionandoCertificado.cargoMinisterial || '');
+        const tempEsp = encontrarTemplatePorCargo(certificadoTemplates, 'Missionária');
+        return (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+            <div className="bg-white rounded-2xl shadow-2xl overflow-hidden max-w-md w-full p-6 relative border border-gray-100">
+              <button
+                onClick={() => setMembroSelecionandoCertificado(null)}
+                className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-700 font-bold transition"
+                title="Fechar"
+              >✕</button>
 
-            <div className="mb-6">
-              <h3 className="text-lg font-bold text-[#0D2B4E] flex items-center gap-2">
-                🎓 Impressão de Certificados
-              </h3>
-              <p className="text-xs text-gray-500 mt-1">
-                Ministro: <strong className="text-teal-700 font-semibold">{membroSelecionandoCertificado.nome}</strong>
-              </p>
-            </div>
+              <div className="mb-6">
+                <h3 className="text-lg font-bold text-[#0D2B4E] flex items-center gap-2">
+                  🎓 Impressão de Certificados
+                </h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  Ministro: <strong className="text-teal-700 font-semibold">{membroSelecionandoCertificado.nome}</strong>
+                </p>
+              </div>
 
-            <div className="space-y-6">
-              {/* Seção Ministro */}
-              <div className="border border-teal-100 bg-teal-50/30 rounded-xl p-4">
-                <h4 className="text-sm font-bold text-teal-900 mb-3 flex items-center gap-1.5">
-                  👤 Certificado do Ministro ({membroSelecionandoCertificado.cargoMinisterial || 'Sem Cargo'})
-                </h4>
-                <div className="flex flex-col gap-2.5">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-gray-600 mb-1">Modelo de Certificado</label>
-                    <select
-                      value={templateMinistroSelecionado}
-                      onChange={(e) => setTemplateMinistroSelecionado(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-teal-500"
-                    >
-                      <option value="">-- Selecione um Modelo --</option>
-                      {certificadoTemplates.map((t) => (
-                        <option key={t.id} value={t.id}>{t.nome}</option>
-                      ))}
-                    </select>
+              <div className="space-y-6">
+                {/* Seção Ministro */}
+                <div className="border border-teal-100 bg-teal-50/30 rounded-xl p-4">
+                  <h4 className="text-sm font-bold text-teal-900 mb-3 flex items-center gap-1.5">
+                    👤 Certificado do Ministro ({membroSelecionandoCertificado.cargoMinisterial || 'Sem Cargo'})
+                  </h4>
+                  <div className="flex flex-col gap-2.5">
+                    {tempMin ? (
+                      <>
+                        <p className="text-xs text-gray-600">
+                          Modelo encontrado: <strong className="text-teal-700 font-semibold">{tempMin.nome}</strong>
+                        </p>
+                        <button
+                          onClick={async () => {
+                            const dados = {
+                              ministro_nome: membroSelecionandoCertificado.nome,
+                              matricula: membroSelecionandoCertificado.matricula || '',
+                              cargo_ministerial: membroSelecionandoCertificado.cargoMinisterial || '',
+                              congregacao: membroSelecionandoCertificado.congregacao || membroSelecionandoCertificado.campo || '',
+                              data_consagracao: membroSelecionandoCertificado.dataConsagracao || (membroSelecionandoCertificado as any).evAutorizadoData || (membroSelecionandoCertificado as any).evConsagradoData || (membroSelecionandoCertificado as any).ordenPastorData || '',
+                              uniqueId: membroSelecionandoCertificado.uniqueId,
+                              memberId: membroSelecionandoCertificado.id,
+                            };
+                            await gerarCertificadoMembroPDF(tempMin, dados);
+                          }}
+                          className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs uppercase tracking-wide rounded-lg shadow-sm transition flex items-center justify-center gap-1"
+                        >
+                          🖨️ Imprimir Certificado do Ministro
+                        </button>
+                      </>
+                    ) : (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 font-semibold">
+                        ⚠️ Nenhum modelo de certificado cadastrado com o nome exato "{membroSelecionandoCertificado.cargoMinisterial || 'Sem Cargo'}".
+                      </div>
+                    )}
                   </div>
-                  <button
-                    disabled={!templateMinistroSelecionado}
-                    onClick={async () => {
-                      const t = certificadoTemplates.find(x => x.id === templateMinistroSelecionado);
-                      if (t) {
-                        const dados = {
-                          ministro_nome: membroSelecionandoCertificado.nome,
-                          matricula: membroSelecionandoCertificado.matricula || '',
-                          cargo_ministerial: membroSelecionandoCertificado.cargoMinisterial || '',
-                          congregacao: membroSelecionandoCertificado.congregacao || membroSelecionandoCertificado.campo || '',
-                          data_consagracao: membroSelecionandoCertificado.dataConsagracao || (membroSelecionandoCertificado as any).evAutorizadoData || (membroSelecionandoCertificado as any).evConsagradoData || (membroSelecionandoCertificado as any).ordenPastorData || '',
-                          uniqueId: membroSelecionandoCertificado.uniqueId,
-                          memberId: membroSelecionandoCertificado.id,
-                        };
-                        await gerarCertificadoMembroPDF(t, dados);
-                      }
-                    }}
-                    className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-xs uppercase tracking-wide rounded-lg shadow-sm transition flex items-center justify-center gap-1"
-                  >
-                    🖨️ Imprimir Certificado do Ministro
-                  </button>
+                </div>
+
+                {/* Seção Esposa */}
+                <div className="border border-purple-100 bg-purple-50/20 rounded-xl p-4">
+                  <h4 className="text-sm font-bold text-purple-900 mb-3 flex items-center gap-1.5">
+                    👩 Certificado da Esposa (Missionária)
+                  </h4>
+                  {membroSelecionandoCertificado.nomeConjuge ? (
+                    <div className="flex flex-col gap-2.5">
+                      <p className="text-xs text-gray-700">
+                        Nome: <strong>{membroSelecionandoCertificado.nomeConjuge}</strong>
+                      </p>
+                      {tempEsp ? (
+                        <>
+                          <p className="text-xs text-gray-600">
+                            Modelo encontrado: <strong className="text-purple-700 font-semibold">{tempEsp.nome}</strong>
+                          </p>
+                          <button
+                            onClick={async () => {
+                              const dados = {
+                                ministro_nome: membroSelecionandoCertificado.nomeConjuge || '',
+                                matricula: membroSelecionandoCertificado.matricula || '',
+                                cargo_ministerial: 'Missionária',
+                                congregacao: membroSelecionandoCertificado.congregacao || membroSelecionandoCertificado.campo || '',
+                                data_consagracao: membroSelecionandoCertificado.dataConsagracao || (membroSelecionandoCertificado as any).evAutorizadoData || (membroSelecionandoCertificado as any).evConsagradoData || (membroSelecionandoCertificado as any).ordenPastorData || '',
+                                uniqueId: membroSelecionandoCertificado.uniqueId,
+                                memberId: membroSelecionandoCertificado.id,
+                              };
+                              await gerarCertificadoMembroPDF(tempEsp, dados);
+                            }}
+                            className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs uppercase tracking-wide rounded-lg shadow-sm transition flex items-center justify-center gap-1"
+                          >
+                            🖨️ Imprimir Certificado da Esposa
+                          </button>
+                        </>
+                      ) : (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 font-semibold">
+                          ⚠️ Nenhum modelo de certificado cadastrado com o nome "Missionária".
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-800 font-semibold">
+                      ⚠️ Esposa não cadastrada no registro deste ministro.
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Seção Esposa */}
-              <div className="border border-purple-100 bg-purple-50/20 rounded-xl p-4">
-                <h4 className="text-sm font-bold text-purple-900 mb-3 flex items-center gap-1.5">
-                  👩 Certificado da Esposa (Missionária)
-                </h4>
-                {membroSelecionandoCertificado.nomeConjuge ? (
-                  <div className="flex flex-col gap-2.5">
-                    <p className="text-xs text-gray-700">
-                      Nome: <strong>{membroSelecionandoCertificado.nomeConjuge}</strong>
-                    </p>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-gray-600 mb-1">Modelo de Certificado</label>
-                      <select
-                        value={templateEsposaSelecionado}
-                        onChange={(e) => setTemplateEsposaSelecionado(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                      >
-                        <option value="">-- Selecione um Modelo --</option>
-                        {certificadoTemplates.map((t) => (
-                          <option key={t.id} value={t.id}>{t.nome}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <button
-                      disabled={!templateEsposaSelecionado}
-                      onClick={async () => {
-                        const t = certificadoTemplates.find(x => x.id === templateEsposaSelecionado);
-                        if (t) {
-                          const dados = {
-                            ministro_nome: membroSelecionandoCertificado.nomeConjuge || '',
-                            matricula: membroSelecionandoCertificado.matricula || '',
-                            cargo_ministerial: 'Missionária',
-                            congregacao: membroSelecionandoCertificado.congregacao || membroSelecionandoCertificado.campo || '',
-                            data_consagracao: membroSelecionandoCertificado.dataConsagracao || (membroSelecionandoCertificado as any).evAutorizadoData || (membroSelecionandoCertificado as any).evConsagradoData || (membroSelecionandoCertificado as any).ordenPastorData || '',
-                            uniqueId: membroSelecionandoCertificado.uniqueId,
-                            memberId: membroSelecionandoCertificado.id,
-                          };
-                          await gerarCertificadoMembroPDF(t, dados);
-                        }
-                      }}
-                      className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-xs uppercase tracking-wide rounded-lg shadow-sm transition flex items-center justify-center gap-1"
-                    >
-                      🖨️ Imprimir Certificado da Esposa
-                    </button>
-                  </div>
-                ) : (
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-800 font-semibold">
-                    ⚠️ Esposa não cadastrada no registro deste ministro.
-                  </div>
-                )}
+              <div className="mt-6 flex justify-end">
+                <button
+                  onClick={() => setMembroSelecionandoCertificado(null)}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-lg transition"
+                >
+                  Fechar
+                </button>
               </div>
             </div>
-
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={() => setMembroSelecionandoCertificado(null)}
-                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-lg transition"
-              >
-                Fechar
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Modal: Escolher Carta Convencional */}
       {membroSelecionandoCarta && (
@@ -3186,10 +3176,6 @@ useEffect(() => {
                           <button
                             onClick={() => {
                               setMembroSelecionandoCertificado(membro);
-                              const tempMin = encontrarTemplatePorCargo(certificadoTemplates, membro.cargoMinisterial || '');
-                              const tempEsp = encontrarTemplatePorCargo(certificadoTemplates, 'Missionária');
-                              setTemplateMinistroSelecionado(tempMin?.id || '');
-                              setTemplateEsposaSelecionado(tempEsp?.id || '');
                             }}
                             className="p-1.5 text-teal-600 hover:bg-teal-100 rounded-lg transition"
                             title="Imprimir Certificado"
