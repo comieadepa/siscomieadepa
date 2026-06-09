@@ -3295,24 +3295,40 @@ useEffect(() => {
                                   : null;
                                 setDadosPessoais({
                                   ...dadosPessoais,
-                                  supervisao: '',
+                                  supervisao: supervisaoRelacionada?.nome || dadosPessoais.supervisao,
                                   campo: value,
-                                  congregacao: supervisaoRelacionada?.nome || '',
                                 });
                               }}
                               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                             >
                               <option value="">Selecione</option>
-                              {camposOptions.map((opt) => (
-                                <option key={opt.id} value={opt.nome}>{opt.nome}</option>
-                              ))}
+                              {camposOptions
+                                .filter((opt) => {
+                                  if (!dadosPessoais.supervisao) return true;
+                                  const selectedSupervisaoId = supervisoesOptions.find((s) => s.nome === dadosPessoais.supervisao)?.id;
+                                  return !selectedSupervisaoId || opt.supervisao_id === selectedSupervisaoId;
+                                })
+                                .map((opt) => (
+                                  <option key={opt.id} value={opt.nome}>{opt.nome}</option>
+                                ))}
                             </select>
                           </div>
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1">Supervisão</label>
                             <select
                               value={dadosPessoais.supervisao}
-                              onChange={(e) => setDadosPessoais({ ...dadosPessoais, supervisao: e.target.value })}
+                              onChange={(e) => {
+                                const newSupervisao = e.target.value;
+                                const selectedSupervisaoId = supervisoesOptions.find((opt) => opt.nome === newSupervisao)?.id;
+                                const campoSelecionado = camposOptions.find((opt) => opt.nome === dadosPessoais.campo);
+                                const pertenceANovaSupervisao = selectedSupervisaoId && campoSelecionado && campoSelecionado.supervisao_id === selectedSupervisaoId;
+
+                                setDadosPessoais({
+                                  ...dadosPessoais,
+                                  supervisao: newSupervisao,
+                                  campo: pertenceANovaSupervisao ? dadosPessoais.campo : '',
+                                });
+                              }}
                               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                             >
                               <option value="">Selecione</option>
