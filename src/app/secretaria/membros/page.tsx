@@ -406,6 +406,7 @@ export default function MembrosPage() {
   const [isJubilado, setIsJubilado] = useState(false);
   const [motivoStatus, setMotivoStatus] = useState('');
   const [salvandoStatus, setSalvandoStatus] = useState(false);
+  const [salvandoMembro, setSalvandoMembro] = useState(false);
   const [membroImprimindo, setMembroImprimindo] = useState<Membro | null>(null);
   const [fichaAcpStatus, setFichaAcpStatus] = useState<string>('');
   const [fichaAcpLoading, setFichaAcpLoading] = useState(false);
@@ -1303,7 +1304,20 @@ useEffect(() => {
     });
     setCargoSelecionado(resolveCargoValue(membro.cargoMinisterial));
     setDadosCargos(membro.dadosCargos || {});
-    setDadosConsagracao(prev => ({ ...prev, diretoria: membro.diretoria || false, cargo_diretoria: membro.diretoriaCargo || '' }));
+    setDadosConsagracao({
+      ev_autorizado_data: membro.evAutorizadoData || '',
+      ev_autorizado_local: membro.evAutorizadoLocal || '',
+      ev_consagrado_data: membro.evConsagradoData || '',
+      ev_consagrado_local: membro.evConsagradoLocal || '',
+      cons_missionario_data: membro.consMissionarioData || '',
+      cons_missionario_local: membro.consMissionarioLocal || '',
+      orden_pastor_data: membro.ordenPastorData || '',
+      orden_pastor_local: membro.ordenPastorLocal || '',
+      diretoria: membro.diretoria || false,
+      local_batismo: membro.localBatismo || '',
+      data_filiacao: membro.dataFiliacao || '',
+      cargo_diretoria: membro.diretoriaCargo || '',
+    });
     setIsEditando(false);
     setIsAdminMode(true); // Modo admin ativado para edição
     setShowForm(true);
@@ -1382,6 +1396,7 @@ useEffect(() => {
       return;
     }
 
+    setSalvandoMembro(true);
     try {
       const fotoEhBase64 = isDataUrl(fotoMembro);
       let fotoUrlFinal: string | null = fotoMembro || null;
@@ -1582,6 +1597,8 @@ useEffect(() => {
         type: 'error'
       });
       return;
+    } finally {
+      setSalvandoMembro(false);
     }
 
     // Limpar formulário completamente
@@ -3876,13 +3893,9 @@ useEffect(() => {
                             className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                           >
                             <option value="">- Selecionar -</option>
-                            {cargosMinisteriais
-                              .filter(cargo => cargo.ativo)
-                              .map(cargo => (
-                                <option key={cargo.id} value={cargo.nome}>
-                                  {cargo.nome}
-                                </option>
-                              ))}
+                            <option value="Evangelista Autorizado">Evangelista Autorizado</option>
+                            <option value="Evangelista Consagrado">Evangelista Consagrado</option>
+                            <option value="Pastor">Pastor</option>
                           </select>
                         </div>
                         <div>
@@ -4457,13 +4470,22 @@ useEffect(() => {
                 <div className="flex gap-4 px-4 py-3 border-t border-gray-300 bg-gradient-to-r from-teal-50 to-cyan-50 flex-shrink-0">
                   <button
                     onClick={salvarMembro}
-                    className="flex-1 px-4 py-2 bg-gradient-to-r from-teal-600 to-teal-700 text-white rounded-lg hover:from-teal-700 hover:to-teal-800 transition font-bold text-sm"
+                    disabled={salvandoMembro}
+                    className="flex-1 px-4 py-2 bg-gradient-to-r from-teal-600 to-teal-700 text-white rounded-lg hover:from-teal-700 hover:to-teal-800 transition font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
-                    ✓ {membroEditando ? 'Atualizar' : 'Cadastrar'}
+                    {salvandoMembro ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                        Salvando...
+                      </>
+                    ) : (
+                      <span>✓ {membroEditando ? 'Atualizar' : 'Cadastrar'}</span>
+                    )}
                   </button>
                   <button
                     onClick={fecharFormulario}
-                    className="flex-1 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition font-bold text-sm"
+                    disabled={salvandoMembro}
+                    className="flex-1 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     ✕ Cancelar
                   </button>
