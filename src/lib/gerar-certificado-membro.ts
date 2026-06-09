@@ -57,6 +57,7 @@ export interface DadosCertificadoMembro {
 }
 
 export interface TemplateCertificado {
+  id?: string;
   nome: string;
   backgroundUrl?: string;
   orientacao?: 'landscape' | 'portrait';

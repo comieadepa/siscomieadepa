@@ -20,6 +20,7 @@ import { loadOrgNomenclaturasFromSupabaseOrMigrate } from '@/lib/org-nomenclatur
 import { loadTemplatesForCurrentUser } from '@/lib/cartoes-templates-sync';
 import { authenticatedFetch } from '@/lib/api-client';
 import { useMembers } from '@/hooks/useMembers';
+import { gerarCertificadoMembroPDF, encontrarTemplatePorCargo } from '@/lib/gerar-certificado-membro';
 import type { Member, CreateMemberRequest, UpdateMemberRequest } from '@/types/supabase';
 
 interface Membro {
@@ -428,6 +429,10 @@ export default function MembrosPage() {
   const [membroDocumentos, setMembroDocumentos] = useState<Membro | null>(null);
   const [membroHistorico, setMembroHistorico] = useState<Membro | null>(null);
   const [membroImprimindoCartao, setMembroImprimindoCartao] = useState<Membro | null>(null);
+  const [membroSelecionandoCertificado, setMembroSelecionandoCertificado] = useState<Membro | null>(null);
+  const [templateMinistroSelecionado, setTemplateMinistroSelecionado] = useState<string>('');
+  const [templateEsposaSelecionado, setTemplateEsposaSelecionado] = useState<string>('');
+  const [certificadoTemplates, setCertificadoTemplates] = useState<any[]>([]);
   const [_ultimoCadastro, setUltimoCadastro] = useState<Membro | null>(null);
   const [membrosSelecionados, setMembrosSelecionados] = useState<Set<string>>(new Set());
   const [imprimindoLote, setImprimindoLote] = useState(false);
@@ -705,6 +710,21 @@ useEffect(() => {
 
     loadEstruturaOptions().catch(() => null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const loadCertificadosTemplates = async () => {
+      try {
+        const res = await authenticatedFetch('/api/v1/secretaria/certificados-templates');
+        if (res.ok) {
+          const json = await res.json().catch(() => null as any);
+          setCertificadoTemplates(json?.data || []);
+        }
+      } catch (e) {
+        console.error('Erro ao carregar templates de certificados:', e);
+      }
+    };
+    loadCertificadosTemplates();
   }, []);
 
   const sanitizeNome = (value: unknown) => String(value || '').trim();
@@ -2216,6 +2236,134 @@ useEffect(() => {
         />
       )}
 
+      {/* Modal: Escolher Certificado */}
+      {membroSelecionandoCertificado && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-2xl overflow-hidden max-w-md w-full p-6 relative border border-gray-100">
+            <button
+              onClick={() => setMembroSelecionandoCertificado(null)}
+              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-700 font-bold transition"
+              title="Fechar"
+            >✕</button>
+
+            <div className="mb-6">
+              <h3 className="text-lg font-bold text-[#0D2B4E] flex items-center gap-2">
+                🎓 Impressão de Certificados
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Ministro: <strong className="text-teal-700 font-semibold">{membroSelecionandoCertificado.nome}</strong>
+              </p>
+            </div>
+
+            <div className="space-y-6">
+              {/* Seção Ministro */}
+              <div className="border border-teal-100 bg-teal-50/30 rounded-xl p-4">
+                <h4 className="text-sm font-bold text-teal-900 mb-3 flex items-center gap-1.5">
+                  👤 Certificado do Ministro ({membroSelecionandoCertificado.cargoMinisterial || 'Sem Cargo'})
+                </h4>
+                <div className="flex flex-col gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-gray-600 mb-1">Modelo de Certificado</label>
+                    <select
+                      value={templateMinistroSelecionado}
+                      onChange={(e) => setTemplateMinistroSelecionado(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    >
+                      <option value="">-- Selecione um Modelo --</option>
+                      {certificadoTemplates.map((t) => (
+                        <option key={t.id} value={t.id}>{t.nome}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    disabled={!templateMinistroSelecionado}
+                    onClick={async () => {
+                      const t = certificadoTemplates.find(x => x.id === templateMinistroSelecionado);
+                      if (t) {
+                        const dados = {
+                          ministro_nome: membroSelecionandoCertificado.nome,
+                          matricula: membroSelecionandoCertificado.matricula || '',
+                          cargo_ministerial: membroSelecionandoCertificado.cargoMinisterial || '',
+                          congregacao: membroSelecionandoCertificado.congregacao || membroSelecionandoCertificado.campo || '',
+                          data_consagracao: membroSelecionandoCertificado.dataConsagracao || (membroSelecionandoCertificado as any).evAutorizadoData || (membroSelecionandoCertificado as any).evConsagradoData || (membroSelecionandoCertificado as any).ordenPastorData || '',
+                          uniqueId: membroSelecionandoCertificado.uniqueId,
+                          memberId: membroSelecionandoCertificado.id,
+                        };
+                        await gerarCertificadoMembroPDF(t, dados);
+                      }
+                    }}
+                    className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-xs uppercase tracking-wide rounded-lg shadow-sm transition flex items-center justify-center gap-1"
+                  >
+                    🖨️ Imprimir Certificado do Ministro
+                  </button>
+                </div>
+              </div>
+
+              {/* Seção Esposa */}
+              <div className="border border-purple-100 bg-purple-50/20 rounded-xl p-4">
+                <h4 className="text-sm font-bold text-purple-900 mb-3 flex items-center gap-1.5">
+                  👩 Certificado da Esposa (Missionária)
+                </h4>
+                {membroSelecionandoCertificado.nomeConjuge ? (
+                  <div className="flex flex-col gap-2.5">
+                    <p className="text-xs text-gray-700">
+                      Nome: <strong>{membroSelecionandoCertificado.nomeConjuge}</strong>
+                    </p>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-600 mb-1">Modelo de Certificado</label>
+                      <select
+                        value={templateEsposaSelecionado}
+                        onChange={(e) => setTemplateEsposaSelecionado(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      >
+                        <option value="">-- Selecione um Modelo --</option>
+                        {certificadoTemplates.map((t) => (
+                          <option key={t.id} value={t.id}>{t.nome}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <button
+                      disabled={!templateEsposaSelecionado}
+                      onClick={async () => {
+                        const t = certificadoTemplates.find(x => x.id === templateEsposaSelecionado);
+                        if (t) {
+                          const dados = {
+                            ministro_nome: membroSelecionandoCertificado.nomeConjuge || '',
+                            matricula: membroSelecionandoCertificado.matricula || '',
+                            cargo_ministerial: 'Missionária',
+                            congregacao: membroSelecionandoCertificado.congregacao || membroSelecionandoCertificado.campo || '',
+                            data_consagracao: membroSelecionandoCertificado.dataConsagracao || (membroSelecionandoCertificado as any).evAutorizadoData || (membroSelecionandoCertificado as any).evConsagradoData || (membroSelecionandoCertificado as any).ordenPastorData || '',
+                            uniqueId: membroSelecionandoCertificado.uniqueId,
+                            memberId: membroSelecionandoCertificado.id,
+                          };
+                          await gerarCertificadoMembroPDF(t, dados);
+                        }
+                      }}
+                      className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-xs uppercase tracking-wide rounded-lg shadow-sm transition flex items-center justify-center gap-1"
+                    >
+                      🖨️ Imprimir Certificado da Esposa
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-800 font-semibold">
+                    ⚠️ Esposa não cadastrada no registro deste ministro.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setMembroSelecionandoCertificado(null)}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-lg transition"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal: Escolher Carta Convencional */}
       {membroSelecionandoCarta && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
@@ -3033,6 +3181,21 @@ useEffect(() => {
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setMembroSelecionandoCertificado(membro);
+                              const tempMin = encontrarTemplatePorCargo(certificadoTemplates, membro.cargoMinisterial || '');
+                              const tempEsp = encontrarTemplatePorCargo(certificadoTemplates, 'Missionária');
+                              setTemplateMinistroSelecionado(tempMin?.id || '');
+                              setTemplateEsposaSelecionado(tempEsp?.id || '');
+                            }}
+                            className="p-1.5 text-teal-600 hover:bg-teal-100 rounded-lg transition"
+                            title="Imprimir Certificado"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />
                             </svg>
                           </button>
                           <button
