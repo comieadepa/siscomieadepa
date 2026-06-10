@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@/lib/supabase-client';
 import { buildUrl, getAppBaseUrl } from '@/lib/urls';
+import { calcularValorFinanceiroInscricao, formatarValorUI } from '@/lib/eventos/financeiro-lote-utils';
 
 // ─── Tipos locais ─────────────────────────────────────────────────────────
 interface Evento {
@@ -24,6 +25,8 @@ interface Inscricao {
   tipo_inscricao: string | null; valor_original: number | null;
   cupom_codigo: string | null; desconto_valor: number;
   valor_final: number | null; lote_id: string | null;
+  responsavel_pagamento?: boolean | null;
+  lote?: any;
   valor_pago: number; status_pagamento: string;
   forma_pagamento: string | null; asaas_payment_id: string | null;
   checkin_realizado: boolean; checkin_at: string | null;
@@ -321,7 +324,11 @@ export default function TabBackup({
     etiqPendentes: inscricoes.filter(i => !i.etiqueta_impressa && i.checkin_realizado).length,
     arrecadado:    inscricoes
       .filter(i => i.status_pagamento === 'pago')
-      .reduce((a, i) => a + (i.valor_pago || 0), 0),
+      .reduce((a, i) => {
+        const outras = i.lote_id ? inscricoes.filter(o => o.lote_id === i.lote_id) : [];
+        const localLote = i.lote || lotes.find(l => l.id === i.lote_id) || null;
+        return a + calcularValorFinanceiroInscricao(i, localLote, outras);
+      }, 0),
   }), [inscricoes, hospedagens]);
 
   // ════════════════════════════════════════════════════════════
@@ -363,7 +370,7 @@ export default function TabBackup({
       i.cupom_codigo,
       fmtMoeda(i.desconto_valor),
       fmtMoeda(i.valor_final),
-      fmtMoeda(i.valor_pago),
+      formatarValorUI(i, i.lote || lotes.find(l => l.id === i.lote_id) || null, i.lote_id ? inscricoes.filter(o => o.lote_id === i.lote_id) : []),
       i.status_pagamento, i.forma_pagamento,
       i.asaas_payment_id, fmtData(i.created_at),
     ]);
@@ -718,7 +725,7 @@ export default function TabBackup({
         <td>${esc(i.nome_inscrito)}</td>
         <td>${esc(i.cpf)}</td>
         <td>${esc(fmtMoeda(i.valor_final))}</td>
-        <td>${esc(fmtMoeda(i.valor_pago))}</td>
+        <td>${esc(formatarValorUI(i, i.lote || lotes.find(l => l.id === i.lote_id) || null, i.lote_id ? inscricoes.filter(o => o.lote_id === i.lote_id) : []))}</td>
         <td>${esc(i.status_pagamento)}</td>
         <td>${esc(i.forma_pagamento)}</td>
       </tr>`).join('');

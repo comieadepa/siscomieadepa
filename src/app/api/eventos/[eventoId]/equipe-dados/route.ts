@@ -76,7 +76,24 @@ export async function GET(
       page++;
     }
 
-    return NextResponse.json({ inscricoes: allInsc });
+    const { data: lotes } = await supabase
+      .from('evento_lotes_inscricao')
+      .select('*')
+      .eq('evento_id', eventoId);
+
+    const lotesMap: Record<string, any> = {};
+    if (lotes) {
+      lotes.forEach((l: any) => {
+        lotesMap[l.id] = l;
+      });
+    }
+
+    const enrichedInsc = allInsc.map((i: any) => ({
+      ...i,
+      lote: i.lote_id ? (lotesMap[i.lote_id] || null) : null,
+    }));
+
+    return NextResponse.json({ inscricoes: enrichedInsc });
   }
 
   return NextResponse.json({ error: 'tipo invalido. Use: evento | inscricoes' }, { status: 400 });

@@ -24,6 +24,7 @@ import TabBackup        from './TabBackup';
 import TabProgramacao   from './TabProgramacao';
 import TabCertificados  from './TabCertificados';
 import TabControleAGO  from './TabControleAGO';
+import { calcularValorFinanceiroInscricao, formatarValorUI } from '@/lib/eventos/financeiro-lote-utils';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -69,6 +70,8 @@ interface Inscricao {
   valor_final: number | null;
   direito_brinde: boolean;
   lote_id: string | null;
+  responsavel_pagamento?: boolean | null;
+  lote?: any;
   valor_pago: number; status_pagamento: string; forma_pagamento: string | null;
   asaas_payment_id: string | null; comprovante_url: string | null;
   qr_code: string | null; checkin_realizado: boolean; checkin_at: string | null;
@@ -445,7 +448,24 @@ export default function GerenciarEventoPage() {
       if (data.length < limit) break;
       page++;
     }
-    setInscricoes(allData);
+    const { data: lotesData } = await supabase
+      .from('evento_lotes_inscricao')
+      .select('*')
+      .eq('evento_id', id);
+
+    const lotesMap: Record<string, any> = {};
+    if (lotesData) {
+      lotesData.forEach((l: any) => {
+        lotesMap[l.id] = l;
+      });
+    }
+
+    const enriched = allData.map((i) => ({
+      ...i,
+      lote: i.lote_id ? (lotesMap[i.lote_id] || null) : null,
+    }));
+
+    setInscricoes(enriched);
     setLoadingInsc(false);
   }, [id, supabase]);
 
@@ -534,7 +554,10 @@ export default function GerenciarEventoPage() {
       pagos:        pagos.length,
       pendentes:    pend.length,
       isentos:      isentos.length,
-      arrecadado:   pagos.reduce((a, i) => a + (i.valor_pago || 0), 0),
+      arrecadado:   pagos.reduce((a, i) => {
+        const outras = i.lote_id ? inscricoes.filter(o => o.lote_id === i.lote_id) : [];
+        return a + calcularValorFinanceiroInscricao(i, i.lote || null, outras);
+      }, 0),
       checkins:     inscricoes.filter(i => i.checkin_realizado).length,
       etiquetas:    inscricoes.filter(i => i.etiqueta_impressa).length,
     };
@@ -1577,7 +1600,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
           <td>${escHtml(i.whatsapp ?? '-')}</td>
           <td>${escHtml(nomeSup(i.supervisao_id))}</td>
           <td>${escHtml(nomeCampo(i.campo_id))}</td>
-          <td>${escHtml(fmtMoeda(i.valor_pago))}</td>
+          <td>${escHtml(formatarValorUI(i, i.lote || null, i.lote_id ? filtrados.filter(o => o.lote_id === i.lote_id) : []))}</td>
           <td>${escHtml(status)}</td>
           <td>${i.checkin_realizado ? escHtml(fmtDT(i.checkin_at)) : '—'}</td>
           <td>${escHtml(fmtDT(i.created_at))}</td>
@@ -1871,7 +1894,9 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{ins.cpf || '-'}</td>
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{nomeSup(ins.supervisao_id)}</td>
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{nomeCampo(ins.campo_id)}</td>
-                      <td className="px-4 py-3 text-gray-800 font-medium whitespace-nowrap">{fmtMoeda(ins.valor_pago)}</td>
+                      <td className="px-4 py-3 text-gray-800 font-medium whitespace-nowrap">
+                        {formatarValorUI(ins, ins.lote || null, ins.lote_id ? inscricoes.filter(o => o.lote_id === ins.lote_id) : [])}
+                      </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${pagCfg.cls}`}>{pagCfg.label}</span>
                       </td>
@@ -3321,7 +3346,7 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
       const nom = nomeSup(i.supervisao_id);
       const cur = map.get(k) ?? { nome: nom, total: 0, pagos: 0, pendentes: 0, isentos: 0, checkins: 0, valor: 0 };
       cur.total++;
-      if (i.status_pagamento === 'pago')     { cur.pagos++;     cur.valor += i.valor_pago; }
+      if (i.status_pagamento === 'pago')     { cur.pagos++;     cur.valor += calcularValorFinanceiroInscricao(i, i.lote || null, i.lote_id ? filtradas.filter(o => o.lote_id === i.lote_id) : []); }
       if (i.status_pagamento === 'pendente')   cur.pendentes++;
       if (i.status_pagamento === 'isento')     cur.isentos++;
       if (i.checkin_realizado)                 cur.checkins++;
@@ -3360,7 +3385,10 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
     hospedagem: filtradas.filter(i => i.hospedagem).length,
     alimentacao:filtradas.filter(i => i.alimentacao).length,
     brindes:    filtradas.filter(i => i.brinde).length,
-    valor:      filtradas.filter(i => i.status_pagamento === 'pago').reduce((s, i) => s + i.valor_pago, 0),
+    valor:      filtradas.filter(i => i.status_pagamento === 'pago').reduce((s, i) => {
+      const outras = i.lote_id ? filtradas.filter(o => o.lote_id === i.lote_id) : [];
+      return s + calcularValorFinanceiroInscricao(i, i.lote || null, outras);
+    }, 0),
   }), [filtradas]);
 
   // Exportar CSV conforme relatório ativo
@@ -3748,7 +3776,9 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
                   <tr key={i.id} className="hover:bg-gray-50 transition">
                     <td className={`${tdCls} font-medium`}>{i.nome_inscrito}</td>
                     <td className={tdCls}>{i.cpf ?? '-'}</td>
-                    <td className={`${tdNumCls} ${i.status_pagamento === 'pago' ? 'text-emerald-700' : 'text-gray-500'}`}>{fmtMoeda(i.valor_pago)}</td>
+                    <td className={`${tdNumCls} ${i.status_pagamento === 'pago' ? 'text-emerald-700' : 'text-gray-500'}`}>
+                      {formatarValorUI(i, i.lote || null, i.lote_id ? filtradas.filter(o => o.lote_id === i.lote_id) : [])}
+                    </td>
                     <td className={`${tdCls} text-gray-500`}>{i.forma_pagamento ?? '-'}</td>
                     <td className={tdCls}>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${STATUS_PAG_CFG[i.status_pagamento]?.cls ?? ''}`}>
@@ -3761,7 +3791,10 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
                 <tr className="bg-gray-50 font-bold border-t-2 border-gray-200">
                   <td className={`${tdCls} font-bold`} colSpan={2}>TOTAL ARRECADADO</td>
                   <td className={`${tdNumCls} text-emerald-700 font-bold`}>
-                    {fmtMoeda(filtradas.filter(i => i.status_pagamento === 'pago').reduce((s, i) => s + i.valor_pago, 0))}
+                    {fmtMoeda(filtradas.filter(i => i.status_pagamento === 'pago').reduce((s, i) => {
+                      const outras = i.lote_id ? filtradas.filter(o => o.lote_id === i.lote_id) : [];
+                      return s + calcularValorFinanceiroInscricao(i, i.lote || null, outras);
+                    }, 0))}
                   </td>
                   <td colSpan={3} />
                 </tr>
@@ -3903,7 +3936,9 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
                   <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{ins.nome_inscrito}</td>
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{nomeSup(ins.supervisao_id)}</td>
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{nomeCampo(ins.campo_id)}</td>
-                  <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{fmtMoeda(ins.valor_pago)}</td>
+                  <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
+                    {formatarValorUI(ins, ins.lote || null, ins.lote_id ? filtradas.filter(o => o.lote_id === ins.lote_id) : [])}
+                  </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${pagCfg.cls}`}>{pagCfg.label}</span>
                   </td>
@@ -3941,7 +3976,7 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
               <p className="font-bold text-[#123b63] text-lg mb-1">{confirmarIns.nome_inscrito}</p>
               <div className="flex flex-wrap gap-2 mt-3 mb-1">
                 <span className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded-full">
-                  {fmtMoeda(confirmarIns.valor_pago)}
+                  {formatarValorUI(confirmarIns, confirmarIns.lote || null, confirmarIns.lote_id ? inscricoes.filter(o => o.lote_id === confirmarIns.lote_id) : [])}
                 </span>
                 {confirmarIns.forma_pagamento && (
                   <span className="text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded-full capitalize">

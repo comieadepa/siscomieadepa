@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
 import { authenticatedFetch } from '@/lib/api-client';
 import PrintLetterhead from '@/components/print/PrintLetterhead';
+import { calcularValorFinanceiroInscricao, formatarValorUI } from '@/lib/eventos/financeiro-lote-utils';
 
 // ─── Tipos locais ─────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -17,6 +18,10 @@ interface Inscricao  {
   valor_pago: number; checkin_realizado: boolean; checkin_at: string | null;
   hospedagem: boolean; alimentacao: boolean; brinde: boolean;
   etiqueta_impressa: boolean; created_at: string;
+  lote_id: string | null;
+  responsavel_pagamento?: boolean | null;
+  valor_final: number | null;
+  lote?: any;
 }
 
 type RelTipo = 'resumo' | 'supervisao' | 'campo' | 'hospedagem' | 'alimentacao' | 'presenca' | 'financeiro';
@@ -70,13 +75,16 @@ export default function RelatoriosPrintPage() {
 
   useEffect(() => {
     async function load() {
-      const [evRes, estruturaRes, insRes] = await Promise.all([
+      const [evRes, estruturaRes, insRes, lotesRes] = await Promise.all([
         supabase.from('eventos').select('id,nome,departamento,data_inicio,data_fim,cidade').eq('id', id).single(),
         authenticatedFetch('/api/v1/estrutura'),
         supabase.from('evento_inscricoes')
-          .select('id,nome_inscrito,cpf,whatsapp,supervisao_id,campo_id,status_pagamento,forma_pagamento,valor_pago,checkin_realizado,checkin_at,hospedagem,alimentacao,brinde,etiqueta_impressa,created_at')
+          .select('id,nome_inscrito,cpf,whatsapp,supervisao_id,campo_id,status_pagamento,forma_pagamento,valor_pago,checkin_realizado,checkin_at,hospedagem,alimentacao,brinde,etiqueta_impressa,created_at,lote_id,responsavel_pagamento,valor_final')
           .eq('evento_id', id)
           .order('nome_inscrito'),
+        supabase.from('evento_lotes_inscricao')
+          .select('*')
+          .eq('evento_id', id),
       ]);
       if (evRes.data)  setEvento(evRes.data as Evento);
       if (estruturaRes.ok) {
@@ -84,7 +92,19 @@ export default function RelatoriosPrintPage() {
         setSupervisoes((estrutura?.supervisoes as Supervisao[]) || []);
         setCampos((estrutura?.campos as Campo[]) || []);
       }
-      if (insRes.data) setInscricoes(insRes.data as Inscricao[]);
+      if (insRes.data) {
+        const lotesMap: Record<string, any> = {};
+        if (lotesRes.data) {
+          lotesRes.data.forEach((l: any) => {
+            lotesMap[l.id] = l;
+          });
+        }
+        const enriched = (insRes.data as any[]).map(i => ({
+          ...i,
+          lote: i.lote_id ? (lotesMap[i.lote_id] || null) : null
+        }));
+        setInscricoes(enriched);
+      }
       setLoading(false);
     }
     load();
@@ -112,7 +132,7 @@ export default function RelatoriosPrintPage() {
       const k = i.supervisao_id ?? '__sem__';
       const cur = map.get(k) ?? { nome: nomeSup(i.supervisao_id), total: 0, pagos: 0, pendentes: 0, isentos: 0, checkins: 0, valor: 0 };
       cur.total++;
-      if (i.status_pagamento === 'pago')     { cur.pagos++;     cur.valor += i.valor_pago; }
+      if (i.status_pagamento === 'pago')     { cur.pagos++;     cur.valor += calcularValorFinanceiroInscricao(i, i.lote || null, i.lote_id ? filtradas.filter(o => o.lote_id === i.lote_id) : []); }
       if (i.status_pagamento === 'pendente')   cur.pendentes++;
       if (i.status_pagamento === 'isento')     cur.isentos++;
       if (i.checkin_realizado)                 cur.checkins++;
@@ -150,7 +170,10 @@ export default function RelatoriosPrintPage() {
     hospedagem: filtradas.filter(i => i.hospedagem).length,
     alimentacao:filtradas.filter(i => i.alimentacao).length,
     brindes:    filtradas.filter(i => i.brinde).length,
-    valor:      filtradas.filter(i => i.status_pagamento === 'pago').reduce((s, i) => s + i.valor_pago, 0),
+    valor:      filtradas.filter(i => i.status_pagamento === 'pago').reduce((s, i) => {
+      const outras = i.lote_id ? filtradas.filter(o => o.lote_id === i.lote_id) : [];
+      return s + calcularValorFinanceiroInscricao(i, i.lote || null, outras);
+    }, 0),
   }), [filtradas]);
 
   const TITULOS: Record<RelTipo, string> = {
@@ -401,7 +424,9 @@ export default function RelatoriosPrintPage() {
                   <td style={{ ...tdS, color: '#9CA3AF' }}>{idx + 1}</td>
                   <td style={{ ...tdS, fontWeight: 600 }}>{i.nome_inscrito}</td>
                   <td style={tdS}>{i.cpf ?? '-'}</td>
-                  <td style={{ ...tdNumS, color: i.status_pagamento === 'pago' ? '#15803D' : '#6B7280' }}>{fmtMoeda(i.valor_pago)}</td>
+                  <td style={{ ...tdNumS, color: i.status_pagamento === 'pago' ? '#15803D' : '#6B7280' }}>
+                    {formatarValorUI(i, i.lote || null, i.lote_id ? filtradas.filter(o => o.lote_id === i.lote_id) : [])}
+                  </td>
                   <td style={tdS}>{i.forma_pagamento ?? '-'}</td>
                   <td style={tdS}>{STATUS_LABEL[i.status_pagamento] ?? i.status_pagamento}</td>
                   <td style={tdS}>{fmtData(i.created_at)}</td>
@@ -412,7 +437,10 @@ export default function RelatoriosPrintPage() {
               <tr style={{ backgroundColor: '#F0FDF4', borderTop: '2px solid #D1D5DB', fontWeight: 800 }}>
                 <td style={{ ...tdS, fontWeight: 800 }} colSpan={3}>TOTAL ARRECADADO</td>
                 <td style={{ ...tdNumS, color: '#15803D', fontWeight: 800 }}>
-                  {fmtMoeda(filtradas.filter(i => i.status_pagamento === 'pago').reduce((s, i) => s + i.valor_pago, 0))}
+                  {fmtMoeda(filtradas.filter(i => i.status_pagamento === 'pago').reduce((s, i) => {
+                    const outras = i.lote_id ? filtradas.filter(o => o.lote_id === i.lote_id) : [];
+                    return s + calcularValorFinanceiroInscricao(i, i.lote || null, outras);
+                  }, 0))}
                 </td>
                 <td colSpan={3} />
               </tr>
