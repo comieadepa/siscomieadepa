@@ -87,6 +87,7 @@ export default function ConsagracaoPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const suppressNextSearchRef = useRef(false);
+  const suppressIndicadorSearchRef = useRef(false);
 
   // CSV Import
   const [csvRows, setCsvRows] = useState<any[]>([]);
@@ -375,6 +376,11 @@ export default function ConsagracaoPage() {
     let cancelled = false;
     const query = indicadorQuery.trim();
 
+    if (suppressIndicadorSearchRef.current) {
+      suppressIndicadorSearchRef.current = false;
+      setIndicadorOpen(false);
+      return;
+    }
     if (query.length < 3) {
       setIndicadorResults([]);
       setIndicadorOpen(false);
@@ -446,6 +452,7 @@ export default function ConsagracaoPage() {
       supervisao_id: memberSupervisaoId,
       campo_id: memberCampoId,
     }));
+    suppressIndicadorSearchRef.current = true;
     setIndicadorQuery(member.name || (member as any).nome || '');
     setIndicadorOpen(false);
   };
@@ -552,6 +559,9 @@ export default function ConsagracaoPage() {
     setMemberQuery('');
     setMemberResults([]);
     setMemberOpen(false);
+    setIndicadorQuery('');
+    setIndicadorResults([]);
+    setIndicadorOpen(false);
     setFotoBloqueada(false);
   };
 
