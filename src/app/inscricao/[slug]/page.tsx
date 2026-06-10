@@ -239,6 +239,73 @@ function normalizarComparacao(v: string | null | undefined) {
     .trim();
 }
 
+function formatYmdToDma(ymd: string | null | undefined): string {
+  if (!ymd) return '';
+  if (ymd.includes('/')) return ymd;
+  const parts = ymd.split('-');
+  if (parts.length === 3) {
+    const [y, m, d] = parts;
+    return `${d}/${m}/${y}`;
+  }
+  return ymd;
+}
+
+function formatDmaToYmd(dma: string | null | undefined): string {
+  if (!dma) return '';
+  if (dma.includes('-')) return dma;
+  const parts = dma.split('/');
+  if (parts.length === 3) {
+    const [d, m, y] = parts;
+    if (d.length === 2 && m.length === 2 && y.length === 4) {
+      return `${y}-${m}-${d}`;
+    }
+  }
+  return '';
+}
+
+function formatBirthDateInput(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) {
+    return digits;
+  } else if (digits.length <= 4) {
+    return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  } else {
+    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+  }
+}
+
+function validarDataNascimento(dma: string | null | undefined): string | null {
+  if (!dma) return null;
+  const regex = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+  const match = dma.match(regex);
+  if (!match) {
+    return 'Data de nascimento inválida. Use o formato dd/mm/aaaa.';
+  }
+  const dia = parseInt(match[1], 10);
+  const mes = parseInt(match[2], 10);
+  const ano = parseInt(match[3], 10);
+
+  const hoje = new Date();
+  if (ano > hoje.getFullYear()) {
+    return 'O ano de nascimento não pode ser no futuro.';
+  }
+
+  const dateObj = new Date(ano, mes - 1, dia);
+  if (
+    dateObj.getFullYear() !== ano ||
+    dateObj.getMonth() !== mes - 1 ||
+    dateObj.getDate() !== dia
+  ) {
+    return 'Data de nascimento inválida.';
+  }
+
+  if (dateObj > hoje) {
+    return 'A data de nascimento não pode ser no futuro.';
+  }
+
+  return null;
+}
+
 // ─── Componente principal ────────────────────────────────────
 export default function InscricaoPublicaPage() {
   const params = useParams();
@@ -453,7 +520,7 @@ export default function InscricaoPublicaPage() {
           supervisao_id: sup?.id || payload.supervisao_id || f.supervisao_id,
           campo_id: campoSelecionado?.id || payload.campo_id || '',
           sexo: 'F',
-          ...(payload.data_nascimento ? { data_nascimento: payload.data_nascimento } : {}),
+          ...(payload.data_nascimento ? { data_nascimento: formatYmdToDma(payload.data_nascimento) } : {}),
         }));
 
         const tipoEsposaJubilado = findTipoEsposaJubilado(tipos);
@@ -497,7 +564,7 @@ export default function InscricaoPublicaPage() {
         setFormEsposa({
           nome: payload.nome_conjuge || '',
           cpf: payload.cpf_conjuge ? formatarCPF(payload.cpf_conjuge) : '',
-          data_nascimento: payload.data_nascimento_conjuge || '',
+          data_nascimento: payload.data_nascimento_conjuge ? formatYmdToDma(payload.data_nascimento_conjuge) : '',
           whatsapp: '',
         });
       } else {
@@ -514,7 +581,7 @@ export default function InscricaoPublicaPage() {
         supervisao_id: sup?.id || payload.supervisao_id || f.supervisao_id,
         campo_id: campoSelecionado?.id || payload.campo_id || '',
         sexo: sexoLookup,
-        data_nascimento: payload.data_nascimento || f.data_nascimento,
+        data_nascimento: payload.data_nascimento ? formatYmdToDma(payload.data_nascimento) : f.data_nascimento,
       }));
     } else {
       setCpfStatus('nao_encontrado');
@@ -533,6 +600,11 @@ export default function InscricaoPublicaPage() {
       const masked = formatarCPF(value);
       setForm(f => ({ ...f, cpf: masked }));
       if (masked.replace(/\D/g, '').length === 11) buscarCPF(masked);
+      return;
+    }
+    if (name === 'data_nascimento') {
+      const masked = formatBirthDateInput(value);
+      setForm(f => ({ ...f, data_nascimento: masked }));
       return;
     }
     if (name === 'supervisao_id') {
@@ -653,7 +725,7 @@ export default function InscricaoPublicaPage() {
     setParticipantesExtra((p) => p.map((x, i) => i === idx ? {
       ...x,
       sexo: payload.sexo || x.sexo,
-      data_nascimento: payload.data_nascimento || x.data_nascimento,
+      data_nascimento: payload.data_nascimento ? formatYmdToDma(payload.data_nascimento) : x.data_nascimento,
       supervisao_id: payload.supervisao_id || x.supervisao_id,
       campo_id: payload.campo_id || x.campo_id,
     } : x));
@@ -697,7 +769,7 @@ export default function InscricaoPublicaPage() {
 
   const mainGroup = tipoSelecionado ? resolveGrupoHospedagemAGO({
     sexo: form.sexo || null,
-    data_nascimento: form.data_nascimento || null,
+    data_nascimento: formatDmaToYmd(form.data_nascimento) || null,
     tipo_inscricao: tipoSelecionado.nome,
     hosp_necessidade_especial: !!form.hosp_necessidade_especial,
     hosp_possui_comorbidade: !!form.hosp_possui_comorbidade,
@@ -807,7 +879,7 @@ export default function InscricaoPublicaPage() {
 
     return filtrarTiposAgo(tipos, {
       sexo: form.sexo,
-      dataNascimento: form.data_nascimento,
+      dataNascimento: formatDmaToYmd(form.data_nascimento),
       permitirViuvaEEsposaJubilado: false,
       permitirJubiladoManual: false,
       somentePastorPresidente: fluxoCampoMissionarioEspecial,
@@ -860,7 +932,7 @@ export default function InscricaoPublicaPage() {
       return evento?.departamento === 'AGO'
         ? filtrarTiposAgo(tipos, {
           sexo: p.sexo,
-          dataNascimento: p.data_nascimento,
+          dataNascimento: formatDmaToYmd(p.data_nascimento),
           permitirViuvaEEsposaJubilado: false,
           permitirJubiladoManual: false,
           cpfLocalizado: extraCpfLocalizado,
@@ -887,7 +959,7 @@ export default function InscricaoPublicaPage() {
     const tiposElegiveis = evento?.departamento === 'AGO'
       ? filtrarTiposAgo(tipos, {
         sexo: p.sexo,
-        dataNascimento: p.data_nascimento,
+        dataNascimento: formatDmaToYmd(p.data_nascimento),
         permitirViuvaEEsposaJubilado: false,
         permitirJubiladoManual: false,
         cpfLocalizado: extraCpfLocalizado,
@@ -1026,14 +1098,14 @@ export default function InscricaoPublicaPage() {
 
   const grupoHospedagemPrevisto = resolveGrupoHospedagemAGO({
     sexo: form.sexo || null,
-    data_nascimento: form.data_nascimento || null,
+    data_nascimento: formatDmaToYmd(form.data_nascimento) || null,
     tipo_inscricao: tipoSelecionado?.nome || null,
     hosp_necessidade_especial: form.hosp_necessidade_especial,
     hosp_possui_comorbidade: form.hosp_possui_comorbidade,
   });
   const grupoHospedagemEsposaPrevisto = resolveGrupoHospedagemAGO({
     sexo: 'F',
-    data_nascimento: formEsposa.data_nascimento || null,
+    data_nascimento: formatDmaToYmd(formEsposa.data_nascimento) || null,
     tipo_inscricao: 'Esposa de Pastor Presidente Campo Missionário',
     hosp_necessidade_especial: hospEsposa.hosp_necessidade_especial,
     hosp_possui_comorbidade: hospEsposa.hosp_possui_comorbidade,
@@ -1075,6 +1147,15 @@ export default function InscricaoPublicaPage() {
     if (!form.nome_inscrito.trim()) return setErroForm('Nome completo é obrigatório.');
     if (!form.cpf.replace(/\D/g, ''))  return setErroForm('CPF é obrigatório.');
     if (!form.supervisao_id)           return setErroForm('Selecione a supervisão.');
+
+    const errDataTitular = validarDataNascimento(form.data_nascimento);
+    if (errDataTitular) return setErroForm(errDataTitular);
+
+    if (fluxoCampoMissionarioEspecial && incluirEsposa && formEsposa.data_nascimento) {
+      const errDataEsposa = validarDataNascimento(formEsposa.data_nascimento);
+      if (errDataEsposa) return setErroForm(`Cônjuge: ${errDataEsposa}`);
+    }
+
     if (evento.usar_tipos_inscricao && !tipoSelecionado)
       return setErroForm(evento.departamento === 'AGO' ? 'Selecione a categoria de inscrição.' : 'Selecione a modalidade de inscrição.');
     if (ministroSemPerfil)
@@ -1126,6 +1207,11 @@ export default function InscricaoPublicaPage() {
           return setErroForm(`Tipo de inscrição do participante ${i + 2} é obrigatório.`);
         }
 
+        const errDataExtra = validarDataNascimento(pExtra.data_nascimento);
+        if (errDataExtra) {
+          return setErroForm(`Participante ${i + 2}: ${errDataExtra}`);
+        }
+
         if (pExtra.hospedagem) {
           if (pExtra.hosp_necessidade_especial && !pExtra.hosp_descricao_necessidade.trim()) {
             return setErroForm(`A descrição da necessidade especial do participante ${i + 2} é obrigatória.`);
@@ -1153,7 +1239,7 @@ export default function InscricaoPublicaPage() {
         email:           form.email.trim() || null,
         whatsapp:        form.whatsapp.trim() || null,
         sexo:            form.sexo || null,
-        data_nascimento: form.data_nascimento || null,
+        data_nascimento: formatDmaToYmd(form.data_nascimento) || null,
         supervisao_id:   form.supervisao_id || null,
         campo_id:        form.campo_id || null,
         // Regra 8: Hospedagem é opt-in quando o evento/tipo permitir
@@ -1176,6 +1262,7 @@ export default function InscricaoPublicaPage() {
         body.participantes = participantesExtra.map(p => normalizePayloadUppercase({
           ...p,
           cpf:           p.cpf.replace(/\D/g, ''),
+          data_nascimento: formatDmaToYmd(p.data_nascimento) || null,
           tipo_inscricao: p.tipo_inscricao || null,
           hospedagem:    !!p.hospedagem,
           hosp_necessidade_especial:  !!p.hospedagem && !!p.hosp_necessidade_especial,
@@ -1195,7 +1282,7 @@ export default function InscricaoPublicaPage() {
         body.esposa = normalizePayloadUppercase({
           nome_inscrito:   formEsposa.nome.trim(),
           cpf:             formEsposa.cpf,
-          data_nascimento: formEsposa.data_nascimento || null,
+          data_nascimento: formatDmaToYmd(formEsposa.data_nascimento) || null,
           whatsapp:        formEsposa.whatsapp.trim() || null,
           sexo:            'F',
           tipo_inscricao:  'Esposa de Pastor Presidente Campo Missionário',
@@ -1681,8 +1768,17 @@ export default function InscricaoPublicaPage() {
               {/* Data nascimento */}
               <div>
                 <label className={LBL}>Data de Nascimento</label>
-                <input name="data_nascimento" type="date" value={form.data_nascimento}
-                  onChange={handleText} className={INP + (dadosMinisteriaisBloqueados ? ' bg-gray-50 text-gray-600' : '')} readOnly={dadosMinisteriaisBloqueados} />
+                <input
+                  name="data_nascimento"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="dd/mm/aaaa"
+                  maxLength={10}
+                  value={form.data_nascimento}
+                  onChange={handleText}
+                  className={INP + (dadosMinisteriaisBloqueados ? ' bg-gray-50 text-gray-600' : '')}
+                  readOnly={dadosMinisteriaisBloqueados}
+                />
               </div>
             </div>
 
@@ -2027,9 +2123,18 @@ export default function InscricaoPublicaPage() {
                       </div>
                       <div>
                         <label className={LBL}>Data de Nascimento</label>
-                        <input type="date" value={formEsposa.data_nascimento}
-                          onChange={e => setFormEsposa(f => ({ ...f, data_nascimento: e.target.value }))}
-                          className={INP} />
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="dd/mm/aaaa"
+                          maxLength={10}
+                          value={formEsposa.data_nascimento}
+                          onChange={e => {
+                            const formatted = formatBirthDateInput(e.target.value);
+                            setFormEsposa(f => ({ ...f, data_nascimento: formatted }));
+                          }}
+                          className={INP}
+                        />
                       </div>
                     </div>
                     <div>
@@ -2261,7 +2366,18 @@ export default function InscricaoPublicaPage() {
                       </div>
                       <div>
                         <label className={LBL}>Data de Nascimento</label>
-                        <input type="date" value={p.data_nascimento} onChange={e => atualizarParticipante(idx, 'data_nascimento', e.target.value)} className={INP} />
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="dd/mm/aaaa"
+                          maxLength={10}
+                          value={p.data_nascimento}
+                          onChange={e => {
+                            const formatted = formatBirthDateInput(e.target.value);
+                            atualizarParticipante(idx, 'data_nascimento', formatted);
+                          }}
+                          className={INP}
+                        />
                       </div>
                       <div>
                         <label className={LBL}>Supervisão *</label>
@@ -2332,7 +2448,7 @@ export default function InscricaoPublicaPage() {
 
                         const extraGroup = resolveGrupoHospedagemAGO({
                           sexo: p.sexo || null,
-                          data_nascimento: p.data_nascimento || null,
+                          data_nascimento: formatDmaToYmd(p.data_nascimento) || null,
                           tipo_inscricao: p.tipo_inscricao || null,
                           hosp_necessidade_especial: !!p.hosp_necessidade_especial,
                           hosp_possui_comorbidade: !!p.hosp_possui_comorbidade,
