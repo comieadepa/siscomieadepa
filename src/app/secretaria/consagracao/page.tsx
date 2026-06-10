@@ -118,6 +118,10 @@ export default function ConsagracaoPage() {
   const [memberQuery, setMemberQuery] = useState('');
   const [memberResults, setMemberResults] = useState<Member[]>([]);
   const [memberOpen, setMemberOpen] = useState(false);
+
+  const [indicadorQuery, setIndicadorQuery] = useState('');
+  const [indicadorResults, setIndicadorResults] = useState<Member[]>([]);
+  const [indicadorOpen, setIndicadorOpen] = useState(false);
   const [fotoBloqueada, setFotoBloqueada] = useState(false);
 
   // Estados para Impressão da Ficha
@@ -229,7 +233,8 @@ export default function ConsagracaoPage() {
     cargo_anterior: '',
     mat_pr_solicitante: '',
     doc_pendente: false,
-    data_registro: ''
+    data_registro: '',
+    regiao: ''
   });
 
   const getNextProcessNumber = async () => {
@@ -366,6 +371,85 @@ export default function ConsagracaoPage() {
     };
   }, [memberQuery, fetchMembers, formRegistro.tipo_registro]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const query = indicadorQuery.trim();
+
+    if (query.length < 3) {
+      setIndicadorResults([]);
+      setIndicadorOpen(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetchMembers(1, 20, { status: 'active', search: query });
+        const list = ((res as any)?.data || []) as Member[];
+        if (!cancelled) {
+          setIndicadorResults(list);
+          setIndicadorOpen(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setIndicadorResults([]);
+          setIndicadorOpen(true);
+        }
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [indicadorQuery, fetchMembers]);
+
+  const handleSelectIndicador = (member: Member) => {
+    const cf = ((member as any).custom_fields || {}) as Record<string, any>;
+    const matricula = (member as any).matricula || cf.matricula || '';
+
+    const normalizeText = (value: unknown) =>
+      String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toUpperCase();
+
+    const findOptionIdByName = (options: SimpleOption[], rawName: unknown) => {
+      const target = normalizeText(rawName);
+      if (!target) return '';
+      const found = options.find((opt) => normalizeText(opt.nome) === target);
+      return found?.id || '';
+    };
+
+    const memberSupervisaoIdRaw =
+      String((member as any).supervisao_id || cf.supervisao_id || '') ||
+      findOptionIdByName(
+        supervisoes,
+        (member as any).supervisao || cf.supervisao || cf.regional || cf.divisao3
+      );
+
+    const memberCampoIdRaw =
+      String((member as any).campo_id || cf.campo_id || '') ||
+      findOptionIdByName(
+        campos,
+        (member as any).campo || cf.campo || cf.setor || cf.divisao2
+      );
+
+    const campoFromId = campos.find((c) => c.id === memberCampoIdRaw) || null;
+    const memberSupervisaoId = memberSupervisaoIdRaw || campoFromId?.supervisao_id || '';
+    const memberCampoId = memberCampoIdRaw || '';
+
+    setFormRegistro((prev) => ({
+      ...prev,
+      pastor_solicitante: member.name || (member as any).nome || '',
+      mat_pr_solicitante: matricula,
+      supervisao_id: memberSupervisaoId,
+      campo_id: memberCampoId,
+    }));
+    setIndicadorQuery(member.name || (member as any).nome || '');
+    setIndicadorOpen(false);
+  };
+
   const compressImage = (base64: string): Promise<string> => {
     return new Promise((resolve) => {
       const img = new Image();
@@ -461,7 +545,8 @@ export default function ConsagracaoPage() {
       cargo_anterior: '',
       mat_pr_solicitante: '',
       doc_pendente: false,
-      data_registro: ''
+      data_registro: '',
+      regiao: ''
     });
     setEditingRegistro(null);
     setMemberQuery('');
@@ -852,7 +937,8 @@ export default function ConsagracaoPage() {
     const payload = {
             member_id: tipoRegistro === 'progressao' ? formRegistro.member_id || null : null,
       tipo_registro: tipoRegistro,
-      regiao: formRegistro.categoria_registro || null,
+      regiao: formRegistro.regiao || null,
+      categoria_registro: formRegistro.categoria_registro || null,
       numero_processo: formRegistro.numero_processo || null,
       data_processo: formRegistro.data_processo || null,
       cpf: formRegistro.cpf || null,
@@ -1434,9 +1520,9 @@ export default function ConsagracaoPage() {
                           <div className="flex items-stretch gap-1">
                             <select
                               className="flex-1 min-w-0 px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              value={regioesList.includes(formRegistro.categoria_registro) ? formRegistro.categoria_registro : ''}
+                              value={formRegistro.regiao}
                               onChange={(e) => {
-                                if (e.target.value) setFormRegistro({ ...formRegistro, categoria_registro: e.target.value });
+                                setFormRegistro({ ...formRegistro, regiao: e.target.value });
                               }}
                             >
                               <option value="">- Região -</option>
@@ -1461,7 +1547,7 @@ export default function ConsagracaoPage() {
                                 onKeyDown={e => {
                                   if (e.key === 'Enter' && novaRegiao.trim()) {
                                     setRegioesList(prev => [...prev, novaRegiao.trim()]);
-                                    setFormRegistro(prev => ({ ...prev, categoria_registro: novaRegiao.trim() }));
+                                    setFormRegistro(prev => ({ ...prev, regiao: novaRegiao.trim() }));
                                     setNovaRegiao('');
                                     setShowNovaRegiao(false);
                                   }
@@ -1472,7 +1558,7 @@ export default function ConsagracaoPage() {
                                 onClick={() => {
                                   if (!novaRegiao.trim()) return;
                                   setRegioesList(prev => [...prev, novaRegiao.trim()]);
-                                  setFormRegistro(prev => ({ ...prev, categoria_registro: novaRegiao.trim() }));
+                                  setFormRegistro(prev => ({ ...prev, regiao: novaRegiao.trim() }));
                                   setNovaRegiao('');
                                   setShowNovaRegiao(false);
                                 }}
@@ -1764,13 +1850,46 @@ export default function ConsagracaoPage() {
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="md:col-span-2">
+                        <div className="md:col-span-2 relative">
                           <label className="block text-sm font-semibold text-gray-700 mb-1">Indicação</label>
                           <input
                             className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             value={formRegistro.pastor_solicitante}
-                            onChange={(e) => setFormRegistro({ ...formRegistro, pastor_solicitante: e.target.value })}
-                            placeholder="Nome do pastor que indica o ministro"
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setFormRegistro({ ...formRegistro, pastor_solicitante: val });
+                              setIndicadorQuery(val);
+                              if (!val) {
+                                setIndicadorResults([]);
+                                setIndicadorOpen(false);
+                              }
+                            }}
+                            placeholder="Nome do pastor que indica o ministro (digite para buscar)"
+                            autoComplete="off"
+                          />
+                          {indicadorOpen && indicadorResults.length > 0 && (
+                            <div className="absolute z-20 mt-2 w-full bg-white border rounded-lg shadow-lg max-h-60 overflow-auto">
+                              {indicadorResults.map((m) => (
+                                <button
+                                  key={m.id}
+                                  type="button"
+                                  onClick={() => handleSelectIndicador(m)}
+                                  className="w-full px-4 py-2 text-left hover:bg-blue-50 text-sm"
+                                >
+                                  <div className="font-semibold text-gray-800">{m.name}</div>
+                                  <div className="text-xs text-gray-500">Matrícula: {m.matricula || (m.custom_fields && (m.custom_fields as any).matricula) || '-'}</div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Matrícula do Solicitante (Pastor)</label>
+                          <input
+                            className="mt-1 w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={formRegistro.mat_pr_solicitante}
+                            onChange={(e) => setFormRegistro({ ...formRegistro, mat_pr_solicitante: e.target.value })}
+                            placeholder="Matrícula do pastor indicante"
                           />
                         </div>
                       </div>
@@ -1952,7 +2071,7 @@ export default function ConsagracaoPage() {
                           />
                         </div>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-semibold text-gray-700 mb-1">Cargo Anterior</label>
                           <input
@@ -1960,15 +2079,6 @@ export default function ConsagracaoPage() {
                             value={formRegistro.cargo_anterior}
                             onChange={(e) => setFormRegistro({ ...formRegistro, cargo_anterior: e.target.value })}
                             placeholder="Cargo exercido anteriormente"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">Matrícula do Solicitante (Pastor)</label>
-                          <input
-                            className="w-full px-3 py-2 border-2 border-teal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            value={formRegistro.mat_pr_solicitante}
-                            onChange={(e) => setFormRegistro({ ...formRegistro, mat_pr_solicitante: e.target.value })}
-                            placeholder="Matrícula do pastor indicante"
                           />
                         </div>
                         <div className="flex items-center gap-3 pt-6">
@@ -2265,6 +2375,7 @@ export default function ConsagracaoPage() {
                     <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">Nome</th>
                     <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">CPF</th>
                     <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">Categoria</th>
+                    <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">Região</th>
                     <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">Tipo</th>
                     <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">Status</th>
                     <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">Documentação</th>
@@ -2274,7 +2385,7 @@ export default function ConsagracaoPage() {
                 <tbody>
                   {registrosFiltrados.length === 0 && (
                     <tr>
-                      <td colSpan={10} className="px-4 py-8 text-center text-gray-500">Nenhum registro encontrado.</td>
+                      <td colSpan={11} className="px-4 py-8 text-center text-gray-500">Nenhum registro encontrado.</td>
                     </tr>
                   )}
                   {registrosFiltrados.map((reg) => (
@@ -2292,6 +2403,7 @@ export default function ConsagracaoPage() {
                       <td className="px-3 py-2 text-xs text-gray-700 whitespace-nowrap">{reg.data_processo ? new Date(reg.data_processo + 'T00:00:00').toLocaleDateString('pt-BR') : '—'}</td>
                       <td className="px-3 py-2 text-xs font-semibold text-gray-800 uppercase">{reg.nome}</td>
                       <td className="px-3 py-2 text-xs text-gray-600">{reg.cpf || '—'}</td>
+                      <td className="px-3 py-2 text-xs text-gray-600">{reg.categoria_registro || '—'}</td>
                       <td className="px-3 py-2 text-xs text-gray-600">{reg.regiao || '—'}</td>
                       <td className="px-3 py-2 text-xs text-gray-600">{TIPO_REGISTRO_LABELS[reg.tipo_registro] || reg.tipo_registro || '—'}</td>
                       <td className="px-3 py-2 text-center">
@@ -2350,7 +2462,8 @@ export default function ConsagracaoPage() {
                               setEditingRegistro(reg);
                               setFormRegistro({
                                 tipo_registro: normalizeTipoRegistro(reg.tipo_registro || ''),
-                                categoria_registro: reg.regiao || '',
+                                categoria_registro: reg.categoria_registro || '',
+                                regiao: reg.regiao || '',
                                 member_id: reg.member_id || '',
                                 numero_processo: reg.numero_processo || '',
                                 data_processo: reg.data_processo || '',
