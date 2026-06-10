@@ -176,6 +176,7 @@ export default function ConsagracaoPage() {
   const [showNovaRegiao, setShowNovaRegiao] = useState(false);
 
   // Filtros da aba Lista
+  const [filtroCategoria, setFiltroCategoria] = useState('');
   const [filtroRegiao, setFiltroRegiao] = useState('');
   const [filtroSupervisao, setFiltroSupervisao] = useState('');
   const [filtroCampo, setFiltroCampo] = useState('');
@@ -1150,6 +1151,7 @@ export default function ConsagracaoPage() {
   const statusIsError = /(erro|preencha|obrigat|nao foi possivel|não foi possível)/i.test(statusMensagem);
 
   const registrosFiltrados = registros.filter(r => {
+    if (filtroCategoria && r.categoria_registro !== filtroCategoria) return false;
     if (filtroRegiao && r.regiao !== filtroRegiao) return false;
     if (filtroSupervisao && r.supervisao_id !== filtroSupervisao) return false;
     if (filtroCampo && r.campo_id !== filtroCampo) return false;
@@ -1167,7 +1169,8 @@ export default function ConsagracaoPage() {
   const getCampoNome = (id: string) => campos.find((c) => c.id === id)?.nome || 'Todos os Campos';
 
   const filtrosAplicadosImpressao = [
-    filtroRegiao ? `Categoria: ${filtroRegiao}` : null,
+    filtroCategoria ? `Categoria: ${filtroCategoria}` : null,
+    filtroRegiao ? `Região: ${filtroRegiao}` : null,
     filtroSupervisao ? `Supervisão: ${getSupervisaoNome(filtroSupervisao)}` : null,
     filtroCampo ? `Campo: ${getCampoNome(filtroCampo)}` : null,
     filtroStatus ? `Status: ${STATUS_LABELS[filtroStatus] || filtroStatus}` : null,
@@ -2295,15 +2298,27 @@ export default function ConsagracaoPage() {
 
             {/* Filtros */}
             <div className="flex flex-wrap items-center gap-3 mb-5">
-              {/* Região/Categoria */}
+              {/* Categoria */}
               <select
-                value={filtroRegiao}
-                onChange={e => setFiltroRegiao(e.target.value)}
+                value={filtroCategoria}
+                onChange={e => setFiltroCategoria(e.target.value)}
                 className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Todas as Categorias</option>
                 {CATEGORIA_REGISTRO_OPTIONS.map(c => (
                   <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+
+              {/* Região */}
+              <select
+                value={filtroRegiao}
+                onChange={e => setFiltroRegiao(e.target.value)}
+                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Todas as Regiões</option>
+                {regioesList.map(r => (
+                  <option key={r} value={r}>{r}</option>
                 ))}
               </select>
 
@@ -2356,7 +2371,7 @@ export default function ConsagracaoPage() {
               />
 
               <button
-                onClick={() => { setFiltroRegiao(''); setFiltroSupervisao(''); setFiltroCampo(''); setFiltroBusca(''); setFiltroStatus(''); }}
+                onClick={() => { setFiltroCategoria(''); setFiltroRegiao(''); setFiltroSupervisao(''); setFiltroCampo(''); setFiltroBusca(''); setFiltroStatus(''); }}
                 className="px-4 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-semibold rounded-lg transition"
               >
                 Limpar
