@@ -18,34 +18,43 @@ export interface InscricaoFinanceiro {
 const norm = (s?: string | null) => s ? s.trim().toUpperCase().replace(/\s+/g, ' ') : '';
 const cleanCpf = (c?: string | null) => c ? c.replace(/\D/g, '') : '';
 
-export function isResponsavelPagamento(
+export function identificarResponsavelFinanceiro(
   inscricao: { id: string; nome_inscrito: string; cpf?: string | null; responsavel_pagamento?: boolean | null },
   lote: LoteFinanceiro | null,
-  outrasInscricoesDoLote?: { id: string; nome_inscrito: string; cpf?: string | null }[]
+  outrasInscricoesDoLote?: { id: string; nome_inscrito: string; cpf?: string | null; responsavel_pagamento?: boolean | null }[]
 ): boolean {
+  // 1. responsavel_pagamento === true
   if (inscricao.responsavel_pagamento === true) return true;
   if (inscricao.responsavel_pagamento === false) return false;
 
-  // Se responsavel_pagamento for null
   if (!lote) return false;
 
   const nomeIns = norm(inscricao.nome_inscrito);
   const nomeResp = norm(lote.responsavel_nome);
 
-  // Se houver cpf no lote
+  // 2. lote.responsavel_cpf
   if (lote.responsavel_cpf && inscricao.cpf) {
     if (cleanCpf(inscricao.cpf) === cleanCpf(lote.responsavel_cpf)) {
       return true;
     }
   }
 
-  // Se o nome bate com o responsável do lote
+  // 3. lote.responsavel_nome
   if (nomeResp && nomeIns === nomeResp) {
     return true;
   }
 
-  // Caso não consiga identificar e houver a lista de participantes do mesmo lote
-  if (outrasInscricoesDoLote && outrasInscricoesDoLote.length > 0) {
+  // 4. Verificar se algum participante já atende aos critérios acima
+  const alguemJaIdentificado = outrasInscricoesDoLote?.some(o => {
+    if (o.responsavel_pagamento === true) return true;
+    if (lote.responsavel_cpf && o.cpf && cleanCpf(o.cpf) === cleanCpf(lote.responsavel_cpf)) return true;
+    const oNome = norm(o.nome_inscrito);
+    if (nomeResp && oNome === nomeResp) return true;
+    return false;
+  });
+
+  // 5. Fallback por ordenação de ID (somente se ninguém foi identificado)
+  if (!alguemJaIdentificado && outrasInscricoesDoLote && outrasInscricoesDoLote.length > 0) {
     const sorted = [...outrasInscricoesDoLote].sort((a, b) => a.id.localeCompare(b.id));
     if (sorted[0]?.id === inscricao.id) {
       console.warn(`[FINANCEIRO-ALERTA] responsavel_pagamento nulo/indefinido para lote ${lote.id}. Elegendo participante ID ${inscricao.id} como responsável fallback.`);
@@ -59,10 +68,10 @@ export function isResponsavelPagamento(
 export function calcularValorFinanceiroInscricao(
   inscricao: InscricaoFinanceiro,
   lote: LoteFinanceiro | null,
-  outrasInscricoesDoLote?: { id: string; nome_inscrito: string; cpf?: string | null }[]
+  outrasInscricoesDoLote?: { id: string; nome_inscrito: string; cpf?: string | null; responsavel_pagamento?: boolean | null }[]
 ): number {
   if (inscricao.lote_id) {
-    const isResp = isResponsavelPagamento(inscricao, lote, outrasInscricoesDoLote);
+    const isResp = identificarResponsavelFinanceiro(inscricao, lote, outrasInscricoesDoLote);
     if (isResp) {
       return lote ? lote.valor_total : 0;
     } else {
@@ -90,10 +99,10 @@ export function formatarValorUI(
     cpf?: string | null;
   },
   lote: LoteFinanceiro | null,
-  outrasInscricoesDoLote?: { id: string; nome_inscrito: string; cpf?: string | null }[]
+  outrasInscricoesDoLote?: { id: string; nome_inscrito: string; cpf?: string | null; responsavel_pagamento?: boolean | null }[]
 ): string {
   if (inscricao.lote_id) {
-    const isResp = isResponsavelPagamento(inscricao, lote, outrasInscricoesDoLote);
+    const isResp = identificarResponsavelFinanceiro(inscricao, lote, outrasInscricoesDoLote);
     if (isResp) {
       const v = lote ? lote.valor_total : 0;
       return `${v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (lote)`;
