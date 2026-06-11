@@ -16,6 +16,7 @@ import {
   resolveEventoStatusVisual,
   type EventoStatusVisual,
 } from '@/lib/eventos/evento-listing';
+import { calcularValorFinanceiroInscricao } from '@/lib/eventos/financeiro-lote-utils';
 
 // ─── Tipos ───────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -43,9 +44,17 @@ interface Evento {
 }
 
 interface InscricaoResumo {
+  id: string;
   evento_id: string;
+  nome_inscrito: string;
+  cpf: string | null;
   status_pagamento: string;
-  valor_pago: number;
+  valor_original: number | null;
+  valor_final: number | null;
+  valor_pago: number | null;
+  lote_id: string | null;
+  responsavel_pagamento?: boolean | null;
+  lote?: any;
 }
 
 type ImportCsvRow = {
@@ -305,7 +314,7 @@ export default function EventosPage() {
         while (true) {
           const { data: inData, error } = await supabase
             .from('evento_inscricoes')
-            .select('evento_id, status_pagamento, valor_pago')
+            .select('id, evento_id, nome_inscrito, cpf, status_pagamento, valor_original, valor_final, valor_pago, lote_id, responsavel_pagamento')
             .in('evento_id', ids)
             .range(page * limit, (page + 1) * limit - 1);
           
@@ -314,11 +323,29 @@ export default function EventosPage() {
             break;
           }
           if (!inData || inData.length === 0) break;
-          allInsc = [...allInsc, ...(inData as InscricaoResumo[])];
+          allInsc = [...allInsc, ...(inData as any[])];
           if (inData.length < limit) break;
           page++;
         }
-        setInscricoes(allInsc);
+
+        const { data: lotesData } = await supabase
+          .from('evento_lotes_inscricao')
+          .select('*')
+          .in('evento_id', ids);
+
+        const lotesMap: Record<string, any> = {};
+        if (lotesData) {
+          lotesData.forEach((l: any) => {
+            lotesMap[l.id] = l;
+          });
+        }
+
+        const enriched = allInsc.map((i) => ({
+          ...i,
+          lote: i.lote_id ? (lotesMap[i.lote_id] || null) : null,
+        }));
+
+        setInscricoes(enriched);
       } else {
         setInscricoes([]);
       }
@@ -351,7 +378,10 @@ export default function EventosPage() {
         statusVisual: resolveEventoStatusVisual(ev),
         total_inscritos:  ins.length,
         total_pagos:      pagos.length,
-        valor_arrecadado: pagos.reduce((acc, i) => acc + (i.valor_pago || 0), 0),
+        valor_arrecadado: pagos.reduce((acc, i) => {
+          const outras = i.lote_id ? ins.filter(o => o.lote_id === i.lote_id) : [];
+          return acc + calcularValorFinanceiroInscricao(i as any, i.lote || null, outras);
+        }, 0),
         nome_supervisao:  sup?.nome   ?? null,
         nome_campo:       campo?.nome ?? null,
       };
@@ -364,7 +394,10 @@ export default function EventosPage() {
     cancelados:  eventosComStats.filter(e => e.statusVisual === 'cancelado').length,
     pagas:       inscricoes.filter(i => i.status_pagamento === 'pago').length,
     pendentes:   inscricoes.filter(i => i.status_pagamento === 'pendente').length,
-    valorTotal:  inscricoes.filter(i => i.status_pagamento === 'pago').reduce((a, i) => a + (i.valor_pago || 0), 0),
+    valorTotal:  inscricoes.filter(i => i.status_pagamento === 'pago').reduce((a, i) => {
+      const outras = i.lote_id ? inscricoes.filter(o => o.lote_id === i.lote_id) : [];
+      return a + calcularValorFinanceiroInscricao(i as any, i.lote || null, outras);
+    }, 0),
   }), [eventosComStats, inscricoes]);
 
   const anos = useMemo(() => {
