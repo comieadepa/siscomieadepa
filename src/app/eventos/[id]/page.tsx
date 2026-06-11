@@ -1898,7 +1898,13 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                         {formatarValorUI(ins, ins.lote || null, ins.lote_id ? inscricoes.filter(o => o.lote_id === ins.lote_id) : [])}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${pagCfg.cls}`}>{pagCfg.label}</span>
+                        {ins.lote_id ? (
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200`}>
+                            {pagCfg.label} (Lote)
+                          </span>
+                        ) : (
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${pagCfg.cls}`}>{pagCfg.label}</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-center">
                         {ins.etiqueta_impressa ? '🏷️' : <span className="text-gray-300">—</span>}
