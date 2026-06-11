@@ -760,7 +760,7 @@ function AbaMinistros({
                 <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide">Nome</th>
                 <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide">CPF</th>
                 <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide">Supervisão</th>
-                <th className="text-center px-4 py-3 font-semibold text-xs uppercase tracking-wide">Anos em Débito</th>
+                <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide">Campo</th>
                 <th className="text-right px-4 py-3 font-semibold text-xs uppercase tracking-wide">Total Devido</th>
                 <th className="text-center px-4 py-3 font-semibold text-xs uppercase tracking-wide">Status</th>
                 <th className="text-center px-4 py-3 font-semibold text-xs uppercase tracking-wide">CGADB</th>
@@ -785,15 +785,7 @@ function AbaMinistros({
                     <td className="px-4 py-3 font-medium text-gray-800">{m.nome}</td>
                     <td className="px-4 py-3 text-gray-600 font-mono text-xs">{formatCpfDisplay(m.cpf)}</td>
                     <td className="px-4 py-3 text-gray-600 text-xs">{m.supervisao || '—'}</td>
-                    <td className="px-4 py-3 text-center">
-                      {m.anosDebito.length > 0 ? (
-                        <span className="text-xs font-semibold text-red-600">
-                          {m.anosDebito.join(', ')}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-gray-400">—</span>
-                      )}
-                    </td>
+                    <td className="px-4 py-3 text-gray-600 text-xs">{m.campo || '—'}</td>
                     <td className="px-4 py-3 text-right font-semibold">
                       {m.totalDevido > 0 ? (
                         <span className="text-red-600">{formatValor(m.totalDevido)}</span>
