@@ -11,6 +11,7 @@ import { requireRole } from '@/lib/auth/require-auth'
 import { createServerClient } from '@/lib/supabase-server'
 
 const MEMBERS_ROLES = ['super', 'administrador', 'comissao'] as const
+const MEMBERS_READ_ROLES = ['super', 'administrador', 'comissao', 'cgadb'] as const
 
 /**
  * GET: Obter um membro pelo ID
@@ -21,7 +22,7 @@ export async function GET(
 ) {
   const { id } = await params
   try {
-    const auth = await requireRole(request, MEMBERS_ROLES)
+    const auth = await requireRole(request, MEMBERS_READ_ROLES)
     if (!auth.ok) return auth.response
     const supabase = createServerClient()
 
