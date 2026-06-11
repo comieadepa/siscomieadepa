@@ -44,8 +44,9 @@ export function identificarResponsavelFinanceiro(
     return true;
   }
 
-  // 4. Verificar se algum participante já atende aos critérios acima
+  // 4. Verificar se ALGUM OUTRO participante já atende aos critérios acima
   const alguemJaIdentificado = outrasInscricoesDoLote?.some(o => {
+    if (o.id === inscricao.id) return false;
     if (o.responsavel_pagamento === true) return true;
     if (lote.responsavel_cpf && o.cpf && cleanCpf(o.cpf) === cleanCpf(lote.responsavel_cpf)) return true;
     const oNome = norm(o.nome_inscrito);
