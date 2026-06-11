@@ -474,8 +474,8 @@ export default function FichaMembro({ membro, dadosIgreja, fotoUrl, isCandidato 
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px' }}>
                 <thead>
                   <tr style={{ background: '#f0f0f0', fontWeight: 'bold' }}>
-                    <th style={{ border: '1px solid #bbb', padding: '3px 8px', textAlign: 'left', width: '50%' }}>Nome</th>
-                    <th style={{ border: '1px solid #bbb', padding: '3px 8px', textAlign: 'left', width: '50%' }}>Assinatura</th>
+                    <th style={{ border: '1px solid #bbb', padding: '3px 8px', textAlign: 'left', width: '70%' }}>Nome</th>
+                    <th style={{ border: '1px solid #bbb', padding: '3px 8px', textAlign: 'left', width: '30%' }}>Assinatura</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -490,11 +490,12 @@ export default function FichaMembro({ membro, dadosIgreja, fotoUrl, isCandidato 
             </div>
 
             {/* Deferimento e assinatura do presidente */}
-            <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', fontSize: '10px' }}>
+            <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', fontSize: '10px' }}>
               <div>
                 <strong>Data de deferimento:</strong> ____/____/________
               </div>
               <div style={{ textAlign: 'center', minWidth: '240px' }}>
+                <div style={{ height: '35px' }}></div>
                 <div style={{ borderTop: '1px solid #000', width: '100%', margin: '0 auto 4px auto' }}></div>
                 <strong>Pr. Océlio Nauar de Araújo</strong><br />
                 Presidente
