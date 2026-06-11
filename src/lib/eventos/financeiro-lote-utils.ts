@@ -108,7 +108,7 @@ export function formatarValorUI(
       const v = lote ? lote.valor_total : 0;
       return `${v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (lote)`;
     } else {
-      return (0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      return 'Pago no lote';
     }
   } else {
     const val = inscricao.valor_final !== null && inscricao.valor_final !== undefined

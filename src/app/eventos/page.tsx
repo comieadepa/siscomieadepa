@@ -314,7 +314,7 @@ export default function EventosPage() {
         while (true) {
           const { data: inData, error } = await supabase
             .from('evento_inscricoes')
-            .select('id, evento_id, nome_inscrito, cpf, status_pagamento, valor_original, valor_final, valor_pago, lote_id, responsavel_pagamento')
+            .select('id, evento_id, nome_inscrito, cpf, status_pagamento, valor_original, valor_final, valor_pago, lote_id')
             .in('evento_id', ids)
             .range(page * limit, (page + 1) * limit - 1);
           
