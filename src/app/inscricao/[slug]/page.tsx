@@ -1146,12 +1146,17 @@ export default function InscricaoPublicaPage() {
     if (!evento) return;
     if (!form.nome_inscrito.trim()) return setErroForm('Nome completo é obrigatório.');
     if (!form.cpf.replace(/\D/g, ''))  return setErroForm('CPF é obrigatório.');
+    if (!form.whatsapp.replace(/\D/g, '')) return setErroForm('WhatsApp/Celular é obrigatório.');
+    if (!form.data_nascimento) return setErroForm('Data de nascimento é obrigatória.');
     if (!form.supervisao_id)           return setErroForm('Selecione a supervisão.');
 
     const errDataTitular = validarDataNascimento(form.data_nascimento);
     if (errDataTitular) return setErroForm(errDataTitular);
 
     if (fluxoCampoMissionarioEspecial && incluirEsposa && formEsposa.data_nascimento) {
+      if (!formEsposa.cpf.replace(/\D/g, '')) return setErroForm('CPF da cônjuge é obrigatório.');
+      if (!formEsposa.whatsapp.replace(/\D/g, '')) return setErroForm('WhatsApp/Celular da cônjuge é obrigatório.');
+      if (!formEsposa.data_nascimento) return setErroForm('Data de nascimento da cônjuge é obrigatória.');
       const errDataEsposa = validarDataNascimento(formEsposa.data_nascimento);
       if (errDataEsposa) return setErroForm(`Cônjuge: ${errDataEsposa}`);
     }
@@ -1199,6 +1204,15 @@ export default function InscricaoPublicaPage() {
         const pExtra = participantesExtra[i];
         if (!pExtra.nome_inscrito.trim()) {
           return setErroForm(`Nome do participante ${i + 2} é obrigatório.`);
+        }
+        if (!pExtra.cpf.replace(/\D/g, '')) {
+          return setErroForm(`CPF do participante ${i + 2} é obrigatório.`);
+        }
+        if (!pExtra.whatsapp.replace(/\D/g, '')) {
+          return setErroForm(`WhatsApp/Celular do participante ${i + 2} é obrigatório.`);
+        }
+        if (!pExtra.data_nascimento) {
+          return setErroForm(`Data de nascimento do participante ${i + 2} é obrigatória.`);
         }
         if (!pExtra.supervisao_id) {
           return setErroForm(`Supervisão do participante ${i + 2} é obrigatória.`);
