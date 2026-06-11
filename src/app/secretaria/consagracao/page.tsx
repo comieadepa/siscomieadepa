@@ -2814,7 +2814,7 @@ export default function ConsagracaoPage() {
             {/* Header */}
             <div className="flex justify-between items-center px-6 py-4 border-b-2 border-teal-500 bg-gradient-to-r from-teal-600 to-teal-700 flex-shrink-0">
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <span>🖨️</span> Ficha do Ministro
+                <span>🖨️</span> Comissão - Dados do Candidato
               </h2>
               <button
                 onClick={() => setMembroImprimindo(null)}
@@ -2827,6 +2827,7 @@ export default function ConsagracaoPage() {
             {/* Conteúdo da Ficha com scroll */}
             <div className="flex-1 overflow-y-auto p-6">
               <FichaMembro
+                isCandidato={true}
                 membro={{
                   matricula: membroImprimindo.matricula || '',
                   id: membroImprimindo.member_id || membroImprimindo.id,

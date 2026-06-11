@@ -93,6 +93,7 @@ interface FichaMembroProps {
   membro: DadosMembro;
   dadosIgreja: DadosIgreja;
   fotoUrl?: string;
+  isCandidato?: boolean;
 }
 
 const fmt = (v?: string | null) => v || '';
@@ -127,7 +128,7 @@ const secHead = (color = '#003d7a'): React.CSSProperties => ({
   letterSpacing: '0.5px',
 });
 
-export default function FichaMembro({ membro, dadosIgreja, fotoUrl }: FichaMembroProps) {
+export default function FichaMembro({ membro, dadosIgreja, fotoUrl, isCandidato = false }: FichaMembroProps) {
   const fichaRef = useRef<HTMLDivElement>(null);
   const [emailUsuario, setEmailUsuario] = useState('');
 
@@ -147,7 +148,7 @@ export default function FichaMembro({ membro, dadosIgreja, fotoUrl }: FichaMembr
     if (!pw) return;
     pw.document.write(`<!DOCTYPE html><html><head>
       <meta charset="UTF-8">
-      <title>Ficha Convencional - ${membro.nome}</title>
+      <title>${isCandidato ? 'Comissão - Dados do Candidato' : 'Ficha Convencional'} - ${membro.nome}</title>
       <style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;background:#fff;}@media print{@page{margin:8mm;}}</style>
     </head><body>${fichaRef.current.innerHTML}</body></html>`);
     pw.document.close();
@@ -169,7 +170,7 @@ export default function FichaMembro({ membro, dadosIgreja, fotoUrl }: FichaMembr
       pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, pos, imgW, imgH);
       left -= ph;
       while (left >= 0) { pos = left - imgH; pdf.addPage(); pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, pos, imgW, imgH); left -= ph; }
-      pdf.save(`Ficha_${membro.nome.replace(/\\s+/g, '_')}_${membro.matricula}.pdf`);
+      pdf.save(`${isCandidato ? 'Dados_Candidato' : 'Ficha'}_${membro.nome.replace(/\s+/g, '_')}_${membro.matricula}.pdf`);
     } catch (e) { alert('Erro ao gerar PDF: ' + (e instanceof Error ? e.message : String(e))); }
   };
 
@@ -222,7 +223,7 @@ export default function FichaMembro({ membro, dadosIgreja, fotoUrl }: FichaMembr
                   {[dadosIgreja.telefone && `Fone: ${dadosIgreja.telefone}`, dadosIgreja.cnpj && `CNPJ ${dadosIgreja.cnpj}`].filter(Boolean).join(' | ')}
                 </div>
                 <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0D2B4E', marginTop: '4px', letterSpacing: '1px' }}>
-                  Ficha Convencional
+                  {isCandidato ? 'Comissão - Dados do Candidato' : 'Ficha Convencional'}
                 </div>
               </td>
               <td style={{ width: '70px', verticalAlign: 'middle', padding: '0 0 0 8px', textAlign: 'right' }}>
@@ -451,16 +452,66 @@ export default function FichaMembro({ membro, dadosIgreja, fotoUrl }: FichaMembr
           </tbody>
         </table>
 
-        {/* OBSERVACOES */}
-        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '6px' }}>
-          <tbody>
-            <tr><td colSpan={2} style={secHead()}>Observacoes</td></tr>
-            <tr>
-              <td style={lbl}>Obs.</td>
-              <td style={{ ...cell, minHeight: '24px', height: '24px' }}>{fmt(membro.observacoes)}</td>
-            </tr>
-          </tbody>
-        </table>
+        {/* RODAPE / OBSERVACOES / COMISSAO */}
+        {isCandidato ? (
+          <div style={{ border: '1px solid #bbb', padding: '8px', marginBottom: '6px', pageBreakInside: 'avoid' }}>
+            <div style={{ ...secHead(), margin: '-8px -8px 8px -8px' }}>Comissão</div>
+            
+            {/* Parecer da comissão */}
+            <div style={{ marginTop: '4px', marginBottom: '12px' }}>
+              <strong style={{ fontSize: '10px' }}>Parecer da comissão</strong>
+              <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div style={{ borderBottom: '1px solid #999', height: '14px' }}></div>
+                <div style={{ borderBottom: '1px solid #999', height: '14px' }}></div>
+                <div style={{ borderBottom: '1px solid #999', height: '14px' }}></div>
+                <div style={{ borderBottom: '1px solid #999', height: '14px' }}></div>
+              </div>
+            </div>
+
+            {/* Tabela COMISSÃO */}
+            <div style={{ marginTop: '12px', marginBottom: '12px' }}>
+              <strong style={{ display: 'block', marginBottom: '4px', fontSize: '10px' }}>COMISSÃO</strong>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px' }}>
+                <thead>
+                  <tr style={{ background: '#f0f0f0', fontWeight: 'bold' }}>
+                    <th style={{ border: '1px solid #bbb', padding: '3px 8px', textAlign: 'left', width: '50%' }}>Nome</th>
+                    <th style={{ border: '1px solid #bbb', padding: '3px 8px', textAlign: 'left', width: '50%' }}>Assinatura</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...Array(6)].map((_, idx) => (
+                    <tr key={idx}>
+                      <td style={{ border: '1px solid #bbb', height: '20px', padding: '3px 8px' }}></td>
+                      <td style={{ border: '1px solid #bbb', height: '20px', padding: '3px 8px' }}></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Deferimento e assinatura do presidente */}
+            <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', fontSize: '10px' }}>
+              <div>
+                <strong>Data de deferimento:</strong> ____/____/________
+              </div>
+              <div style={{ textAlign: 'center', minWidth: '240px' }}>
+                <div style={{ borderTop: '1px solid #000', width: '100%', margin: '0 auto 4px auto' }}></div>
+                <strong>Pr. Océlio Nauar de Araújo</strong><br />
+                Presidente
+              </div>
+            </div>
+          </div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '6px' }}>
+            <tbody>
+              <tr><td colSpan={2} style={secHead()}>Observacoes</td></tr>
+              <tr>
+                <td style={lbl}>Obs.</td>
+                <td style={{ ...cell, minHeight: '24px', height: '24px' }}>{fmt(membro.observacoes)}</td>
+              </tr>
+            </tbody>
+          </table>
+        )}
 
         {/* RODAPE */}
         <div style={{ borderTop: '1px solid #0D2B4E', paddingTop: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
