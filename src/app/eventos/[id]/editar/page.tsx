@@ -43,6 +43,7 @@ interface FormData {
 }
 
 interface TipoDraft {
+  id?: string;
   nome: string;
   valor: string;
   inclui_alimentacao: boolean;
@@ -53,6 +54,7 @@ interface TipoDraft {
 
 // ─── Tipos AGO ───────────────────────────────────────────────
 interface AgoCategoriaDraft {
+  id?: string;
   key: string;
   nome: string;
   valor_str: string;
@@ -339,6 +341,7 @@ export default function EditarEventoPage() {
         if (res.ok) {
           const j = await res.json();
           const tipos = (j.tipos ?? []) as Array<{
+            id?: string;
             nome: string; valor: number;
             inclui_alimentacao: boolean; inclui_hospedagem: boolean;
             cortesia: boolean; limite_vagas: number | null; ativo: boolean;
@@ -352,6 +355,7 @@ export default function EditarEventoPage() {
                   d => d.nome.toUpperCase() === (t.nome ?? '').toUpperCase()
                 );
                 return {
+                  id: t.id,
                   key: def?.key ?? `custom_${i}`,
                   nome: t.nome ?? '',
                   valor_str: String(t.valor ?? 0),
@@ -371,6 +375,7 @@ export default function EditarEventoPage() {
               }
               const deduped = Array.from(unique.values());
               setTiposDraft(deduped.map(t => ({
+                id: t.id,
                 nome: t.nome ?? '',
                 valor: String(t.valor ?? ''),
                 inclui_alimentacao: !!t.inclui_alimentacao,
@@ -544,6 +549,7 @@ export default function EditarEventoPage() {
         const tiposAGO = agoCategorias
           .filter(c => c.ativo)
           .map((c, i) => ({
+            id: c.id,
             nome: c.nome.trim() || `Categoria ${i + 1}`,
             valor: c.cortesia ? 0 : (parseFloat(c.valor_str) || 0),
             inclui_alimentacao: c.inclui_alimentacao,
@@ -555,11 +561,15 @@ export default function EditarEventoPage() {
             ativo: true,
             ordem: i + 1,
           }));
-        await fetch(`/api/eventos/${id}/tipos-inscricao`, {
+        const resTipos = await fetch(`/api/eventos/${id}/tipos-inscricao`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tipos: tiposAGO }),
         });
+        if (!resTipos.ok) {
+          const errData = await resTipos.json().catch(() => ({}));
+          throw new Error(errData.error || 'Erro ao salvar categorias da AGO.');
+        }
       }
 
       // Salva tipos genericos (nao-AGO)
@@ -570,6 +580,7 @@ export default function EditarEventoPage() {
           if (!unique.has(key)) unique.set(key, t);
         }
         const tiposPayload = Array.from(unique.values()).map((t, i) => ({
+            id: t.id,
             nome: t.nome.trim() || `Tipo ${i + 1}`,
             valor: parseFloat(t.valor) || 0,
             inclui_alimentacao: t.inclui_alimentacao,
@@ -578,11 +589,15 @@ export default function EditarEventoPage() {
             ativo: t.ativo,
             ordem: i + 1,
           }));
-        await fetch(`/api/eventos/${id}/tipos-inscricao`, {
+        const resTipos = await fetch(`/api/eventos/${id}/tipos-inscricao`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tipos: tiposPayload }),
         });
+        if (!resTipos.ok) {
+          const errData = await resTipos.json().catch(() => ({}));
+          throw new Error(errData.error || 'Erro ao salvar tipos de inscrição.');
+        }
       }
 
       router.push(`/eventos/${id}?tab=configuracoes`);

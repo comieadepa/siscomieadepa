@@ -53,42 +53,53 @@ export async function POST(
 
   const supabase = guard.ctx.supabaseAdmin;
 
-  // Remove os tipos antigos e insere os novos (evita duplicados)
-  // Valida quantidade_refeicoes quando inclui_alimentacao = true (exceto tipos administrativos)
-  for (const t of tipos) {
-    if (!t.administrativo && t.inclui_alimentacao && !(t.quantidade_refeicoes > 0)) {
-      return NextResponse.json(
-        { error: `Tipo "${t.nome}": informe a quantidade de refeicoes (> 0) quando alimentacao esta marcada.` },
-        { status: 400 }
-      );
+  // Busca o departamento do evento para checar se é AGO
+  const { data: evento, error: eventoError } = await supabase
+    .from('eventos')
+    .select('departamento')
+    .eq('id', eventoId)
+    .single();
+
+  if (eventoError) {
+    return NextResponse.json({ error: 'Evento não encontrado.' }, { status: 404 });
+  }
+  const isAGO = evento?.departamento === 'AGO';
+
+  // Valida quantidade_refeicoes apenas para eventos AGO quando inclui_alimentacao = true
+  if (isAGO) {
+    for (const t of tipos) {
+      if (!t.administrativo && t.inclui_alimentacao && !(t.quantidade_refeicoes > 0)) {
+        return NextResponse.json(
+          { error: `Tipo "${t.nome}": informe a quantidade de refeicoes (> 0) quando alimentacao esta marcada.` },
+          { status: 400 }
+        );
+      }
     }
   }
 
-  const rows = tipos.map(t => ({
-    evento_id:            eventoId,
-    nome:                 normalizeUppercase(String(t.nome || '')),
-    valor:                t.cortesia ? 0 : (t.valor ?? 0),
-    inclui_alimentacao:   t.inclui_alimentacao,
-    inclui_hospedagem:    t.inclui_hospedagem,
-    cortesia:             t.cortesia ?? false,
-    limite_vagas:         t.limite_vagas ?? null,
-    quantidade_refeicoes: t.inclui_alimentacao ? (t.quantidade_refeicoes ?? 0) : 0,
-    administrativo:       t.administrativo ?? false,
-    ativo:                t.ativo,
-    ordem:                t.ordem,
-  }));
+  // Apenas faz UPDATE por ID para os tipos existentes passados no payload
+  for (const t of tipos) {
+    if (t.id) {
+      const { error: updateError } = await supabase
+        .from('evento_tipos_inscricao')
+        .update({
+          nome:                 normalizeUppercase(String(t.nome || '')),
+          valor:                t.cortesia ? 0 : (t.valor ?? 0),
+          inclui_alimentacao:   t.inclui_alimentacao,
+          inclui_hospedagem:    t.inclui_hospedagem,
+          cortesia:             t.cortesia ?? false,
+          limite_vagas:         t.limite_vagas ?? null,
+          quantidade_refeicoes: t.inclui_alimentacao ? (t.quantidade_refeicoes ?? 0) : 0,
+          ativo:                t.ativo,
+        })
+        .eq('id', t.id);
 
-  const { error: deleteError } = await supabase
-    .from('evento_tipos_inscricao')
-    .delete()
-    .eq('evento_id', eventoId);
+      if (updateError) {
+        return NextResponse.json({ error: updateError.message }, { status: 500 });
+      }
+    }
+  }
 
-  if (deleteError) return NextResponse.json({ error: deleteError.message }, { status: 500 });
-
-  const { error } = await supabase
-    .from('evento_tipos_inscricao')
-    .insert(rows);
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ sucesso: true });
 }
+
