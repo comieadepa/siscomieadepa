@@ -24,7 +24,7 @@ import TabBackup        from './TabBackup';
 import TabProgramacao   from './TabProgramacao';
 import TabCertificados  from './TabCertificados';
 import TabControleAGO  from './TabControleAGO';
-import { calcularValorFinanceiroInscricao, formatarValorUI } from '@/lib/eventos/financeiro-lote-utils';
+import { calcularValorFinanceiroInscricao, formatarValorUI, identificarResponsavelFinanceiro } from '@/lib/eventos/financeiro-lote-utils';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -1895,7 +1895,37 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{nomeSup(ins.supervisao_id)}</td>
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{nomeCampo(ins.campo_id)}</td>
                       <td className="px-4 py-3 text-gray-800 font-medium whitespace-nowrap">
-                        {formatarValorUI(ins, ins.lote || null, ins.lote_id ? inscricoes.filter(o => o.lote_id === ins.lote_id) : [])}
+                        {ins.lote_id ? (() => {
+                          const outras = inscricoes.filter(o => o.lote_id === ins.lote_id);
+                          const isResp = identificarResponsavelFinanceiro(ins, ins.lote || null, outras);
+                          const valInd = ins.valor_final !== null && ins.valor_final !== undefined
+                            ? ins.valor_final
+                            : (ins.valor_pago !== null && ins.valor_pago !== undefined ? ins.valor_pago : 0);
+                          const fmtInd = valInd.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) + ' individual';
+                          
+                          if (isResp) {
+                            const vTotal = ins.lote ? ins.lote.valor_total : 0;
+                            const fmtTotal = vTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                            return (
+                              <div className="flex flex-col text-xs">
+                                <span className="font-semibold text-gray-700">{fmtInd}</span>
+                                <span className="text-[10px] text-emerald-600 font-black">💳 Pagador do lote: {fmtTotal}</span>
+                              </div>
+                            );
+                          } else {
+                            return (
+                              <div className="flex flex-col text-xs text-gray-500">
+                                <span>{fmtInd}</span>
+                                <span className="text-[10px] text-gray-400">Pago no lote</span>
+                              </div>
+                            );
+                          }
+                        })() : (() => {
+                          const valInd = ins.valor_final !== null && ins.valor_final !== undefined
+                            ? ins.valor_final
+                            : (ins.valor_pago !== null && ins.valor_pago !== undefined ? ins.valor_pago : 0);
+                          return valInd.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                        })()}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         {ins.lote_id ? (
