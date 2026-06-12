@@ -1173,23 +1173,55 @@ useEffect(() => {
     doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')}`, pageWidth - 14, yPos, { align: 'right' });
 
     // Preparar dados da tabela
-    const tableData = membrosFiltrados.map(membro => [
-      membro.matricula,
-      membro.nome,
-      membro.cpf,
-      membro.cargoMinisterial || '-',
-      (membro as any).dadosCargos?.dataConsagracao
-        ? new Date((membro as any).dadosCargos.dataConsagracao).toLocaleDateString('pt-BR')
-        : (membro as any).dataConsagracao
-          ? new Date((membro as any).dataConsagracao).toLocaleDateString('pt-BR')
-          : '-',
-      membro.status === 'ativo' ? 'Ativo' : 'Inativo'
-    ]);
+    const includeCelular = pastorPresidenteFilter && supervisaoFilter !== 'TODOS';
+
+    const tableData = membrosFiltrados.map(membro => {
+      const row = [
+        membro.matricula,
+        membro.nome,
+        membro.cpf,
+        membro.cargoMinisterial || '-',
+        (membro as any).dadosCargos?.dataConsagracao
+          ? new Date((membro as any).dadosCargos.dataConsagracao).toLocaleDateString('pt-BR')
+          : (membro as any).dataConsagracao
+            ? new Date((membro as any).dataConsagracao).toLocaleDateString('pt-BR')
+            : '-',
+        membro.status === 'ativo' ? 'Ativo' : 'Inativo'
+      ];
+      if (includeCelular) {
+        // Insere o celular antes da data de consagração (índice 4)
+        row.splice(4, 0, membro.celular || (membro as any).phone || (membro as any).whatsapp || '-');
+      }
+      return row;
+    });
+
+    const headers = includeCelular
+      ? [['Matrícula', 'Nome', 'CPF', 'Cargo', 'Celular', 'Dt. Consagração', 'Status']]
+      : [['Matrícula', 'Nome', 'CPF', 'Cargo', 'Dt. Consagração', 'Status']];
+
+    const colStyles = includeCelular
+      ? {
+          0: { halign: 'center', cellWidth: 18 },
+          1: { halign: 'left', cellWidth: 'auto' },
+          2: { halign: 'center', cellWidth: 30 },
+          3: { halign: 'left', cellWidth: 30 },
+          4: { halign: 'center', cellWidth: 30 }, // Celular
+          5: { halign: 'center', cellWidth: 25 }, // Dt. Consagração
+          6: { halign: 'center', cellWidth: 18 }  // Status
+        }
+      : {
+          0: { halign: 'center', cellWidth: 20 },
+          1: { halign: 'left', cellWidth: 'auto' },
+          2: { halign: 'center', cellWidth: 35 },
+          3: { halign: 'left', cellWidth: 35 },
+          4: { halign: 'center', cellWidth: 30 },
+          5: { halign: 'center', cellWidth: 20 }
+        };
 
     // Gerar tabela
     autoTable(doc, {
       startY: yPos + 5,
-      head: [['Matrícula', 'Nome', 'CPF', 'Cargo', 'Dt. Consagração', 'Status']],
+      head: headers,
       body: tableData,
       theme: 'grid',
       headStyles: {
@@ -1202,14 +1234,7 @@ useEffect(() => {
         fontSize: 8,
         cellPadding: 2
       },
-      columnStyles: {
-        0: { halign: 'center', cellWidth: 20 },
-        1: { halign: 'left', cellWidth: 'auto' },
-        2: { halign: 'center', cellWidth: 35 },
-        3: { halign: 'left', cellWidth: 35 },
-        4: { halign: 'center', cellWidth: 30 },
-        5: { halign: 'center', cellWidth: 20 }
-      },
+      columnStyles: colStyles,
       alternateRowStyles: {
         fillColor: [245, 245, 245]
       }
