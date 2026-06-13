@@ -351,31 +351,29 @@ export default function ConecDashboardPage() {
                             </span>
                           </td>
                           <td className="px-6 py-4">
-                            <div className="flex flex-wrap items-center justify-center gap-1.5 max-w-[340px] mx-auto">
+                            <div className="flex items-center justify-center gap-2">
                               
                               {/* Ficha */}
                               <button
                                 onClick={() => handleFicha(inst.id)}
-                                title="Imprimir Ficha de Credenciamento"
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded text-xs font-semibold transition"
+                                title="Ficha de Credenciamento"
+                                className="p-2 bg-gray-50 hover:bg-blue-50 hover:text-blue-600 text-gray-600 border border-gray-200 hover:border-blue-200 rounded-full transition shadow-sm"
                               >
-                                <Printer className="w-3.5 h-3.5" />
-                                Ficha
+                                <Printer className="w-4 h-4" />
                               </button>
 
                               {/* Certificado */}
                               <button
                                 onClick={() => handleCertificado(inst)}
                                 disabled={!hasActiveCred}
-                                title={hasActiveCred ? "Imprimir Certificado de Credenciamento" : "Sem credenciamento ativo"}
-                                className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold transition ${
+                                title={hasActiveCred ? "Certificado de Credenciamento" : "Esta instituição ainda não possui credenciamento ativo para emissão do certificado."}
+                                className={`p-2 rounded-full transition shadow-sm ${
                                   hasActiveCred
-                                    ? 'bg-teal-500 hover:bg-teal-600 text-white shadow-sm'
-                                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                    ? 'bg-teal-50 hover:bg-teal-600 hover:text-white text-teal-700 border border-teal-200 hover:border-teal-600'
+                                    : 'bg-gray-50 text-gray-300 border border-gray-150 cursor-not-allowed'
                                 }`}
                               >
-                                <Award className="w-3.5 h-3.5" />
-                                Certificado
+                                <Award className="w-4 h-4" />
                               </button>
 
                               {/* Gerar taxa */}
@@ -383,30 +381,27 @@ export default function ConecDashboardPage() {
                                 onClick={() => handleGerarTaxa(inst)}
                                 disabled={billingLoadingId === inst.id}
                                 title="Gerar taxa de Credenciamento — ASAAS Bank"
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-semibold transition shadow-sm disabled:opacity-50"
+                                className="p-2 bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 border border-blue-200 hover:border-blue-600 rounded-full transition shadow-sm disabled:opacity-50"
                               >
-                                <CreditCard className="w-3.5 h-3.5" />
-                                {billingLoadingId === inst.id ? 'Gerando...' : 'Gerar taxa'}
+                                <CreditCard className="w-4 h-4" />
                               </button>
 
                               {/* Editar */}
                               <button
                                 onClick={() => router.push(`/secretaria/conec/cadastro?id=${inst.id}`)}
                                 title="Editar Cadastro"
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-gray-100 hover:bg-blue-100 hover:text-blue-700 text-gray-700 rounded text-xs font-semibold transition"
+                                className="p-2 bg-gray-50 hover:bg-amber-50 hover:text-amber-600 text-gray-600 border border-gray-200 hover:border-amber-200 rounded-full transition shadow-sm"
                               >
-                                <Edit2 className="w-3.5 h-3.5" />
-                                Editar
+                                <Edit2 className="w-4 h-4" />
                               </button>
 
                               {/* Excluir */}
                               <button
                                 onClick={() => handleDelete(inst.id, inst.nome_instituicao)}
-                                title="Remover Cadastro"
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-gray-100 hover:bg-red-100 hover:text-red-700 text-gray-700 rounded text-xs font-semibold transition"
+                                title="Excluir Cadastro"
+                                className="p-2 bg-gray-50 hover:bg-red-50 hover:text-red-600 text-gray-600 border border-gray-200 hover:border-red-200 rounded-full transition shadow-sm"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                Excluir
+                                <Trash2 className="w-4 h-4" />
                               </button>
 
                             </div>
