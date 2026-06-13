@@ -53,9 +53,9 @@ type MenuSection = {
 // Quais menus de topo (por id) cada nível pode ver. 'super' vê tudo.
 const MENU_POR_NIVEL: Record<string, string[]> = {
   super: ['*'],
-  administrador: ['dashboard', 'secretaria', 'cgadb', 'comissao', 'patrimonio', 'missoes', 'configuracoes'],
+  administrador: ['dashboard', 'secretaria', 'conec', 'cgadb', 'comissao', 'patrimonio', 'missoes', 'configuracoes'],
   cgadb: ['cgadb'],
-  comissao: ['dashboard', 'secretaria', 'comissao'],
+  comissao: ['dashboard', 'secretaria', 'conec', 'comissao'],
   inscricao: ['eventos'],
   financeiro: ['financeiro'],
 };
@@ -132,7 +132,7 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
   // Abre automaticamente o menu pai quando um submenu está ativo
   useEffect(() => {
     const menusComSubmenu: Record<string, string[]> = {
-      secretaria: ['estrutura-hierarquica', 'membros', 'funcionarios', 'consagracao', 'cartas', 'permutas', 'impressoes-credenciais', 'conec'],
+      secretaria: ['estrutura-hierarquica', 'membros', 'funcionarios', 'consagracao', 'cartas', 'permutas', 'impressoes-credenciais'],
       cgadb: ['cgadb-dashboard', 'cgadb-debitos', 'cgadb-relatorios', 'cgadb-historico'],
       eventos: ['eventos-lista', 'eventos-dashboard'],
       configuracoes: ['config-geral', 'importar-membros', 'config-certificados', 'config-cartoes', 'config-video-presidente'],
@@ -162,13 +162,13 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
             { id: 'membros', label: 'Ministros', icon: Users, path: '/secretaria/membros' },
             { id: 'funcionarios', label: 'Funcionários', icon: Users, path: '/secretaria/funcionarios' },
             { id: 'consagracao', label: 'Consagração (obreiros)', icon: FileText, path: '/secretaria/consagracao' },
-            { id: 'conec', label: 'Módulo CONEC', icon: ShieldCheck, path: '/secretaria/conec' },
             { id: 'cartas', label: 'Cartas ministeriais', icon: FileText, path: '/secretaria/cartas' },
             // { id: 'certificados', label: 'Certificados', icon: ShieldCheck, path: '/secretaria/certificados' },
             { id: 'permutas', label: 'Permutas', icon: ArrowRight, path: '/secretaria/permutas' },
             { id: 'impressoes-credenciais', label: 'Impressões de Credenciais', icon: CreditCard, path: '/secretaria/impressoes-credenciais' },
           ],
         },
+        { id: 'conec', label: 'CONEC', icon: ShieldCheck, path: '/secretaria/conec' },
         {
           id: 'cgadb',
           label: 'Débitos CGADB',
