@@ -4105,7 +4105,6 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
 
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const operadorUrl = origin ? `${origin}/eventos/${eventoId}/operador` : `/eventos/${eventoId}/operador`;
-  const checkinCredenciamentoUrl = origin ? `${origin}/eventos/${eventoId}/checkin/credenciamento` : `/eventos/${eventoId}/checkin/credenciamento`;
   const checkinPlenariaUrl = origin ? `${origin}/eventos/${eventoId}/checkin/plenaria` : `/eventos/${eventoId}/checkin/plenaria`;
   const checkinRefeitorioUrl = origin ? `${origin}/eventos/${eventoId}/checkin/refeitorio` : `/eventos/${eventoId}/checkin/refeitorio`;
   const hospedagemUrl = origin ? `${origin}/eventos/${eventoId}/hospedagem` : `/eventos/${eventoId}/hospedagem`;
@@ -4372,11 +4371,12 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
         <div className="grid gap-3">
           {([
             { key: 'operador' as const, titulo: 'Operador', url: operadorUrl, desc: 'Entra com e-mail e senha definidos pelo administrador.' },
-            { key: 'checkin_credenciamento' as const, titulo: 'Credenciamento', url: checkinCredenciamentoUrl, desc: 'Leitura de QR Code para credenciamento.' },
             { key: 'checkin_plenaria' as const, titulo: 'Plenária', url: checkinPlenariaUrl, desc: 'Leitura de QR Code para presença em plenária.' },
             { key: 'checkin_refeitorio' as const, titulo: 'Refeitório', url: checkinRefeitorioUrl, desc: 'Leitura de QR Code para débito de refeições.' },
-            { key: 'hospedagem' as const, titulo: 'Hospedagem', url: hospedagemUrl, desc: 'Entra com e-mail e senha para operar somente a area de hospedagem.' },
-            { key: 'checkin_hospedagem' as const, titulo: 'Check-in de Hospedagem', url: checkinHospedagemUrl, desc: 'Acessa com e-mail cadastrado para check-in/check-out de hospedagem.' },
+            ...(evento?.departamento === 'AGO' || (evento as any)?.formato === 'AGO' ? [
+              { key: 'hospedagem' as const, titulo: 'Hospedagem', url: hospedagemUrl, desc: 'Entra com e-mail e senha para operar somente a area de hospedagem.' },
+              { key: 'checkin_hospedagem' as const, titulo: 'Check-in de Hospedagem', url: checkinHospedagemUrl, desc: 'Acessa com e-mail cadastrado para check-in/check-out de hospedagem.' }
+            ] : [])
           ]).map(item => (
             <div key={item.key} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
               <div className="flex items-start justify-between gap-3 mb-2">
