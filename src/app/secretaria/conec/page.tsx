@@ -276,13 +276,23 @@ export default function ConecDashboardPage() {
               </select>
             </div>
 
-            <button
-              onClick={() => router.push('/secretaria/conec/cadastro')}
-              className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2 rounded-lg transition text-sm shadow-sm"
-            >
-              <Plus className="w-5 h-5" />
-              Cadastrar Instituição
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => router.push('/secretaria/conec/financeiro')}
+                className="flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold px-5 py-2 rounded-lg transition text-sm shadow-sm"
+              >
+                <span>📊</span>
+                Financeiro
+              </button>
+
+              <button
+                onClick={() => router.push('/secretaria/conec/cadastro')}
+                className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2 rounded-lg transition text-sm shadow-sm"
+              >
+                <Plus className="w-5 h-5" />
+                Cadastrar Instituição
+              </button>
+            </div>
           </div>
 
           {/* Tabela */}
