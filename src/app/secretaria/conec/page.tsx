@@ -323,9 +323,43 @@ export default function ConecDashboardPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-100 text-sm text-gray-700 bg-white">
                     {filteredInstituicoes.map((inst) => {
-                      const hasActiveCred = inst.conec_credenciamentos?.some(
-                        (c) => c.status_credenciamento === 'ativo'
-                      );
+                      const latestCred = inst.conec_credenciamentos
+                        ?.sort((a, b) => b.ano_referencia - a.ano_referencia)[0];
+
+                      let statusText = 'Aguardando pagamento';
+                      let statusColorClass = 'bg-yellow-100 text-yellow-850 border border-yellow-200';
+
+                      if (latestCred) {
+                        if (latestCred.status_pagamento === 'pago' && latestCred.status_credenciamento === 'ativo') {
+                          statusText = 'Credenciado Ativo';
+                          statusColorClass = 'bg-green-100 text-green-800 border border-green-200';
+                        } else if (latestCred.status_pagamento === 'pendente') {
+                          statusText = 'Aguardando pagamento';
+                          statusColorClass = 'bg-yellow-100 text-yellow-800 border border-yellow-200';
+                        } else {
+                          const rawStatus = latestCred.status_credenciamento || 'Inativo';
+                          statusText = rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1);
+                          statusColorClass = 'bg-red-100 text-red-800 border border-red-200';
+                        }
+                      }
+
+                      const isDocLocked = !latestCred || latestCred.status_pagamento !== 'pago' || latestCred.status_credenciamento !== 'ativo';
+
+                      const handleFichaClick = () => {
+                        if (isDocLocked) {
+                          alert("Documento disponível somente após confirmação do pagamento da taxa de credenciamento.");
+                          return;
+                        }
+                        handleFicha(inst.id);
+                      };
+
+                      const handleCertificadoClick = () => {
+                        if (isDocLocked) {
+                          alert("Documento disponível somente após confirmação do pagamento da taxa de credenciamento.");
+                          return;
+                        }
+                        handleCertificado(inst);
+                      };
 
                       return (
                         <tr key={inst.id} className="hover:bg-gray-50/70 transition-colors">
@@ -352,12 +386,8 @@ export default function ConecDashboardPage() {
                             )}
                           </td>
                           <td className="px-6 py-4">
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${
-                              inst.status === 'ativo'
-                                ? 'bg-green-100 text-green-800 border border-green-200'
-                                : 'bg-yellow-100 text-yellow-800 border border-yellow-200'
-                            }`}>
-                              {inst.status === 'ativo' ? 'Ativo' : 'Inativo'}
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${statusColorClass}`}>
+                              {statusText}
                             </span>
                           </td>
                           <td className="px-6 py-4">
@@ -365,22 +395,25 @@ export default function ConecDashboardPage() {
                               
                               {/* Ficha */}
                               <button
-                                onClick={() => handleFicha(inst.id)}
-                                title="Ficha de Credenciamento"
-                                className="p-2 bg-gray-50 hover:bg-blue-50 hover:text-blue-600 text-gray-600 border border-gray-200 hover:border-blue-200 rounded-full transition shadow-sm"
+                                onClick={handleFichaClick}
+                                title={isDocLocked ? "Documento disponível somente após confirmação do pagamento" : "Ficha de Credenciamento"}
+                                className={`p-2 rounded-full transition shadow-sm ${
+                                  isDocLocked
+                                    ? 'bg-gray-50 text-gray-300 border border-gray-150'
+                                    : 'bg-gray-50 hover:bg-blue-50 hover:text-blue-600 text-gray-600 border border-gray-200 hover:border-blue-200'
+                                }`}
                               >
                                 <Printer className="w-4 h-4" />
                               </button>
 
                               {/* Certificado */}
                               <button
-                                onClick={() => handleCertificado(inst)}
-                                disabled={!hasActiveCred}
-                                title={hasActiveCred ? "Certificado de Credenciamento" : "Esta instituição ainda não possui credenciamento ativo para emissão do certificado."}
+                                onClick={handleCertificadoClick}
+                                title={isDocLocked ? "Documento disponível somente após confirmação do pagamento" : "Certificado de Credenciamento"}
                                 className={`p-2 rounded-full transition shadow-sm ${
-                                  hasActiveCred
+                                  !isDocLocked
                                     ? 'bg-teal-50 hover:bg-teal-600 hover:text-white text-teal-700 border border-teal-200 hover:border-teal-600'
-                                    : 'bg-gray-50 text-gray-300 border border-gray-150 cursor-not-allowed'
+                                    : 'bg-gray-50 text-gray-300 border border-gray-150'
                                 }`}
                               >
                                 <Award className="w-4 h-4" />
