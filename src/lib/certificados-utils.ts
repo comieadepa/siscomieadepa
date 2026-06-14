@@ -6,8 +6,26 @@ export const CERTIFICADO_PLACEHOLDERS = [
   { campo: 'data_consagracao', placeholder: '{data_consagracao}', label: 'Data de Consagração' },
   { campo: 'presidente_nome', placeholder: '{presidente_nome}', label: 'Presidente' },
   { campo: 'data_emissao', placeholder: '{data_emissao}', label: 'Data de Emissao' },
-  { campo: 'nome_igreja', placeholder: '{nome_igreja}', label: 'Nome da Igreja' }
+  { campo: 'nome_igreja', placeholder: '{nome_igreja}', label: 'Nome da Igreja' },
+  
+  // CONEC
+  { campo: 'instituicao_nome', placeholder: '{instituicao_nome}', label: 'Nome da Instituição' },
+  { campo: 'cnpj', placeholder: '{cnpj}', label: 'CNPJ' },
+  { campo: 'numero_registro', placeholder: '{numero_registro}', label: 'Registro nº' },
+  { campo: 'data_credenciamento', placeholder: '{data_credenciamento}', label: 'Data de Credenciamento' },
+  { campo: 'validade', placeholder: '{validade}', label: 'Validade' },
+  { campo: 'ano_referencia', placeholder: '{ano_referencia}', label: 'Ano Referência' },
+
+  // Eventos
+  { campo: 'evento_nome', placeholder: '{evento_nome}', label: 'Nome do Evento' },
+  { campo: 'participante_nome', placeholder: '{participante_nome}', label: 'Nome do Participante' },
+  { campo: 'evento_carga_horaria', placeholder: '{evento_carga_horaria}', label: 'Carga Horária' },
+  { campo: 'evento_data', placeholder: '{evento_data}', label: 'Data do Evento' },
+
+  // Sistema
+  { campo: 'data_atual', placeholder: '{data_atual}', label: 'Data Atual' }
 ];
+
 
 const formatDate = (value?: string | null) => {
   if (!value) return '';

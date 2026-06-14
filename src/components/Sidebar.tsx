@@ -211,7 +211,7 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
           submenu: [
             { id: 'config-geral', label: 'Geral', icon: Settings, path: '/configuracoes' },
             { id: 'importar-membros', label: 'Importar Ministros', icon: ArrowRight, path: '/secretaria/membros/importar' },
-            { id: 'config-certificados', label: 'Certificados', icon: ShieldCheck, path: '/configuracoes/certificados' },
+            { id: 'config-certificados', label: 'Template Studio', icon: ShieldCheck, path: '/configuracoes/certificados' },
             { id: 'config-cartoes', label: 'Cartões', icon: FileText, path: '/configuracoes/cartoes' },
             { id: 'config-video-presidente', label: 'Vídeo Palavra do Presidente', icon: FileText, path: '/configuracoes/video-presidente' },
           ],

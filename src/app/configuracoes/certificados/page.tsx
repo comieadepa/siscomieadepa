@@ -13,18 +13,21 @@ import {
   persistCertificadosTemplatesSnapshotToSupabase,
 } from '@/lib/certificados-templates-sync';
 import {
-  CERTIFICADO_PLACEHOLDERS,
   obterPreviewTextoCertificado,
 } from '@/lib/certificados-utils';
 
 const CERTIFICADO_CANVAS = { largura: 840, altura: 595 };
 
 const ELEMENTOS_TIPOS = [
-  { tipo: 'texto',  label: 'Texto',   icone: 'T'   },
-  { tipo: 'logo',   label: 'Logo',    icone: 'L'   },
-  { tipo: 'imagem', label: 'Imagem',  icone: 'IMG' },
-  { tipo: 'chapa',  label: 'Chapa',   icone: 'CH'  },
-  { tipo: 'qrcode', label: 'QR Code', icone: '▣'   },
+  { tipo: 'texto',      label: 'Texto',      icone: 'T' },
+  { tipo: 'logo',       label: 'Logo',       icone: 'L' },
+  { tipo: 'imagem',     label: 'Imagem',     icone: 'IMG' },
+  { tipo: 'chapa',      label: 'Chapa',      icone: 'CH' },
+  { tipo: 'qrcode',     label: 'QR Code',    icone: '▣' },
+  { tipo: 'linha',      label: 'Linha',      icone: '━' },
+  { tipo: 'retangulo',  label: 'Retângulo',  icone: '█' },
+  { tipo: 'assinatura', label: 'Assinatura', icone: '✍' },
+  { tipo: 'data_auto',  label: 'Data Auto',  icone: '📅' },
 ];
 
 interface CertificadoElemento {
@@ -199,22 +202,105 @@ export default function ConfiguracoesCertificadosPage() {
     });
   };
 
-  const handleAddEl = (tipo: CertificadoElemento['tipo']) => {
+  const handleAddPlaceholderEl = (placeholderText: string) => {
     if (!templateEmEdicao) return;
     const base: CertificadoElemento = {
       id: gId(),
-      tipo,
+      tipo: 'texto',
       x: 40,
       y: 40,
-      largura: tipo === 'logo' ? 90 : tipo === 'imagem' ? 160 : tipo === 'chapa' ? 200 : tipo === 'qrcode' ? 100 : 320,
-      altura:  tipo === 'logo' ? 90 : tipo === 'imagem' ? 120 : tipo === 'chapa' ? 40  : tipo === 'qrcode' ? 100 : 40,
+      largura: 320,
+      altura: 40,
       fontSize: 16,
       cor: '#111827',
       fonte: 'Arial',
-      alinhamento: 'left',
+      alinhamento: 'center',
       visivel: true,
-      texto: tipo === 'texto' ? 'Texto do certificado' : undefined,
+      texto: placeholderText,
     };
+    setTemplateEmEdicao({
+      ...templateEmEdicao,
+      elementos: [...templateEmEdicao.elementos, base],
+    });
+    setElementoSelecionado(base);
+    setElementosSelecionados([base]);
+  };
+
+  const handleAddEl = (tipo: any) => {
+    if (!templateEmEdicao) return;
+    let base: CertificadoElemento;
+
+    if (tipo === 'linha') {
+      base = {
+        id: gId(),
+        tipo: 'chapa',
+        x: 40,
+        y: 40,
+        largura: 200,
+        altura: 4,
+        cor: '#111827',
+        transparencia: 1,
+        visivel: true
+      };
+    } else if (tipo === 'retangulo') {
+      base = {
+        id: gId(),
+        tipo: 'chapa',
+        x: 40,
+        y: 40,
+        largura: 150,
+        altura: 80,
+        cor: '#e2e8f0',
+        transparencia: 1,
+        visivel: true
+      };
+    } else if (tipo === 'assinatura') {
+      base = {
+        id: gId(),
+        tipo: 'texto',
+        x: 40,
+        y: 40,
+        largura: 250,
+        altura: 40,
+        fontSize: 14,
+        cor: '#111827',
+        fonte: 'Arial',
+        alinhamento: 'center',
+        texto: '{presidente_nome}',
+        visivel: true
+      };
+    } else if (tipo === 'data_auto') {
+      base = {
+        id: gId(),
+        tipo: 'texto',
+        x: 40,
+        y: 40,
+        largura: 200,
+        altura: 40,
+        fontSize: 14,
+        cor: '#111827',
+        fonte: 'Arial',
+        alinhamento: 'left',
+        texto: '{data_atual}',
+        visivel: true
+      };
+    } else {
+      base = {
+        id: gId(),
+        tipo: tipo as CertificadoElemento['tipo'],
+        x: 40,
+        y: 40,
+        largura: tipo === 'logo' ? 90 : tipo === 'imagem' ? 160 : tipo === 'chapa' ? 200 : tipo === 'qrcode' ? 100 : 320,
+        altura:  tipo === 'logo' ? 90 : tipo === 'imagem' ? 120 : tipo === 'chapa' ? 40  : tipo === 'qrcode' ? 100 : 40,
+        fontSize: 16,
+        cor: tipo === 'chapa' ? '#ef4444' : '#111827',
+        fonte: 'Arial',
+        alinhamento: 'left',
+        visivel: true,
+        texto: tipo === 'texto' ? 'Texto do certificado' : undefined,
+      };
+    }
+
     setTemplateEmEdicao({
       ...templateEmEdicao,
       elementos: [...templateEmEdicao.elementos, base],
@@ -264,9 +350,9 @@ export default function ConfiguracoesCertificadosPage() {
         {/* Header */}
         <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">Modelos de Certificado</h1>
+            <h1 className="text-2xl font-bold text-gray-800">Template Studio</h1>
             <p className="text-sm text-gray-500 mt-0.5">
-              Crie e edite modelos que ficam disponiveis em Secretaria / Certificados
+              Editor visual de documentos e certificados da plataforma
             </p>
           </div>
           {statusMensagem && (
@@ -549,6 +635,35 @@ export default function ConfiguracoesCertificadosPage() {
                     </div>
                   )}
 
+                  {elementoSelecionado.tipo === 'qrcode' && (
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600">Tipo de QRCode</label>
+                      <select
+                        className="mt-1 w-full border rounded px-2 py-1 text-xs"
+                        value={elementoSelecionado.texto || 'validacao_conec'}
+                        onChange={(e) => updateEl(elementoSelecionado.id, { texto: e.target.value })}
+                      >
+                        <option value="validacao_conec">Validação CONEC</option>
+                        <option value="certificado">Certificado</option>
+                        <option value="evento">Evento</option>
+                        <option value="checkin">Check-in</option>
+                        <option value="custom">URL Personalizada</option>
+                      </select>
+                      {elementoSelecionado.texto === 'custom' && (
+                        <div className="mt-2">
+                          <label className="text-xs font-semibold text-gray-500">URL / Conteúdo</label>
+                          <input
+                            type="text"
+                            placeholder="https://exemplo.com"
+                            className="mt-1 w-full border rounded px-2 py-1 text-xs"
+                            value={elementoSelecionado.imagemUrl || ''}
+                            onChange={(e) => updateEl(elementoSelecionado.id, { imagemUrl: e.target.value })}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="flex gap-2">
                     <button
                       className="text-xs text-gray-500 hover:text-gray-700"
@@ -583,15 +698,99 @@ export default function ConfiguracoesCertificadosPage() {
 
             {/* Placeholders */}
             <div>
-              <h4 className="text-sm font-bold text-gray-800 mb-2">Variaveis Disponiveis</h4>
-              <ul className="text-xs text-gray-500 space-y-1">
-                {CERTIFICADO_PLACEHOLDERS.map((ph) => (
-                  <li key={ph.placeholder} className="flex items-center gap-1">
-                    <code className="bg-gray-100 px-1 rounded">{ph.placeholder}</code>
-                    <span>{ph.label}</span>
-                  </li>
-                ))}
-              </ul>
+              <h4 className="text-sm font-bold text-gray-800 mb-2">Placeholders (Clique p/ Adicionar)</h4>
+              
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs font-bold text-gray-500 mb-1">Secretaria</p>
+                  <div className="flex flex-wrap gap-1">
+                    {[
+                      { placeholder: '{ministro_nome}', label: 'Nome do Ministro' },
+                      { placeholder: '{matricula}', label: 'Matrícula' },
+                      { placeholder: '{cargo_ministerial}', label: 'Cargo Ministerial' },
+                      { placeholder: '{congregacao}', label: 'Congregação' },
+                      { placeholder: '{data_consagracao}', label: 'Consagração' },
+                      { placeholder: '{nome_igreja}', label: 'Nome da Igreja' },
+                    ].map((ph) => (
+                      <button
+                        key={ph.placeholder}
+                        onClick={() => handleAddPlaceholderEl(ph.placeholder)}
+                        disabled={!templateEmEdicao}
+                        title={ph.label}
+                        className="bg-gray-100 hover:bg-blue-50 hover:text-blue-600 px-1.5 py-0.5 rounded text-[10px] font-mono border border-gray-200 transition"
+                      >
+                        {ph.placeholder}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs font-bold text-gray-500 mb-1">CONEC</p>
+                  <div className="flex flex-wrap gap-1">
+                    {[
+                      { placeholder: '{instituicao_nome}', label: 'Nome da Instituição' },
+                      { placeholder: '{cnpj}', label: 'CNPJ' },
+                      { placeholder: '{numero_registro}', label: 'Registro nº' },
+                      { placeholder: '{data_credenciamento}', label: 'Data Credenciamento' },
+                      { placeholder: '{validade}', label: 'Validade' },
+                      { placeholder: '{ano_referencia}', label: 'Ano Referência' },
+                    ].map((ph) => (
+                      <button
+                        key={ph.placeholder}
+                        onClick={() => handleAddPlaceholderEl(ph.placeholder)}
+                        disabled={!templateEmEdicao}
+                        title={ph.label}
+                        className="bg-gray-100 hover:bg-blue-50 hover:text-blue-600 px-1.5 py-0.5 rounded text-[10px] font-mono border border-gray-200 transition"
+                      >
+                        {ph.placeholder}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs font-bold text-gray-500 mb-1">Eventos</p>
+                  <div className="flex flex-wrap gap-1">
+                    {[
+                      { placeholder: '{evento_nome}', label: 'Nome do Evento' },
+                      { placeholder: '{participante_nome}', label: 'Nome do Participante' },
+                      { placeholder: '{evento_carga_horaria}', label: 'Carga Horária' },
+                      { placeholder: '{evento_data}', label: 'Data do Evento' },
+                    ].map((ph) => (
+                      <button
+                        key={ph.placeholder}
+                        onClick={() => handleAddPlaceholderEl(ph.placeholder)}
+                        disabled={!templateEmEdicao}
+                        title={ph.label}
+                        className="bg-gray-100 hover:bg-blue-50 hover:text-blue-600 px-1.5 py-0.5 rounded text-[10px] font-mono border border-gray-200 transition"
+                      >
+                        {ph.placeholder}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs font-bold text-gray-500 mb-1">Sistema</p>
+                  <div className="flex flex-wrap gap-1">
+                    {[
+                      { placeholder: '{data_atual}', label: 'Data Atual' },
+                      { placeholder: '{presidente_nome}', label: 'Presidente' },
+                    ].map((ph) => (
+                      <button
+                        key={ph.placeholder}
+                        onClick={() => handleAddPlaceholderEl(ph.placeholder)}
+                        disabled={!templateEmEdicao}
+                        title={ph.label}
+                        className="bg-gray-100 hover:bg-blue-50 hover:text-blue-600 px-1.5 py-0.5 rounded text-[10px] font-mono border border-gray-200 transition"
+                      >
+                        {ph.placeholder}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -602,3 +801,4 @@ export default function ConfiguracoesCertificadosPage() {
     </div>
   );
 }
+
