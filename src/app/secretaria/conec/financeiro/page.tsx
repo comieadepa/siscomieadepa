@@ -12,7 +12,8 @@ import {
   Download,
   Printer,
   ArrowLeft,
-  X
+  X,
+  ExternalLink
 } from 'lucide-react';
 
 interface Credenciamento {
@@ -28,6 +29,7 @@ interface Credenciamento {
   data_pagamento?: string;
   forma_pagamento?: string;
   observacoes_financeiras?: string;
+  asaas_invoice_url?: string;
   conec_instituicoes: {
     nome_instituicao: string;
     cnpj: string;
@@ -416,21 +418,46 @@ export default function ConecFinanceiroPage() {
                             : '-'}
                         </td>
                         <td className="px-6 py-4 text-center print:hidden">
-                          {c.status_pagamento === 'pendente' &&
-                           c.status_credenciamento !== 'cancelado' &&
-                           c.status_credenciamento !== 'suspenso' ? (
-                            <button
-                              onClick={() => openBaixaModal(c)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-bold transition shadow-sm"
-                            >
-                              <CheckCircle className="w-3.5 h-3.5" />
-                              Baixar Manual
-                            </button>
-                          ) : (
-                            <span className="text-gray-400 text-xs italic font-medium">
-                              {c.status_pagamento === 'pago' ? 'Confirmado' : 'Bloqueado'}
-                            </span>
-                          )}
+                          <div className="flex items-center justify-center gap-2">
+                            {c.status_pagamento === 'pendente' &&
+                             c.status_credenciamento !== 'cancelado' &&
+                             c.status_credenciamento !== 'suspenso' ? (
+                              <>
+                                {c.asaas_invoice_url ? (
+                                  <a
+                                    href={c.asaas_invoice_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title="Abrir Fatura Asaas"
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition shadow-sm"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                    Abrir Fatura
+                                  </a>
+                                ) : (
+                                  <button
+                                    disabled
+                                    title="Fatura ainda não gerada"
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-150 text-gray-400 border border-gray-200 rounded text-xs font-bold cursor-not-allowed"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                    Abrir Fatura
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => openBaixaModal(c)}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-bold transition shadow-sm"
+                                >
+                                  <CheckCircle className="w-3.5 h-3.5" />
+                                  Baixar Manual
+                                </button>
+                              </>
+                            ) : (
+                              <span className="text-gray-400 text-xs italic font-medium">
+                                {c.status_pagamento === 'pago' ? 'Confirmado' : 'Bloqueado'}
+                              </span>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
