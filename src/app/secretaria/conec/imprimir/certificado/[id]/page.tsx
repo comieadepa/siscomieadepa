@@ -5,25 +5,28 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
 import { formatCnpj } from '@/lib/mascaras';
 import { Printer, ArrowLeft, Lock } from 'lucide-react';
+import TemplateStudioRenderer from '@/components/TemplateStudioRenderer';
 
 function CertificadoContent() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
-  
+
   const id = params.id as string; // credenciamentoId
   const debug = searchParams?.get('debug') === '1';
   const supabase = createClient();
 
   const [credenciamento, setCredenciamento] = useState<any>(null);
   const [instituicao, setInstituicao] = useState<any>(null);
+  const [template, setTemplate] = useState<any>(null);
+  const [token, setToken] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchDados = async () => {
       try {
-        // Buscar o credenciamento
+        // 1. Buscar o credenciamento
         const { data: cred, error: credError } = await supabase
           .from('conec_credenciamentos')
           .select('*')
@@ -36,7 +39,7 @@ function CertificadoContent() {
         }
         setCredenciamento(cred);
 
-        // Buscar a instituição
+        // 2. Buscar a instituição
         const { data: inst, error: instError } = await supabase
           .from('conec_instituicoes')
           .select('*')
@@ -48,6 +51,78 @@ function CertificadoContent() {
           throw new Error('Instituição associada ao credenciamento não encontrada.');
         }
         setInstituicao(inst);
+
+        // 3. Buscar ou criar token de validação para o certificado
+        const { data: existingToken } = await supabase
+          .from('document_tokens')
+          .select('token')
+          .eq('reference_id', id)
+          .eq('document_type', 'conec_credenciamento')
+          .maybeSingle();
+
+        let currentToken = '';
+
+        if (existingToken?.token) {
+          currentToken = existingToken.token;
+          setToken(currentToken);
+        } else {
+          // Criar novo token
+          const dadosPublicos = {
+            nome_instituicao: inst.nome_instituicao,
+            cnpj: inst.cnpj,
+            numero_registro: cred.numero_registro,
+            data_inicio: cred.data_inicio,
+            data_fim: cred.data_fim,
+            status: cred.status_credenciamento,
+          };
+
+          const { data: newToken, error: createError } = await supabase
+            .from('document_tokens')
+            .insert({
+              template_id: '12345678-1234-1234-1234-123456789abc', // ID do seed padrão
+              document_type: 'conec_credenciamento',
+              reference_id: id,
+              dados_publicos: dadosPublicos,
+            })
+            .select('token')
+            .single();
+
+          if (!createError && newToken) {
+            currentToken = newToken.token;
+            setToken(currentToken);
+          }
+        }
+
+        // 4. Buscar o template ativo para certificado CONEC do Template Studio
+        const { data: templateData } = await supabase
+          .from('document_templates')
+          .select('*')
+          .eq('modulo', 'conec')
+          .eq('tipo_documento', 'certificado_credenciamento')
+          .eq('ativo', true)
+          .order('versao', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (templateData) {
+          setTemplate(templateData);
+        } else {
+          // Fallback para estrutura interna local
+          setTemplate({
+            background_url: '/img/cert_credenciamento.jpg',
+            largura: 1123,
+            altura: 794,
+            orientacao: 'landscape',
+            elementos: [
+              { id: 'nome_instituicao', tipo: 'text_dynamic', placeholder: 'nome_instituicao', x: 15, y: 49, width: 70, height: 4.5, styles: { fontSize: '26px', fontWeight: 'bold', textAlign: 'center' } },
+              { id: 'cnpj', tipo: 'text_dynamic', placeholder: 'cnpj', x: 35, y: 54, width: 30, height: 3, styles: { fontSize: '14px', textAlign: 'center' } },
+              { id: 'numero_registro', tipo: 'text_dynamic', placeholder: 'numero_registro', x: 15, y: 80, width: 20, height: 3, styles: { fontSize: '14px', fontWeight: 'bold', textAlign: 'left' } },
+              { id: 'data_credenciamento', tipo: 'text_dynamic', placeholder: 'data_credenciamento', x: 15, y: 83, width: 25, height: 3, styles: { fontSize: '14px', fontWeight: 'bold', textAlign: 'left' } },
+              { id: 'validade', tipo: 'text_dynamic', placeholder: 'validade', x: 15, y: 86, width: 20, height: 3, styles: { fontSize: '14px', fontWeight: 'bold', textAlign: 'left' } },
+              { id: 'qr_code_validacao', tipo: 'qrcode', placeholder: 'qr_code_validacao', x: 78, y: 76, width: 10, height: 10 }
+            ]
+          });
+        }
 
       } catch (err: any) {
         console.error(err);
@@ -102,8 +177,14 @@ function CertificadoContent() {
 
   const dataFimFormatada = new Date(credenciamento.data_fim).toLocaleDateString('pt-BR');
 
-  // Estilo debug temporário para calibrar posicionamento absoluto
-  const debugBorder = debug ? 'border-2 border-red-500 bg-red-100/10' : '';
+  // Dados dinâmicos mapeados para os placeholders do template
+  const dados = {
+    nome_instituicao: instituicao.nome_instituicao,
+    cnpj: formatCnpj(instituicao.cnpj),
+    numero_registro: credenciamento.numero_registro,
+    data_credenciamento: dataEmissaoFormatada,
+    validade: dataFimFormatada,
+  };
 
   return (
     <div className="min-h-screen bg-gray-100 py-12 px-4 flex flex-col items-center justify-center print:bg-white print:p-0 print:min-h-0 print:h-screen print:justify-center">
@@ -152,87 +233,15 @@ function CertificadoContent() {
         </button>
       </div>
 
-      {/* Diploma em Paisagem (A4 Proportional: 1123px x 794px) */}
-      <div
-        className="print-container relative w-[1123px] h-[794px] bg-white border border-gray-300 rounded-lg shadow-2xl overflow-hidden bg-cover bg-no-repeat bg-center select-none"
-        style={{ backgroundImage: "url('/img/cert_credenciamento.jpg')" }}
-      >
-        {/* Nome da Instituição */}
-        <div
-          className={`absolute ${debugBorder} flex items-center justify-center`}
-          style={{
-            top: '49%',
-            left: '15%',
-            width: '70%',
-            height: '4.5%',
-          }}
-        >
-          <span className="text-[26px] font-bold text-gray-900 uppercase tracking-wide font-sans leading-none">
-            {instituicao.nome_instituicao}
-          </span>
-        </div>
-
-        {/* CNPJ */}
-        <div
-          className={`absolute ${debugBorder} flex items-center justify-center`}
-          style={{
-            top: '54%',
-            left: '35%',
-            width: '30%',
-            height: '3%',
-          }}
-        >
-          <span className="text-[14px] text-gray-800 font-sans font-medium">
-            {formatCnpj(instituicao.cnpj)}
-          </span>
-        </div>
-
-        {/* Registro nº */}
-        <div
-          className={`absolute ${debugBorder} flex items-center justify-start`}
-          style={{
-            top: '80%',
-            left: '15%',
-            width: '20%',
-            height: '3%',
-          }}
-        >
-          <span className="text-[14px] text-gray-800 font-sans font-bold">
-            {credenciamento.numero_registro}
-          </span>
-        </div>
-
-        {/* Data de credenciamento */}
-        <div
-          className={`absolute ${debugBorder} flex items-center justify-start`}
-          style={{
-            top: '83%',
-            left: '15%',
-            width: '25%',
-            height: '3%',
-          }}
-        >
-          <span className="text-[14px] text-gray-800 font-sans font-bold">
-            {dataEmissaoFormatada}
-          </span>
-        </div>
-
-        {/* Validade */}
-        <div
-          className={`absolute ${debugBorder} flex items-center justify-start`}
-          style={{
-            top: '86%',
-            left: '15%',
-            width: '20%',
-            height: '3%',
-          }}
-        >
-          <span className="text-[14px] text-gray-800 font-sans font-bold">
-            {dataFimFormatada}
-          </span>
-        </div>
-
-      </div>
+      {/* Renderização do Certificado via Template Studio */}
+      {template && (
+        <TemplateStudioRenderer
+          template={template}
+          dados={dados}
+          validationToken={token}
+          debug={debug}
+        />
+      )}
     </div>
   );
 }
