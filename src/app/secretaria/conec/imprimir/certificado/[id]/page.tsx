@@ -1,15 +1,18 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useEffect, useState, Suspense } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
 import { formatCnpj } from '@/lib/mascaras';
 import { Printer, ArrowLeft, Lock } from 'lucide-react';
 
-export default function ImprimirCertificadoPage() {
+function CertificadoContent() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  
   const id = params.id as string; // credenciamentoId
+  const debug = searchParams?.get('debug') === '1';
   const supabase = createClient();
 
   const [credenciamento, setCredenciamento] = useState<any>(null);
@@ -95,9 +98,12 @@ export default function ImprimirCertificadoPage() {
   // Datas Formatadas
   const dataEmissaoFormatada = credenciamento.data_emissao
     ? new Date(credenciamento.data_emissao).toLocaleDateString('pt-BR')
-    : new Date().toLocaleDateString('pt-BR');
+    : new Date(credenciamento.data_inicio).toLocaleDateString('pt-BR');
 
   const dataFimFormatada = new Date(credenciamento.data_fim).toLocaleDateString('pt-BR');
+
+  // Estilo debug temporário para calibrar posicionamento absoluto
+  const debugBorder = debug ? 'border-2 border-red-500 bg-red-100/10' : '';
 
   return (
     <div className="min-h-screen bg-gray-100 py-12 px-4 flex flex-col items-center justify-center print:bg-white print:p-0 print:min-h-0 print:h-screen print:justify-center">
@@ -105,7 +111,7 @@ export default function ImprimirCertificadoPage() {
       <style jsx global>{`
         @media print {
           @page {
-            size: landscape;
+            size: A4 landscape;
             margin: 0;
           }
           body {
@@ -117,8 +123,8 @@ export default function ImprimirCertificadoPage() {
             display: none !important;
           }
           .print-container {
-            width: 297mm !important;
-            height: 210mm !important;
+            width: 1123px !important;
+            height: 794px !important;
             border: 0 !important;
             box-shadow: none !important;
             border-radius: 0 !important;
@@ -129,7 +135,7 @@ export default function ImprimirCertificadoPage() {
       `}</style>
 
       {/* Barra de Ações (Oculta na impressão) */}
-      <div className="w-full max-w-[1122px] mb-6 flex items-center justify-between print:hidden no-print">
+      <div className="w-full max-w-[1123px] mb-6 flex items-center justify-between print:hidden no-print">
         <button
           onClick={() => router.back()}
           className="flex items-center gap-2 text-gray-600 hover:text-gray-900 font-semibold text-sm transition"
@@ -146,70 +152,95 @@ export default function ImprimirCertificadoPage() {
         </button>
       </div>
 
-      {/* Diploma em Paisagem (A4 Proportional: 1122px x 793px) */}
+      {/* Diploma em Paisagem (A4 Proportional: 1123px x 794px) */}
       <div
-        className="print-container relative w-[1122px] h-[793px] bg-white border border-gray-300 rounded-lg shadow-2xl overflow-hidden bg-cover bg-no-repeat bg-center select-none"
+        className="print-container relative w-[1123px] h-[794px] bg-white border border-gray-300 rounded-lg shadow-2xl overflow-hidden bg-cover bg-no-repeat bg-center select-none"
         style={{ backgroundImage: "url('/img/cert_credenciamento.jpg')" }}
       >
-        {/* Nome da Instituição - Centralizado após 'CERTIFICA QUE A INSTITUIÇÃO' */}
-        <div className="absolute top-[41%] left-1/2 -translate-x-1/2 w-[85%] text-center">
-          <h2 className="text-3xl font-extrabold text-teal-950 uppercase tracking-wide font-sans leading-snug drop-shadow-sm">
+        {/* Nome da Instituição */}
+        <div
+          className={`absolute ${debugBorder} flex items-center justify-center`}
+          style={{
+            top: '49%',
+            left: '15%',
+            width: '70%',
+            height: '4.5%',
+          }}
+        >
+          <span className="text-[26px] font-bold text-gray-900 uppercase tracking-wide font-sans leading-none">
             {instituicao.nome_instituicao}
-          </h2>
-          <p className="text-sm font-semibold text-gray-600 tracking-wider mt-1.5">
-            CNPJ: {formatCnpj(instituicao.cnpj)}
-          </p>
+          </span>
         </div>
 
-        {/* Dados do Credenciamento */}
-        <div className="absolute bottom-[28%] left-1/2 -translate-x-1/2 w-[70%] flex justify-between text-center text-teal-950 text-sm font-bold tracking-wider uppercase font-sans">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] text-gray-500 font-medium">Registro do Conselho</span>
-            <span>Nº {credenciamento.numero_registro}</span>
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] text-gray-500 font-medium">Data de Emissão</span>
-            <span>{dataEmissaoFormatada}</span>
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] text-gray-500 font-medium">Válido até</span>
-            <span>{dataFimFormatada}</span>
-          </div>
+        {/* CNPJ */}
+        <div
+          className={`absolute ${debugBorder} flex items-center justify-center`}
+          style={{
+            top: '54%',
+            left: '35%',
+            width: '30%',
+            height: '3%',
+          }}
+        >
+          <span className="text-[14px] text-gray-800 font-sans font-medium">
+            {formatCnpj(instituicao.cnpj)}
+          </span>
         </div>
 
-        {/* Assinaturas Oficiais */}
-        <div className="absolute bottom-[11%] left-1/2 -translate-x-1/2 w-[80%] flex justify-around text-center text-gray-800 font-sans">
-          <div className="flex flex-col items-center">
-            <div className="w-64 border-t border-gray-400/80 mb-1"></div>
-            <span className="text-[11px] font-extrabold text-teal-950 uppercase tracking-wide">
-              Pr. Francisco de Assis da Silva Alcântara
-            </span>
-            <span className="text-[9px] text-gray-500 uppercase tracking-widest font-semibold mt-0.5">
-              Secretário do CONEC
-            </span>
-          </div>
-          
-          <div className="flex flex-col items-center">
-            <div className="w-64 border-t border-gray-400/80 mb-1"></div>
-            <span className="text-[11px] font-extrabold text-teal-950 uppercase tracking-wide">
-              Pr. Jesanias Calderaro Pereira
-            </span>
-            <span className="text-[9px] text-gray-500 uppercase tracking-widest font-semibold mt-0.5">
-              Presidente do CONEC
-            </span>
-          </div>
+        {/* Registro nº */}
+        <div
+          className={`absolute ${debugBorder} flex items-center justify-start`}
+          style={{
+            top: '80%',
+            left: '15%',
+            width: '20%',
+            height: '3%',
+          }}
+        >
+          <span className="text-[14px] text-gray-800 font-sans font-bold">
+            {credenciamento.numero_registro}
+          </span>
         </div>
 
-        {/* Ano Referência no Selo (Canto Inferior Direito) */}
-        {credenciamento.ano_referencia && (
-          <div className="absolute bottom-[23%] right-[8%] w-16 h-16 flex items-center justify-center pointer-events-none">
-            <span className="text-lg font-extrabold text-teal-800/20 font-serif rotate-[15deg]">
-              {credenciamento.ano_referencia}
-            </span>
-          </div>
-        )}
+        {/* Data de credenciamento */}
+        <div
+          className={`absolute ${debugBorder} flex items-center justify-start`}
+          style={{
+            top: '83%',
+            left: '15%',
+            width: '25%',
+            height: '3%',
+          }}
+        >
+          <span className="text-[14px] text-gray-800 font-sans font-bold">
+            {dataEmissaoFormatada}
+          </span>
+        </div>
+
+        {/* Validade */}
+        <div
+          className={`absolute ${debugBorder} flex items-center justify-start`}
+          style={{
+            top: '86%',
+            left: '15%',
+            width: '20%',
+            height: '3%',
+          }}
+        >
+          <span className="text-[14px] text-gray-800 font-sans font-bold">
+            {dataFimFormatada}
+          </span>
+        </div>
 
       </div>
     </div>
+  );
+}
+
+export default function ImprimirCertificadoPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-gray-50"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" /></div>}>
+      <CertificadoContent />
+    </Suspense>
   );
 }
