@@ -2011,7 +2011,7 @@ export default function InscricaoPublicaPage() {
             {/* Campos de hospedagem (opt-in) */}
             {podeHospedagem && (
               <div className="mb-6">
-                {!(tipoSelecionado && tipoSelecionado.inclui_hospedagem) && (
+                {!(tipoSelecionado && tipoSelecionado.inclui_hospedagem && evento.departamento !== 'AGO') && (
                   <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
                     <label className="flex items-center gap-3 cursor-pointer">
                       <input type="checkbox" id="solicita_hospedagem"
@@ -2500,7 +2500,7 @@ export default function InscricaoPublicaPage() {
 
                         return (
                           <div className="sm:col-span-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                            {!(tipoExtra && tipoExtra.inclui_hospedagem) && (
+                            {!(tipoExtra && tipoExtra.inclui_hospedagem && evento.departamento !== 'AGO') && (
                               <label className="flex items-start gap-3 cursor-pointer select-none">
                                 <input
                                   type="checkbox"
