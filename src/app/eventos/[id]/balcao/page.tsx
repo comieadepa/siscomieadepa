@@ -1815,7 +1815,18 @@ export default function BalcaoPage() {
                     >
                       <p className="font-semibold text-sm">{t.nome}</p>
                       <p className="text-xs mt-0.5 opacity-70">
-                        {t.valor === 0 ? 'Gratuito' : fmtMoeda(t.valor)}
+                        {(() => {
+                          const isPPT = /pastor\s*presidente/i.test(t.nome) && !/esposa|viuva/i.test(t.nome);
+                          let vExib = t.valor;
+                          if (descontoCampoMissionario && isPPT && evento?.configuracoes_ago) {
+                            const cmConfig = parseCampoMissionarioConfig(evento.configuracoes_ago);
+                            const valorM = cmConfig
+                              ? (typeof cmConfig.valor_pastor_presidente === 'number' ? cmConfig.valor_pastor_presidente : parseFloat(String(cmConfig.valor_pastor_presidente)) || 0)
+                              : parseFloat(String(evento.configuracoes_ago.valor_pastor_presidente_campo_missionario ?? '0')) || 0;
+                            if (valorM > 0) vExib = valorM;
+                          }
+                          return vExib === 0 ? 'Gratuito' : fmtMoeda(vExib);
+                        })()}
                         {t.inclui_alimentacao && ' · Alim.'}
                         {t.inclui_hospedagem  && ' · Hosp.'}
                       </p>

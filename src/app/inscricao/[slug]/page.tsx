@@ -1900,7 +1900,13 @@ export default function InscricaoPublicaPage() {
                               </div>
                             </div>
                             <span className="text-sm font-bold text-[#123b63] sm:whitespace-nowrap">
-                              {t.valor === 0 ? (t.cortesia ? 'Gratuito (Cortesia)' : 'Gratuito') : fmtMoeda(t.valor)}
+                              {(() => {
+                                const isPPT = /pastor\s*presidente/i.test(t.nome) && !/esposa|viuva/i.test(t.nome);
+                                const vExib = (descontoCampoMissionario && isPPT && valorEspecialMissionario > 0)
+                                  ? valorEspecialMissionario
+                                  : t.valor;
+                                return vExib === 0 ? (t.cortesia ? 'Gratuito (Cortesia)' : 'Gratuito') : fmtMoeda(vExib);
+                              })()}
                             </span>
                           </label>
                         ))}
