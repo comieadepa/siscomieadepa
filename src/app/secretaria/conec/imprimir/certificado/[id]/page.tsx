@@ -93,23 +93,22 @@ function CertificadoContent() {
           }
         }
 
-        // 4. Buscar o template ativo para certificado CONEC do Template Studio
-        const { data: templateData } = await supabase
-          .from('document_templates')
+        // 4. Buscar o template ativo para certificado CONEC do Template Studio (tabela certificados_templates)
+        const { data: templatesList } = await supabase
+          .from('certificados_templates')
           .select('*')
-          .eq('modulo', 'conec')
-          .eq('tipo_documento', 'certificado_credenciamento')
-          .eq('ativo', true)
-          .is('deleted_at', null)
-          .order('versao', { ascending: false })
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+          .or('name.ilike.conec,template_key.ilike.conec');
 
-        if (templateData) {
-          setTemplate(templateData);
+        if (templatesList && templatesList.length > 0) {
+          // Ordena: ativo primeiro, depois atualizado por último
+          const sorted = [...templatesList].sort((a, b) => {
+            if (a.is_active && !b.is_active) return -1;
+            if (!a.is_active && b.is_active) return 1;
+            return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+          });
+          setTemplate(sorted[0]);
         } else {
-          // Fallback para estrutura interna local
+          // Fallback para estrutura interna local se não existir modelo no banco
           setTemplate({
             background_url: '/img/cert_credenciamento.jpg',
             largura: 1123,
@@ -191,6 +190,62 @@ function CertificadoContent() {
     qr_code_validacao: token ? `${typeof window !== 'undefined' ? window.location.origin : ''}/validar/${token}` : '',
   };
 
+  // Mapeia e normaliza o template do visual editor para o formato do renderizador
+  const getMappedTemplate = () => {
+    if (!template) return null;
+    
+    // Se for o fallback local (que tem background_url em vez de backgroundUrl)
+    if (template.background_url && !template.template_data) {
+      return template;
+    }
+
+    const tData = template.template_data || template;
+    const rawElements = Array.isArray(tData.elementos)
+      ? tData.elementos
+      : (typeof tData.elementos === 'string' ? JSON.parse(tData.elementos) : []);
+
+    const parsePlaceholderText = (text: string) => {
+      if (!text) return '';
+      let res = text;
+      Object.entries(dados).forEach(([key, val]) => {
+        res = res.split(`{${key}}`).join(String(val ?? ''));
+      });
+      return res;
+    };
+
+    const mappedElements = rawElements
+      .filter((el: any) => el.visivel !== false)
+      .map((el: any) => {
+        return {
+          id: el.id,
+          tipo: el.tipo === 'qrcode' ? 'qrcode' : 'text_fixed',
+          x: (el.x / 840) * 100,
+          y: (el.y / 595) * 100,
+          width: (el.largura / 840) * 100,
+          height: (el.altura / 595) * 100,
+          conteudo: el.tipo === 'qrcode' ? '' : parsePlaceholderText(el.texto || ''),
+          styles: {
+            fontSize: el.fontSize ? `${el.fontSize}px` : '14px',
+            fontFamily: el.fonte || 'sans-serif',
+            fontWeight: el.negrito ? 'bold' : 'normal',
+            fontStyle: el.italico ? 'italic' : 'normal',
+            textAlign: el.alinhamento || 'left',
+            color: el.cor || '#000000',
+          }
+        };
+      });
+
+    return {
+      background_url: tData.backgroundUrl || '',
+      largura: 840,
+      altura: 595,
+      orientacao: tData.orientacao || 'landscape',
+      elementos: mappedElements
+    };
+  };
+
+  const finalTemplate = getMappedTemplate();
+
   return (
     <div className="min-h-screen bg-gray-100 py-12 px-4 flex flex-col items-center justify-center print:bg-white print:p-0 print:min-h-0 print:h-screen print:justify-center">
       {/* Estilos CSS Nativos de Impressão */}
@@ -239,9 +294,9 @@ function CertificadoContent() {
       </div>
 
       {/* Renderização do Certificado via Template Studio */}
-      {template && (
+      {finalTemplate && (
         <TemplateStudioRenderer
-          template={template}
+          template={finalTemplate}
           dados={dados}
           validationToken={token}
           debug={debug}

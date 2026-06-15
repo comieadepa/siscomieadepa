@@ -590,7 +590,7 @@ export async function POST(request: NextRequest) {
         }
         const { data: membro, error: membErr } = await supabase
           .from('members')
-          .select('id, name, cpf, status, pastor_presidente, campo_id')
+          .select('id, name, cpf, status, pastor_presidente, campo_id, congregacao_id, congregacoes!congregacao_id(nome, campo_id), custom_fields')
           .eq('cpf', cpfLimpoInput)
           .maybeSingle();
 
@@ -599,11 +599,30 @@ export async function POST(request: NextRequest) {
         const isPP = !!membro?.pastor_presidente;
 
         let isCampoMissionario = false;
-        if (membro?.campo_id) {
+        const congregacoesData = membro?.congregacoes;
+        const congreObj = Array.isArray(congregacoesData) ? congregacoesData[0] : congregacoesData;
+        let resolvedCampoId = membro?.campo_id || (congreObj as any)?.campo_id || null;
+
+        if (!resolvedCampoId && membro?.custom_fields) {
+          const customFields = membro.custom_fields as Record<string, any>;
+          const customCampo = customFields.campo || customFields.Campo || null;
+          if (typeof customCampo === 'string' && customCampo.trim()) {
+            const { data: campoRow } = await supabase
+              .from('campos')
+              .select('id')
+              .ilike('nome', customCampo.trim())
+              .maybeSingle();
+            if (campoRow) {
+              resolvedCampoId = campoRow.id;
+            }
+          }
+        }
+
+        if (resolvedCampoId) {
           const { data: campoData } = await supabase
             .from('campos')
             .select('is_campo_missionario')
-            .eq('id', membro.campo_id)
+            .eq('id', resolvedCampoId)
             .maybeSingle();
           isCampoMissionario = !!campoData?.is_campo_missionario;
         }
@@ -792,7 +811,7 @@ export async function POST(request: NextRequest) {
     if (cpfLimpo && evento.departamento === 'AGO') {
       const { data: membro } = await supabase
         .from('members')
-        .select('id, name, cpf, matricula, data_nascimento, status, cargo_ministerial, pastor_presidente, pastor_auxiliar, jubilado, campo_id, supervisao_id')
+        .select('id, name, cpf, matricula, data_nascimento, status, cargo_ministerial, pastor_presidente, pastor_auxiliar, jubilado, campo_id, supervisao_id, congregacao_id, congregacoes!congregacao_id(nome, campo_id), custom_fields')
         .eq('cpf', cpfLimpo)
         .maybeSingle();
       if (membro) {
@@ -800,7 +819,26 @@ export async function POST(request: NextRequest) {
         let isCampoMissionario = false;
         let campoNome: string | null = null;
         let supervisaoNome: string | null = null;
-        const campoIdSnapshot = String((membro as any).campo_id ?? campo_id ?? '').trim() || null;
+
+        const congregacoesData = membro.congregacoes;
+        const congreObj = Array.isArray(congregacoesData) ? congregacoesData[0] : congregacoesData;
+        let resolvedCampoId = membro.campo_id || (congreObj as any)?.campo_id || null;
+        if (!resolvedCampoId && membro.custom_fields) {
+          const customFields = membro.custom_fields as Record<string, any>;
+          const customCampo = customFields.campo || customFields.Campo || null;
+          if (typeof customCampo === 'string' && customCampo.trim()) {
+            const { data: campoRow } = await supabase
+              .from('campos')
+              .select('id')
+              .ilike('nome', customCampo.trim())
+              .maybeSingle();
+            if (campoRow) {
+              resolvedCampoId = campoRow.id;
+            }
+          }
+        }
+
+        const campoIdSnapshot = resolvedCampoId;
         const supervisaoIdSnapshot = String((membro as any).supervisao_id ?? supervisao_id ?? '').trim() || null;
         if (campoIdSnapshot) {
           const { data: campoData } = await supabase

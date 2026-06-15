@@ -685,6 +685,15 @@ export default function InscricaoPublicaPage() {
           tipo_inscricao: '',
         };
       }
+      if (field === 'tipo_inscricao') {
+        const selectedType = value ? tipos.find(t => t.nome === String(value)) : null;
+        const autoHospedagem = selectedType ? !!selectedType.inclui_hospedagem : false;
+        return {
+          ...x,
+          tipo_inscricao: String(value || ''),
+          hospedagem: autoHospedagem ? true : x.hospedagem
+        };
+      }
       return { ...x, [field]: value };
     }));
   }
@@ -1088,6 +1097,16 @@ export default function InscricaoPublicaPage() {
     tipos,
     evento?.departamento,
   ]);
+
+  useEffect(() => {
+    if (tipoSelecionado) {
+      if (tipoSelecionado.inclui_hospedagem) {
+        setSolicitaHospedagem(true);
+      } else {
+        setSolicitaHospedagem(false);
+      }
+    }
+  }, [tipoSelecionado]);
 
   const erroNomeTitular = erroForm === 'Nome completo é obrigatório.';
   const erroCpfTitular = erroForm === 'CPF é obrigatório.';
@@ -1992,26 +2011,28 @@ export default function InscricaoPublicaPage() {
             {/* Campos de hospedagem (opt-in) */}
             {podeHospedagem && (
               <div className="mb-6">
-                <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" id="solicita_hospedagem"
-                      checked={solicitaHospedagem}
-                      onChange={e => setSolicitaHospedagem(e.target.checked)}
-                      className="accent-[#123b63]" />
-                    <div>
-                      <span className="text-sm font-semibold text-gray-700">🛏️ Desejo solicitar hospedagem</span>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        A solicitação não garante alocação. A organização fará a distribuição conforme disponibilidade.
-                        {evento.departamento === 'AGO' && mainGroup ? (mainGroup === 'Misto' ? ' (Informe sexo/data/perfil para verificar vagas de hospedagem.)' : ` (Grupo: ${mainGroup} - ${mainVagasGrupo} vagas restantes)`) : (vagasHospedagem !== null && ` (${vagasHospedagem} vagas restantes)`)}
-                      </p>
-                      {mainGrupoEsgotado && mainGroup !== 'Misto' && (
-                        <p className="text-xs text-red-600 font-bold mt-1.5">
-                          ⚠️ Não há mais vagas de hospedagem disponíveis para o grupo {mainGroup}. Você ainda pode concluir a inscrição sem hospedagem.
+                {!(tipoSelecionado && tipoSelecionado.inclui_hospedagem) && (
+                  <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input type="checkbox" id="solicita_hospedagem"
+                        checked={solicitaHospedagem}
+                        onChange={e => setSolicitaHospedagem(e.target.checked)}
+                        className="accent-[#123b63]" />
+                      <div>
+                        <span className="text-sm font-semibold text-gray-700">🛏️ Desejo solicitar hospedagem</span>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          A solicitação não garante alocação. A organização fará a distribuição conforme disponibilidade.
+                          {evento.departamento === 'AGO' && mainGroup ? (mainGroup === 'Misto' ? ' (Informe sexo/data/perfil para verificar vagas de hospedagem.)' : ` (Grupo: ${mainGroup} - ${mainVagasGrupo} vagas restantes)`) : (vagasHospedagem !== null && ` (${vagasHospedagem} vagas restantes)`)}
                         </p>
-                      )}
-                    </div>
-                  </label>
-                </div>
+                        {mainGrupoEsgotado && mainGroup !== 'Misto' && (
+                          <p className="text-xs text-red-600 font-bold mt-1.5">
+                            ⚠️ Não há mais vagas de hospedagem disponíveis para o grupo {mainGroup}. Você ainda pode concluir a inscrição sem hospedagem.
+                          </p>
+                        )}
+                      </div>
+                    </label>
+                  </div>
+                )}
 
                 {/* Detalhes de hospedagem: aparece somente quando o usuário solicitar e for evento AGO */}
                 {evento.departamento === 'AGO' && solicitaHospedagem && (
@@ -2479,26 +2500,28 @@ export default function InscricaoPublicaPage() {
 
                         return (
                           <div className="sm:col-span-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                            <label className="flex items-start gap-3 cursor-pointer select-none">
-                              <input
-                                type="checkbox"
-                                checked={!!p.hospedagem}
-                                onChange={e => atualizarParticipante(idx, 'hospedagem', e.target.checked)}
-                                className="mt-0.5 accent-[#123b63]"
-                              />
-                              <div>
-                                <span className="text-sm font-semibold text-gray-700">🛏️ Desejo solicitar hospedagem</span>
-                                <p className="text-xs text-gray-500 mt-0.5">
-                                  A solicitação não garante alocação. A organização fará a distribuição conforme disponibilidade.
-                                  {evento.departamento === 'AGO' && extraGroup ? (extraGroup === 'Misto' ? ' (Informe sexo/data/perfil para verificar vagas de hospedagem.)' : ` (Grupo: ${extraGroup} - ${extraVagasGrupo} vagas restantes)`) : (vagasHospedagem !== null && ` (${vagasHospedagem} vagas restantes)`)}
-                                </p>
-                                {extraGrupoEsgotado && extraGroup !== 'Misto' && (
-                                  <p className="text-xs text-red-600 font-bold mt-1.5">
-                                    ⚠️ Não há mais vagas de hospedagem disponíveis para o grupo {extraGroup}. Você ainda pode concluir a inscrição sem hospedagem.
+                            {!(tipoExtra && tipoExtra.inclui_hospedagem) && (
+                              <label className="flex items-start gap-3 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={!!p.hospedagem}
+                                  onChange={e => atualizarParticipante(idx, 'hospedagem', e.target.checked)}
+                                  className="mt-0.5 accent-[#123b63]"
+                                />
+                                <div>
+                                  <span className="text-sm font-semibold text-gray-700">🛏️ Desejo solicitar hospedagem</span>
+                                  <p className="text-xs text-gray-500 mt-0.5">
+                                    A solicitação não garante alocação. A organização fará a distribuição conforme disponibilidade.
+                                    {evento.departamento === 'AGO' && extraGroup ? (extraGroup === 'Misto' ? ' (Informe sexo/data/perfil para verificar vagas de hospedagem.)' : ` (Grupo: ${extraGroup} - ${extraVagasGrupo} vagas restantes)`) : (vagasHospedagem !== null && ` (${vagasHospedagem} vagas restantes)`)}
                                   </p>
-                                )}
-                              </div>
-                            </label>
+                                  {extraGrupoEsgotado && extraGroup !== 'Misto' && (
+                                    <p className="text-xs text-red-600 font-bold mt-1.5">
+                                      ⚠️ Não há mais vagas de hospedagem disponíveis para o grupo {extraGroup}. Você ainda pode concluir a inscrição sem hospedagem.
+                                    </p>
+                                  )}
+                                </div>
+                              </label>
+                            )}
 
                             {evento.departamento === 'AGO' && p.hospedagem && (
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
