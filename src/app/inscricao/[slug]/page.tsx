@@ -752,22 +752,6 @@ export default function InscricaoPublicaPage() {
 
   function getValorExibicaoTipo(tipo: TipoInscricao | null | undefined): number {
     if (!tipo) return 0;
-    const isNomePP = tipo.nome.trim().toLowerCase() === 'pastor presidente' || tipo.nome.trim().toUpperCase() === 'PASTOR PRESIDENTE';
-    const isMinistroPP = !!ministroInfo?.isPastorPresidente;
-    const isCampoMissionario = !!ministroInfo?.isCampoMissionario;
-    if (isNomePP && isMinistroPP && isCampoMissionario && evento?.configuracoes_ago) {
-      const config = evento.configuracoes_ago;
-      if (config.valor_pastor_presidente_campo_missionario !== undefined && config.valor_pastor_presidente_campo_missionario !== null) {
-        return typeof config.valor_pastor_presidente_campo_missionario === 'number'
-          ? config.valor_pastor_presidente_campo_missionario
-          : parseFloat(String(config.valor_pastor_presidente_campo_missionario)) || 0;
-      }
-      if (config.campo_missionario?.valor_pastor_presidente !== undefined && config.campo_missionario?.valor_pastor_presidente !== null) {
-        return typeof config.campo_missionario.valor_pastor_presidente === 'number'
-          ? config.campo_missionario.valor_pastor_presidente
-          : parseFloat(String(config.campo_missionario.valor_pastor_presidente)) || 0;
-      }
-    }
     return tipo.valor;
   }
 
@@ -790,7 +774,7 @@ export default function InscricaoPublicaPage() {
     tipo_inscricao: tipoSelecionado.nome,
     hosp_necessidade_especial: !!form.hosp_necessidade_especial,
     hosp_possui_comorbidade: !!form.hosp_possui_comorbidade,
-  }) : null;
+  }) : '';
   const mainVagasGrupo = mainGroup ? (vagasPorGrupo[mainGroup] ?? 0) : 0;
   const mainGrupoEsgotado = evento?.departamento === 'AGO' && mainGroup && mainVagasGrupo <= 0;
 
@@ -894,7 +878,7 @@ export default function InscricaoPublicaPage() {
       return [];
     }
 
-    return filtrarTiposAgo(tipos, {
+    const filtered = filtrarTiposAgo(tipos, {
       sexo: form.sexo,
       dataNascimento: formatDmaToYmd(form.data_nascimento),
       permitirViuvaEEsposaJubilado: false,
@@ -908,6 +892,35 @@ export default function InscricaoPublicaPage() {
       jubilado: !!ministroInfo?.isJubilado,
       isCampoMissionario: !!ministroInfo?.isCampoMissionario,
     });
+
+    if (evento?.departamento === 'AGO' && ministroInfo && ministroAtivo && ministroInfo.isPastorPresidente && ministroInfo.isCampoMissionario) {
+      const config = evento.configuracoes_ago;
+      let valorCm = 0;
+      if (config) {
+        if (config.valor_pastor_presidente_campo_missionario !== undefined && config.valor_pastor_presidente_campo_missionario !== null) {
+          valorCm = typeof config.valor_pastor_presidente_campo_missionario === 'number'
+            ? config.valor_pastor_presidente_campo_missionario
+            : parseFloat(String(config.valor_pastor_presidente_campo_missionario)) || 0;
+        } else if (config.campo_missionario?.valor_pastor_presidente !== undefined && config.campo_missionario?.valor_pastor_presidente !== null) {
+          valorCm = typeof config.campo_missionario.valor_pastor_presidente === 'number'
+            ? config.campo_missionario.valor_pastor_presidente
+            : parseFloat(String(config.campo_missionario.valor_pastor_presidente)) || 0;
+        }
+      }
+      if (valorCm > 0) {
+        if (!filtered.some(t => t.nome === 'CAMPO MISSIONÁRIO')) {
+          filtered.push({
+            id: 'virtual-campo-missionario',
+            nome: 'CAMPO MISSIONÁRIO',
+            valor: valorCm,
+            inclui_alimentacao: true,
+            inclui_hospedagem: true,
+            ordem: 10,
+          });
+        }
+      }
+    }
+    return filtered;
   })();
 
   const ppPorCampoNoLote = (() => {

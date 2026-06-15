@@ -551,7 +551,74 @@ export async function POST(request: NextRequest) {
           : 0;
       }
     }
-    if (tipo_inscricao && usaTipos && !vinculoEsposaJubiladoTitular) {
+    const isRequestedCM = tipo_inscricao && (String(tipo_inscricao).trim().toUpperCase() === 'CAMPO MISSIONÁRIO' || String(tipo_inscricao).trim().toUpperCase() === 'CAMPO MISSIONARIO');
+    if (isRequestedCM && usaTipos && !vinculoEsposaJubiladoTitular) {
+      if (evento.departamento !== 'AGO') {
+        return buildErrorResponse(400, {
+          error: 'Categoria de Campo Missionário só é permitida em eventos do tipo AGO.',
+          stage,
+          code: 'CAMPO_MISSIONARIO_INVALIDO',
+          payloadResumo,
+        });
+      }
+      const { data: membro, error: membErr } = await supabase
+        .from('members')
+        .select('id, name, cpf, status, pastor_presidente, campo_id')
+        .eq('cpf', cpfLimpoInput)
+        .maybeSingle();
+
+      const statusMinistro = String(membro?.status ?? '').toLowerCase();
+      const ministroAtivo = statusMinistro === 'active' || statusMinistro === 'ativo';
+      const isPP = !!membro?.pastor_presidente;
+
+      let isCampoMissionario = false;
+      if (membro?.campo_id) {
+        const { data: campoData } = await supabase
+          .from('campos')
+          .select('is_campo_missionario')
+          .eq('id', membro.campo_id)
+          .maybeSingle();
+        isCampoMissionario = !!campoData?.is_campo_missionario;
+      }
+
+      if (membErr || !membro || !ministroAtivo || !isPP || !isCampoMissionario) {
+        return buildErrorResponse(422, {
+          error: 'Inscrição não permitida para esta modalidade. Requisitos ministeriais de Campo Missionário não atendidos.',
+          stage,
+          code: 'CAMPO_MISSIONARIO_NAO_ELEGIVEL',
+          payloadResumo,
+        });
+      }
+
+      const confAgo = (evento as any).configuracoes_ago;
+      const cmConfig = parseCampoMissionarioConfig(confAgo);
+      let valorCm = 0;
+      if (confAgo) {
+        if (confAgo.valor_pastor_presidente_campo_missionario !== undefined && confAgo.valor_pastor_presidente_campo_missionario !== null) {
+          valorCm = typeof confAgo.valor_pastor_presidente_campo_missionario === 'number'
+            ? confAgo.valor_pastor_presidente_campo_missionario
+            : parseFloat(String(confAgo.valor_pastor_presidente_campo_missionario)) || 0;
+        } else if (cmConfig?.valor_pastor_presidente !== undefined && cmConfig?.valor_pastor_presidente !== null) {
+          valorCm = typeof cmConfig.valor_pastor_presidente === 'number'
+            ? cmConfig.valor_pastor_presidente
+            : parseFloat(String(cmConfig.valor_pastor_presidente)) || 0;
+        }
+      }
+
+      if (valorCm <= 0) {
+        return buildErrorResponse(400, {
+          error: 'Valor de Campo Missionário não configurado para este evento.',
+          stage,
+          code: 'CAMPO_MISSIONARIO_SEM_VALOR',
+          payloadResumo,
+        });
+      }
+
+      valorBase = valorCm;
+      tipoNome = 'CAMPO MISSIONÁRIO';
+      tipoInclui = { alimentacao: true, hospedagem: true };
+      tipoRefeicoes = 12;
+    } else if (tipo_inscricao && usaTipos && !vinculoEsposaJubiladoTitular) {
       const { data: tipo, error: tipoErr } = await supabase
         .from('evento_tipos_inscricao')
         .select('nome, valor, inclui_alimentacao, inclui_hospedagem, quantidade_refeicoes')
@@ -784,7 +851,7 @@ export async function POST(request: NextRequest) {
           && isCampoMissionario
           && campoMissionarioEnabled;
 
-        if (fluxoCampoMissionarioEspecial && valorCmPastorConfigurado > 0) {
+        if (fluxoCampoMissionarioEspecial && valorCmPastorConfigurado > 0 && tipoNome === 'CAMPO MISSIONÁRIO') {
           valorBase = valorCmPastorConfigurado;
           valorFinal = Math.max(0, valorBase - desconto);
         }

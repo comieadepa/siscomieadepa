@@ -214,7 +214,12 @@ export async function POST(
     };
     let incluiAlimentacao = false;
     let quantidadeRefeicoes = 0;
-    if (tipoNome) {
+    const isRequestedCM = tipoNome && (tipoNome.toUpperCase() === 'CAMPO MISSIONÁRIO' || tipoNome.toUpperCase() === 'CAMPO MISSIONARIO');
+    if (isRequestedCM) {
+      tipoNome = 'CAMPO MISSIONÁRIO';
+      incluiAlimentacao = true;
+      quantidadeRefeicoes = 12;
+    } else if (tipoNome) {
       const { data: tipo } = await supabase
         .from('evento_tipos_inscricao')
         .select('nome, valor, inclui_alimentacao, quantidade_refeicoes')
@@ -404,6 +409,13 @@ export async function POST(
       && !!ministroSnapshot?.is_pastor_presidente
       && !!ministroSnapshot?.is_campo_missionario;
 
+    if (tipoNome === 'CAMPO MISSIONÁRIO' && !fluxoCampoMissionarioEspecial) {
+      return NextResponse.json(
+        { error: 'Inscrição não permitida para esta modalidade. Requisitos ministeriais de Campo Missionário não atendidos.' },
+        { status: 422 },
+      );
+    }
+
     if ((evento as any).departamento === 'AGO' && !!ministroSnapshot?.is_pastor_jubilado) {
       const { data: tipoJubilado } = await supabase
         .from('evento_tipos_inscricao')
@@ -477,9 +489,9 @@ export async function POST(
       && !vinculoEsposaJubiladoTitular;
 
     if (fluxoCampoMissionarioEspecial) {
-      if (!(tipoNome && ehTipoPastorPresidente(tipoNome))) {
+      if (!(tipoNome && (ehTipoPastorPresidente(tipoNome) || tipoNome === 'CAMPO MISSIONÁRIO'))) {
         return NextResponse.json(
-          { error: 'Campo Missionário exige categoria Pastor Presidente para o titular.' },
+          { error: 'Campo Missionário exige categoria Pastor Presidente ou Campo Missionário para o titular.' },
           { status: 400 },
         );
       }
@@ -487,7 +499,7 @@ export async function POST(
       const valorCmPastor = cmConfig
         ? (typeof cmConfig.valor_pastor_presidente === 'number' ? cmConfig.valor_pastor_presidente : parseFloat(String(cmConfig.valor_pastor_presidente)) || 0)
         : 0;
-      if (valorCmPastor > 0) {
+      if (valorCmPastor > 0 && tipoNome === 'CAMPO MISSIONÁRIO') {
         vOriginal = valorCmPastor;
         vFinal = Math.max(0, vOriginal - vDesconto);
       }

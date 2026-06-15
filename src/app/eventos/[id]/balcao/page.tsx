@@ -239,25 +239,37 @@ export default function BalcaoPage() {
   const [cupomDesconto, setCupomDesconto] = useState(0);
   const [cupomMsg,      setCupomMsg]      = useState('');
 
+  // Inclui serviços do tipo selecionado
+  const tipoSel = useMemo(() => {
+    if (form.tipo_id === 'virtual-campo-missionario') {
+      const config = evento?.configuracoes_ago;
+      let valorCm = 0;
+      if (config) {
+        if (config.valor_pastor_presidente_campo_missionario !== undefined && config.valor_pastor_presidente_campo_missionario !== null) {
+          valorCm = typeof config.valor_pastor_presidente_campo_missionario === 'number'
+            ? config.valor_pastor_presidente_campo_missionario
+            : parseFloat(String(config.valor_pastor_presidente_campo_missionario)) || 0;
+        } else if (config.campo_missionario?.valor_pastor_presidente !== undefined && config.campo_missionario?.valor_pastor_presidente !== null) {
+          valorCm = typeof config.campo_missionario.valor_pastor_presidente === 'number'
+            ? config.campo_missionario.valor_pastor_presidente
+            : parseFloat(String(config.campo_missionario.valor_pastor_presidente)) || 0;
+        }
+      }
+      return {
+        id: 'virtual-campo-missionario',
+        nome: 'CAMPO MISSIONÁRIO',
+        valor: valorCm,
+        inclui_alimentacao: true,
+        inclui_hospedagem: true,
+      };
+    }
+    return tipos.find(t => t.id === form.tipo_id) ?? null;
+  }, [form.tipo_id, tipos, evento]);
+
   // ── Estado de valores ─────────────────────────────────────
   const valorBase = useMemo(() => {
-    if (form.tipo_id && tipos.length > 0) {
-      const t = tipos.find(t => t.id === form.tipo_id);
-      if (t) {
-        const isPP = /pastor\s*presidente/i.test(t.nome) && !/esposa/i.test(t.nome);
-        if (descontoCampoMissionario && isPP && evento?.configuracoes_ago) {
-          const cmConfig = parseCampoMissionarioConfig(evento.configuracoes_ago);
-          const valorM = cmConfig
-            ? (typeof cmConfig.valor_pastor_presidente === 'number' ? cmConfig.valor_pastor_presidente : parseFloat(String(cmConfig.valor_pastor_presidente)) || 0)
-            : parseFloat(String(evento.configuracoes_ago.valor_pastor_presidente_campo_missionario ?? '0')) || 0;
-          if (valorM > 0) return valorM;
-        }
-        return t.valor;
-      }
-      return evento?.valor_inscricao ?? 0;
-    }
-    return evento?.valor_inscricao ?? 0;
-  }, [form.tipo_id, tipos, evento, descontoCampoMissionario]);
+    return tipoSel?.valor ?? (evento?.valor_inscricao ?? 0);
+  }, [tipoSel, evento]);
 
   const valorFinal = Math.max(0, valorBase - cupomDesconto);
   // Valor da esposa (Campo Missionário)
@@ -267,12 +279,6 @@ export default function BalcaoPage() {
     if (!cmConfig) return 0;
     return typeof cmConfig.valor_esposa === 'number' ? cmConfig.valor_esposa : parseFloat(String(cmConfig.valor_esposa)) || 0;
   }, [evento]);
-
-  // Inclui serviços do tipo selecionado
-  const tipoSel = useMemo(
-    () => tipos.find(t => t.id === form.tipo_id) ?? null,
-    [form.tipo_id, tipos]
-  );
 
   // ── Perfil ministerial AGO + filtragem de categorias ─────
   const tipoJubiladoAutomatico = useMemo(() => findTipoPastorJubilado(tipos), [tipos]);
@@ -320,6 +326,33 @@ export default function BalcaoPage() {
       jubilado: !!ministroInfo?.isJubilado,
       isCampoMissionario: !!ministroInfo?.isCampoMissionario,
     });
+
+    if (evento?.departamento === 'AGO' && ministroInfo && ativo && ministroInfo.isPastorPresidente && ministroInfo.isCampoMissionario) {
+      const config = evento.configuracoes_ago;
+      let valorCm = 0;
+      if (config) {
+        if (config.valor_pastor_presidente_campo_missionario !== undefined && config.valor_pastor_presidente_campo_missionario !== null) {
+          valorCm = typeof config.valor_pastor_presidente_campo_missionario === 'number'
+            ? config.valor_pastor_presidente_campo_missionario
+            : parseFloat(String(config.valor_pastor_presidente_campo_missionario)) || 0;
+        } else if (config.campo_missionario?.valor_pastor_presidente !== undefined && config.campo_missionario?.valor_pastor_presidente !== null) {
+          valorCm = typeof config.campo_missionario.valor_pastor_presidente === 'number'
+            ? config.campo_missionario.valor_pastor_presidente
+            : parseFloat(String(config.campo_missionario.valor_pastor_presidente)) || 0;
+        }
+      }
+      if (valorCm > 0) {
+        if (!filtered.some(t => t.nome === 'CAMPO MISSIONÁRIO')) {
+          filtered.push({
+            id: 'virtual-campo-missionario',
+            nome: 'CAMPO MISSIONÁRIO',
+            valor: valorCm,
+            inclui_alimentacao: true,
+            inclui_hospedagem: true,
+          });
+        }
+      }
+    }
 
     // Ministro ativo mas sem nenhum tipo ministerial compatível → perfil indefinido
     const semPerfil = ativo && filtered.length === 0;
