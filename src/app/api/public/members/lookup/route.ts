@@ -122,14 +122,30 @@ export async function GET(request: NextRequest) {
       supervisaoNomeConjuge = (supervisaoRow as { nome?: string | null } | null)?.nome?.trim() || null;
     }
 
+    let campoIdConjuge = campoIdViaFkConjuge;
     let campoNomeConjuge: string | null = campoNomeViaCfConjuge;
-    if (campoIdViaFkConjuge) {
+    let isCampoMissionarioConjuge = false;
+    if (campoIdConjuge) {
       const { data: campoRow } = await supabase
         .from('campos')
-        .select('nome')
-        .eq('id', campoIdViaFkConjuge)
+        .select('nome, is_campo_missionario')
+        .eq('id', campoIdConjuge)
         .maybeSingle();
-      campoNomeConjuge = (campoRow as { nome?: string | null } | null)?.nome?.trim() || campoNomeViaCfConjuge;
+      if (campoRow) {
+        campoNomeConjuge = campoRow.nome?.trim() || campoNomeViaCfConjuge;
+        isCampoMissionarioConjuge = !!campoRow.is_campo_missionario;
+      }
+    } else if (campoNomeViaCfConjuge) {
+      const { data: campoRow } = await supabase
+        .from('campos')
+        .select('id, nome, is_campo_missionario')
+        .ilike('nome', campoNomeViaCfConjuge.trim())
+        .maybeSingle();
+      if (campoRow) {
+        campoIdConjuge = campoRow.id;
+        campoNomeConjuge = campoRow.nome?.trim() || campoNomeViaCfConjuge;
+        isCampoMissionarioConjuge = !!campoRow.is_campo_missionario;
+      }
     }
 
     return NextResponse.json({
@@ -141,8 +157,9 @@ export async function GET(request: NextRequest) {
       data_nascimento: conjugeRow.data_nascimento_conjuge || null,
       supervisao_id: conjugeRow.supervisao_id || null,
       supervisao_nome: supervisaoNomeConjuge || supervisaoNomeViaCfConjuge,
-      campo_id: campoIdViaFkConjuge,
+      campo_id: campoIdConjuge,
       campo_nome: campoNomeConjuge,
+      is_campo_missionario: isCampoMissionarioConjuge,
       congregacao_id: conjugeRow.congregacao_id || null,
       congregacao_nome: conjugeRow.congregacoes?.nome?.trim() || readCustomField(conjugeRow.custom_fields, ['congregacao']),
       conjuge_de_ministro_id: conjugeRow.id || null,
@@ -207,14 +224,30 @@ export async function GET(request: NextRequest) {
     supervisaoNome = (supervisaoRow as { nome?: string | null } | null)?.nome?.trim() || null;
   }
 
+  let campoId = campoIdViaFk;
   let campoNome: string | null = campoNomeViaCf;
-  if (campoIdViaFk) {
+  let isCampoMissionario = false;
+  if (campoId) {
     const { data: campoRow } = await supabase
       .from('campos')
-      .select('nome')
-      .eq('id', campoIdViaFk)
+      .select('nome, is_campo_missionario')
+      .eq('id', campoId)
       .maybeSingle();
-    campoNome = (campoRow as { nome?: string | null } | null)?.nome?.trim() || campoNomeViaCf;
+    if (campoRow) {
+      campoNome = campoRow.nome?.trim() || campoNomeViaCf;
+      isCampoMissionario = !!campoRow.is_campo_missionario;
+    }
+  } else if (campoNomeViaCf) {
+    const { data: campoRow } = await supabase
+      .from('campos')
+      .select('id, nome, is_campo_missionario')
+      .ilike('nome', campoNomeViaCf.trim())
+      .maybeSingle();
+    if (campoRow) {
+      campoId = campoRow.id;
+      campoNome = campoRow.nome?.trim() || campoNomeViaCf;
+      isCampoMissionario = !!campoRow.is_campo_missionario;
+    }
   }
 
   return NextResponse.json({
@@ -231,8 +264,9 @@ export async function GET(request: NextRequest) {
     data_nascimento: row.data_nascimento || null,
     supervisao_id: row.supervisao_id || null,
     supervisao_nome: supervisaoNome || supervisaoNomeViaCf,
-    campo_id: campoIdViaFk,
+    campo_id: campoId,
     campo_nome: campoNome,
+    is_campo_missionario: isCampoMissionario,
     congregacao_id: row.congregacao_id || null,
     congregacao_nome: row.congregacoes?.nome?.trim() || readCustomField(row.custom_fields, ['congregacao']),
     ...(includeMatricula ? { matricula: row.matricula || null } : {}),

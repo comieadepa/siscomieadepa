@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
   try {
     const [supervisoes, campos, congregacoes] = await Promise.all([
       getAllRows(supabase, 'supervisoes', 'id,nome', true),
-      getAllRows(supabase, 'campos', 'id,nome,supervisao_id', true),
+      getAllRows(supabase, 'campos', 'id,nome,supervisao_id,is_campo_missionario', true),
       includeCongregacoes
         ? getAllRows(supabase, 'congregacoes', 'id,nome,campo_id', true)
         : Promise.resolve([]),

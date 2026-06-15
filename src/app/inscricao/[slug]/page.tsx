@@ -75,6 +75,7 @@ interface MemberLookupPayload {
   pastor_auxiliar?: boolean;
   jubilado?: boolean;
   status?: string | null;
+  is_campo_missionario?: boolean;
   nome_conjuge?: string | null;
   cpf_conjuge?: string | null;
   data_nascimento_conjuge?: string | null;
@@ -499,7 +500,7 @@ export default function InscricaoPublicaPage() {
 
       const confAgo = evento.configuracoes_ago;
       const descontoHabilitado = !!(confAgo?.habilitar_desconto_campo_missionario);
-      const campoMissionario = campoSelecionado?.is_campo_missionario ?? false;
+      const campoMissionario = payload.is_campo_missionario ?? campoSelecionado?.is_campo_missionario ?? false;
 
       if (conjugeJubiladoAuto) {
         setEsposaJubiladoAuto({

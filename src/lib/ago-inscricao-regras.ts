@@ -14,6 +14,7 @@ export type FiltroTiposAgoOptions = {
   pastorPresidente?: boolean;
   pastorAuxiliar?: boolean;
   jubilado?: boolean;
+  isCampoMissionario?: boolean;
 };
 
 export function normalizarTipoNome(v: string | null | undefined): string {
@@ -98,6 +99,7 @@ export function filtrarTiposAgo<T extends TipoComNome>(tipos: T[], options: Filt
     pastorPresidente,
     pastorAuxiliar,
     jubilado,
+    isCampoMissionario,
   } = options;
 
   const idade = calcularIdade(dataNascimento);
@@ -109,8 +111,19 @@ export function filtrarTiposAgo<T extends TipoComNome>(tipos: T[], options: Filt
     cpfFoiLocalizado && ministerioAtivo && sexoNorm === 'M' && !pastorPresidente && !jubilado
   );
 
+  const elegivelCampoMissionario = !!pastorPresidente && !!isCampoMissionario && ministerioAtivo;
+
   return tipos
-    .filter((t) => !/campo\s*mission/i.test(t.nome))
+    .filter((t) => {
+      const isCMType = /campo\s*mission/i.test(t.nome);
+      if (elegivelCampoMissionario) {
+        if (ehTipoPastorPresidente(t.nome) && !isCMType) return false;
+        return true;
+      } else {
+        if (isCMType) return false;
+        return true;
+      }
+    })
     .filter((t) => {
       if (somentePastorPresidente) return ehTipoPastorPresidente(t.nome);
       return true;

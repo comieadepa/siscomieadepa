@@ -752,7 +752,7 @@ export async function POST(request: NextRequest) {
     if (cpfLimpo && evento.departamento === 'AGO') {
       const { data: membro } = await supabase
         .from('members')
-        .select('id, name, cpf, matricula, data_nascimento, status, cargo_ministerial, pastor_presidente, pastor_auxiliar, jubilado')
+        .select('id, name, cpf, matricula, data_nascimento, status, cargo_ministerial, pastor_presidente, pastor_auxiliar, jubilado, campo_id, supervisao_id')
         .eq('cpf', cpfLimpo)
         .maybeSingle();
       if (membro) {

@@ -318,6 +318,7 @@ export default function BalcaoPage() {
       pastorPresidente: !!ministroInfo?.isPastorPresidente,
       pastorAuxiliar: !!ministroInfo?.isPastorAuxiliar,
       jubilado: !!ministroInfo?.isJubilado,
+      isCampoMissionario: !!ministroInfo?.isCampoMissionario,
     });
 
     // Ministro ativo mas sem nenhum tipo ministerial compatível → perfil indefinido
@@ -561,6 +562,7 @@ export default function BalcaoPage() {
         pastor_auxiliar?: boolean;
         jubilado?: boolean;
         status?: string | null;
+        is_campo_missionario?: boolean;
         nome_conjuge?: string | null;
         cpf_conjuge?: string | null;
         data_nascimento_conjuge?: string | null;
@@ -593,7 +595,7 @@ export default function BalcaoPage() {
                 : undefined);
         }
 
-        const campoMissionario = campoEncontrado?.is_campo_missionario ?? false;
+        const campoMissionario = payload.is_campo_missionario ?? campoEncontrado?.is_campo_missionario ?? false;
         const confAgo = evento.configuracoes_ago;
         setDescontoCampoMissionario(!!(confAgo?.habilitar_desconto_campo_missionario) && campoMissionario);
 
