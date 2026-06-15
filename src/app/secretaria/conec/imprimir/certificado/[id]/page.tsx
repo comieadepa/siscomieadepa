@@ -266,6 +266,7 @@ function CertificadoContent() {
           .print-container {
             width: 1123px !important;
             height: 794px !important;
+            background-size: 100% 100% !important;
             border: 0 !important;
             box-shadow: none !important;
             border-radius: 0 !important;

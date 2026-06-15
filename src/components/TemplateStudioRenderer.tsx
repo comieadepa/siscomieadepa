@@ -60,11 +60,12 @@ export default function TemplateStudioRenderer({
 
   return (
     <div
-      className="print-container relative select-none overflow-hidden bg-cover bg-no-repeat bg-center"
+      className="print-container relative select-none overflow-hidden bg-no-repeat bg-center"
       style={{
         width: `${template.largura}px`,
         height: `${template.altura}px`,
         backgroundImage: template.background_url ? `url('${template.background_url}')` : 'none',
+        backgroundSize: '100% 100%',
       }}
     >
       {elementos.map((el) => {
