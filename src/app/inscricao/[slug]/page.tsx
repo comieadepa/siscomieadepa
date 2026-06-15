@@ -1119,7 +1119,7 @@ export default function InscricaoPublicaPage() {
   const erroNomeTitular = erroForm === 'Nome completo é obrigatório.';
   const erroCpfTitular = erroForm === 'CPF é obrigatório.';
   const erroSupervisaoTitular = erroForm === 'Selecione a supervisão.';
-  const erroTipoTitular = erroForm === 'Selecione a categoria de inscrição.' || erroForm === 'Selecione a modalidade de inscrição.';
+  const erroTipoTitular = erroForm === 'Selecione o tipo de inscrição.' || erroForm === 'Selecione a modalidade de inscrição.';
   const erroNomeExtra = (idx: number) => erroForm === `Nome do participante ${idx + 2} é obrigatório.`;
   const erroSupervisaoExtra = (idx: number) => erroForm === `Supervisão do participante ${idx + 2} é obrigatória.`;
   const erroTipoExtra = (idx: number) => erroForm === `Tipo de inscrição do participante ${idx + 2} é obrigatório.`;
@@ -1193,7 +1193,7 @@ export default function InscricaoPublicaPage() {
     }
 
     if (evento.usar_tipos_inscricao && !tipoSelecionado)
-      return setErroForm(evento.departamento === 'AGO' ? 'Selecione a categoria de inscrição.' : 'Selecione a modalidade de inscrição.');
+      return setErroForm(evento.departamento === 'AGO' ? 'Selecione o tipo de inscrição.' : 'Selecione a modalidade de inscrição.');
     if (ministroSemPerfil)
       return setErroForm('Ministro localizado, mas o perfil ministerial não está definido para esta AGO. Verifique o cargo/cadastro do ministro e selecione uma categoria autorizada.');
 
@@ -1902,7 +1902,7 @@ export default function InscricaoPublicaPage() {
                   {/* Lista de categorias filtradas */}
                   {tiposParaExibir.length > 0 && (
                     <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                      <p className="text-sm font-semibold text-[#123b63] mb-3">🏛️ Categoria de Inscrição</p>
+                      <p className="text-sm font-semibold text-[#123b63] mb-3">🏛️ Tipo de Inscrição</p>
                       <div className="space-y-2">
                         {tiposParaExibir.map(t => (
                           <label key={t.id} className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${tipoSelecionado?.id === t.id ? 'border-[#123b63] bg-white' : 'border-gray-200 bg-white hover:border-[#123b63]/50'}`}>
