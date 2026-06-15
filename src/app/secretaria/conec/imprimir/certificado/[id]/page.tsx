@@ -100,7 +100,9 @@ function CertificadoContent() {
           .eq('modulo', 'conec')
           .eq('tipo_documento', 'certificado_credenciamento')
           .eq('ativo', true)
+          .is('deleted_at', null)
           .order('versao', { ascending: false })
+          .order('updated_at', { ascending: false })
           .limit(1)
           .maybeSingle();
 
@@ -179,11 +181,14 @@ function CertificadoContent() {
 
   // Dados dinâmicos mapeados para os placeholders do template
   const dados = {
+    instituicao_nome: instituicao.nome_instituicao,
     nome_instituicao: instituicao.nome_instituicao,
     cnpj: formatCnpj(instituicao.cnpj),
     numero_registro: credenciamento.numero_registro,
     data_credenciamento: dataEmissaoFormatada,
     validade: dataFimFormatada,
+    ano_referencia: credenciamento.ano_referencia,
+    qr_code_validacao: token ? `${typeof window !== 'undefined' ? window.location.origin : ''}/validar/${token}` : '',
   };
 
   return (
