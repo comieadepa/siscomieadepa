@@ -890,6 +890,7 @@ export default function InscricaoPublicaPage() {
       pastorPresidente: !!ministroInfo?.isPastorPresidente,
       pastorAuxiliar: !!ministroInfo?.isPastorAuxiliar,
       jubilado: !!ministroInfo?.isJubilado,
+      isCampoMissionario: !!ministroInfo?.isCampoMissionario,
     });
   })();
 
