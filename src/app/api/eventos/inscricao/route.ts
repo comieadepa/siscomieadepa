@@ -891,7 +891,8 @@ export async function POST(request: NextRequest) {
       quantidade_refeicoes: tipoRefeicoes,
     });
 
-    if (fluxoCampoMissionarioEspecial && tipoNome && !ehTipoPastorPresidente(tipoNome)) {
+    const isTipoCM = tipoNome && (tipoNome.trim().toUpperCase() === 'CAMPO MISSIONÁRIO' || tipoNome.trim().toUpperCase() === 'CAMPO MISSIONARIO');
+    if (fluxoCampoMissionarioEspecial && tipoNome && !ehTipoPastorPresidente(tipoNome) && !isTipoCM) {
       return buildErrorResponse(400, {
         error: 'Campo Missionário exige categoria Pastor Presidente para o titular.',
         stage: 'validacao_campo_missionario_tipo_titular',
