@@ -19,15 +19,15 @@ import {
 const CERTIFICADO_CANVAS = { largura: 840, altura: 595 };
 
 const ELEMENTOS_TIPOS = [
-  { tipo: 'texto',      label: 'Texto',      icone: 'T' },
-  { tipo: 'logo',       label: 'Logo',       icone: 'L' },
-  { tipo: 'imagem',     label: 'Imagem',     icone: 'IMG' },
-  { tipo: 'chapa',      label: 'Chapa',      icone: 'CH' },
-  { tipo: 'qrcode',     label: 'QR Code',    icone: '▣' },
-  { tipo: 'linha',      label: 'Linha',      icone: '━' },
-  { tipo: 'retangulo',  label: 'Retângulo',  icone: '█' },
-  { tipo: 'assinatura', label: 'Assinatura', icone: '✍' },
-  { tipo: 'data_auto',  label: 'Data Auto',  icone: '📅' },
+  { tipo: 'texto',          label: 'Texto',          icone: 'T' },
+  { tipo: 'logo',           label: 'Logo',           icone: 'L' },
+  { tipo: 'imagem',         label: 'Imagem',         icone: 'IMG' },
+  { tipo: 'chapa',          label: 'Chapa',          icone: 'CH' },
+  { tipo: 'qr_credencial',  label: 'QR Credencial',  icone: '▣' },
+  { tipo: 'qr_conec',       label: 'QR CONEC',       icone: '▣' },
+  { tipo: 'linha',          label: 'Linha',          icone: '━' },
+  { tipo: 'retangulo',      label: 'Retângulo',      icone: '█' },
+  { tipo: 'data_auto',      label: 'Data Auto',      icone: '📅' },
 ];
 
 interface CertificadoElemento {
@@ -254,19 +254,26 @@ export default function ConfiguracoesCertificadosPage() {
         transparencia: 1,
         visivel: true
       };
-    } else if (tipo === 'assinatura') {
+    } else if (tipo === 'qr_credencial') {
       base = {
         id: gId(),
-        tipo: 'texto',
+        tipo: 'qrcode',
         x: 40,
         y: 40,
-        largura: 250,
-        altura: 40,
-        fontSize: 14,
-        cor: '#111827',
-        fonte: 'Arial',
-        alinhamento: 'center',
-        texto: '{presidente_nome}',
+        largura: 100,
+        altura: 100,
+        texto: 'qr_credencial',
+        visivel: true
+      };
+    } else if (tipo === 'qr_conec') {
+      base = {
+        id: gId(),
+        tipo: 'qrcode',
+        x: 40,
+        y: 40,
+        largura: 100,
+        altura: 100,
+        texto: 'qr_conec',
         visivel: true
       };
     } else if (tipo === 'data_auto') {
@@ -640,27 +647,13 @@ export default function ConfiguracoesCertificadosPage() {
                       <label className="text-xs font-semibold text-gray-600">Tipo de QRCode</label>
                       <select
                         className="mt-1 w-full border rounded px-2 py-1 text-xs"
-                        value={elementoSelecionado.texto || 'validacao_conec'}
+                        value={elementoSelecionado.texto || ''}
                         onChange={(e) => updateEl(elementoSelecionado.id, { texto: e.target.value })}
                       >
-                        <option value="validacao_conec">Validação CONEC</option>
-                        <option value="certificado">Certificado</option>
-                        <option value="evento">Evento</option>
-                        <option value="checkin">Check-in</option>
-                        <option value="custom">URL Personalizada</option>
+                        <option value="qr_credencial">Credencial Digital</option>
+                        <option value="qr_conec">CONEC Credenciamento</option>
+                        <option value="">Legado</option>
                       </select>
-                      {elementoSelecionado.texto === 'custom' && (
-                        <div className="mt-2">
-                          <label className="text-xs font-semibold text-gray-500">URL / Conteúdo</label>
-                          <input
-                            type="text"
-                            placeholder="https://exemplo.com"
-                            className="mt-1 w-full border rounded px-2 py-1 text-xs"
-                            value={elementoSelecionado.imagemUrl || ''}
-                            onChange={(e) => updateEl(elementoSelecionado.id, { imagemUrl: e.target.value })}
-                          />
-                        </div>
-                      )}
                     </div>
                   )}
 
