@@ -687,11 +687,11 @@ export default function InscricaoPublicaPage() {
       }
       if (field === 'tipo_inscricao') {
         const selectedType = value ? tipos.find(t => t.nome === String(value)) : null;
-        const autoHospedagem = selectedType ? !!selectedType.inclui_hospedagem : false;
+        const checkboxInvisivel = !!(selectedType?.inclui_hospedagem && evento?.departamento !== 'AGO');
         return {
           ...x,
           tipo_inscricao: String(value || ''),
-          hospedagem: autoHospedagem ? true : x.hospedagem
+          hospedagem: checkboxInvisivel
         };
       }
       return { ...x, [field]: value };
@@ -1100,13 +1100,12 @@ export default function InscricaoPublicaPage() {
 
   useEffect(() => {
     if (tipoSelecionado) {
-      if (tipoSelecionado.inclui_hospedagem) {
-        setSolicitaHospedagem(true);
-      } else {
-        setSolicitaHospedagem(false);
-      }
+      const checkboxInvisivel = !!(tipoSelecionado.inclui_hospedagem && evento?.departamento !== 'AGO');
+      setSolicitaHospedagem(checkboxInvisivel);
+    } else {
+      setSolicitaHospedagem(false);
     }
-  }, [tipoSelecionado]);
+  }, [tipoSelecionado, evento?.departamento]);
 
   const erroNomeTitular = erroForm === 'Nome completo é obrigatório.';
   const erroCpfTitular = erroForm === 'CPF é obrigatório.';
