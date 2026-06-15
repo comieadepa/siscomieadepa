@@ -893,33 +893,6 @@ export default function InscricaoPublicaPage() {
       isCampoMissionario: !!ministroInfo?.isCampoMissionario,
     });
 
-    if (evento?.departamento === 'AGO' && ministroInfo && ministroAtivo && ministroInfo.isPastorPresidente && ministroInfo.isCampoMissionario) {
-      const config = evento.configuracoes_ago;
-      let valorCm = 0;
-      if (config) {
-        if (config.valor_pastor_presidente_campo_missionario !== undefined && config.valor_pastor_presidente_campo_missionario !== null) {
-          valorCm = typeof config.valor_pastor_presidente_campo_missionario === 'number'
-            ? config.valor_pastor_presidente_campo_missionario
-            : parseFloat(String(config.valor_pastor_presidente_campo_missionario)) || 0;
-        } else if (config.campo_missionario?.valor_pastor_presidente !== undefined && config.campo_missionario?.valor_pastor_presidente !== null) {
-          valorCm = typeof config.campo_missionario.valor_pastor_presidente === 'number'
-            ? config.campo_missionario.valor_pastor_presidente
-            : parseFloat(String(config.campo_missionario.valor_pastor_presidente)) || 0;
-        }
-      }
-      if (valorCm > 0) {
-        if (!filtered.some(t => t.nome === 'CAMPO MISSIONÁRIO')) {
-          filtered.push({
-            id: 'virtual-campo-missionario',
-            nome: 'CAMPO MISSIONÁRIO',
-            valor: valorCm,
-            inclui_alimentacao: true,
-            inclui_hospedagem: true,
-            ordem: 10,
-          });
-        }
-      }
-    }
     return filtered;
   })();
 

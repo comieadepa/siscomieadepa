@@ -99,6 +99,7 @@ export function filtrarTiposAgo<T extends TipoComNome>(tipos: T[], options: Filt
     pastorPresidente,
     pastorAuxiliar,
     jubilado,
+    isCampoMissionario,
   } = options;
 
   const idade = calcularIdade(dataNascimento);
@@ -110,11 +111,17 @@ export function filtrarTiposAgo<T extends TipoComNome>(tipos: T[], options: Filt
     cpfFoiLocalizado && ministerioAtivo && sexoNorm === 'M' && !pastorPresidente && !jubilado
   );
 
+  const ehElegivelCM = !!cpfFoiLocalizado && !!ministerioAtivo && !!pastorPresidente && !!isCampoMissionario;
 
   return tipos
     .filter((t) => {
       const isCMType = /campo\s*mission/i.test(t.nome);
-      if (isCMType) return false;
+      if (isCMType) {
+        return ehElegivelCM;
+      }
+      if (ehElegivelCM) {
+        return ehTipoPastorPresidente(t.nome);
+      }
       return true;
     })
     .filter((t) => {

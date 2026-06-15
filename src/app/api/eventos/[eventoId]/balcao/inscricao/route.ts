@@ -214,12 +214,7 @@ export async function POST(
     };
     let incluiAlimentacao = false;
     let quantidadeRefeicoes = 0;
-    const isRequestedCM = tipoNome && (tipoNome.toUpperCase() === 'CAMPO MISSIONÁRIO' || tipoNome.toUpperCase() === 'CAMPO MISSIONARIO');
-    if (isRequestedCM) {
-      tipoNome = 'CAMPO MISSIONÁRIO';
-      incluiAlimentacao = true;
-      quantidadeRefeicoes = 12;
-    } else if (tipoNome) {
+    if (tipoNome) {
       const { data: tipo } = await supabase
         .from('evento_tipos_inscricao')
         .select('nome, valor, inclui_alimentacao, quantidade_refeicoes')
