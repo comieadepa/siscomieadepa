@@ -19,15 +19,16 @@ import {
 const CERTIFICADO_CANVAS = { largura: 840, altura: 595 };
 
 const ELEMENTOS_TIPOS = [
-  { tipo: 'texto',          label: 'Texto',          icone: 'T' },
-  { tipo: 'logo',           label: 'Logo',           icone: 'L' },
-  { tipo: 'imagem',         label: 'Imagem',         icone: 'IMG' },
-  { tipo: 'chapa',          label: 'Chapa',          icone: 'CH' },
-  { tipo: 'qr_credencial',  label: 'QR Credencial',  icone: '▣' },
+  { tipo: 'texto',          label: 'Texto',          icone: '📝' },
+  { tipo: 'logo',           label: 'Logo',           icone: '🏛️' },
+  { tipo: 'imagem',         label: 'Imagem',         icone: '🖼️' },
+  { tipo: 'chapa',          label: 'Chapa',          icone: '🟥' },
+  { tipo: 'qr_credencial',  label: 'QR Credencial',  icone: '🪪' },
   { tipo: 'qr_conec',       label: 'QR CONEC',       icone: '▣' },
   { tipo: 'linha',          label: 'Linha',          icone: '━' },
   { tipo: 'retangulo',      label: 'Retângulo',      icone: '█' },
   { tipo: 'data_auto',      label: 'Data Auto',      icone: '📅' },
+  { tipo: 'icones',         label: 'Ícones',         icone: '⭐' },
 ];
 
 interface CertificadoElemento {
@@ -291,6 +292,21 @@ export default function ConfiguracoesCertificadosPage() {
         texto: '{data_atual}',
         visivel: true
       };
+    } else if (tipo === 'icones') {
+      base = {
+        id: gId(),
+        tipo: 'texto',
+        x: 40,
+        y: 40,
+        largura: 60,
+        altura: 60,
+        fontSize: 32,
+        cor: '#fbbf24',
+        fonte: 'Arial',
+        alinhamento: 'center',
+        texto: '⭐',
+        visivel: true
+      };
     } else {
       base = {
         id: gId(),
@@ -533,17 +549,24 @@ export default function ConfiguracoesCertificadosPage() {
             <div>
               <h3 className="text-sm font-bold text-gray-800 mb-2">Adicionar Elemento</h3>
               <div className="grid grid-cols-2 gap-2">
-                {ELEMENTOS_TIPOS.map((el) => (
-                  <button
-                    key={el.tipo}
-                    onClick={() => handleAddEl(el.tipo as CertificadoElemento['tipo'])}
-                    disabled={!templateEmEdicao}
-                    className="flex flex-col items-center gap-1 p-3 border rounded-lg hover:border-blue-400 hover:bg-blue-50 transition disabled:opacity-40 text-gray-700"
-                  >
-                    <span className="text-base font-bold">{el.icone}</span>
-                    <span className="text-xs">{el.label}</span>
-                  </button>
-                ))}
+                {ELEMENTOS_TIPOS.map((el) => {
+                  const isSelected = elementoSelecionado?.tipo === el.tipo || (el.tipo === 'qr_credencial' && elementoSelecionado?.texto === 'qr_credencial') || (el.tipo === 'qr_conec' && elementoSelecionado?.texto === 'qr_conec');
+                  return (
+                    <button
+                      key={el.tipo}
+                      onClick={() => handleAddEl(el.tipo as any)}
+                      disabled={!templateEmEdicao}
+                      className={`flex flex-col items-center justify-center gap-1.5 p-2.5 h-20 border rounded-xl transition disabled:opacity-40 text-gray-700 shadow-sm ${
+                        isSelected
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-gray-200 hover:border-blue-400 hover:bg-blue-50/50'
+                      }`}
+                    >
+                      <span className="text-2xl leading-none">{el.icone}</span>
+                      <span className="text-[11px] font-medium leading-tight text-center">{el.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
