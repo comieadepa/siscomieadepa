@@ -749,13 +749,29 @@ export default function InscricaoPublicaPage() {
     && ['active', 'ativo'].includes((ministroInfo?.status ?? '').toLowerCase())
     && !!ministroInfo?.isPastorPresidente
     && !!ministroInfo?.isCampoMissionario;
-  const valorEspecialMissionario = descontoCampoMissionario && isPastorPresidenteTipo
-    ? (configCM ? (typeof configCM.valor_pastor_presidente === 'number' ? configCM.valor_pastor_presidente : parseFloat(String(configCM.valor_pastor_presidente)) || 0)
-        : parseFloat(String(evento?.configuracoes_ago?.valor_pastor_presidente_campo_missionario ?? '0')) || 0)
-    : 0;
-  const valorBase  = (descontoCampoMissionario && isPastorPresidenteTipo && valorEspecialMissionario > 0)
-    ? valorEspecialMissionario
-    : (tipoSelecionado?.valor ?? (evento?.valor_inscricao ?? 0));
+
+  function getValorExibicaoTipo(tipo: TipoInscricao | null | undefined): number {
+    if (!tipo) return 0;
+    const isNomePP = tipo.nome.trim().toLowerCase() === 'pastor presidente' || tipo.nome.trim().toUpperCase() === 'PASTOR PRESIDENTE';
+    const isMinistroPP = !!ministroInfo?.isPastorPresidente;
+    const isCampoMissionario = !!ministroInfo?.isCampoMissionario;
+    if (isNomePP && isMinistroPP && isCampoMissionario && evento?.configuracoes_ago) {
+      const config = evento.configuracoes_ago;
+      if (config.valor_pastor_presidente_campo_missionario !== undefined && config.valor_pastor_presidente_campo_missionario !== null) {
+        return typeof config.valor_pastor_presidente_campo_missionario === 'number'
+          ? config.valor_pastor_presidente_campo_missionario
+          : parseFloat(String(config.valor_pastor_presidente_campo_missionario)) || 0;
+      }
+      if (config.campo_missionario?.valor_pastor_presidente !== undefined && config.campo_missionario?.valor_pastor_presidente !== null) {
+        return typeof config.campo_missionario.valor_pastor_presidente === 'number'
+          ? config.campo_missionario.valor_pastor_presidente
+          : parseFloat(String(config.campo_missionario.valor_pastor_presidente)) || 0;
+      }
+    }
+    return tipo.valor;
+  }
+
+  const valorBase  = tipoSelecionado ? getValorExibicaoTipo(tipoSelecionado) : (evento?.valor_inscricao ?? 0);
   const valorFinal = Math.max(0, valorBase - cupomDesconto);
   // Valor da esposa (AGO Campo Missionário)
   const valorEsposaBase = configCM
@@ -1901,10 +1917,7 @@ export default function InscricaoPublicaPage() {
                             </div>
                             <span className="text-sm font-bold text-[#123b63] sm:whitespace-nowrap">
                               {(() => {
-                                const isPPT = /pastor\s*presidente/i.test(t.nome) && !/esposa|viuva/i.test(t.nome);
-                                const vExib = (descontoCampoMissionario && isPPT && valorEspecialMissionario > 0)
-                                  ? valorEspecialMissionario
-                                  : t.valor;
+                                const vExib = getValorExibicaoTipo(t);
                                 return vExib === 0 ? (t.cortesia ? 'Gratuito (Cortesia)' : 'Gratuito') : fmtMoeda(vExib);
                               })()}
                             </span>
@@ -1941,7 +1954,7 @@ export default function InscricaoPublicaPage() {
                             </div>
                           </div>
                           <span className="text-sm font-bold text-[#123b63] sm:whitespace-nowrap">
-                            {t.valor === 0 ? (t.cortesia ? 'Gratuito (Cortesia)' : 'Gratuito') : fmtMoeda(t.valor)}
+                            {getValorExibicaoTipo(t) === 0 ? (t.cortesia ? 'Gratuito (Cortesia)' : 'Gratuito') : fmtMoeda(getValorExibicaoTipo(t))}
                           </span>
                         </label>
                       ))}
@@ -2427,7 +2440,7 @@ export default function InscricaoPublicaPage() {
                           <option value="">{String(p.sexo || '').trim() ? 'Selecione o tipo...' : 'Aguardando dados!'}</option>
                           {tiposDisponiveisParticipanteLote(idx).map(t => (
                             <option key={`extra-${idx}-${t.id}`} value={t.nome}>
-                              {t.nome} - {fmtMoeda(t.valor)}
+                              {t.nome} - {fmtMoeda(getValorExibicaoTipo(t))}
                             </option>
                           ))}
                         </select>
