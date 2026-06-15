@@ -246,6 +246,15 @@ function CertificadoContent() {
 
   const finalTemplate = getMappedTemplate();
 
+  useEffect(() => {
+    if (!loading && finalTemplate && !error && !isLocked) {
+      const timer = setTimeout(() => {
+        window.print();
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, finalTemplate, error, isLocked]);
+
   return (
     <div className="min-h-screen bg-gray-100 py-12 px-4 flex flex-col items-center justify-center print:bg-white print:p-0 print:min-h-0 print:h-screen print:justify-center">
       {/* Estilos CSS Nativos de Impressão */}
