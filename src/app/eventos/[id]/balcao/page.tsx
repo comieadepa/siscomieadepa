@@ -141,7 +141,7 @@ interface FormState {
   hosp_observacoes: string;
 }
 
-type BalcaoTab = 'nova' | 'inscritos';
+type BalcaoTab = 'nova' | 'inscritos' | 'caixa';
 
 const FORM_VAZIO: FormState = {
   nome: '', cpf: '', email: '', whatsapp: '', sexo: '',
@@ -197,6 +197,12 @@ export default function BalcaoPage() {
   const [loadingInit, setLoadingInit] = useState(true);
   const [acessoNegado, setAcessoNegado] = useState(false);
   const [activeTab, setActiveTab] = useState<BalcaoTab>('nova');
+
+  // ── Estado do Meu Caixa ──────────────────────────────────
+  const [caixaSessao, setCaixaSessao] = useState<any | null>(null);
+  const [caixaResumo, setCaixaResumo] = useState<any | null>(null);
+  const [caixaTimeline, setCaixaTimeline] = useState<any[]>([]);
+  const [carregandoCaixa, setCarregandoCaixa] = useState(true);
 
   // ── Estado da lista de inscritos ─────────────────────────
   const [inscricoesLista, setInscricoesLista] = useState<InscricaoResumo[]>([]);
@@ -452,6 +458,39 @@ export default function BalcaoPage() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [inscricaoSalva]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Funções do Meu Caixa ──────────────────────────────────
+  const carregarCaixaDados = useCallback(async () => {
+    if (!id) return;
+    try {
+      const res = await fetch(`/api/eventos/${id}/caixa/resumo`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.ok) {
+          setCaixaSessao(json.sessao);
+          setCaixaResumo(json.resumo);
+          setCaixaTimeline(json.timeline || []);
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao carregar resumo de caixa:', err);
+    } finally {
+      setCarregandoCaixa(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (authLoading || perfil.loading || !id) return;
+    carregarCaixaDados();
+  }, [authLoading, perfil.loading, id, carregarCaixaDados]);
+
+  useEffect(() => {
+    if (!id) return;
+    const interval = setInterval(() => {
+      carregarCaixaDados();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [id, carregarCaixaDados]);
 
   // ─────────────────────────────────────────────────────────
   // Helpers do form
@@ -1511,9 +1550,17 @@ export default function BalcaoPage() {
         >
           ← Sair
         </button>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-white font-bold text-sm truncate">🏪 Modo Balcão — {evento.nome}</h1>
-          <p className="text-white/40 text-xs hidden sm:block">Inscrição presencial rápida · Esc=Limpar · Ctrl+Enter=Salvar</p>
+        <div className="flex-1 min-w-0 flex flex-wrap items-center gap-3">
+          <div>
+            <h1 className="text-white font-bold text-sm truncate">🏪 Modo Balcão — {evento.nome}</h1>
+            <p className="text-white/40 text-xs hidden sm:block">Inscrição presencial rápida · Esc=Limpar · Ctrl+Enter=Salvar</p>
+          </div>
+          {caixaSessao && (
+            <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-3 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1.5 flex-shrink-0">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              Caixa Aberto • Operador: {caixaSessao.operador_nome} • Iniciado às {new Date(caixaSessao.data_abertura).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+            </div>
+          )}
         </div>
         {contadorTotal > 0 && (
           <div className="bg-emerald-500 text-white text-xs font-bold px-3 py-1 rounded-full flex-shrink-0">
@@ -1547,6 +1594,17 @@ export default function BalcaoPage() {
               }`}
             >
               👥 Inscritos
+            </button>
+            <button
+              type="button"
+              onClick={() => trocarAba('caixa')}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition whitespace-nowrap flex-shrink-0 ${
+                activeTab === 'caixa'
+                  ? 'bg-[#F39C12] text-[#0D2B4E]'
+                  : 'bg-white/10 text-white/70 hover:bg-white/20'
+              }`}
+            >
+              💵 Meu Caixa
             </button>
           </div>
         </div>
@@ -2663,6 +2721,154 @@ export default function BalcaoPage() {
                   >
                     {salvandoEdit ? 'Salvando...' : 'Salvar'}
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'caixa' && carregandoCaixa && (
+            <div className="min-h-[300px] flex items-center justify-center">
+              <div className="w-8 h-8 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
+            </div>
+          )}
+
+          {activeTab === 'caixa' && !carregandoCaixa && (
+            <div className="space-y-6 text-white">
+              <style dangerouslySetInnerHTML={{__html: `
+                @media print {
+                  body {
+                    background: white !important;
+                    color: black !important;
+                  }
+                  header, nav, button, .flex-shrink-0 {
+                    display: none !important;
+                  }
+                  .flex-1 {
+                    overflow: visible !important;
+                  }
+                  .min-h-screen {
+                    background: white !important;
+                    min-height: auto !important;
+                  }
+                  .bg-\\[\\#0D2B4E\\], .bg-\\[\\#1a3050\\], .bg-\\[\\#0a2040\\] {
+                    background: white !important;
+                    border: 1px solid #ddd !important;
+                    color: black !important;
+                  }
+                  .text-emerald-400 {
+                    color: #059669 !important;
+                  }
+                  .text-red-400 {
+                    color: #dc2626 !important;
+                  }
+                  .text-white\\/50, .text-white\\/40, .text-white\\/60 {
+                    color: #666 !important;
+                  }
+                  .text-white {
+                    color: black !important;
+                  }
+                  .shadow-sm, .border-white\\/10 {
+                    border: 1px solid #ddd !important;
+                  }
+                }
+              `}} />
+
+              {/* Resumo Superior */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-[#1a3050] border border-white/10 rounded-xl p-4">
+                  <p className="text-xs text-white/50 font-semibold uppercase">🟢 Sessão</p>
+                  <p className="text-lg font-bold mt-1 text-emerald-400">Aberto</p>
+                  <p className="text-xs text-white/40 mt-1">Desde: {caixaSessao ? new Date(caixaSessao.data_abertura).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-'}</p>
+                </div>
+                <div className="bg-[#1a3050] border border-white/10 rounded-xl p-4">
+                  <p className="text-xs text-white/50 font-semibold uppercase">💰 Total Recebido</p>
+                  <p className="text-2xl font-bold mt-1 text-white">{fmtMoeda(caixaResumo?.totalRecebido || 0)}</p>
+                  <p className="text-xs text-white/40 mt-1">Inscrições + Complementos</p>
+                </div>
+                <div className="bg-[#1a3050] border border-white/10 rounded-xl p-4">
+                  <p className="text-xs text-white/50 font-semibold uppercase">💵 Dinheiro</p>
+                  <p className="text-xl font-bold mt-1 text-white">{fmtMoeda(caixaResumo?.dinheiroRecebido || 0)}</p>
+                  <p className="text-xs text-white/40 mt-1">Em mãos</p>
+                </div>
+                <div className="bg-[#1a3050] border border-white/10 rounded-xl p-4">
+                  <p className="text-xs text-white/50 font-semibold uppercase">📱 PIX / 💳 Cartão</p>
+                  <p className="text-sm font-bold mt-1 text-white">PIX: {fmtMoeda(caixaResumo?.pixRecebido || 0)}</p>
+                  <p className="text-sm font-bold text-white">Cartão: {fmtMoeda(caixaResumo?.cartaoRecebido || 0)}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Saldo Caixa & Ações */}
+                <div className="space-y-4 lg:col-span-1">
+                  <div className="bg-[#1a3050] border border-emerald-500/30 rounded-xl p-6 space-y-4">
+                    <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-wider">CAIXA EM DINHEIRO</h3>
+                    <div className="space-y-2 text-sm text-white/80">
+                      <div className="flex justify-between">
+                        <span>Recebido:</span>
+                        <span className="font-semibold text-white">{fmtMoeda(caixaResumo?.dinheiroRecebido || 0)}</span>
+                      </div>
+                      <div className="flex justify-between text-red-400">
+                        <span>(-) Sangrias:</span>
+                        <span className="font-semibold">-{fmtMoeda(caixaResumo?.totalSangrias || 0)}</span>
+                      </div>
+                      <div className="border-t border-white/10 pt-2 flex justify-between font-bold text-emerald-400 text-lg">
+                        <span>Saldo esperado:</span>
+                        <span>{fmtMoeda(caixaResumo?.saldoEsperadoDinheiro || 0)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#1a3050] border border-white/10 rounded-xl p-6 space-y-4">
+                    <h3 className="text-xs font-bold text-white/50 uppercase tracking-wider">OUTROS PAGAMENTOS</h3>
+                    <div className="space-y-2 text-sm text-white/80">
+                      <div className="flex justify-between">
+                        <span>Cortesias (Qtd):</span>
+                        <span className="font-semibold text-white">{caixaResumo?.cortesiasQtd || 0} ({fmtMoeda(caixaResumo?.cortesiasValor || 0)})</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Complementos (Qtd):</span>
+                        <span className="font-semibold text-white">{caixaResumo?.complementosQtd || 0} ({fmtMoeda(caixaResumo?.complementosValor || 0)})</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="w-full bg-white/10 hover:bg-white/20 border border-white/15 text-white py-3 rounded-xl font-bold transition flex items-center justify-center gap-2"
+                  >
+                    🖨 Imprimir prestação parcial
+                  </button>
+                </div>
+
+                {/* Timeline */}
+                <div className="lg:col-span-2 bg-[#1a3050] border border-white/10 rounded-xl p-6 space-y-4">
+                  <h3 className="text-sm font-bold text-white/80 uppercase">Timeline de Movimentações</h3>
+                  <div className="divide-y divide-white/10 max-h-[500px] overflow-y-auto pr-2">
+                    {caixaTimeline.length === 0 ? (
+                      <p className="text-white/40 text-sm py-4 text-center">Nenhuma movimentação realizada nesta sessão.</p>
+                    ) : (
+                      caixaTimeline.map((item: any, idx: number) => (
+                        <div key={idx} className="py-3 flex justify-between items-center text-sm">
+                          <div>
+                            <span className="text-xs text-white/40 block">
+                              {new Date(item.data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            <span className="font-semibold block">{item.tipo}</span>
+                            <span className="text-white/60 block">{item.nome}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs bg-white/5 border border-white/10 px-2 py-0.5 rounded text-white/60 uppercase">
+                              {item.forma}
+                            </span>
+                            <span className={`block font-bold mt-1 ${item.valor < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                              {item.valor < 0 ? '' : '+'}{fmtMoeda(item.valor)}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

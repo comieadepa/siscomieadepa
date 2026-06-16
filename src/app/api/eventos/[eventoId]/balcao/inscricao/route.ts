@@ -121,8 +121,77 @@ export async function POST(
   if (!guard.ok) return guard.response;
 
   const supabase = guard.ctx.supabaseAdmin;
-  const operadorId = guard.ctx.user?.id;
   const operadorEmail = guard.ctx.user?.email ?? undefined;
+
+  // Identificar operador da equipe e caixa ativo
+  let equipeId: string | null = guard.ctx.equipe?.id || null;
+  let operadorNome: string | null = null;
+
+  if (equipeId) {
+    const { data: eq } = await supabase
+      .from('evento_equipe')
+      .select('nome')
+      .eq('id', equipeId)
+      .maybeSingle();
+    if (eq) {
+      operadorNome = eq.nome;
+    }
+  } else if (guard.ctx.user?.email) {
+    const { data: eq } = await supabase
+      .from('evento_equipe')
+      .select('id, nome')
+      .eq('evento_id', eventoId)
+      .eq('email', guard.ctx.user.email)
+      .eq('ativo', true)
+      .maybeSingle();
+    if (eq) {
+      equipeId = eq.id;
+      operadorNome = eq.nome;
+    }
+  }
+
+  let caixaSessaoId: string | null = null;
+  if (equipeId) {
+    const { data: sessao } = await supabase
+      .from('evento_caixa_sessoes')
+      .select('id, operador_nome')
+      .eq('evento_id', eventoId)
+      .eq('operador_id', equipeId)
+      .eq('status', 'aberto')
+      .maybeSingle();
+
+    if (sessao) {
+      caixaSessaoId = sessao.id;
+      if (!operadorNome) {
+        operadorNome = sessao.operador_nome;
+      }
+    } else {
+      // Auto-abrir caixa se não existir
+      const { data: novaSessao, error: insertError } = await supabase
+        .from('evento_caixa_sessoes')
+        .insert({
+          evento_id: eventoId,
+          operador_id: equipeId,
+          operador_nome: operadorNome || guard.ctx.user?.email || 'Operador',
+          status: 'aberto',
+          data_abertura: new Date().toISOString()
+        })
+        .select('id')
+        .single();
+      
+      if (!insertError && novaSessao) {
+        caixaSessaoId = novaSessao.id;
+      }
+    }
+  } else {
+    const isGlobalOrDeptAdmin = guard.ctx.role === 'admin_evento' || guard.ctx.source === 'global' || guard.ctx.source === 'departamento';
+    if (!isGlobalOrDeptAdmin) {
+      return NextResponse.json({ error: 'Operador não identificado para o caixa operacional.' }, { status: 403 });
+    }
+  }
+
+  const operadorId = equipeId || guard.ctx.user?.id || undefined;
+  const dbOperadorNome = operadorNome || guard.ctx.user?.email || 'Operador';
 
   try {
     const body = await request.json() as Record<string, unknown>;
@@ -590,6 +659,9 @@ export async function POST(
         quantidade_refeicoes_saldo: quantidadeRefeicoes,
         observacoes: observacoes ? String(observacoes).trim() : null,
         qr_code: qrFinal, operador_id: operadorId, ministro_snapshot: ministroSnapshot,
+        operador_nome: dbOperadorNome,
+        caixa_sessao_id: caixaSessaoId,
+        origem: 'balcao',
         hosp_necessidade_especial: !!hosp_necessidade_especial,
         hosp_descricao_necessidade: hosp_descricao_necessidade ? String(hosp_descricao_necessidade).trim() : null,
         hosp_cama_inferior: hospCamaInferiorAuto,
@@ -619,6 +691,9 @@ export async function POST(
         quantidade_refeicoes_usadas: 0,
         quantidade_refeicoes_saldo: refeicoesEsposa,
         operador_id: operadorId,
+        operador_nome: dbOperadorNome,
+        caixa_sessao_id: caixaSessaoId,
+        origem: 'balcao',
         hosp_necessidade_especial: !!esposaData.hosp_necessidade_especial,
         hosp_descricao_necessidade: esposaData.hosp_descricao_necessidade ? String(esposaData.hosp_descricao_necessidade).trim() : null,
         hosp_cama_inferior: esposaCamaInferiorAuto,
@@ -722,6 +797,9 @@ export async function POST(
       observacoes:      observacoes ? String(observacoes).trim() : null,
       qr_code:          qrFinal,
       operador_id:      operadorId,
+      operador_nome:    dbOperadorNome,
+      caixa_sessao_id:  caixaSessaoId,
+      origem:           'balcao',
       ministro_snapshot: ministroSnapshot,
       hosp_necessidade_especial:  !!hosp_necessidade_especial,
       hosp_descricao_necessidade: hosp_descricao_necessidade
