@@ -1188,7 +1188,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ inscricaoId: insPastor.id, loteId: lote2.id, inscricoes: 2, statusPagamento: 'pendente', pagamento: { asaasId: pagamento2.id, invoiceUrl: pagamento2.invoiceUrl, pixQrCode: pagamento2.pixQrCode, pixCopiaECola: pagamento2.pixCopiaECola, valor: valorTotal2, vencimento: dueDate2 } });
       } catch (asaasErr) {
         console.error('[INSCRICAO CASAL] ASAAS falhou:', (asaasErr as Error).message);
-        return NextResponse.json({ inscricaoId: insPastor.id, loteId: lote2.id, inscricoes: 2, statusPagamento: 'pendente', pagamento: null, asaasError: 'Pagamento online indisponível.' });
+        return NextResponse.json({ inscricaoId: insPastor.id, loteId: lote2.id, inscricoes: 2, statusPagamento: 'pendente', pagamento: null, asaasError: `Pagamento online indisponível. Detalhes: ${(asaasErr as Error).message}` });
       }
     }
 
@@ -1621,9 +1621,7 @@ export async function POST(request: NextRequest) {
 
       if (isGratuitoLote) {
         return NextResponse.json({ loteId: lote.id, inscricoes: todos.length, statusPagamento: 'isento', pagamento: null });
-      }
-
-      try {
+      }      try {
         stage = 'criar_asaas_lote';
         const customerId = await createOrFindAsaasCustomer({ nome: nome_inscrito.trim(), email: email?.trim() || null, cpf: cleanCpf(cpf), whatsapp: whatsapp || null });
         const dueDateLote = dueDateFromNow();
@@ -1651,10 +1649,9 @@ export async function POST(request: NextRequest) {
         console.error('[INSCRICAO LOTE] ASAAS falhou, lote salvo sem cobranca:', {
           loteId: lote.id,
           eventoId: evento.id,
-          valor: valorTotalLote,
-          erro: message,
+          value: valorTotalLote,
         });
-        return NextResponse.json({ loteId: lote.id, inscricoes: todos.length, statusPagamento: 'pendente', pagamento: null, asaasError: 'Pagamento online indisponível.' });
+        return NextResponse.json({ loteId: lote.id, inscricoes: todos.length, statusPagamento: 'pendente', pagamento: null, asaasError: `Pagamento online indisponível. Detalhes: ${message}` });
       }
     }
 
@@ -1863,7 +1860,7 @@ export async function POST(request: NextRequest) {
         inscricaoId:     inscricao.id,
         statusPagamento: 'pendente',
         pagamento:       null,
-        asaasError:      'Pagamento online indisponível no momento. Regularize com a organização do evento.',
+        asaasError:      `Pagamento online indisponível no momento. Detalhes: ${(asaasErr as Error).message}`,
       });
     }
   } catch (err: any) {

@@ -136,57 +136,29 @@ function CertificadoContent() {
     if (id) fetchDados();
   }, [id]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
-      </div>
-    );
-  }
-
   // Regra de Bloqueio Obrigatória
   const isLocked = !credenciamento ||
                    credenciamento.status_pagamento !== 'pago' ||
                    credenciamento.status_credenciamento !== 'ativo';
 
-  if (error || !credenciamento || !instituicao || isLocked) {
-    const errorMsg = error || (isLocked
-      ? 'Certificado disponível somente após confirmação do pagamento e ativação do credenciamento.'
-      : 'Credenciamento inválido.');
-
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
-        <div className="bg-amber-50 border border-amber-200 text-amber-900 p-8 rounded-lg max-w-md text-center shadow-lg">
-          <Lock className="w-12 h-12 text-amber-600 mx-auto mb-4" />
-          <h2 className="text-xl font-bold mb-3">Acesso Bloqueado</h2>
-          <p className="text-sm text-amber-800 leading-relaxed">{errorMsg}</p>
-          <button
-            onClick={() => router.back()}
-            className="mt-6 px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold transition"
-          >
-            Voltar
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   // Datas Formatadas
-  const dataEmissaoFormatada = credenciamento.data_emissao
+  const dataEmissaoFormatada = credenciamento?.data_emissao
     ? new Date(credenciamento.data_emissao).toLocaleDateString('pt-BR')
-    : new Date(credenciamento.data_inicio).toLocaleDateString('pt-BR');
+    : credenciamento?.data_inicio
+    ? new Date(credenciamento.data_inicio).toLocaleDateString('pt-BR')
+    : '';
 
-  const dataFimFormatada = new Date(credenciamento.data_fim).toLocaleDateString('pt-BR');
+  const dataFimFormatada = credenciamento?.data_fim ? new Date(credenciamento.data_fim).toLocaleDateString('pt-BR') : '';
 
   // Dados dinâmicos mapeados para os placeholders do template
   const dados = {
-    instituicao_nome: instituicao.nome_instituicao,
-    nome_instituicao: instituicao.nome_instituicao,
-    cnpj: formatCnpj(instituicao.cnpj),
-    numero_registro: credenciamento.numero_registro,
+    instituicao_nome: instituicao?.nome_instituicao || '',
+    nome_instituicao: instituicao?.nome_instituicao || '',
+    cnpj: instituicao?.cnpj ? formatCnpj(instituicao.cnpj) : '',
+    numero_registro: credenciamento?.numero_registro || '',
     data_credenciamento: dataEmissaoFormatada,
     validade: dataFimFormatada,
-    ano_referencia: credenciamento.ano_referencia,
+    ano_referencia: credenciamento?.ano_referencia || '',
     qr_code_validacao: token ? `${typeof window !== 'undefined' ? window.location.origin : ''}/validar/${token}` : '',
   };
 
@@ -216,9 +188,21 @@ function CertificadoContent() {
     const mappedElements = rawElements
       .filter((el: any) => el.visivel !== false)
       .map((el: any) => {
+        let tipoFinal = 'text_fixed';
+        if (el.tipo === 'qrcode') {
+          tipoFinal = 'qrcode';
+        } else if (el.tipo === 'imagem' || el.tipo === 'image') {
+          tipoFinal = 'image';
+        } else if (el.tipo === 'logo') {
+          tipoFinal = 'logo';
+        } else if (el.tipo === 'signature' || el.tipo === 'assinatura') {
+          tipoFinal = 'signature';
+        }
+
         return {
           id: el.id,
-          tipo: el.tipo === 'qrcode' ? 'qrcode' : 'text_fixed',
+          tipo: tipoFinal,
+          imagemUrl: el.imagemUrl || el.url || el.conteudo || '',
           x: (el.x / 840) * 100,
           y: (el.y / 595) * 100,
           width: (el.largura / 840) * 100,
@@ -254,6 +238,36 @@ function CertificadoContent() {
       return () => clearTimeout(timer);
     }
   }, [loading, finalTemplate, error, isLocked]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
+      </div>
+    );
+  }
+
+  if (error || !credenciamento || !instituicao || isLocked) {
+    const errorMsg = error || (isLocked
+      ? 'Certificado disponível somente após confirmação do pagamento e ativação do credenciamento.'
+      : 'Credenciamento inválido.');
+
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 p-8 rounded-lg max-w-md text-center shadow-lg">
+          <Lock className="w-12 h-12 text-amber-600 mx-auto mb-4" />
+          <h2 className="text-xl font-bold mb-3">Acesso Bloqueado</h2>
+          <p className="text-sm text-amber-800 leading-relaxed">{errorMsg}</p>
+          <button
+            onClick={() => router.back()}
+            className="mt-6 px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold transition"
+          >
+            Voltar
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 py-12 px-4 flex flex-col items-center justify-center print:bg-white print:p-0 print:min-h-0 print:h-screen print:justify-center">

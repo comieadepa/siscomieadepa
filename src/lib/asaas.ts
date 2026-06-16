@@ -259,7 +259,7 @@ export const createOrFindAsaasCustomer = async (payload: {
 }): Promise<string> => {
   const cleanCpf = payload.cpf ? payload.cpf.replace(/\D/g, '') : null;
   if (!cleanCpf) {
-    throw new Error('CPF do pagador e obrigatorio para gerar cobranca ASAAS');
+    throw new Error('CPF do pagador é obrigatório para gerar cobrança ASAAS');
   }
 
   // Evita erro de CPF duplicado no ASAAS reaproveitando cliente existente
@@ -273,18 +273,48 @@ export const createOrFindAsaasCustomer = async (payload: {
     // Ignora falhas de lookup e tenta criar normalmente
   }
 
-  const customer = await asaasFetch('/customers', {
-    method: 'POST',
-    body: JSON.stringify({
-      name: payload.nome,
-      email: payload.email || `sem-email-${Date.now()}@gestoservus.local`,
-      cpfCnpj: cleanCpf || undefined,
-      mobilePhone: payload.whatsapp ? payload.whatsapp.replace(/\D/g, '') : undefined,
-    }),
-  });
+  // Sanitiza e valida e-mail
+  let rawEmail = payload.email?.trim() || '';
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const isEmailValid = emailRegex.test(rawEmail);
+  const email = isEmailValid ? rawEmail : `sem-email-${Date.now()}@gestoservus.local`;
 
-  if (!customer?.id) throw new Error('ASAAS não retornou ID do cliente');
-  return customer.id as string;
+  // Sanitiza e valida celular/whatsapp
+  const rawWhatsapp = payload.whatsapp ? payload.whatsapp.replace(/\D/g, '') : '';
+  const isWhatsappValid = rawWhatsapp.length >= 10 && rawWhatsapp.length <= 11;
+  const mobilePhone = isWhatsappValid ? rawWhatsapp : undefined;
+
+  try {
+    const customer = await asaasFetch('/customers', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: payload.nome.trim(),
+        email,
+        cpfCnpj: cleanCpf || undefined,
+        mobilePhone,
+      }),
+    });
+
+    if (!customer?.id) throw new Error('ASAAS não retornou ID do cliente');
+    return customer.id as string;
+  } catch (err: any) {
+    console.warn('[ASAAS] Falha ao criar cliente com dados completos. Tentando fallback mínimo:', err.message);
+    try {
+      const fallbackCustomer = await asaasFetch('/customers', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: payload.nome.trim(),
+          email: `sem-email-${Date.now()}@gestoservus.local`,
+          cpfCnpj: cleanCpf || undefined,
+        }),
+      });
+      if (!fallbackCustomer?.id) throw new Error('ASAAS não retornou ID do cliente no fallback');
+      return fallbackCustomer.id as string;
+    } catch (fallbackErr: any) {
+      console.error('[ASAAS] Erro persistente na criação do cliente:', fallbackErr.message);
+      throw new Error(`Erro ASAAS ao cadastrar pagador: ${fallbackErr.message}`);
+    }
+  }
 };
 
 /**

@@ -20,6 +20,7 @@ interface TemplateElement {
   tipo: 'text_fixed' | 'text_dynamic' | 'image' | 'logo' | 'qrcode' | 'line' | 'rectangle' | 'signature' | 'date' | 'custom_field';
   placeholder?: string;
   conteudo?: string;
+  imagemUrl?: string;
   x: number;
   y: number;
   width: number;
@@ -95,6 +96,9 @@ export default function TemplateStudioRenderer({
           transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
         };
 
+        const isImage = el.tipo === 'image' || el.tipo === 'logo' || el.tipo === 'signature';
+        const imgUrl = el.imagemUrl || el.conteudo;
+
         // Renderizador condicional baseado no tipo do elemento
         return (
           <div key={el.id} className={`${debugStyle} flex items-center`} style={inlineStyles}>
@@ -108,6 +112,22 @@ export default function TemplateStudioRenderer({
                   </div>
                 )}
               </div>
+            ) : isImage ? (
+              imgUrl ? (
+                <img
+                  src={imgUrl}
+                  alt={el.tipo}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                  }}
+                />
+              ) : (
+                <div className="w-full h-full bg-gray-200 border border-gray-300 flex items-center justify-center text-[10px] text-gray-500 font-bold">
+                  [{el.tipo.toUpperCase()}]
+                </div>
+              )
             ) : (
               <span className="w-full leading-none truncate">
                 {contentText}
