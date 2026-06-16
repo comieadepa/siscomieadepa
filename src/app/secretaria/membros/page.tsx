@@ -4656,6 +4656,8 @@ useEffect(() => {
                             onClick={() => {
                               const link = document.createElement('a');
                               link.href = fotoMembro;
+                              link.target = '_blank';
+                              link.rel = 'noopener noreferrer';
                               // Limpa caracteres especiais do nome para o nome do arquivo
                               const nomeLimpo = (dadosPessoais?.nome || 'foto_ministro')
                                 .toLowerCase()
