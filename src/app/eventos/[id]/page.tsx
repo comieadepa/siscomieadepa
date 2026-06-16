@@ -483,6 +483,27 @@ export default function GerenciarEventoPage() {
   useEffect(() => {
     if (authLoading || perfil.loading) return;
 
+    // Bloqueio simples se detectar sessão ou permissão de equipe operacional
+    const sessCheck = getEquipeSession();
+    const roleCheck = sessCheck?.tipo || permissaoNesseEvento;
+    if (roleCheck) {
+      if (roleCheck === 'operador') {
+        router.replace(`/eventos/${id}/balcao`);
+        return;
+      }
+      if (roleCheck.startsWith('checkin') && roleCheck !== 'checkin_hospedagem') {
+        router.replace(`/eventos/${id}/checkin`);
+        return;
+      }
+      if (roleCheck === 'hospedagem') {
+        const tabParam = searchParams?.get('tab');
+        if (tabParam !== 'hospedagem') {
+          router.replace(`/eventos/${id}?tab=hospedagem`);
+          return;
+        }
+      }
+    }
+
     // Gate de acesso: bloqueia acesso direto por URL
     if (!perfil.isGlobal && id && !perfil.podeAcessarEvento(id)) {
       // Fallback: lê sessão de equipe diretamente do localStorage para cobrir edge cases

@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
 import { clearEquipeSession, setEquipeSession } from '@/lib/equipe-session';
-import { getDefaultEventoPath } from '@/lib/eventos/evento-permissions';
 import type { EquipeSession } from '@/lib/equipe-session';
 
 export default function OperadorLoginPage() {
@@ -59,7 +58,7 @@ export default function OperadorLoginPage() {
         return;
       }
 
-      router.replace(getDefaultEventoPath(eventoId, 'operador'));
+      router.replace(`/eventos/${eventoId}/balcao`);
     } catch {
       setErro('Erro ao acessar o evento.');
     } finally {

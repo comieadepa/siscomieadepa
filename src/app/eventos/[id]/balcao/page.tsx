@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useEventosPerfil } from '@/hooks/useEventosPerfil';
 import { createClient } from '@/lib/supabase-client';
+import { clearEquipeSession } from '@/lib/equipe-session';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { normalizePayloadUppercase } from '@/lib/text';
 import { EventBadge } from '@/components/EventBadge';
@@ -179,6 +180,11 @@ export default function BalcaoPage() {
   const params = useParams();
   const id = params?.id as string;
   const supabase = useMemo(() => createClient(), []);
+  const handleSair = useCallback(async () => {
+    clearEquipeSession();
+    await supabase.auth.signOut();
+    router.replace(`/eventos/${id}/operador`);
+  }, [id, router, supabase]);
   const permissaoEvento = useMemo(() => (id ? perfil.permissaoParaEvento(id) : null), [id, perfil]);
   const podeCheckinManual = perfil.isGlobal || perfil.isDeptAdmin || permissaoEvento === 'admin_evento' || permissaoEvento === 'operador';
 
@@ -1476,7 +1482,7 @@ export default function BalcaoPage() {
           <p className="text-5xl">🚫</p>
           <h1 className="text-xl font-bold">Acesso Negado</h1>
           <p className="text-white/60 text-sm">Você não tem permissão para acessar o Modo Balcão.</p>
-          <button onClick={() => router.back()} className="mt-4 px-6 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm font-semibold transition">← Voltar</button>
+          <button onClick={handleSair} className="mt-4 px-6 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm font-semibold transition">← Sair</button>
         </div>
       </div>
     );
@@ -1499,9 +1505,9 @@ export default function BalcaoPage() {
       {/* ── Header ── */}
       <header className="bg-[#0a2040] border-b border-white/10 px-4 py-3 flex items-center gap-3 flex-shrink-0">
         <button
-          onClick={() => router.push(`/eventos/${id}`)}
+          onClick={handleSair}
           className="text-white/50 hover:text-white text-sm px-3 py-1.5 rounded-lg hover:bg-white/10 transition"
-          title="Voltar ao evento"
+          title="Sair do painel"
         >
           ← Sair
         </button>
