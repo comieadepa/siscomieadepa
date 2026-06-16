@@ -1227,6 +1227,16 @@ export async function POST(request: NextRequest) {
     // FLUXO LOTE
     // ════════════════════════════════════════════════════════════
     if (ehLote) {
+      // Cupom em lote não está disponível nesta etapa
+      if (cupom_codigo) {
+        return buildErrorResponse(400, {
+          error: 'Cupom em lote ainda não está disponível.',
+          stage: 'validacao_cupom_lote',
+          code: 'CUPOM_LOTE_NAO_DISPONIVEL',
+          payloadResumo,
+        });
+      }
+
       const todos = [
         { nome_inscrito, cpf, email, telefone, whatsapp, sexo, data_nascimento, supervisao_id, campo_id, hospedagem: querHospedagem, alimentacao: tipoInclui.alimentacao, brinde: !!brinde, qr_code },
         ...participantes,
@@ -1273,8 +1283,6 @@ export async function POST(request: NextRequest) {
         valor_original: number;
         desconto_valor: number;
         valor_final: number;
-        cupom_codigo: string | null;
-        cupom_id: string | null;
         alimentacao: boolean;
         refeicoes: number;
         hosp_necessidade_especial: boolean;
@@ -1477,17 +1485,7 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        let descontoParticipante = 0;
-        let cupomParticipante: string | null = null;
-        let cupomIdParticipante: string | null = null;
-        if (cupom_codigo) {
-          const cupom = await calcularDesconto(supabase, evento.id, cupom_codigo, valorBaseParticipante, tipoEvento?.id ?? null);
-          if (cupom) {
-            descontoParticipante = cupom.desconto;
-            cupomParticipante = cupom.cupomCodigo;
-            cupomIdParticipante = cupom.cupomId;
-          }
-        }
+        const descontoParticipante = 0;
 
         const valorFinalParticipante = Math.max(0, valorBaseParticipante - descontoParticipante);
         const alimentacaoParticipante = evento.departamento === 'AGO' ? true : !!(tipoEvento?.inclui_alimentacao ?? false);
@@ -1515,8 +1513,6 @@ export async function POST(request: NextRequest) {
           valor_original: valorBaseParticipante,
           desconto_valor: descontoParticipante,
           valor_final: valorFinalParticipante,
-          cupom_codigo: cupomParticipante,
-          cupom_id:     cupomIdParticipante,
           alimentacao: alimentacaoParticipante,
           refeicoes: refeicoesParticipante,
           hosp_necessidade_especial: !!p.hosp_necessidade_especial,
@@ -1599,8 +1595,6 @@ export async function POST(request: NextRequest) {
         brinde:           !!p.brinde,
         tipo_inscricao:   p.tipo_inscricao,
         valor_original:   p.valor_original,
-        cupom_codigo:     p.cupom_codigo,
-        cupom_id:         p.cupom_id ?? null,
         desconto_valor:   p.desconto_valor,
         valor_final:      p.valor_final,
         valor_pago:       0,

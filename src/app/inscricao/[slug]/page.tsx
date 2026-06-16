@@ -2262,7 +2262,7 @@ export default function InscricaoPublicaPage() {
             )}
 
             {/* Cupom de desconto */}
-            {evento.possuiCupomAtivo && (evento.usar_tipos_inscricao || evento.valor_inscricao > 0) && (
+            {!modoLote && evento.possuiCupomAtivo && (evento.usar_tipos_inscricao || evento.valor_inscricao > 0) && (
               <div className="mb-6">
                 <p className="text-sm font-semibold text-gray-700 mb-2">🏷️ Cupom de desconto</p>
                 <div className="flex flex-col sm:flex-row gap-2">
