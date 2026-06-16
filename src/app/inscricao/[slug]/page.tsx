@@ -620,26 +620,30 @@ export default function InscricaoPublicaPage() {
     setForm(f => ({ ...f, [e.target.name]: e.target.checked }));
   }
 
+
   // ── Valida cupom ────────────────────────────────────────
   async function validarCupom() {
     if (!cupomCodigo.trim() || !evento) return;
-    const valorBase = tipoSelecionado?.valor ?? evento.valor_inscricao;
+    const tipoInscricaoId = tipoSelecionado?.id || '';
     setCupomStatus('validando');
     try {
-      const res  = await fetch(`/api/eventos/${evento.id}/cupons/validar`, {
-        method: 'POST',
+      const queryParams = new URLSearchParams({
+        codigo: cupomCodigo,
+        tipo_inscricao_id: tipoInscricaoId
+      });
+      const res = await fetch(`/api/eventos/${evento.id}/cupons/validar?${queryParams.toString()}`, {
+        method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codigo: cupomCodigo, valor_base: valorBase }),
       });
       const json = await res.json();
       if (json.valido) {
         setCupomStatus('ok');
-        setCupomDesconto(json.desconto);
+        setCupomDesconto(json.valor_desconto);
         setCupomMeta({
-          tipo: json.tipo === 'percentual' ? 'percentual' : 'valor_fixo',
-          valor: Number(json.valorCupom ?? 0),
+          tipo: json.tipo_desconto === 'percentual' ? 'percentual' : 'valor_fixo',
+          valor: Number(json.valor ?? 0),
         });
-        setCupomMensagem(`Desconto de ${fmtMoeda(json.desconto)} aplicado!`);
+        setCupomMensagem(`Desconto de ${fmtMoeda(json.valor_desconto)} aplicado!`);
       } else {
         setCupomStatus('erro');
         setCupomDesconto(0);
@@ -1884,50 +1888,41 @@ export default function InscricaoPublicaPage() {
                       Esposa de Pastor Jubilado identificada pelo cadastro ministerial. Cortesia aplicada automaticamente.
                     </div>
                   )}
-                  {/* Nenhuma categoria disponível (só exibe se sexo foi selecionado) */}
-                  {tiposParaExibir.length === 0 && form.sexo !== '' && (
-                    <div className="p-4 bg-orange-50 border border-orange-200 rounded-xl text-sm text-orange-700">
-                      ⚠️ Nenhuma categoria disponível para o perfil identificado. Verifique os dados informados ou entre em contato com a secretaria do evento.
-                    </div>
-                  )}
-                  {/* Lista de categorias filtradas */}
-                  {tiposParaExibir.length > 0 && (
-                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                      <p className="text-sm font-semibold text-[#123b63] mb-3">🏛️ Tipo de Inscrição</p>
-                      <div className="space-y-2">
-                        {tiposParaExibir.map(t => (
-                          <label key={t.id} className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${tipoSelecionado?.id === t.id ? 'border-[#123b63] bg-white' : 'border-gray-200 bg-white hover:border-[#123b63]/50'}`}>
-                            <div className="flex items-center gap-3">
-                              <input type="radio" name="tipo_inscricao" value={t.id}
-                                checked={tipoSelecionado?.id === t.id}
-                                onChange={() => {
-                                  if (jubiladoAutomaticoAtivo && tipoJubiladoAutomatico && t.id !== tipoJubiladoAutomatico.id) return;
-                                  setTipoSelecionado(t); setCupomStatus('idle'); setCupomDesconto(0); setCupomMeta(null);
-                                }}
-                                className="accent-[#123b63]" />
-                              <div>
-                                <p className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-                                  {t.nome}
-                                  {t.cortesia && (
-                                    <span className="text-xs font-bold bg-green-100 text-green-700 border border-green-300 px-1.5 py-0.5 rounded-full">
-                                      🎁 Cortesia
-                                    </span>
-                                  )}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  {[t.inclui_alimentacao && '🍽️ Alimentação', t.inclui_hospedagem && '🛏️ Hospedagem'].filter(Boolean).join(' + ') || 'Apenas plenárias'}
-                                </p>
-                              </div>
+                  {/* Lista de tipos para AGO */}
+                  {tipos.length > 0 && (
+                    <div className="space-y-2 mt-3">
+                      {tipos.map(t => (
+                        <label key={t.id} className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${tipoSelecionado?.id === t.id ? 'border-[#123b63] bg-white' : 'border-gray-200 bg-white hover:border-[#123b63]/50'}`}>
+                          <div className="flex items-center gap-3">
+                            <input type="radio" name="tipo_inscricao" value={t.id}
+                              checked={tipoSelecionado?.id === t.id}
+                              onChange={() => {
+                                if (jubiladoAutomaticoAtivo && tipoJubiladoAutomatico && t.id !== tipoJubiladoAutomatico.id) return;
+                                setTipoSelecionado(t); setCupomStatus('idle'); setCupomCodigo(''); setCupomDesconto(0); setCupomMeta(null);
+                              }}
+                              className="accent-[#123b63]" />
+                            <div>
+                              <p className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                {t.nome}
+                                {t.cortesia && (
+                                  <span className="text-xs font-bold bg-green-100 text-green-700 border border-green-300 px-1.5 py-0.5 rounded-full">
+                                    🎁 Cortesia
+                                  </span>
+                                )}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {[t.inclui_alimentacao && '🍽️ Alimentação', t.inclui_hospedagem && '🛏️ Hospedagem'].filter(Boolean).join(' + ') || 'Apenas plenárias'}
+                              </p>
                             </div>
-                            <span className="text-sm font-bold text-[#123b63] sm:whitespace-nowrap">
-                              {(() => {
-                                const vExib = getValorExibicaoTipo(t);
-                                return vExib === 0 ? (t.cortesia ? 'Gratuito (Cortesia)' : 'Gratuito') : fmtMoeda(vExib);
-                              })()}
-                            </span>
-                          </label>
-                        ))}
-                      </div>
+                          </div>
+                          <span className="text-sm font-bold text-[#123b63] sm:whitespace-nowrap">
+                            {(() => {
+                              const vExib = getValorExibicaoTipo(t);
+                              return vExib === 0 ? (t.cortesia ? 'Gratuito (Cortesia)' : 'Gratuito') : fmtMoeda(vExib);
+                            })()}
+                          </span>
+                        </label>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -1941,7 +1936,7 @@ export default function InscricaoPublicaPage() {
                           <div className="flex items-center gap-3">
                             <input type="radio" name="tipo_inscricao" value={t.id}
                               checked={tipoSelecionado?.id === t.id}
-                              onChange={() => { setTipoSelecionado(t); setCupomStatus('idle'); setCupomDesconto(0); setCupomMeta(null); }}
+                              onChange={() => { setTipoSelecionado(t); setCupomStatus('idle'); setCupomCodigo(''); setCupomDesconto(0); setCupomMeta(null); }}
                               className="accent-[#123b63]" />
                             <div>
                               <p className="text-sm font-semibold text-gray-800 flex items-center gap-2">

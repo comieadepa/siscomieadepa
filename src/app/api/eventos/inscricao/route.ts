@@ -121,28 +121,50 @@ async function calcularDesconto(
   supabase: ReturnType<typeof createServerClient>,
   eventoId: string,
   codigo: string,
-  valorBase: number
-): Promise<{ desconto: number; valorFinal: number; cupomId: string } | null> {
+  valorBase: number,
+  tipoInscricaoId: string | null
+): Promise<{ desconto: number; valorFinal: number; cupomId: string; cupomCodigo: string } | null> {
   const { data: cupom } = await supabase
     .from('evento_cupons')
-    .select('id, tipo, valor, limite_uso, usados, validade')
+    .select('id, codigo, tipo_desconto, valor, limite_usos, usos_atuais, ativo, validade_inicio, validade_fim, aplicar_todos_tipos, tipos_permitidos')
     .eq('evento_id', eventoId)
-    .eq('codigo', codigo.trim().toUpperCase())
+    .ilike('codigo', codigo.trim())
     .eq('ativo', true)
-    .single();
+    .maybeSingle();
 
   if (!cupom) return null;
-  if (cupom.validade && new Date(cupom.validade) < new Date()) return null;
-  if (cupom.limite_uso !== null && cupom.usados >= cupom.limite_uso) return null;
 
-  const desconto = cupom.tipo === 'percentual'
-    ? Math.round(valorBase * cupom.valor / 100 * 100) / 100
+  // Validar vigência
+  const agora = new Date();
+  if (cupom.validade_inicio && new Date(cupom.validade_inicio) > agora) return null;
+  if (cupom.validade_fim && new Date(cupom.validade_fim) < agora) return null;
+
+  // Validar limite de usos
+  if (cupom.limite_usos !== null && cupom.limite_usos !== undefined && cupom.usos_atuais >= cupom.limite_usos) {
+    return null;
+  }
+
+  // Validar tipos permitidos se aplicar_todos_tipos = false
+  if (!cupom.aplicar_todos_tipos) {
+    if (!tipoInscricaoId) return null;
+    const tiposPermitidos = Array.isArray(cupom.tipos_permitidos) ? cupom.tipos_permitidos : [];
+    if (!tiposPermitidos.includes(tipoInscricaoId)) return null;
+  }
+
+  // Calcular o desconto
+  const desconto = cupom.tipo_desconto === 'percentual'
+    ? Math.round((valorBase * cupom.valor / 100) * 100) / 100
     : Math.min(cupom.valor, valorBase);
 
-  return { desconto, valorFinal: Math.max(0, valorBase - desconto), cupomId: cupom.id };
+  return {
+    desconto,
+    valorFinal: Math.max(0, valorBase - desconto),
+    cupomId: cupom.id,
+    cupomCodigo: cupom.codigo,
+  };
 }
 
-// Incrementa usados do cupom via UPDATE direto (sem RPC)
+// Incrementa usos do cupom via UPDATE direto (sem RPC)
 async function incrementarCupom(
   supabase: ReturnType<typeof createServerClient>,
   eventoId: string,
@@ -152,16 +174,16 @@ async function incrementarCupom(
   // Lê o valor atual e incrementa (race condition aceitável para o volume esperado)
   const { data: cup } = await supabase
     .from('evento_cupons')
-    .select('usados')
+    .select('usados_atuais')
     .eq('evento_id', eventoId)
-    .eq('codigo', codigo)
-    .single();
+    .ilike('codigo', codigo.trim())
+    .maybeSingle();
   if (cup) {
     await supabase
       .from('evento_cupons')
-      .update({ usados: cup.usados + qtd })
+      .update({ usos_atuais: (cup.usados_atuais || 0) + qtd })
       .eq('evento_id', eventoId)
-      .eq('codigo', codigo);
+      .ilike('codigo', codigo.trim());
   }
 }
 
@@ -479,6 +501,7 @@ export async function POST(request: NextRequest) {
     };
 
     type TipoEvento = {
+      id: string;
       nome: string;
       valor: number;
       inclui_alimentacao: boolean;
@@ -487,10 +510,12 @@ export async function POST(request: NextRequest) {
     };
 
     let tiposAtivos: TipoEvento[] = [];
+    let tipoInscricaoId = null as string | null;
+
     if (usaTipos) {
       const { data: tiposData, error: tiposErr } = await supabase
         .from('evento_tipos_inscricao')
-        .select('nome, valor, inclui_alimentacao, inclui_hospedagem, quantidade_refeicoes')
+        .select('id, nome, valor, inclui_alimentacao, inclui_hospedagem, quantidade_refeicoes')
         .eq('evento_id', evento.id)
         .eq('ativo', true);
 
@@ -525,6 +550,7 @@ export async function POST(request: NextRequest) {
       }
 
       tipoNome = tipoEsposaJubilado.nome;
+      tipoInscricaoId = tipoEsposaJubilado.id;
       valorBase = 0;
       tipoInclui = {
         alimentacao: !!tipoEsposaJubilado.inclui_alimentacao,
@@ -541,6 +567,7 @@ export async function POST(request: NextRequest) {
 
       if (tipoJubilado) {
         tipoNome = tipoJubilado.nome;
+        tipoInscricaoId = tipoJubilado.id;
         valorBase = tipoJubilado.valor;
         tipoInclui = {
           alimentacao: !!tipoJubilado.inclui_alimentacao,
@@ -554,7 +581,7 @@ export async function POST(request: NextRequest) {
     if (tipo_inscricao && usaTipos && !vinculoEsposaJubiladoTitular) {
       const { data: tipo, error: tipoErr } = await supabase
         .from('evento_tipos_inscricao')
-        .select('nome, valor, inclui_alimentacao, inclui_hospedagem, quantidade_refeicoes')
+        .select('id, nome, valor, inclui_alimentacao, inclui_hospedagem, quantidade_refeicoes')
         .eq('evento_id', evento.id)
         .ilike('nome', String(tipo_inscricao).trim())
         .eq('ativo', true)
@@ -637,6 +664,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      tipoInscricaoId = tipo.id;
       valorBase  = tipo.valor;
       tipoNome   = tipo.nome;
       tipoInclui = { alimentacao: tipo.inclui_alimentacao, hospedagem: tipo.inclui_hospedagem };
@@ -681,6 +709,7 @@ export async function POST(request: NextRequest) {
     let desconto   = 0;
     let valorFinal = valorBase;
     let cupomUsado = null as string | null;
+    let cupomId    = null as string | null;
 
     const confAgo = (evento as any).configuracoes_ago as Record<string, unknown> | null;
     const cmConfig = parseCampoMissionarioConfig(confAgo);
@@ -694,11 +723,12 @@ export async function POST(request: NextRequest) {
 
     stage = 'calculo_valor';
     if (cupom_codigo) {
-      const result = await calcularDesconto(supabase, evento.id, cupom_codigo, valorBase);
+      const result = await calcularDesconto(supabase, evento.id, cupom_codigo, valorBase, tipoInscricaoId);
       if (result) {
         desconto   = result.desconto;
         valorFinal = result.valorFinal;
-        cupomUsado = String(cupom_codigo).trim().toUpperCase();
+        cupomUsado = result.cupomCodigo;
+        cupomId    = result.cupomId;
       }
     }
 
@@ -1045,6 +1075,7 @@ export async function POST(request: NextRequest) {
         brinde:           !!brinde,
         tipo_inscricao:   tipoNome,
         valor_original:   valorBase,
+        cupom_id:         cupomId,
         cupom_codigo:     cupomUsado,
         desconto_valor:   desconto,
         valor_final:      valorFinal,
@@ -1243,6 +1274,7 @@ export async function POST(request: NextRequest) {
         desconto_valor: number;
         valor_final: number;
         cupom_codigo: string | null;
+        cupom_id: string | null;
         alimentacao: boolean;
         refeicoes: number;
         hosp_necessidade_especial: boolean;
@@ -1447,11 +1479,13 @@ export async function POST(request: NextRequest) {
 
         let descontoParticipante = 0;
         let cupomParticipante: string | null = null;
+        let cupomIdParticipante: string | null = null;
         if (cupom_codigo) {
-          const cupom = await calcularDesconto(supabase, evento.id, cupom_codigo, valorBaseParticipante);
+          const cupom = await calcularDesconto(supabase, evento.id, cupom_codigo, valorBaseParticipante, tipoEvento?.id ?? null);
           if (cupom) {
             descontoParticipante = cupom.desconto;
-            cupomParticipante = String(cupom_codigo).trim().toUpperCase();
+            cupomParticipante = cupom.cupomCodigo;
+            cupomIdParticipante = cupom.cupomId;
           }
         }
 
@@ -1482,6 +1516,7 @@ export async function POST(request: NextRequest) {
           desconto_valor: descontoParticipante,
           valor_final: valorFinalParticipante,
           cupom_codigo: cupomParticipante,
+          cupom_id:     cupomIdParticipante,
           alimentacao: alimentacaoParticipante,
           refeicoes: refeicoesParticipante,
           hosp_necessidade_especial: !!p.hosp_necessidade_especial,
@@ -1565,6 +1600,7 @@ export async function POST(request: NextRequest) {
         tipo_inscricao:   p.tipo_inscricao,
         valor_original:   p.valor_original,
         cupom_codigo:     p.cupom_codigo,
+        cupom_id:         p.cupom_id ?? null,
         desconto_valor:   p.desconto_valor,
         valor_final:      p.valor_final,
         valor_pago:       0,
@@ -1674,6 +1710,7 @@ export async function POST(request: NextRequest) {
       brinde:           !!brinde,
       tipo_inscricao:   tipoNome,
       valor_original:   valorBase,
+      cupom_id:         cupomId,
       cupom_codigo:     cupomUsado,
       desconto_valor:   desconto,
       valor_final:      valorFinal,

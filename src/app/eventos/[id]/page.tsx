@@ -5308,10 +5308,23 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
   const router = useRouter();
 
   // ── Cupons ───────────────────────────────────────────────
-  const [cupons,        setCupons]        = useState<Array<{id:string;codigo:string;tipo:string;valor:number;limite_uso:number|null;usados:number;ativo:boolean;validade:string|null}>>([]);
-  const [addCupom,      setAddCupom]      = useState({ codigo:'', tipo:'percentual', valor:'', limite_uso:'', validade:'' });
+  const [cupons, setCupons] = useState<any[]>([]);
+  const [addCupom, setAddCupom] = useState({
+    id: '',
+    codigo: '',
+    tipo_desconto: 'percentual',
+    valor: '',
+    limite_usos: '',
+    validade_inicio: '',
+    validade_fim: '',
+    ativo: true,
+    aplicar_todos_tipos: true,
+    tipos_permitidos: [] as string[],
+    observacoes: '',
+  });
   const [addCupErro,    setAddCupErro]    = useState('');
   const [salvandoCup,   setSalvandoCup]   = useState(false);
+  const [modoEdicaoCup, setModoEdicaoCup] = useState(false);
 
   // ── Tipos de inscrição ────────────────────────────────────
   const [usarTipos,     setUsarTipos]     = useState(evento.usar_tipos_inscricao);
@@ -5386,32 +5399,100 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
     setSalvandoFlag(false);
   }
 
-  async function criarCupom() {
-    setAddCupErro(''); setSalvandoCup(true);
+  function resetCupomForm() {
+    setAddCupom({
+      id: '',
+      codigo: '',
+      tipo_desconto: 'percentual',
+      valor: '',
+      limite_usos: '',
+      validade_inicio: '',
+      validade_fim: '',
+      ativo: true,
+      aplicar_todos_tipos: true,
+      tipos_permitidos: [],
+      observacoes: '',
+    });
+    setAddCupErro('');
+    setModoEdicaoCup(false);
+  }
+
+  async function salvarCupom() {
+    setAddCupErro('');
+    if (!addCupom.codigo.trim()) { setAddCupErro('Código é obrigatório.'); return; }
+    const valorNum = parseFloat(addCupom.valor);
+    if (isNaN(valorNum) || valorNum <= 0) { setAddCupErro('Valor deve ser maior que zero.'); return; }
+
+    setSalvandoCup(true);
+    const method = modoEdicaoCup ? 'PUT' : 'POST';
     const res = await fetch(`/api/eventos/${evento.id}/cupons`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        codigo:    addCupom.codigo,
-        tipo:      addCupom.tipo,
-        valor:     parseFloat(addCupom.valor) || 0,
-        limite_uso: addCupom.limite_uso ? parseInt(addCupom.limite_uso) : null,
-        validade:  addCupom.validade || null,
-        ativo:     true,
+        id: addCupom.id || undefined,
+        codigo: addCupom.codigo.trim().toUpperCase(),
+        tipo_desconto: addCupom.tipo_desconto,
+        valor: valorNum,
+        limite_usos: addCupom.limite_usos ? parseInt(addCupom.limite_usos) : null,
+        validade_inicio: addCupom.validade_inicio ? new Date(addCupom.validade_inicio).toISOString() : null,
+        validade_fim: addCupom.validade_fim ? new Date(addCupom.validade_fim).toISOString() : null,
+        ativo: addCupom.ativo,
+        aplicar_todos_tipos: addCupom.aplicar_todos_tipos,
+        tipos_permitidos: addCupom.tipos_permitidos,
+        observacoes: addCupom.observacoes,
       }),
     });
     const j = await res.json();
     setSalvandoCup(false);
-    if (!res.ok) { setAddCupErro(j.error || 'Erro ao criar cupom.'); return; }
-    setAddCupom({ codigo:'', tipo:'percentual', valor:'', limite_uso:'', validade:'' });
+    if (!res.ok) {
+      setAddCupErro(j.error || 'Erro ao salvar cupom.');
+      return;
+    }
+    resetCupomForm();
     fetch(`/api/eventos/${evento.id}/cupons`).then(r => r.json()).then(j2 => setCupons(j2.cupons ?? []));
   }
 
-  async function toggleCupom(id: string, ativo: boolean) {
-    await fetch(`/api/eventos/${evento.id}/cupons`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, ativo }),
+  function editarCupom(c: any) {
+    setAddCupom({
+      id: c.id,
+      codigo: c.codigo,
+      tipo_desconto: c.tipo_desconto,
+      valor: String(c.valor),
+      limite_usos: c.limite_usos ? String(c.limite_usos) : '',
+      validade_inicio: c.validade_inicio ? new Date(c.validade_inicio).toISOString().slice(0, 16) : '',
+      validade_fim: c.validade_fim ? new Date(c.validade_fim).toISOString().slice(0, 16) : '',
+      ativo: c.ativo,
+      aplicar_todos_tipos: c.aplicar_todos_tipos,
+      tipos_permitidos: Array.isArray(c.tipos_permitidos) ? c.tipos_permitidos : [],
+      observacoes: c.observacoes || '',
     });
-    setCupons(c => c.map(x => x.id === id ? { ...x, ativo } : x));
+    setAddCupErro('');
+    setModoEdicaoCup(true);
+  }
+
+  async function toggleCupom(c: any) {
+    await fetch(`/api/eventos/${evento.id}/cupons`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...c,
+        ativo: !c.ativo
+      }),
+    });
+    setCupons(prev => prev.map(x => x.id === c.id ? { ...x, ativo: !c.ativo } : x));
+  }
+
+  async function excluirCupom(id: string) {
+    if (!confirm('Deseja realmente excluir este cupom?')) return;
+    const res = await fetch(`/api/eventos/${evento.id}/cupons?id=${id}`, {
+      method: 'DELETE'
+    });
+    if (res.ok) {
+      fetch(`/api/eventos/${evento.id}/cupons`).then(r => r.json()).then(j2 => setCupons(j2.cupons ?? []));
+    } else {
+      const j = await res.json();
+      alert(j.error || 'Erro ao excluir cupom.');
+    }
   }
 
   function copiarLink() {
@@ -5629,6 +5710,204 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
         </div>
       </div>
 
+      {/* ══ 4. CUPONS DE DESCONTO ════════════════════════════════════ */}
+      <div className={card}>
+        <div className={hd}>
+          <h3 className={hdT}>🏷️ Cupons de Desconto</h3>
+          <span className="text-xs text-gray-400">{cupons.filter(c => c.ativo).length} ativo(s)</span>
+        </div>
+        <div className="p-6">
+          {cupons.length === 0 ? (
+            <p className="text-sm text-gray-400 mb-4">Nenhum cupom criado ainda.</p>
+          ) : (
+            <div className="mb-5 overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead>
+                  <tr className="text-gray-500 border-b border-gray-100">
+                    <th className="pb-2 font-semibold">Código</th>
+                    <th className="pb-2 font-semibold">Tipo</th>
+                    <th className="pb-2 font-semibold text-right">Valor</th>
+                    <th className="pb-2 font-semibold text-right">Limite</th>
+                    <th className="pb-2 font-semibold text-right">Usados</th>
+                    <th className="pb-2 font-semibold">Validade</th>
+                    <th className="pb-2 font-semibold text-center">Status</th>
+                    <th className="pb-2 font-semibold text-center">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {cupons.map(c => (
+                    <tr key={c.id}>
+                      <td className="py-2 font-mono font-bold text-[#123b63]">{c.codigo}</td>
+                      <td className="py-2">{c.tipo_desconto === 'percentual' ? 'Percentual' : 'Fixo'}</td>
+                      <td className="py-2 text-right font-semibold">{c.tipo_desconto === 'percentual' ? `${c.valor}%` : fmtMoeda(c.valor)}</td>
+                      <td className="py-2 text-right">{c.limite_usos ?? 'Ilimitado'}</td>
+                      <td className="py-2 text-right">{c.usos_atuais}</td>
+                      <td className="py-2 text-xs">
+                        {c.validade_inicio || c.validade_fim ? (
+                          <>
+                            {c.validade_inicio ? `De ${new Date(c.validade_inicio).toLocaleDateString('pt-BR')}` : ''}
+                            {c.validade_fim ? ` até ${new Date(c.validade_fim).toLocaleDateString('pt-BR')}` : ''}
+                          </>
+                        ) : 'Permanente'}
+                      </td>
+                      <td className="py-2 text-center">
+                        <button onClick={() => toggleCupom(c)} disabled={!podeEditar}
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition ${c.ativo ? 'bg-emerald-100 text-emerald-700 hover:bg-red-100 hover:text-red-700' : 'bg-gray-100 text-gray-500 hover:bg-emerald-100 hover:text-emerald-700'}`}>
+                          {c.ativo ? 'Ativo' : 'Inativo'}
+                        </button>
+                      </td>
+                      <td className="py-2 text-center space-x-2">
+                        <button onClick={() => editarCupom(c)} disabled={!podeEditar}
+                          className="text-xs text-[#123b63] font-bold hover:underline">
+                          ✏️ Editar
+                        </button>
+                        <button onClick={() => excluirCupom(c.id)} disabled={!podeEditar}
+                          className="text-xs text-red-600 font-bold hover:underline">
+                          ❌ Excluir
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {podeEditar && (
+            <div className="border-t border-gray-100 pt-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-bold text-gray-700">
+                  {modoEdicaoCup ? '✏️ Editar cupom' : '➕ Criar novo cupom'}
+                </p>
+                {modoEdicaoCup && (
+                  <button onClick={resetCupomForm} className="text-xs text-gray-500 font-semibold hover:underline">
+                    Cancelar Edição
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {/* Código */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Código</label>
+                  <input value={addCupom.codigo} onChange={e => setAddCupom(x => ({...x, codigo: e.target.value.toUpperCase()}))}
+                    placeholder="CODIGO" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono uppercase" />
+                </div>
+
+                {/* Tipo de desconto */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Tipo de Desconto</label>
+                  <div className="flex gap-4 mt-2">
+                    <label className="flex items-center gap-1.5 text-xs text-gray-700 font-medium cursor-pointer">
+                      <input type="radio" name="tipo_desconto" value="fixo" checked={addCupom.tipo_desconto === 'fixo'}
+                        onChange={() => setAddCupom(x => ({...x, tipo_desconto: 'fixo'}))}
+                        className="accent-[#123b63]" />
+                      Valor Fixo (R$)
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs text-gray-700 font-medium cursor-pointer">
+                      <input type="radio" name="tipo_desconto" value="percentual" checked={addCupom.tipo_desconto === 'percentual'}
+                        onChange={() => setAddCupom(x => ({...x, tipo_desconto: 'percentual'}))}
+                        className="accent-[#123b63]" />
+                      Percentual (%)
+                    </label>
+                  </div>
+                </div>
+
+                {/* Valor */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Valor</label>
+                  <input type="number" min="0" step="0.01" value={addCupom.valor}
+                    onChange={e => setAddCupom(x => ({...x, valor: e.target.value}))}
+                    placeholder={addCupom.tipo_desconto === 'percentual' ? 'Ex: 10 (%)' : 'Ex: 20.00'}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+
+                {/* Limite de usos */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Quantidade máxima de usos</label>
+                  <input type="number" min="1" step="1" value={addCupom.limite_usos}
+                    onChange={e => setAddCupom(x => ({...x, limite_usos: e.target.value}))}
+                    placeholder="Ilimitado se vazio"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+
+                {/* Validade início */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Validade início</label>
+                  <input type="datetime-local" value={addCupom.validade_inicio}
+                    onChange={e => setAddCupom(x => ({...x, validade_inicio: e.target.value}))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+
+                {/* Validade fim */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Validade fim</label>
+                  <input type="datetime-local" value={addCupom.validade_fim}
+                    onChange={e => setAddCupom(x => ({...x, validade_fim: e.target.value}))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+              </div>
+
+              {/* Aplica para */}
+              <div className="border border-gray-150 rounded-xl p-3 bg-gray-50/50">
+                <label className="block text-xs font-semibold text-gray-500 mb-2">Aplica para</label>
+                <div className="flex gap-4 mb-2">
+                  <label className="flex items-center gap-1.5 text-xs text-gray-700 font-medium cursor-pointer">
+                    <input type="checkbox" checked={addCupom.aplicar_todos_tipos}
+                      onChange={e => setAddCupom(x => ({...x, aplicar_todos_tipos: e.target.checked}))}
+                      className="rounded accent-[#123b63]" />
+                    Todos os tipos
+                  </label>
+                </div>
+
+                {!addCupom.aplicar_todos_tipos && (
+                  <div className="mt-2 p-2 bg-white rounded-lg border border-gray-200 max-h-40 overflow-y-auto space-y-1.5">
+                    {tipos.map(t => (
+                      <label key={t.id} className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer">
+                        <input type="checkbox"
+                          checked={addCupom.tipos_permitidos.includes(t.id || '')}
+                          onChange={() => {
+                            const id = t.id || '';
+                            const prev = addCupom.tipos_permitidos;
+                            const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+                            setAddCupom(x => ({...x, tipos_permitidos: next}));
+                          }}
+                          className="rounded accent-[#123b63]"
+                        />
+                        <span>{t.nome} ({fmtMoeda(parseFloat(t.valor) || 0)})</span>
+                      </label>
+                    ))}
+                    {tipos.length === 0 && <p className="text-xs text-gray-400">Nenhum tipo de inscrição configurado.</p>}
+                  </div>
+                )}
+              </div>
+
+              {/* Observações */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Observações internas</label>
+                <input value={addCupom.observacoes} onChange={e => setAddCupom(x => ({...x, observacoes: e.target.value}))}
+                  placeholder="Anotações internas..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+              </div>
+
+              {/* Ativo */}
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="cupom_ativo" checked={addCupom.ativo}
+                  onChange={e => setAddCupom(x => ({...x, ativo: e.target.checked}))}
+                  className="rounded accent-[#123b63] cursor-pointer" />
+                <label htmlFor="cupom_ativo" className="text-xs font-semibold text-gray-700 cursor-pointer">Ativo</label>
+              </div>
+
+              {addCupErro && <p className="text-red-600 text-xs">{addCupErro}</p>}
+
+              <button onClick={salvarCupom} disabled={salvandoCup || !addCupom.codigo || !addCupom.valor}
+                className="px-4 py-2 bg-[#F39C12] text-white text-sm font-semibold rounded-lg hover:bg-[#d68910] disabled:opacity-50 transition">
+                {salvandoCup ? 'Salvando...' : (modoEdicaoCup ? '💾 Salvar Alterações' : '➕ Criar Cupom')}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* ══ 3. COMUNICAÇÃO ══════════════════════════════════════════ */}
       <div className={card}>
         <div className={hd}>
@@ -5677,86 +5956,7 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
         </div>
       </div>
 
-      {/* ══ 4. CUPONS DE DESCONTO ════════════════════════════════════ */}
-      <div className={card}>
-        <div className={hd}>
-          <h3 className={hdT}>🏷️ Cupons de Desconto</h3>
-          <span className="text-xs text-gray-400">{cupons.filter(c => c.ativo).length} ativo(s)</span>
-        </div>
-        <div className="p-6">
-          {cupons.length === 0 ? (
-            <p className="text-sm text-gray-400 mb-4">Nenhum cupom criado ainda.</p>
-          ) : (
-            <div className="mb-5 overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-gray-500 border-b border-gray-100">
-                    <th className="text-left pb-2 font-semibold">Código</th>
-                    <th className="text-left pb-2 font-semibold">Tipo</th>
-                    <th className="text-right pb-2 font-semibold">Valor</th>
-                    <th className="text-right pb-2 font-semibold">Usados</th>
-                    <th className="text-left pb-2 font-semibold">Validade</th>
-                    <th className="text-center pb-2 font-semibold">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {cupons.map(c => (
-                    <tr key={c.id}>
-                      <td className="py-2 font-mono font-bold text-[#123b63]">{c.codigo}</td>
-                      <td className="py-2">{c.tipo === 'percentual' ? '%' : 'R$'}</td>
-                      <td className="py-2 text-right">{c.tipo === 'percentual' ? `${c.valor}%` : fmtMoeda(c.valor)}</td>
-                      <td className="py-2 text-right">{c.usados}{c.limite_uso ? `/${c.limite_uso}` : ''}</td>
-                      <td className="py-2">{c.validade ? c.validade.slice(0,10).split('-').reverse().join('/') : '—'}</td>
-                      <td className="py-2 text-center">
-                        {podeEditar ? (
-                          <button onClick={() => toggleCupom(c.id, !c.ativo)}
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition ${c.ativo ? 'bg-emerald-100 text-emerald-700 hover:bg-red-100 hover:text-red-700' : 'bg-gray-100 text-gray-500 hover:bg-emerald-100 hover:text-emerald-700'}`}>
-                            {c.ativo ? 'Ativo' : 'Inativo'}
-                          </button>
-                        ) : (
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${c.ativo ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
-                            {c.ativo ? 'Ativo' : 'Inativo'}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {podeEditar && (
-            <div className={cupons.length > 0 ? 'border-t border-gray-100 pt-4' : ''}>
-              <p className="text-sm font-semibold text-gray-700 mb-3">Criar novo cupom</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-2">
-                <input value={addCupom.codigo} onChange={e => setAddCupom(x => ({...x, codigo: e.target.value.toUpperCase()}))}
-                  placeholder="CODIGO" className="border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono uppercase" />
-                <select value={addCupom.tipo} onChange={e => setAddCupom(x => ({...x, tipo: e.target.value}))}
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                  <option value="percentual">% Percentual</option>
-                  <option value="valor_fixo">R$ Valor Fixo</option>
-                </select>
-                <input type="number" min="0" step="0.01" value={addCupom.valor}
-                  onChange={e => setAddCupom(x => ({...x, valor: e.target.value}))}
-                  placeholder={addCupom.tipo === 'percentual' ? 'Ex: 10 (%)' : 'Ex: 20.00'}
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-                <input type="number" min="1" step="1" value={addCupom.limite_uso}
-                  onChange={e => setAddCupom(x => ({...x, limite_uso: e.target.value}))}
-                  placeholder="Limite de usos (opcional)"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-                <input type="date" value={addCupom.validade}
-                  onChange={e => setAddCupom(x => ({...x, validade: e.target.value}))}
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-              </div>
-              {addCupErro && <p className="text-red-600 text-xs mb-2">{addCupErro}</p>}
-              <button onClick={criarCupom} disabled={salvandoCup || !addCupom.codigo || !addCupom.valor}
-                className="px-4 py-2 bg-[#F39C12] text-white text-sm font-semibold rounded-lg hover:bg-[#d68910] disabled:opacity-50 transition">
-                {salvandoCup ? 'Criando...' : '➕ Criar Cupom'}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
+
 
       {/* ══ 5. HOSPEDAGEM AGO (condicional) ════════════════════════ */}
       {evento.departamento === 'AGO' && evento.permite_hospedagem && (

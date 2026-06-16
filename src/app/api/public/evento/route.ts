@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   const supabase = createServerClient();
   const { data: evento, error } = await supabase
     .from('eventos')
-    .select('id,nome,slug,descricao,departamento,data_inicio,data_fim,local,cidade,banner_url,valor_inscricao,permite_hospedagem,permite_alimentacao,permite_brinde,gerar_certificado,link_whatsapp,mensagem_confirmacao,inscricoes_abertas,limite_vagas,limite_hospedagem,limite_brindes,publico_alvo,usar_tipos_inscricao,status,suporte_nome,suporte_whatsapp')
+    .select('id,nome,slug,descricao,departamento,data_inicio,data_fim,local,cidade,banner_url,valor_inscricao,permite_hospedagem,permite_alimentacao,permite_brinde,gerar_certificado,link_whatsapp,mensagem_confirmacao,inscricoes_abertas,limite_vagas,limite_hospedagem,limite_brindes,publico_alvo,usar_tipos_inscricao,status,suporte_nome,suporte_whatsapp,configuracoes_ago')
     .eq('slug', slug)
     .single();
 
@@ -22,10 +22,18 @@ export async function GET(request: NextRequest) {
 
   const { data: tipos } = await supabase
     .from('evento_tipos_inscricao')
-    .select('id,nome,valor,inclui_alimentacao,inclui_hospedagem,ordem')
+    .select('id,nome,valor,inclui_alimentacao,inclui_hospedagem,ordem,quantidade_refeicoes,cortesia')
     .eq('evento_id', evento.id)
     .eq('ativo', true)
     .order('ordem');
+
+  // Verifica se há cupons ativos para este evento
+  const { count: cuponsAtivos } = await supabase
+    .from('evento_cupons')
+    .select('id', { count: 'exact', head: true })
+    .eq('evento_id', evento.id)
+    .eq('ativo', true);
+  const possuiCupomAtivo = (cuponsAtivos ?? 0) > 0;
 
   let totalInscritos: number | null = null;
   if (evento.limite_vagas) {
@@ -123,7 +131,7 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({
-    evento,
+    evento: { ...evento, possuiCupomAtivo },
     tipos: tipos ?? [],
     totalInscritos,
     vagasHospedagem,
