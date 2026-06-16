@@ -4652,6 +4652,24 @@ useEffect(() => {
                           >
                             🔄 Girar
                           </button>
+                          <button
+                            onClick={() => {
+                              const link = document.createElement('a');
+                              link.href = fotoMembro;
+                              // Limpa caracteres especiais do nome para o nome do arquivo
+                              const nomeLimpo = (dadosPessoais?.nome || 'foto_ministro')
+                                .toLowerCase()
+                                .replace(/\s+/g, '_')
+                                .replace(/[^\w-]/g, '');
+                              link.download = `${nomeLimpo}.jpg`;
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                            }}
+                            className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 font-semibold text-sm flex items-center gap-2"
+                          >
+                            📥 Baixar
+                          </button>
                           {fotoMembro && (
                             <button
                               onClick={() => setFotoMembro(null)}

@@ -225,6 +225,7 @@ const STATUS_PAG_CFG: Record<string, { label: string; cls: string }> = {
   pago:      { label: 'Pago',      cls: 'bg-green-100 text-green-700'  },
   isento:    { label: 'Isento',    cls: 'bg-blue-100  text-blue-700'   },
   cancelado: { label: 'Cancelado', cls: 'bg-red-100   text-red-700'    },
+  pendente_complemento: { label: 'Pendente Complemento', cls: 'bg-amber-100 text-amber-700' },
 };
 
 const STATUS_HOSPEDAGEM_LABEL: Record<string, string> = {
@@ -883,6 +884,8 @@ export default function GerenciarEventoPage() {
           campos={campos}
           nomeSup={nomeSup}
           nomeCampo={nomeCampo}
+          supabase={supabase}
+          eventoId={id}
           onRefresh={fetchInscricoes}
         />
       )}
@@ -1043,6 +1046,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   const [carregandoEventos, setCarregandoEventos] = useState(false);
   const [salvandoEdit,  setSalvandoEdit]  = useState(false);
   const [erroEdit,      setErroEdit]      = useState<string | null>(null);
+  const [ordemGerada,   setOrdemGerada]   = useState<any>(null);
   const [confirmExcluir, setConfirmExcluir] = useState<Inscricao | null>(null);
   const [dadosOperacionais, setDadosOperacionais] = useState<DadosOperacionais | null>(null);
   const [carregandoDadosOperacionais, setCarregandoDadosOperacionais] = useState(false);
@@ -1553,20 +1557,60 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
     });
 
     setSalvandoEdit(true);
+    
+    // Se a inscrição já está paga e há diferença a pagar, fazemos a chamada ao endpoint de complemento
+    const jaEstavaPago = editando.status_pagamento === 'pago' || editando.status_pagamento === 'pendente_complemento';
+    const gerarComplemento = jaEstavaPago && diferencaValor !== null && diferencaValor > 0;
+
+    // Se for gerar complemento, o status de pagamento deve ser 'pendente_complemento'
+    if (gerarComplemento) {
+      payload.status_pagamento = 'pendente_complemento';
+    }
+
     const { error } = await supabase
       .from('evento_inscricoes')
       .update(payload)
       .eq('id', editando.id);
 
     if (error) {
-      setErroEdit('Erro ao salvar: ' + error.message);
+      setErroEdit('Erro ao salvar inscrição: ' + error.message);
       setSalvandoEdit(false);
       return;
     }
 
+    if (gerarComplemento) {
+      try {
+        const res = await fetch(`/api/eventos/inscricao/${editando.id}/complemento`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tipo_inscricao: payload.tipo_inscricao,
+            valor_novo: valorNovoFinal
+          })
+        });
+
+        const resData = await res.json();
+        if (!res.ok) {
+          setErroEdit(`Inscrição salva, mas falhou ao gerar cobrança complementar: ${resData.error || 'Erro desconhecido'}`);
+          setSalvandoEdit(false);
+          return;
+        }
+
+        if (resData.success) {
+          setOrdemGerada(resData.ordem);
+        }
+      } catch (err: any) {
+        setErroEdit(`Inscrição salva, mas falhou ao conectar com o servidor para gerar cobrança complementar: ${err.message}`);
+        setSalvandoEdit(false);
+        return;
+      }
+    }
+
     setSalvandoEdit(false);
-    setEditando(null);
-    setEditForm(null);
+    if (!gerarComplemento) {
+      setEditando(null);
+      setEditForm(null);
+    }
     onRefresh();
   }
 
@@ -2413,7 +2457,10 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                 <div>Valor atual pago: {fmtMoeda(valorPagoAtual)}</div>
                 <div>Valor novo: {fmtMoeda(valorNovo)}</div>
                 {diferencaValor !== null && diferencaValor > 0 && (
-                  <div className="text-amber-600 font-semibold">Diferença a pagar: {fmtMoeda(diferencaValor)} (cobrança complementar)</div>
+                  <div className="text-amber-600 font-semibold bg-amber-50 p-3 rounded-lg border border-amber-200 mt-2">
+                    <p className="font-bold">Diferença a pagar: {fmtMoeda(diferencaValor)}</p>
+                    <p className="mt-1 text-[11px] text-amber-700">Ao salvar, o sistema irá gerar uma cobrança complementar e enviar por e-mail.</p>
+                  </div>
                 )}
                 {diferencaValor !== null && diferencaValor === 0 && (
                   <div className="text-emerald-700 font-semibold">Sem diferença de valor.</div>
@@ -2424,6 +2471,53 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
               </div>
             )}
             </div>{/* fim scroll */}
+
+            {/* Modal de Sucesso da Ordem Gerada */}
+            {ordemGerada && (
+              <div className="absolute inset-0 bg-white/95 z-50 flex flex-col justify-center items-center p-6 text-center">
+                <span className="text-5xl mb-4">📨</span>
+                <h4 className="text-xl font-bold text-[#123b63] mb-2">Cobrança Complementar Gerada!</h4>
+                <p className="text-sm text-gray-600 max-w-md mb-6">
+                  Foi gerada uma cobrança complementar de <strong>{fmtMoeda(ordemGerada.valor)}</strong> para o inscrito <strong>{editando.nome_inscrito}</strong>.
+                  O inscrito receberá um e-mail com os detalhes e o link para pagamento.
+                </p>
+
+                <div className="space-y-3 w-full max-w-sm">
+                  {ordemGerada.invoice_url && (
+                    <a
+                      href={ordemGerada.invoice_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block w-full py-2.5 px-4 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 transition"
+                    >
+                      🔗 Abrir Fatura
+                    </a>
+                  )}
+                  {ordemGerada.pix_copia_cola && (
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(ordemGerada.pix_copia_cola);
+                        alert('Código Pix copiado com sucesso!');
+                      }}
+                      className="block w-full py-2.5 px-4 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition text-xs border border-gray-300"
+                    >
+                      📋 Copiar Código PIX
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setOrdemGerada(null);
+                      setEditando(null);
+                      setEditForm(null);
+                    }}
+                    className="block w-full py-2.5 px-4 bg-gray-800 text-white rounded-lg font-semibold hover:bg-gray-900 transition"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Rodapé fixo */}
             <div className="flex items-center justify-end gap-2 px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-100 shrink-0">
               <button
@@ -2434,7 +2528,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
               </button>
               <button
                 onClick={salvarEdicao}
-                disabled={salvandoEdit}
+                disabled={salvandoEdit || !!ordemGerada}
                 className="px-4 py-2 text-sm rounded-lg bg-[#123b63] text-white font-semibold hover:bg-[#0f2a45] transition disabled:opacity-50"
               >
                 {salvandoEdit ? 'Salvando...' : 'Salvar alterações'}
@@ -3846,12 +3940,14 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
 // ═══════════════════════════════════════════════════════════════
 // ABA FINANCEIRO
 // ═══════════════════════════════════════════════════════════════
-function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSup, nomeCampo, onRefresh }: {
+function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSup, nomeCampo, supabase, eventoId, onRefresh }: {
   inscricoes: Inscricao[]; loading: boolean;
   stats: { total: number; pagos: number; pendentes: number; isentos: number; arrecadado: number };
   supervisoes: Supervisao[]; campos: Campo[];
   nomeSup: (id: string | null) => string;
   nomeCampo: (id: string | null) => string;
+  supabase: any;
+  eventoId: string;
   onRefresh: () => void;
 }) {
   const [busca,       setBusca]       = useState('');
@@ -3861,6 +3957,40 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
   const [salvando,       setSalvando]       = useState<string | null>(null);
   const [confirmarIns,   setConfirmarIns]   = useState<Inscricao | null>(null);
   const [erroModal,      setErroModal]      = useState<string | null>(null);
+  const [ordensComplementares, setOrdensComplementares] = useState<any[]>([]);
+  const [carregandoOrdens, setCarregandoOrdens] = useState(false);
+
+  useEffect(() => {
+    if (supabase && eventoId) {
+      carregarOrdensComplementares();
+    }
+  }, [eventoId, inscricoes]);
+
+  async function carregarOrdensComplementares() {
+    setCarregandoOrdens(true);
+    try {
+      const { data, error } = await supabase
+        .from('evento_ordens_pagamento')
+        .select(`
+          *,
+          evento_inscricoes (
+            id,
+            nome_inscrito
+          )
+        `)
+        .eq('evento_id', eventoId)
+        .eq('tipo_ordem', 'complemento')
+        .eq('status', 'pendente');
+
+      if (!error && data) {
+        setOrdensComplementares(data);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar ordens complementares:', err);
+    } finally {
+      setCarregandoOrdens(false);
+    }
+  }
 
   const camposFiltrados = useMemo(() =>
     filtroSup ? campos.filter(c => c.supervisao_id === filtroSup) : campos,
@@ -4045,6 +4175,67 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
           </div>
         </div>
       )}
+      {/* Seção de Cobranças Complementares Pendentes */}
+      <div className="mt-8 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+          <h3 className="font-bold text-[#123b63] text-sm flex items-center gap-2">
+            <span>📨</span> Cobranças complementares pendentes
+          </h3>
+          <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-semibold">
+            {ordensComplementares.length} pendente(s)
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          {carregandoOrdens ? (
+            <div className="p-6 text-center text-sm text-gray-500">
+              <span className="animate-spin inline-block mr-2">⏳</span> Carregando cobranças complementares...
+            </div>
+          ) : ordensComplementares.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-6">Nenhuma cobrança complementar pendente encontrada.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50/50">
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600">Inscrito</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600">Valor</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600">Status</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ordensComplementares.map((ordem) => (
+                  <tr key={ordem.id} className="border-b border-gray-50 hover:bg-gray-50 transition">
+                    <td className="px-4 py-3 font-medium text-gray-800">
+                      {ordem.evento_inscricoes?.nome_inscrito || 'Inscrito não identificado'}
+                    </td>
+                    <td className="px-4 py-3 text-gray-800 font-semibold">{fmtMoeda(ordem.valor)}</td>
+                    <td className="px-4 py-3">
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                        {ordem.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {ordem.invoice_url ? (
+                        <a
+                          href={ordem.invoice_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded transition"
+                        >
+                          🔗 Abrir Fatura
+                        </a>
+                      ) : (
+                        <span className="text-xs text-gray-400">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
