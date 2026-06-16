@@ -204,6 +204,16 @@ export default function BalcaoPage() {
   const [caixaTimeline, setCaixaTimeline] = useState<any[]>([]);
   const [carregandoCaixa, setCarregandoCaixa] = useState(true);
 
+  // ── Estado do Registro de Sangria ─────────────────────────
+  const [modalSangriaAberto, setModalSangriaAberto] = useState(false);
+  const [sangriaValor, setSangriaValor] = useState('');
+  const [sangriaRetiradoPor, setSangriaRetiradoPor] = useState('');
+  const [sangriaRecebidoPor, setSangriaRecebidoPor] = useState('');
+  const [sangriaObservacao, setSangriaObservacao] = useState('');
+  const [registrandoSangria, setRegistrandoSangria] = useState(false);
+  const [sangriaErro, setSangriaErro] = useState<string | null>(null);
+  const [sangriaSucesso, setSangriaSucesso] = useState(false);
+
   // ── Estado da lista de inscritos ─────────────────────────
   const [inscricoesLista, setInscricoesLista] = useState<InscricaoResumo[]>([]);
   const [loadingLista, setLoadingLista] = useState(false);
@@ -478,6 +488,78 @@ export default function BalcaoPage() {
       setCarregandoCaixa(false);
     }
   }, [id]);
+
+  const executarSangria = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id || !caixaSessao) return;
+
+    const valorNum = parseFloat(sangriaValor);
+    if (isNaN(valorNum) || valorNum <= 0) {
+      setSangriaErro('O valor da sangria precisa ser maior que zero.');
+      return;
+    }
+
+    if (!sangriaRetiradoPor.trim()) {
+      setSangriaErro('O campo "Retirado por" é obrigatório.');
+      return;
+    }
+
+    if (!sangriaRecebidoPor.trim()) {
+      setSangriaErro('O campo "Recebido por" é obrigatório.');
+      return;
+    }
+
+    setRegistrandoSangria(true);
+    setSangriaErro(null);
+    setSangriaSucesso(false);
+
+    try {
+      const equipeId = localStorage.getItem(`evento_${id}_equipe_id`);
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (equipeId) {
+        headers['x-evento-equipe-id'] = equipeId;
+      }
+
+      const res = await fetch(`/api/eventos/${id}/caixa/sangria`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          caixa_sessao_id: caixaSessao.id,
+          operador_id: caixaSessao.operador_id,
+          valor: valorNum,
+          forma_pagamento: 'dinheiro',
+          observacao: sangriaObservacao,
+          retirado_por: sangriaRetiradoPor,
+          recebido_por: sangriaRecebidoPor,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Erro ao registrar sangria.');
+      }
+
+      setSangriaSucesso(true);
+      setSangriaValor('');
+      setSangriaRetiradoPor('');
+      setSangriaRecebidoPor('');
+      setSangriaObservacao('');
+      
+      await carregarCaixaDados();
+
+      setTimeout(() => {
+        setModalSangriaAberto(false);
+        setSangriaSucesso(false);
+      }, 1500);
+
+    } catch (err: any) {
+      setSangriaErro(err.message || 'Erro inesperado ao registrar sangria.');
+    } finally {
+      setRegistrandoSangria(false);
+    }
+  };
 
   useEffect(() => {
     if (authLoading || perfil.loading || !id) return;
@@ -2834,6 +2916,14 @@ export default function BalcaoPage() {
 
                   <button
                     type="button"
+                    onClick={() => setModalSangriaAberto(true)}
+                    className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 py-3 rounded-xl font-bold transition flex items-center justify-center gap-2 mb-2"
+                  >
+                    🏦 Registrar Sangria
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => window.print()}
                     className="w-full bg-white/10 hover:bg-white/20 border border-white/15 text-white py-3 rounded-xl font-bold transition flex items-center justify-center gap-2"
                   >
@@ -2871,6 +2961,119 @@ export default function BalcaoPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Modal de Sangria */}
+              {modalSangriaAberto && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                  <div className="bg-[#0D2B4E] border border-white/10 w-full max-w-md rounded-2xl shadow-2xl p-6 relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModalSangriaAberto(false);
+                        setSangriaErro(null);
+                        setSangriaSucesso(false);
+                      }}
+                      className="absolute top-4 right-4 text-white/50 hover:text-white transition text-lg"
+                    >
+                      ✕
+                    </button>
+                    <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                      🏦 Registrar Sangria
+                    </h3>
+
+                    {sangriaSucesso ? (
+                      <div className="bg-emerald-500/20 text-emerald-300 p-4 rounded-xl text-center text-sm font-semibold mb-4 animate-pulse">
+                        ✓ Sangria registrada com sucesso!
+                      </div>
+                    ) : (
+                      <form onSubmit={executarSangria} className="space-y-4">
+                        {sangriaErro && (
+                          <div className="bg-red-500/20 text-red-300 p-3 rounded-lg text-xs font-semibold">
+                            ⚠️ {sangriaErro}
+                          </div>
+                        )}
+
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-300 mb-1 uppercase tracking-wide">
+                            Valor (R$) *
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            required
+                            value={sangriaValor}
+                            onChange={(e) => setSangriaValor(e.target.value)}
+                            placeholder="Ex: 100.00"
+                            className="w-full border border-gray-600 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#F39C12] bg-[#1a3050] text-white"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-300 mb-1 uppercase tracking-wide">
+                            Retirado por (Supervisor/Diretor) *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={sangriaRetiradoPor}
+                            onChange={(e) => setSangriaRetiradoPor(e.target.value)}
+                            placeholder="Nome de quem retirou o valor"
+                            className="w-full border border-gray-600 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#F39C12] bg-[#1a3050] text-white"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-300 mb-1 uppercase tracking-wide">
+                            Recebido por *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={sangriaRecebidoPor}
+                            onChange={(e) => setSangriaRecebidoPor(e.target.value)}
+                            placeholder="Nome de quem recebeu o valor"
+                            className="w-full border border-gray-600 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#F39C12] bg-[#1a3050] text-white"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-300 mb-1 uppercase tracking-wide">
+                            Observação
+                          </label>
+                          <textarea
+                            value={sangriaObservacao}
+                            onChange={(e) => setSangriaObservacao(e.target.value)}
+                            placeholder="Observações adicionais..."
+                            className="w-full border border-gray-600 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#F39C12] bg-[#1a3050] text-white h-20 resize-none"
+                          />
+                        </div>
+
+                        <div className="flex gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setModalSangriaAberto(false);
+                              setSangriaErro(null);
+                              setSangriaSucesso(false);
+                            }}
+                            className="flex-1 border border-white/20 text-white/70 hover:text-white hover:border-white/40 py-2.5 rounded-lg text-sm font-bold transition"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={registrandoSangria}
+                            className="flex-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 py-2.5 rounded-lg text-sm font-bold transition"
+                          >
+                            {registrandoSangria ? 'Registrando...' : 'Registrar'}
+                          </button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
