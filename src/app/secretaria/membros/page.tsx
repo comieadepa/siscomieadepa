@@ -3552,15 +3552,9 @@ useEffect(() => {
                               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                             >
                               <option value="">Selecione</option>
-                              {camposOptions
-                                .filter((opt) => {
-                                  if (!dadosPessoais.supervisao) return true;
-                                  const selectedSupervisaoId = supervisoesOptions.find((s) => s.nome === dadosPessoais.supervisao)?.id;
-                                  return !selectedSupervisaoId || opt.supervisao_id === selectedSupervisaoId;
-                                })
-                                .map((opt) => (
-                                  <option key={opt.id} value={opt.nome}>{opt.nome}</option>
-                                ))}
+                              {camposOptions.map((opt) => (
+                                <option key={opt.id} value={opt.nome}>{opt.nome}</option>
+                              ))}
                             </select>
                           </div>
                         </div>
