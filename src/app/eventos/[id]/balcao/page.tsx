@@ -214,6 +214,15 @@ export default function BalcaoPage() {
   const [sangriaErro, setSangriaErro] = useState<string | null>(null);
   const [sangriaSucesso, setSangriaSucesso] = useState(false);
 
+  // ── Estado do Modal de Efetivar Pagamento Presencial ──
+  const [modalPagarPresencialAberto, setModalPagarPresencialAberto] = useState(false);
+  const [pagPresencialInscricao, setPagPresencialInscricao] = useState<InscricaoResumo | null>(null);
+  const [pagPresencialForma, setPagPresencialForma] = useState('dinheiro');
+  const [pagPresencialValor, setPagPresencialValor] = useState(0);
+  const [pagPresencialObservacao, setPagPresencialObservacao] = useState('');
+  const [processandoPagPresencial, setProcessandoPagPresencial] = useState(false);
+  const [pagPresencialErro, setPagPresencialErro] = useState<string | null>(null);
+
   // ── Estado da lista de inscritos ─────────────────────────
   const [inscricoesLista, setInscricoesLista] = useState<InscricaoResumo[]>([]);
   const [loadingLista, setLoadingLista] = useState(false);
@@ -227,7 +236,6 @@ export default function BalcaoPage() {
   const [enviandoEmail, setEnviandoEmail] = useState<Record<string, boolean>>({});
   const [enviandoCert, setEnviandoCert] = useState<Record<string, boolean>>({});
   const [marcandoEtiqueta, setMarcandoEtiqueta] = useState<Record<string, boolean>>({});
-  const [abrindoPagamento, setAbrindoPagamento] = useState<Record<string, boolean>>({});
   const [checkinManual, setCheckinManual] = useState<Record<string, boolean>>({});
   const [editando, setEditando] = useState<InscricaoResumo | null>(null);
   const [editForm, setEditForm] = useState<EditFormBalcao | null>(null);
@@ -561,6 +569,68 @@ export default function BalcaoPage() {
     }
   };
 
+  const iniciarPagamentoPresencial = (ins: InscricaoResumo) => {
+    if (ins.status_pagamento !== 'pendente') return;
+
+    if (ins.lote_id) {
+      alert("Inscrição vinculada a lote. O pagamento presencial deve ser marcado individualmente apenas para inscrições sem lote.");
+      return;
+    }
+
+    setPagPresencialInscricao(ins);
+    setPagPresencialForma('dinheiro');
+    setPagPresencialValor(ins.valor_pago ?? ins.valor_final ?? 0);
+    setPagPresencialObservacao('');
+    setPagPresencialErro(null);
+    setModalPagarPresencialAberto(true);
+  };
+
+  const confirmarPagamentoPresencial = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id || !pagPresencialInscricao) return;
+
+    setProcessandoPagPresencial(true);
+    setPagPresencialErro(null);
+
+    try {
+      const equipeId = localStorage.getItem(`evento_${id}_equipe_id`);
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (equipeId) {
+        headers['x-evento-equipe-id'] = equipeId;
+      }
+
+      const res = await fetch(`/api/eventos/${id}/balcao/pagamento-presencial`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          inscricao_id: pagPresencialInscricao.id,
+          forma_pagamento: pagPresencialForma,
+          valor_pago: pagPresencialValor,
+          observacao: pagPresencialObservacao,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Erro ao efetivar pagamento.');
+      }
+
+      setModalPagarPresencialAberto(false);
+      setPagPresencialInscricao(null);
+
+      // Atualizar lista e resumo do caixa imediatamente
+      await carregarCaixaDados();
+      await fetchInscricoesLista({ silent: true });
+
+    } catch (err: any) {
+      setPagPresencialErro(err.message || 'Erro inesperado ao registrar pagamento.');
+    } finally {
+      setProcessandoPagPresencial(false);
+    }
+  };
+
   useEffect(() => {
     if (authLoading || perfil.loading || !id) return;
     carregarCaixaDados();
@@ -619,8 +689,27 @@ export default function BalcaoPage() {
   // ─────────────────────────────────────────────────────────
   // Busca CPF
   // ─────────────────────────────────────────────────────────
-  async function buscarCPF() {
-    if (!cpfBusca.trim() || !evento) return;
+  const handleCpfBuscaChange = (val: string) => {
+    const apenasNumeros = val.replace(/\D/g, '').slice(0, 11);
+    let formatado = apenasNumeros;
+    if (apenasNumeros.length > 9) {
+      formatado = `${apenasNumeros.slice(0, 3)}.${apenasNumeros.slice(3, 6)}.${apenasNumeros.slice(6, 9)}-${apenasNumeros.slice(9)}`;
+    } else if (apenasNumeros.length > 6) {
+      formatado = `${apenasNumeros.slice(0, 3)}.${apenasNumeros.slice(3, 6)}.${apenasNumeros.slice(6)}`;
+    } else if (apenasNumeros.length > 3) {
+      formatado = `${apenasNumeros.slice(0, 3)}.${apenasNumeros.slice(3)}`;
+    }
+    setCpfBusca(formatado);
+
+    if (apenasNumeros.length === 11) {
+      buscarCPF(apenasNumeros);
+    }
+  };
+
+  async function buscarCPF(cpfForcado?: string) {
+    const cpfLimpo = cpfForcado || cpfBusca.replace(/\D/g, '');
+    if (cpfLimpo.length !== 11 || !evento) return;
+
     setBuscando(true);
     setMinistroEncontrado(false);
     setNomeMinistro('');
@@ -629,7 +718,6 @@ export default function BalcaoPage() {
     setMinistroInfo(null);
     setEsposaJubiladoAuto(null);
     setDescontoCampoMissionario(false);
-    const cpfLimpo = cpfBusca.replace(/\D/g, '');
     const isAGO = evento.departamento === 'AGO';
 
     // Para AGO com CPF (11 dígitos): endpoint público com dados ministeriais completos
@@ -665,6 +753,9 @@ export default function BalcaoPage() {
         conjuge_de_ministro_id?: string | null;
         conjuge_de_nome?: string | null;
         nome?: string | null;
+        email?: string | null;
+        whatsapp?: string | null;
+        telefone?: string | null;
         sexo?: string | null;
         data_nascimento?: string | null;
         supervisao_id?: string | null;
@@ -729,11 +820,13 @@ export default function BalcaoPage() {
           setForm(f => ({
             ...f,
             nome: nome || f.nome,
-            cpf: cpfBusca,
+            cpf: cpfLimpo,
             sexo: sexoLookup || 'F',
             data_nascimento: payload.data_nascimento || f.data_nascimento,
             supervisao_id: sup?.id || f.supervisao_id,
             campo_id: campoEncontrado?.id || payload.campo_id || f.campo_id,
+            email: payload.email || f.email,
+            whatsapp: payload.whatsapp || payload.telefone || f.whatsapp,
           }));
 
           const tipoEsposaJub = findTipoEsposaJubilado(tipos);
@@ -782,11 +875,13 @@ export default function BalcaoPage() {
         setForm(f => ({
           ...f,
           nome:            nome || f.nome,
-          cpf:             cpfBusca,
+          cpf:             cpfLimpo,
           sexo:            sexoLookup,
           data_nascimento: payload.data_nascimento || f.data_nascimento,
           supervisao_id:   sup?.id || f.supervisao_id,
           campo_id:        campoEncontrado?.id || payload.campo_id || f.campo_id,
+          email:           payload.email || f.email,
+          whatsapp:        payload.whatsapp || payload.telefone || f.whatsapp,
         }));
 
         if (payload.jubilado) {
@@ -800,7 +895,7 @@ export default function BalcaoPage() {
         setEsposaJubiladoAuto(null);
         setForm(f => ({
           ...f,
-          cpf: cpfBusca,
+          cpf: cpfLimpo,
           nome: '', email: '', whatsapp: '', sexo: '',
           data_nascimento: '', supervisao_id: '', campo_id: '',
         }));
@@ -822,18 +917,20 @@ export default function BalcaoPage() {
         setForm(f => ({
           ...f,
           nome:         nome || f.nome,
-          cpf:          m.cpf || cpfBusca,
+          cpf:          m.cpf || cpfLimpo,
           whatsapp:     m.whatsapp || celular || f.whatsapp,
           email:        m.email   || f.email,
           supervisao_id: sup?.id  || f.supervisao_id,
           campo_id:     campo?.id || f.campo_id,
+          sexo:         m.sexo    || f.sexo,
+          data_nascimento: m.data_nascimento || f.data_nascimento,
         }));
         setTimeout(() => supRef.current?.focus(), 50);
       } else {
         setCpfStatus('nao_encontrado');
         setForm(f => ({
           ...f,
-          cpf: cpfBusca,
+          cpf: cpfLimpo,
           nome: '', email: '', whatsapp: '', sexo: '',
           data_nascimento: '', supervisao_id: '', campo_id: '',
         }));
@@ -1340,30 +1437,7 @@ export default function BalcaoPage() {
     }
   }
 
-  async function abrirSegundaVia(ins: InscricaoResumo, gerarSeAusente = false) {
-    setAbrindoPagamento(p => ({ ...p, [ins.id]: true }));
-    try {
-      const res = await fetch(`/api/eventos/${id}/inscricoes/${ins.id}/invoice`, {
-        method: gerarSeAusente ? 'POST' : 'GET',
-      });
-      const json = await res.json();
-      if (!res.ok || !json.invoice_url) {
-        definirMsgLista('aviso', json.error || 'Sem cobranca ASAAS disponivel.');
-        return;
-      }
-      if (gerarSeAusente) {
-        setInscricoesLista(list => list.map(i => i.id === ins.id
-          ? { ...i, invoice_url: json.invoice_url, asaas_payment_id: i.asaas_payment_id || 'gerado' }
-          : i));
-        definirMsgLista('ok', 'Cobranca ASAAS gerada.');
-      }
-      window.open(json.invoice_url, '_blank', 'noopener,noreferrer');
-    } catch {
-      definirMsgLista('erro', 'Erro ao abrir link de pagamento.');
-    } finally {
-      setAbrindoPagamento(p => ({ ...p, [ins.id]: false }));
-    }
-  }
+
 
   const fmtDT = (d: string | null) => d ? new Date(d).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
 
@@ -1726,14 +1800,14 @@ export default function BalcaoPage() {
                 type="text"
                 placeholder="Digite CPF e pressione Enter"
                 value={cpfBusca}
-                onChange={e => setCpfBusca(e.target.value)}
+                onChange={e => handleCpfBuscaChange(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && buscarCPF()}
                 className={inputCls + ' w-full sm:flex-1'}
                 autoFocus
               />
               <button
-                onClick={buscarCPF}
-                disabled={buscando || !cpfBusca.trim()}
+                onClick={() => buscarCPF()}
+                disabled={buscando || cpfBusca.replace(/\D/g, '').length !== 11}
                 className="w-full sm:w-auto bg-[#F39C12] hover:bg-[#D68910] disabled:opacity-40 text-[#0D2B4E] font-bold px-5 py-2.5 rounded-lg text-sm transition flex-shrink-0 whitespace-nowrap"
               >
                 {buscando ? '...' : '🔍 Buscar'}
@@ -2474,13 +2548,7 @@ export default function BalcaoPage() {
                         const etiquetaTooltip = etiquetaAtiva
                           ? 'Etiqueta impressa · Desmarcar impressão'
                           : 'Marcar etiqueta';
-                        const hasAsaas = !!ins.asaas_payment_id && !!ins.invoice_url;
                         const podeAbrirPagamento = ins.status_pagamento === 'pendente';
-                        const pagamentoTooltip = ins.status_pagamento === 'pendente'
-                          ? (hasAsaas ? 'Abrir link de pagamento' : 'Gerar link ASAAS')
-                          : ins.status_pagamento === 'cancelado'
-                          ? 'Pagamento cancelado'
-                          : 'Pagamento já confirmado';
                         return (
                           <tr
                             key={ins.id}
@@ -2498,10 +2566,10 @@ export default function BalcaoPage() {
                             <td className="px-3 py-3 text-white/70 whitespace-nowrap">{nomeCampo(ins.campo_id) || '-'}</td>
                             <td className="px-3 py-3 text-white whitespace-nowrap">{fmtMoeda(valorExib)}</td>
                             <td className="px-3 py-3 whitespace-nowrap">
-                              <span className={`text-xs font-bold px-2 py-1 rounded-full ${pagCfg.cls}`}>{pagCfg.label}</span>
+                               <span className={`text-xs font-bold px-2 py-1 rounded-full ${pagCfg.cls}`}>{pagCfg.label}</span>
                             </td>
                             <td className="px-3 py-3 whitespace-nowrap">
-                              {ins.etiqueta_impressa ? '🏷️' : <span className="text-white/30">—</span>}
+                               {ins.etiqueta_impressa ? '🏷️' : <span className="text-white/30">—</span>}
                             </td>
                             <td className="px-3 py-3 whitespace-nowrap">
                               <div className="flex flex-wrap gap-1">
@@ -2551,12 +2619,12 @@ export default function BalcaoPage() {
                                 )}
                                 <button
                                   type="button"
-                                  onClick={() => podeAbrirPagamento && abrirSegundaVia(ins, !hasAsaas)}
-                                  disabled={!podeAbrirPagamento || abrindoPagamento[ins.id]}
+                                  onClick={() => podeAbrirPagamento && iniciarPagamentoPresencial(ins)}
+                                  disabled={!podeAbrirPagamento}
                                   className="px-2 py-1 text-xs font-bold rounded-md bg-white/10 text-white/60 hover:bg-white/20 disabled:opacity-50"
-                                  title={pagamentoTooltip}
+                                  title="Efetivar pagamento presencial"
                                 >
-                                  {abrindoPagamento[ins.id] ? '⏳' : '💳'}
+                                  💳
                                 </button>
                                 {podeMostrarCheckin && (
                                   <button
@@ -3071,6 +3139,116 @@ export default function BalcaoPage() {
                         </div>
                       </form>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* Modal de Efetivar Pagamento Presencial */}
+              {modalPagarPresencialAberto && pagPresencialInscricao && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                  <div className="bg-[#0D2B4E] border border-white/10 w-full max-w-md rounded-2xl shadow-2xl p-6 relative text-white">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModalPagarPresencialAberto(false);
+                        setPagPresencialInscricao(null);
+                        setPagPresencialErro(null);
+                      }}
+                      className="absolute top-4 right-4 text-white/50 hover:text-white transition text-lg"
+                    >
+                      ✕
+                    </button>
+                    
+                    <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                      💳 Efetivar Pagamento Presencial
+                    </h3>
+
+                    <form onSubmit={confirmarPagamentoPresencial} className="space-y-4">
+                      {pagPresencialErro && (
+                        <div className="bg-red-500/20 text-red-300 p-3 rounded-lg text-xs font-semibold">
+                          ⚠️ {pagPresencialErro}
+                        </div>
+                      )}
+
+                      <div className="bg-white/5 rounded-xl p-3 space-y-1.5 text-xs text-white/80 border border-white/5">
+                        <div><span className="text-white/40">Inscrito: </span><strong className="text-white">{pagPresencialInscricao.nome_inscrito}</strong></div>
+                        <div><span className="text-white/40">Valor Original: </span><strong className="text-white">{fmtMoeda(pagPresencialInscricao.valor_final ?? 0)}</strong></div>
+                        <div><span className="text-white/40">Status: </span><strong className="text-amber-400">Pendente</strong></div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-300 mb-1 uppercase tracking-wide">
+                          Valor Pago (R$) *
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.00"
+                          required
+                          value={pagPresencialValor}
+                          onChange={(e) => setPagPresencialValor(Number(e.target.value))}
+                          placeholder="0.00"
+                          className="w-full border border-gray-600 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#F39C12] bg-[#1a3050] text-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-300 mb-1 uppercase tracking-wide">
+                          Forma de Pagamento *
+                        </label>
+                        <select
+                          value={pagPresencialForma}
+                          onChange={(e) => {
+                            setPagPresencialForma(e.target.value);
+                            if (e.target.value === 'isento') {
+                              setPagPresencialValor(0);
+                            } else if (pagPresencialValor === 0) {
+                              setPagPresencialValor(pagPresencialInscricao.valor_final ?? 0);
+                            }
+                          }}
+                          className="w-full border border-gray-600 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#F39C12] bg-[#1a3050] text-white"
+                        >
+                          <option value="dinheiro">Dinheiro</option>
+                          <option value="pix">PIX</option>
+                          <option value="debito">Cartão de Débito</option>
+                          <option value="credito">Cartão de Crédito</option>
+                          <option value="isento">Cortesia / Isento</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-300 mb-1 uppercase tracking-wide">
+                          Observação
+                        </label>
+                        <textarea
+                          value={pagPresencialObservacao}
+                          onChange={(e) => setPagPresencialObservacao(e.target.value)}
+                          placeholder="Ex: Recebido no balcão..."
+                          className="w-full border border-gray-600 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#F39C12] bg-[#1a3050] text-white h-16 resize-none"
+                        />
+                      </div>
+
+                      <div className="flex gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setModalPagarPresencialAberto(false);
+                            setPagPresencialInscricao(null);
+                            setPagPresencialErro(null);
+                          }}
+                          className="flex-1 border border-white/20 text-white/70 hover:text-white hover:border-white/40 py-2.5 rounded-lg text-sm font-bold transition"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={processandoPagPresencial}
+                          className="flex-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 py-2.5 rounded-lg text-sm font-bold transition"
+                        >
+                          {processandoPagPresencial ? 'Processando...' : 'Confirmar pagamento'}
+                        </button>
+                      </div>
+                    </form>
                   </div>
                 </div>
               )}
