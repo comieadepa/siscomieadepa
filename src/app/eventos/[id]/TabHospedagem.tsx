@@ -168,6 +168,7 @@ export default function TabHospedagem({
   const [filtroGrupo,   setFiltroGrupo]   = useState('');
   const [filtroPend,    setFiltroPend]    = useState('');
   const [busca,         setBusca]         = useState('');
+  const [filtroSexo,    setFiltroSexo]    = useState('');
 
   // Modal edição
   const [editando, setEditando] = useState<Hospedagem | null>(null);
@@ -269,8 +270,22 @@ export default function TabHospedagem({
     return Array.from(s).sort();
   }, [hospedagens, evento.configuracoes_ago]);
 
-  const hospFiltradas = useMemo(() => {
+  const hospedagensSexFiltered = useMemo(() => {
     let list = hospedagens;
+    if (filtroSexo) {
+      if (filtroSexo === 'M') {
+        list = list.filter(h => (h.sexo ?? '').toUpperCase() === 'M');
+      } else if (filtroSexo === 'F') {
+        list = list.filter(h => (h.sexo ?? '').toUpperCase() === 'F');
+      } else if (filtroSexo === 'N') {
+        list = list.filter(h => !h.sexo || (h.sexo ?? '').trim() === '');
+      }
+    }
+    return list;
+  }, [hospedagens, filtroSexo]);
+
+  const hospFiltradas = useMemo(() => {
+    let list = hospedagensSexFiltered;
     if (filtroStatus)  list = list.filter(h => (h.status_operacional ?? h.status) === filtroStatus);
     if (filtroAloj)    list = list.filter(h => h.alojamento_id === filtroAloj);
     if (filtroSup)     list = list.filter(h => h.supervisao_id === filtroSup);
@@ -288,7 +303,7 @@ export default function TabHospedagem({
       });
     }
     return list;
-  }, [hospedagens, filtroStatus, filtroAloj, filtroSup, filtroNecEsp, filtroGrupo, filtroPend, busca]);
+  }, [hospedagensSexFiltered, filtroStatus, filtroAloj, filtroSup, filtroNecEsp, filtroGrupo, filtroPend, busca]);
 
   // ── Stats ──────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -306,6 +321,11 @@ export default function TabHospedagem({
       return sp === 'pago' || sp === 'isento';
     }).length;
 
+    const pendentes = hospedagens.filter(h => {
+      const sp = (h.status_pagamento || '').toLowerCase();
+      return sp !== 'pago' && sp !== 'isento';
+    }).length;
+
     return {
       total,
       aguardandoPagamento,
@@ -315,13 +335,14 @@ export default function TabHospedagem({
       listaEspera,
       vagasDisp,
       prioridadeInferiorPendente,
-      pagos
+      pagos,
+      pendentes
     };
   }, [hospedagens, alojamentos]);
 
   const pendenciasResumo = useMemo(() => {
     const map: Record<string, number> = {};
-    for (const h of hospedagens) {
+    for (const h of hospedagensSexFiltered) {
       for (const p of h.pendencias ?? []) {
         map[p] = (map[p] ?? 0) + 1;
       }
@@ -329,7 +350,7 @@ export default function TabHospedagem({
     return Object.entries(map)
       .sort((a, b) => b[1] - a[1])
       .map(([codigo, qtd]) => ({ codigo, qtd, label: PENDENCIA_LABEL[codigo] ?? codigo }));
-  }, [hospedagens]);
+  }, [hospedagensSexFiltered]);
 
   // ── Setores planejados (configuracoes_ago.setores) ─────────
   const setoresConfigurados = useMemo(
@@ -630,8 +651,9 @@ export default function TabHospedagem({
           { label: 'Vagas livres', value: stats.vagasDisp, cor: 'text-emerald-700' },
           { label: 'Prioridade ↓ pendente', value: stats.prioridadeInferiorPendente, cor: 'text-rose-700' },
         ] : [
-          { label: 'Inscritos', value: stats.total, cor: 'text-[#123b63]' },
-          { label: 'Pagos', value: stats.pagos, cor: 'text-emerald-700' },
+          { label: 'Solicitaram hospedagem', value: stats.total, cor: 'text-[#123b63]' },
+          { label: 'Pagos com hospedagem', value: stats.pagos, cor: 'text-emerald-700' },
+          { label: 'Pendentes hospedagem', value: stats.pendentes, cor: 'text-rose-700' },
           { label: 'Alocados', value: stats.alocadas, cor: 'text-indigo-700' },
           { label: 'Lista espera', value: stats.listaEspera, cor: 'text-orange-700' },
           { label: 'Vagas livres', value: stats.vagasDisp, cor: 'text-emerald-700' },
@@ -695,6 +717,14 @@ export default function TabHospedagem({
                 <option value="confirmada">Confirmada</option>
                 <option value="checkin_realizado">Check-in Realizado</option>
                 <option value="lista_espera">Lista Espera</option>
+              </select>
+
+              <select value={filtroSexo} onChange={e => setFiltroSexo(e.target.value)}
+                className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+                <option value="">Todos os sexos</option>
+                <option value="M">Masculino</option>
+                <option value="F">Feminino</option>
+                <option value="N">Não informado</option>
               </select>
 
               <select value={filtroAloj} onChange={e => setFiltroAloj(e.target.value)}

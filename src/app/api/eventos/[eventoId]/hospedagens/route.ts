@@ -28,40 +28,99 @@ export async function GET(
   const supabase = guard.ctx.supabaseAdmin;
 
   // 1. Todas as inscrições com hospedagem solicitada
-  const { data: inscricoes, error: insErr } = await supabase
-    .from('evento_inscricoes')
-    .select(`
-      id, nome_inscrito, cpf, sexo, data_nascimento,
-      supervisao_id, campo_id, tipo_inscricao, status_pagamento,
-      hosp_necessidade_especial, hosp_descricao_necessidade,
-      hosp_cama_inferior, hosp_observacoes,
-      hosp_possui_comorbidade, hosp_descricao_comorbidade,
-      grupo_hospedagem
-    `)
-    .eq('evento_id', eventoId)
-    .eq('hospedagem', true)
-    .order('nome_inscrito');
+  let inscricoes: any[] = [];
+  let insFrom = 0;
+  const limit = 1000;
+  let insHasMore = true;
 
-  if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+  while (insHasMore) {
+    const { data: pageData, error: insErr } = await supabase
+      .from('evento_inscricoes')
+      .select(`
+        id, nome_inscrito, cpf, sexo, data_nascimento,
+        supervisao_id, campo_id, tipo_inscricao, status_pagamento,
+        hosp_necessidade_especial, hosp_descricao_necessidade,
+        hosp_cama_inferior, hosp_observacoes,
+        hosp_possui_comorbidade, hosp_descricao_comorbidade,
+        grupo_hospedagem
+      `)
+      .eq('evento_id', eventoId)
+      .eq('hospedagem', true)
+      .order('nome_inscrito')
+      .range(insFrom, insFrom + limit - 1);
+
+    if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+
+    if (pageData && pageData.length > 0) {
+      inscricoes = [...inscricoes, ...pageData];
+      if (pageData.length < limit) {
+        insHasMore = false;
+      } else {
+        insFrom += limit;
+      }
+    } else {
+      insHasMore = false;
+    }
+  }
 
   // 1.5. Leitos ocupados para checar ocupação real
-  const { data: leitosOcupados } = await supabase
-    .from('evento_hospedagem_leitos')
-    .select('inscricao_id')
-    .eq('evento_id', eventoId)
-    .eq('ocupado', true);
+  let leitosOcupados: any[] = [];
+  let leitosFrom = 0;
+  let leitosHasMore = true;
+
+  while (leitosHasMore) {
+    const { data: pageData, error: leitosErr } = await supabase
+      .from('evento_hospedagem_leitos')
+      .select('inscricao_id')
+      .eq('evento_id', eventoId)
+      .eq('ocupado', true)
+      .range(leitosFrom, leitosFrom + limit - 1);
+
+    if (leitosErr) return NextResponse.json({ error: leitosErr.message }, { status: 500 });
+
+    if (pageData && pageData.length > 0) {
+      leitosOcupados = [...leitosOcupados, ...pageData];
+      if (pageData.length < limit) {
+        leitosHasMore = false;
+      } else {
+        leitosFrom += limit;
+      }
+    } else {
+      leitosHasMore = false;
+    }
+  }
 
   // 2. Registros de alocação existentes
-  const { data: alocacoes } = await supabase
-    .from('evento_hospedagens')
-    .select(`
-      id, inscricao_id, alojamento_id, status, prioridade,
-      tipo_cama, numero_cama, observacoes, alocacao_automatica,
-      grupo_hospedagem,
-      checkin_at, checkout_at, checkin_operador, checkout_operador,
-      evento_alojamentos ( id, nome, publico, total_vagas )
-    `)
-    .eq('evento_id', eventoId);
+  let alocacoes: any[] = [];
+  let alocFrom = 0;
+  let alocHasMore = true;
+
+  while (alocHasMore) {
+    const { data: pageData, error: alocErr } = await supabase
+      .from('evento_hospedagens')
+      .select(`
+        id, inscricao_id, alojamento_id, status, prioridade,
+        tipo_cama, numero_cama, observacoes, alocacao_automatica,
+        grupo_hospedagem,
+        checkin_at, checkout_at, checkin_operador, checkout_operador,
+        evento_alojamentos ( id, nome, publico, total_vagas )
+      `)
+      .eq('evento_id', eventoId)
+      .range(alocFrom, alocFrom + limit - 1);
+
+    if (alocErr) return NextResponse.json({ error: alocErr.message }, { status: 500 });
+
+    if (pageData && pageData.length > 0) {
+      alocacoes = [...alocacoes, ...pageData];
+      if (pageData.length < limit) {
+        alocHasMore = false;
+      } else {
+        alocFrom += limit;
+      }
+    } else {
+      alocHasMore = false;
+    }
+  }
 
   // 3. Mapa inscricao_id → alocação
   type AlocRow = Record<string, unknown>;
@@ -111,7 +170,7 @@ export async function GET(
       { publico: String((aloj as AlocRow).publico ?? ''), nome: String((aloj as AlocRow).nome ?? '') },
     ));
 
-    if (isPagamentoElegivel(statusPagamento) && !aloc?.alojamento_id) pendencias.push('pagou_mas_nao_alocado');
+    if (isPagamentoElegivel(statusPagamento) && !aloc?.alojamento_id && aloc?.status !== 'lista_espera') pendencias.push('pagou_mas_nao_alocado');
     if (!isPagamentoElegivel(statusPagamento)) pendencias.push('solicitou_sem_pagamento');
     if (!!(ei.hosp_cama_inferior) && aloc?.tipo_cama && aloc.tipo_cama !== 'inferior') pendencias.push('prioridade_sem_leito_inferior');
     if (!grupoFallback) pendencias.push('sem_grupo_calculado');
