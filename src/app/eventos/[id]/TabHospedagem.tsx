@@ -78,6 +78,7 @@ interface Hospedagem {
   elegivel_autoalocacao?: boolean;
   tem_leito_ocupado?: boolean;
   pendencias?: string[];
+  motivo_nao_alocado?: string | null;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -158,7 +159,7 @@ export default function TabHospedagem({
   const [loadingAloj,     setLoadingAloj]     = useState(true);
   const [loadingHosp,     setLoadingHosp]     = useState(true);
   const [autoalocando,    setAutoalocando]    = useState(false);
-  const [autoalocResult,  setAutoalocResult]  = useState<{ alocadas: number; listaEspera: number; erros: number; leitos: number } | null>(null);
+  const [autoalocResult,  setAutoalocResult]  = useState<{ alocadas: number; listaEspera: number; erros: number; leitos: number; detalhes?: any[] | null } | null>(null);
 
   // Filtros hospedagens
   const [filtroStatus,  setFiltroStatus]  = useState('');
@@ -252,7 +253,13 @@ export default function TabHospedagem({
       if (!res.ok) {
         throw new Error(json.error ?? 'Erro inesperado na autoalocação');
       }
-      setAutoalocResult({ alocadas: json.confirmados ?? 0, listaEspera: json.lista_espera ?? 0, erros: 0, leitos: json.leitos_atribuidos ?? 0 });
+      setAutoalocResult({
+        alocadas: json.confirmados ?? 0,
+        listaEspera: json.lista_espera ?? 0,
+        erros: 0,
+        leitos: json.leitos_atribuidos ?? 0,
+        detalhes: json.detalhes || null
+      });
       fetchHospedagens();
     } catch (err) {
       setQuickErro(err instanceof Error ? err.message : 'Erro ao executar autoalocação');
@@ -668,11 +675,71 @@ export default function TabHospedagem({
 
       {/* ── Resultado autoalocação ────────────────────────────── */}
       {autoalocResult && (
-        <div className={`rounded-xl px-5 py-3 flex items-center gap-3 border text-sm font-semibold ${
-          autoalocResult.erros > 0 ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+        <div className={`rounded-xl border shadow-sm p-5 space-y-4 text-sm ${
+          autoalocResult.alocadas > 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-amber-50 border-amber-200 text-amber-900'
         }`}>
-          ✅ Autoalocação concluída: {autoalocResult.alocadas} alocadas · {autoalocResult.leitos} leitos · {autoalocResult.listaEspera} em lista de espera
-          <button onClick={() => setAutoalocResult(null)} className="ml-auto text-gray-400 hover:text-gray-600">✕</button>
+          <div className="flex items-center justify-between">
+            <h4 className="font-bold text-base">
+              {autoalocResult.alocadas > 0
+                ? '✅ Processamento de pendências concluído!'
+                : '⚠️ Nenhuma hospedagem foi alocada. Veja os motivos abaixo.'}
+            </h4>
+            <button onClick={() => setAutoalocResult(null)} className="text-gray-400 hover:text-gray-600 font-bold text-lg">✕</button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-white bg-opacity-50 p-4 rounded-lg border border-current border-opacity-10">
+            <div>
+              <p className="text-xs uppercase tracking-wider text-gray-500 font-semibold">Alocados</p>
+              <p className="text-2xl font-black">{autoalocResult.alocadas}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wider text-gray-500 font-semibold">Leitos atribuídos</p>
+              <p className="text-2xl font-black">{autoalocResult.leitos}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wider text-gray-500 font-semibold">Fila de espera</p>
+              <p className="text-2xl font-black">{autoalocResult.listaEspera}</p>
+            </div>
+            {autoalocResult.detalhes && (
+              <div>
+                <p className="text-xs uppercase tracking-wider text-gray-500 font-semibold">Não alocados / Pendentes</p>
+                <p className="text-2xl font-black">{autoalocResult.detalhes.filter(d => d.resultado !== 'alocada').length}</p>
+              </div>
+            )}
+          </div>
+
+          {autoalocResult.detalhes && autoalocResult.detalhes.length > 0 && (
+            <div className="space-y-2">
+              <p className="font-bold text-xs uppercase tracking-wider text-gray-500">Detalhamento dos Motivos:</p>
+              <div className="max-h-60 overflow-y-auto rounded-lg border border-current border-opacity-10 bg-white">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100">
+                      <th className="p-2.5 font-bold text-gray-600">Participante</th>
+                      <th className="p-2.5 font-bold text-gray-600">Resultado / Motivo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {autoalocResult.detalhes.map((d, index) => (
+                      <tr key={index} className="border-b border-gray-100 hover:bg-gray-50 transition">
+                        <td className="p-2.5 font-medium text-gray-800">{d.nome_inscrito}</td>
+                        <td className="p-2.5 text-gray-600">
+                          <span className={`inline-block px-1.5 py-0.5 rounded font-bold mr-2 text-[10px] ${
+                            d.resultado === 'alocada' ? 'bg-emerald-100 text-emerald-800'
+                            : d.resultado === 'enviada_para_lista_espera' ? 'bg-orange-100 text-orange-800'
+                            : 'bg-rose-100 text-rose-800'
+                          }`}>
+                            {d.resultado.replace(/_/g, ' ')}
+                          </span>
+                          {d.motivo}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
       {/* ── Erro de ação rápida ───────────────────────────── */}
@@ -691,7 +758,7 @@ export default function TabHospedagem({
             <button
               onClick={autoalocar}
               disabled={autoalocando || stats.elegiveis === 0}
-              title="Reprocessa hospedagens pagas que ainda não receberam leito. O fluxo normal já aloca automaticamente após pagamento."
+              title="Processa TODAS as pendências do evento, ignorando filtros visuais."
               className="w-full sm:w-auto flex items-center gap-2 bg-[#0D2B4E] text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-[#0a1e38] transition disabled:opacity-50"
             >
               {autoalocando ? '⏳ Alocando...' : '🤖 Processar pendências'}
@@ -795,7 +862,9 @@ export default function TabHospedagem({
                     title="Filtrar participantes com esta pendência"
                   >
                     <p className="text-xs font-semibold text-amber-900">{p.label}</p>
-                    <p className="text-[11px] text-amber-700">{p.qtd} caso(s)</p>
+                    <p className="text-[11px] text-amber-700">
+                      {p.qtd} caso(s) {p.codigo === 'pagou_mas_nao_alocado' && <span className="text-[10px] text-indigo-600 font-bold block mt-0.5 underline">Clique para ver os motivos</span>}
+                    </p>
                   </button>
                 ))}
               </div>
@@ -828,6 +897,7 @@ export default function TabHospedagem({
                     <th className={thCls}>Supervisão</th>
                     <th className={thCls}>Grupo</th>
                     <th className={thCls}>Alojamento</th>
+                    <th className={thCls}>Motivo</th>
                     <th className={thCls}>Status</th>
                     <th className={thCls + ' text-center'}>🦽</th>
                     <th className={thCls + ' text-center'}>🩺</th>
@@ -859,6 +929,7 @@ export default function TabHospedagem({
                         <td className={tdCls + ' text-xs text-gray-500'}>{nomeSup(h.supervisao_id ?? null)}</td>
                         <td className={tdCls + ' text-xs'}>{h.grupo_hospedagem ?? <span className="text-gray-300">—</span>}</td>
                         <td className={tdCls}>{h.alojamento_nome ?? <span className="text-gray-400 italic text-xs">Não alocado</span>}</td>
+                        <td className={tdCls + ' text-xs text-amber-700 max-w-[150px] truncate'} title={h.motivo_nao_alocado ?? ''}>{h.motivo_nao_alocado ?? <span className="text-gray-300">—</span>}</td>
                         <td className={tdCls}>
                           <div className="space-y-1">
                             <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${stCfg.cls}`}>{stCfg.label}</span>

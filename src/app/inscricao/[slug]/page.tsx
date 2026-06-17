@@ -1889,9 +1889,9 @@ export default function InscricaoPublicaPage() {
                     </div>
                   )}
                   {/* Lista de tipos para AGO */}
-                  {tipos.length > 0 && (
+                  {tiposParaExibir.length > 0 && (
                     <div className="space-y-2 mt-3">
-                      {tipos.map(t => (
+                      {tiposParaExibir.map(t => (
                         <label key={t.id} className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${tipoSelecionado?.id === t.id ? 'border-[#123b63] bg-white' : 'border-gray-200 bg-white hover:border-[#123b63]/50'}`}>
                           <div className="flex items-center gap-3">
                             <input type="radio" name="tipo_inscricao" value={t.id}
