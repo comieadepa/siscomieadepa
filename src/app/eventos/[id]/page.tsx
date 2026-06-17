@@ -4177,49 +4177,51 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${pagCfg.cls}`}>{pagCfg.label}</span>
                   </td>
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{ins.forma_pagamento || '-'}</td>
-                  <td className="px-4 py-3 whitespace-nowrap flex items-center gap-1">
-                    {ins.status_pagamento !== 'pago' && ins.status_pagamento !== 'isento' && (
-                      <>
-                        <button
-                          onClick={() => { setErroModal(null); setConfirmarIns(ins); }}
-                          disabled={salvando === ins.id}
-                          title="Efetivar pagamento manual"
-                          className="p-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded transition disabled:opacity-50 inline-flex items-center justify-center"
-                        >
-                          <DollarSign className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => { setEnviarCobErro(null); setEnviarCobSucesso(null); setEnviarCobIns(ins); }}
-                          title="Enviar 2ª via por e-mail"
-                          className="p-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded transition inline-flex items-center justify-center"
-                        >
-                          <Mail className="w-4 h-4" />
-                        </button>
-                      </>
-                    )}
-                    {ins.invoice_url && (
-                      <>
-                        <a
-                          href={ins.invoice_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title="Abrir fatura"
-                          className="p-1.5 bg-purple-100 text-purple-700 hover:bg-purple-200 rounded transition inline-flex items-center justify-center"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </a>
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(ins.invoice_url || '');
-                            alert('Link da cobrança copiado com sucesso!');
-                          }}
-                          title="Copiar link da cobrança"
-                          className="p-1.5 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded transition inline-flex items-center justify-center"
-                        >
-                          <Link className="w-4 h-4" />
-                        </button>
-                      </>
-                    )}
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="flex flex-wrap items-center gap-2 min-w-[140px] md:min-w-[180px]">
+                      {ins.status_pagamento !== 'pago' && ins.status_pagamento !== 'isento' && (
+                        <>
+                          <button
+                            onClick={() => { setErroModal(null); setConfirmarIns(ins); }}
+                            disabled={salvando === ins.id}
+                            title="Efetivar pagamento manual"
+                            className="p-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded transition disabled:opacity-50 inline-flex items-center justify-center"
+                          >
+                            <DollarSign className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => { setEnviarCobErro(null); setEnviarCobSucesso(null); setEnviarCobIns(ins); }}
+                            title="Enviar 2ª via por e-mail"
+                            className="p-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded transition inline-flex items-center justify-center"
+                          >
+                            <Mail className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                      {ins.invoice_url && (
+                        <>
+                          <a
+                            href={ins.invoice_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Abrir fatura"
+                            className="p-1.5 bg-purple-100 text-purple-700 hover:bg-purple-200 rounded transition inline-flex items-center justify-center"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </a>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(ins.invoice_url || '');
+                              alert('Link da cobrança copiado com sucesso!');
+                            }}
+                            title="Copiar link da cobrança"
+                            className="p-1.5 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded transition inline-flex items-center justify-center"
+                          >
+                            <Link className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
