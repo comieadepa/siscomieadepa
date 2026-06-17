@@ -3142,120 +3142,120 @@ export default function BalcaoPage() {
                   </div>
                 </div>
               )}
-
-              {/* Modal de Efetivar Pagamento Presencial */}
-              {modalPagarPresencialAberto && pagPresencialInscricao && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-                  <div className="bg-[#0D2B4E] border border-white/10 w-full max-w-md rounded-2xl shadow-2xl p-6 relative text-white">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setModalPagarPresencialAberto(false);
-                        setPagPresencialInscricao(null);
-                        setPagPresencialErro(null);
-                      }}
-                      className="absolute top-4 right-4 text-white/50 hover:text-white transition text-lg"
-                    >
-                      ✕
-                    </button>
-                    
-                    <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                      💳 Efetivar Pagamento Presencial
-                    </h3>
-
-                    <form onSubmit={confirmarPagamentoPresencial} className="space-y-4">
-                      {pagPresencialErro && (
-                        <div className="bg-red-500/20 text-red-300 p-3 rounded-lg text-xs font-semibold">
-                          ⚠️ {pagPresencialErro}
-                        </div>
-                      )}
-
-                      <div className="bg-white/5 rounded-xl p-3 space-y-1.5 text-xs text-white/80 border border-white/5">
-                        <div><span className="text-white/40">Inscrito: </span><strong className="text-white">{pagPresencialInscricao.nome_inscrito}</strong></div>
-                        <div><span className="text-white/40">Valor Original: </span><strong className="text-white">{fmtMoeda(pagPresencialInscricao.valor_final ?? 0)}</strong></div>
-                        <div><span className="text-white/40">Status: </span><strong className="text-amber-400">Pendente</strong></div>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-300 mb-1 uppercase tracking-wide">
-                          Valor Pago (R$) *
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0.00"
-                          required
-                          value={pagPresencialValor}
-                          onChange={(e) => setPagPresencialValor(Number(e.target.value))}
-                          placeholder="0.00"
-                          className="w-full border border-gray-600 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#F39C12] bg-[#1a3050] text-white"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-300 mb-1 uppercase tracking-wide">
-                          Forma de Pagamento *
-                        </label>
-                        <select
-                          value={pagPresencialForma}
-                          onChange={(e) => {
-                            setPagPresencialForma(e.target.value);
-                            if (e.target.value === 'isento') {
-                              setPagPresencialValor(0);
-                            } else if (pagPresencialValor === 0) {
-                              setPagPresencialValor(pagPresencialInscricao.valor_final ?? 0);
-                            }
-                          }}
-                          className="w-full border border-gray-600 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#F39C12] bg-[#1a3050] text-white"
-                        >
-                          <option value="dinheiro">Dinheiro</option>
-                          <option value="pix">PIX</option>
-                          <option value="debito">Cartão de Débito</option>
-                          <option value="credito">Cartão de Crédito</option>
-                          <option value="isento">Cortesia / Isento</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-300 mb-1 uppercase tracking-wide">
-                          Observação
-                        </label>
-                        <textarea
-                          value={pagPresencialObservacao}
-                          onChange={(e) => setPagPresencialObservacao(e.target.value)}
-                          placeholder="Ex: Recebido no balcão..."
-                          className="w-full border border-gray-600 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#F39C12] bg-[#1a3050] text-white h-16 resize-none"
-                        />
-                      </div>
-
-                      <div className="flex gap-2 pt-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setModalPagarPresencialAberto(false);
-                            setPagPresencialInscricao(null);
-                            setPagPresencialErro(null);
-                          }}
-                          className="flex-1 border border-white/20 text-white/70 hover:text-white hover:border-white/40 py-2.5 rounded-lg text-sm font-bold transition"
-                        >
-                          Cancelar
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={processandoPagPresencial}
-                          className="flex-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 py-2.5 rounded-lg text-sm font-bold transition"
-                        >
-                          {processandoPagPresencial ? 'Processando...' : 'Confirmar pagamento'}
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>
       </div>
+
+      {/* Modal de Efetivar Pagamento Presencial */}
+      {modalPagarPresencialAberto && pagPresencialInscricao && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-[#0D2B4E] border border-white/10 w-full max-w-md rounded-2xl shadow-2xl p-6 relative text-white">
+            <button
+              type="button"
+              onClick={() => {
+                setModalPagarPresencialAberto(false);
+                setPagPresencialInscricao(null);
+                setPagPresencialErro(null);
+              }}
+              className="absolute top-4 right-4 text-white/50 hover:text-white transition text-lg"
+            >
+              ✕
+            </button>
+            
+            <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+              💳 Efetivar Pagamento Presencial
+            </h3>
+
+            <form onSubmit={confirmarPagamentoPresencial} className="space-y-4">
+              {pagPresencialErro && (
+                <div className="bg-red-500/20 text-red-300 p-3 rounded-lg text-xs font-semibold">
+                  ⚠️ {pagPresencialErro}
+                </div>
+              )}
+
+              <div className="bg-white/5 rounded-xl p-3 space-y-1.5 text-xs text-white/80 border border-white/5">
+                <div><span className="text-white/40">Inscrito: </span><strong className="text-white">{pagPresencialInscricao.nome_inscrito}</strong></div>
+                <div><span className="text-white/40">Valor Original: </span><strong className="text-white">{fmtMoeda(pagPresencialInscricao.valor_final ?? 0)}</strong></div>
+                <div><span className="text-white/40">Status: </span><strong className="text-amber-400">Pendente</strong></div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1 uppercase tracking-wide">
+                  Valor Pago (R$) *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.00"
+                  required
+                  value={pagPresencialValor}
+                  onChange={(e) => setPagPresencialValor(Number(e.target.value))}
+                  placeholder="0.00"
+                  className="w-full border border-gray-600 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#F39C12] bg-[#1a3050] text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1 uppercase tracking-wide">
+                  Forma de Pagamento *
+                </label>
+                <select
+                  value={pagPresencialForma}
+                  onChange={(e) => {
+                    setPagPresencialForma(e.target.value);
+                    if (e.target.value === 'isento') {
+                      setPagPresencialValor(0);
+                    } else if (pagPresencialValor === 0) {
+                      setPagPresencialValor(pagPresencialInscricao.valor_final ?? 0);
+                    }
+                  }}
+                  className="w-full border border-gray-600 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#F39C12] bg-[#1a3050] text-white"
+                >
+                  <option value="dinheiro">Dinheiro</option>
+                  <option value="pix">PIX</option>
+                  <option value="debito">Cartão de Débito</option>
+                  <option value="credito">Cartão de Crédito</option>
+                  <option value="isento">Cortesia / Isento</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1 uppercase tracking-wide">
+                  Observação
+                </label>
+                <textarea
+                  value={pagPresencialObservacao}
+                  onChange={(e) => setPagPresencialObservacao(e.target.value)}
+                  placeholder="Ex: Recebido no balcão..."
+                  className="w-full border border-gray-600 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#F39C12] bg-[#1a3050] text-white h-16 resize-none"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalPagarPresencialAberto(false);
+                    setPagPresencialInscricao(null);
+                    setPagPresencialErro(null);
+                  }}
+                  className="flex-1 border border-white/20 text-white/70 hover:text-white hover:border-white/40 py-2.5 rounded-lg text-sm font-bold transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={processandoPagPresencial}
+                  className="flex-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 py-2.5 rounded-lg text-sm font-bold transition"
+                >
+                  {processandoPagPresencial ? 'Processando...' : 'Confirmar pagamento'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

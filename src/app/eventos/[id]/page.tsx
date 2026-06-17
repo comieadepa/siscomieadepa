@@ -327,6 +327,7 @@ export default function GerenciarEventoPage() {
     { id: 'certificados',label: 'Certificados',        icon: '🎓' },
     { id: 'programacao',    label: 'Programação',   icon: '📋' },
     { id: 'relatorios',     label: 'Relatórios',    icon: '📊' },
+    { id: 'configuracoes',  label: 'Configurações', icon: '⚙️' },
     ...(isAGO ? [
       { id: 'relatorios-ago' as TabId, label: 'Relatórios AGO',    icon: '📈' },
       { id: 'ausentes'       as TabId, label: 'Ausentes',          icon: '🚨' },
