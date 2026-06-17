@@ -125,7 +125,10 @@ export function filtrarTiposAgo<T extends TipoComNome>(tipos: T[], options: Filt
       return true;
     })
     .filter((t) => {
-      if (somentePastorPresidente) return ehTipoPastorPresidente(t.nome);
+      if (somentePastorPresidente) {
+        const isCMType = /campo\s*mission/i.test(t.nome);
+        return ehTipoPastorPresidente(t.nome) || (ehElegivelCM && isCMType);
+      }
       return true;
     })
     .filter((t) => {

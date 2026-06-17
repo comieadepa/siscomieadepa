@@ -18,7 +18,7 @@ import { normalizePayloadUppercase } from '@/lib/text';
 import { authenticatedFetch } from '@/lib/api-client';
 import { EtiquetaPreviewDepartamento, EtiquetaPreviewAGO } from '@/components/EtiquetaLabels';
 import type { EtiquetaInscricaoAGO } from '@/components/EtiquetaLabels';
-import { Pencil, KeyRound, Mail, PowerOff, Power, Trash2 } from 'lucide-react';
+import { Pencil, KeyRound, Mail, PowerOff, Power, Trash2, DollarSign, Eye, Link } from 'lucide-react';
 import TabHospedagem    from './TabHospedagem';
 import TabBackup        from './TabBackup';
 import TabProgramacao   from './TabProgramacao';
@@ -74,6 +74,7 @@ interface Inscricao {
   lote?: any;
   valor_pago: number; status_pagamento: string; forma_pagamento: string | null;
   asaas_payment_id: string | null; comprovante_url: string | null;
+  invoice_url: string | null; asaas_due_date: string | null;
   qr_code: string | null; checkin_realizado: boolean; checkin_at: string | null;
   etiqueta_impressa: boolean; certificado_enviado: boolean;
   observacoes: string | null; created_at: string;
@@ -909,6 +910,7 @@ export default function GerenciarEventoPage() {
           supabase={supabase}
           eventoId={id}
           onRefresh={fetchInscricoes}
+          evento={evento}
         />
       )}
       {activeTab === 'relatorios' && (
@@ -3962,7 +3964,7 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
 // ═══════════════════════════════════════════════════════════════
 // ABA FINANCEIRO
 // ═══════════════════════════════════════════════════════════════
-function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSup, nomeCampo, supabase, eventoId, onRefresh }: {
+function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSup, nomeCampo, supabase, eventoId, onRefresh, evento }: {
   inscricoes: Inscricao[]; loading: boolean;
   stats: { total: number; pagos: number; pendentes: number; isentos: number; arrecadado: number };
   supervisoes: Supervisao[]; campos: Campo[];
@@ -3971,6 +3973,7 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
   supabase: any;
   eventoId: string;
   onRefresh: () => void;
+  evento: any;
 }) {
   const [busca,       setBusca]       = useState('');
   const [filtroSup,   setFiltroSup]   = useState('');
@@ -3981,6 +3984,49 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
   const [erroModal,      setErroModal]      = useState<string | null>(null);
   const [ordensComplementares, setOrdensComplementares] = useState<any[]>([]);
   const [carregandoOrdens, setCarregandoOrdens] = useState(false);
+
+  // Estados do Modal "Enviar Cobrança"
+  const [enviarCobIns, setEnviarCobIns] = useState<Inscricao | null>(null);
+  const [enviarCobLoading, setEnviarCobLoading] = useState(false);
+  const [enviarCobErro, setEnviarCobErro] = useState<string | null>(null);
+  const [enviarCobSucesso, setEnviarCobSucesso] = useState<string | null>(null);
+
+  const fmtDataExibicao = (d: string | null) => {
+    if (!d) return '';
+    const parts = d.split('-');
+    if (parts.length !== 3) return d;
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  };
+
+  async function handleEnviarCobranca() {
+    if (!enviarCobIns) return;
+    setEnviarCobLoading(true);
+    setEnviarCobErro(null);
+    setEnviarCobSucesso(null);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/financeiro/enviar-cobranca`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ inscricao_id: enviarCobIns.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Erro ao enviar cobrança.');
+      }
+      if (data.emailWarning) {
+        setEnviarCobSucesso(`Cobrança gerada (${data.tipo}), mas o e-mail não pôde ser enviado: ${data.message || ''}`);
+      } else {
+        setEnviarCobSucesso(`Cobrança enviada por e-mail com sucesso! Tipo: ${data.tipo === 'reutilizada' ? 'Reutilizada' : 'Gerada nova'}.`);
+      }
+      onRefresh();
+    } catch (err: any) {
+      setEnviarCobErro(err.message || 'Erro ao processar requisição.');
+    } finally {
+      setEnviarCobLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (supabase && eventoId) {
@@ -4131,12 +4177,48 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${pagCfg.cls}`}>{pagCfg.label}</span>
                   </td>
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{ins.forma_pagamento || '-'}</td>
-                  <td className="px-4 py-3 whitespace-nowrap">
+                  <td className="px-4 py-3 whitespace-nowrap flex items-center gap-1">
                     {ins.status_pagamento !== 'pago' && ins.status_pagamento !== 'isento' && (
-                      <button onClick={() => { setErroModal(null); setConfirmarIns(ins); }} disabled={salvando === ins.id}
-                        className="text-xs px-2 py-1 bg-emerald-100 text-emerald-700 rounded font-semibold hover:bg-emerald-200 transition disabled:opacity-50">
-                        💳 Baixa manual
-                      </button>
+                      <>
+                        <button
+                          onClick={() => { setErroModal(null); setConfirmarIns(ins); }}
+                          disabled={salvando === ins.id}
+                          title="Efetivar pagamento manual"
+                          className="p-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded transition disabled:opacity-50 inline-flex items-center justify-center"
+                        >
+                          <DollarSign className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => { setEnviarCobErro(null); setEnviarCobSucesso(null); setEnviarCobIns(ins); }}
+                          title="Enviar 2ª via por e-mail"
+                          className="p-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded transition inline-flex items-center justify-center"
+                        >
+                          <Mail className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                    {ins.invoice_url && (
+                      <>
+                        <a
+                          href={ins.invoice_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Abrir fatura"
+                          className="p-1.5 bg-purple-100 text-purple-700 hover:bg-purple-200 rounded transition inline-flex items-center justify-center"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </a>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(ins.invoice_url || '');
+                            alert('Link da cobrança copiado com sucesso!');
+                          }}
+                          title="Copiar link da cobrança"
+                          className="p-1.5 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded transition inline-flex items-center justify-center"
+                        >
+                          <Link className="w-4 h-4" />
+                        </button>
+                      </>
                     )}
                   </td>
                 </tr>
@@ -4192,6 +4274,85 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
                 {salvando === confirmarIns.id ? (
                   <><span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Salvando...</>
                 ) : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Enviar Cobrança */}
+      {enviarCobIns && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            {/* Cabeçalho */}
+            <div className="bg-[#123b63] px-6 py-4 flex items-center gap-3">
+              <span className="text-xl">📧</span>
+              <h2 className="text-white font-bold text-base">Enviar cobrança ao inscrito</h2>
+            </div>
+            {/* Corpo */}
+            <div className="px-6 py-5">
+              <div className="space-y-3 text-sm text-gray-700">
+                <div>
+                  <span className="block text-xs font-semibold text-gray-400 uppercase">Nome</span>
+                  <span className="font-bold text-gray-950">{enviarCobIns.nome_inscrito}</span>
+                </div>
+                <div>
+                  <span className="block text-xs font-semibold text-gray-400 uppercase">E-mail</span>
+                  <span className="font-medium text-gray-900">{enviarCobIns.email || <em className="text-red-500 font-normal">Não cadastrado (obrigatório)</em>}</span>
+                </div>
+                <div>
+                  <span className="block text-xs font-semibold text-gray-400 uppercase">Evento</span>
+                  <span className="font-medium text-gray-900">{evento?.nome || '-'}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <span className="block text-xs font-semibold text-gray-400 uppercase">Valor</span>
+                    <span className="font-bold text-[#123b63]">
+                      {formatarValorUI(enviarCobIns, enviarCobIns.lote || null, enviarCobIns.lote_id ? inscricoes.filter(o => o.lote_id === enviarCobIns.lote_id) : [])}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="block text-xs font-semibold text-gray-400 uppercase">Status atual</span>
+                    <span className="font-bold capitalize text-amber-600">{enviarCobIns.status_pagamento}</span>
+                  </div>
+                </div>
+                {enviarCobIns.asaas_due_date && (
+                  <div>
+                    <span className="block text-xs font-semibold text-gray-400 uppercase">Vencimento atual</span>
+                    <span className="font-medium text-gray-900">{fmtDataExibicao(enviarCobIns.asaas_due_date)}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-5 p-3 bg-blue-50 border border-blue-105 rounded-lg text-xs text-blue-900 leading-relaxed">
+                <strong>Mensagem informativa:</strong> O sistema reenviará a cobrança atual se ela ainda estiver válida. Caso esteja vencida, uma nova cobrança será gerada automaticamente.
+              </div>
+
+              {enviarCobErro && (
+                <p className="mt-3 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{enviarCobErro}</p>
+              )}
+
+              {enviarCobSucesso && (
+                <p className="mt-3 text-xs text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">{enviarCobSucesso}</p>
+              )}
+            </div>
+            {/* Rodapé */}
+            <div className="px-6 pb-5 flex gap-3 justify-end">
+              <button
+                onClick={() => { setEnviarCobIns(null); setEnviarCobErro(null); setEnviarCobSucesso(null); }}
+                disabled={enviarCobLoading}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 transition disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleEnviarCobranca}
+                disabled={enviarCobLoading || !enviarCobIns.email}
+                className="px-4 py-2 rounded-lg bg-[#123b63] text-white text-sm font-semibold hover:bg-[#0f3052] transition disabled:opacity-50 flex items-center gap-2"
+              >
+                {enviarCobLoading ? (
+                  <><span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Enviando...</>
+                ) : 'Enviar cobrança'}
               </button>
             </div>
           </div>
