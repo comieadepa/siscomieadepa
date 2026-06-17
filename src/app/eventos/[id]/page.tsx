@@ -5536,7 +5536,7 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
   const hdT  = 'font-bold text-[#123b63] text-sm';
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6">
 
       {/* ══ 1. DADOS DO EVENTO ══════════════════════════════════════ */}
       <div className={card}>
