@@ -430,14 +430,34 @@ export async function alocarLeitoParaInscricaoEventoComum(supabase: any, inscric
       descricao: `[Hospedagem] Pagamento confirmado. Iniciando alocação automática para ${inscricao.nome_inscrito} no evento comum.`,
     });
 
-    // 4. Busca os alojamentos ativos
-    const { data: alojamentosRaw, error: errAloj } = await supabase
+    // 4. Busca os alojamentos cadastrados (todos)
+    const { data: todosAlojamentos, error: errAloj } = await supabase
       .from('evento_alojamentos')
       .select('id, nome, publico, sexo, total_vagas, camas_inferiores, camas_superiores, ativo')
-      .eq('evento_id', evento.id)
-      .eq('ativo', true);
+      .eq('evento_id', evento.id);
 
-    if (errAloj || !alojamentosRaw || alojamentosRaw.length === 0) {
+    if (errAloj) {
+      console.error(`[Autoalocacao] [Comum] Erro ao buscar alojamentos:`, errAloj.message);
+      return;
+    }
+
+    const totalAlojamentos = todosAlojamentos?.length ?? 0;
+
+    if (totalAlojamentos === 0) {
+      console.warn(`[Autoalocacao] [Comum] EVENTO_SEM_ALOJAMENTOS_CONFIGURADOS: Nenhum alojamento cadastrado no evento ${evento.id}`);
+      await logDB({
+        acao: 'EVENTO_SEM_ALOJAMENTOS_CONFIGURADOS',
+        modulo: 'eventos',
+        entidade: 'evento_hospedagens',
+        entidadeId: hospedagem.id,
+        descricao: `[Hospedagem] EVENTO_SEM_ALOJAMENTOS_CONFIGURADOS. Não existem alojamentos cadastrados para o evento. Mantendo status pago_sem_alocacao.`,
+      });
+      return;
+    }
+
+    const alojamentosRaw = (todosAlojamentos ?? []).filter((a: any) => a.ativo);
+
+    if (alojamentosRaw.length === 0) {
       console.warn(`[Autoalocacao] [Comum] Nenhum alojamento ativo no evento ${evento.id}`);
       await colocarEmListaEspera(supabase, hospedagem.id, 0);
       await logDB({
