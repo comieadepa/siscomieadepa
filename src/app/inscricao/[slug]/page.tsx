@@ -1010,7 +1010,14 @@ export default function InscricaoPublicaPage() {
       return nome.includes('pastor presidente') && !nome.includes('esposa') && !nome.includes('viuva');
     }) || null;
 
-    if (tipoPP && tipoSelecionado?.id !== tipoPP.id) {
+    // Se o tipo selecionado atual for válido e for Pastor Presidente ou Campo Missionário, mantém a seleção
+    const jaSelecionadoValido = tipoSelecionado && tiposParaExibir.some(t => t.id === tipoSelecionado.id);
+    const jaSelecionadoCerto = jaSelecionadoValido && (
+      tipoSelecionado?.id === tipoPP?.id ||
+      /campo\s*mission/i.test(tipoSelecionado?.nome || '')
+    );
+
+    if (tipoPP && !jaSelecionadoCerto) {
       setTipoSelecionado(tipoPP);
       setCupomStatus('idle');
       setCupomDesconto(0);
@@ -1023,7 +1030,7 @@ export default function InscricaoPublicaPage() {
   }, [
     fluxoCampoMissionarioEspecial,
     tiposParaExibir,
-    tipoSelecionado?.id,
+    tipoSelecionado,
     modoLote,
     participantesExtra.length,
     extrasMinisteriais.length,
