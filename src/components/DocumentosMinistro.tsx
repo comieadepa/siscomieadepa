@@ -119,6 +119,19 @@ export default function DocumentosMinistro({
   const [deletando, setDeletando] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [lastStats, setLastStats] = useState<{
+    originalSize: number;
+    optimizedSize: number;
+    reductionPercentage: number;
+    optimized: boolean;
+    fileName: string;
+  } | null>(null);
+
+  // Estados do Progresso por Etapas (Sprint UX)
+  const [uploadStage, setUploadStage] = useState<'idle' | 'validating' | 'uploading' | 'optimizing' | 'sending_drive' | 'completed' | 'error'>('idle');
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadMessage, setUploadMessage] = useState('');
+  const [uploadingFile, setUploadingFile] = useState<File | null>(null);
 
   const getAuthHeader = useCallback(async () => {
     const supabase = createClient();
@@ -187,8 +200,49 @@ export default function DocumentosMinistro({
   useEffect(() => { fetchFiles(); }, [fetchFiles]);
 
   const handleUpload = async (file: File) => {
+    // Validar tamanho do arquivo no frontend (limite: 100 MB)
+    const maxLimit = 100 * 1024 * 1024;
+    if (file.size > maxLimit) {
+      setUploadError("Arquivo muito grande. O limite atual é 100 MB. Compacte o PDF ou divida em partes menores.");
+      return;
+    }
+
     setUploading(true);
     setUploadError('');
+    setLastStats(null);
+    setUploadingFile(file);
+
+    // Progresso por Etapas (Sprint UX)
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    setUploadStage('validating');
+    setUploadProgress(0);
+    setUploadMessage('Validando arquivo...');
+
+    let currentProgress = 0;
+    const progressInterval = setInterval(() => {
+      if (currentProgress < 10) {
+        currentProgress += 2;
+        setUploadStage('validating');
+        setUploadMessage('Validando arquivo...');
+        setUploadProgress(currentProgress);
+      } else if (currentProgress < 45) {
+        setUploadStage('uploading');
+        setUploadMessage(isPdf ? 'Preparando upload...' : 'Preparando documento...');
+        currentProgress += 3;
+        setUploadProgress(Math.min(currentProgress, 45));
+      } else if (isPdf && currentProgress < 75) {
+        setUploadStage('optimizing');
+        setUploadMessage('Otimizando PDF...');
+        currentProgress += 2;
+        setUploadProgress(Math.min(currentProgress, 75));
+      } else if (currentProgress < 95) {
+        setUploadStage('sending_drive');
+        setUploadMessage('Enviando ao Google Drive...');
+        currentProgress += 2;
+        setUploadProgress(Math.min(currentProgress, 95));
+      }
+    }, 100);
+
     try {
       const headers = await getAuthHeader();
       const formData = new FormData();
@@ -206,14 +260,42 @@ export default function DocumentosMinistro({
       formData.append('tipoDocumento', tipoFinal);
 
       const res = await fetch('/api/documentos', { method: 'POST', headers, body: formData });
-      const json = await res.json();
+      
+      const contentType = res.headers.get('content-type') || '';
+      let json: any = {};
+      if (contentType.includes('application/json')) {
+        json = await res.json();
+      } else {
+        const text = await res.text().catch(() => '');
+        console.error('[UPLOAD ERROR RESPONSE]', text);
+        throw new Error('Não foi possível processar o upload. O servidor recusou o arquivo ou retornou uma resposta inválida.');
+      }
+
       if (!res.ok) throw new Error(json.error || 'Erro ao enviar arquivo');
+
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+      setUploadStage('completed');
+      setUploadMessage('Upload concluído com sucesso.');
+      
+      setLastStats({
+        originalSize: json.originalSize || file.size,
+        optimizedSize: json.optimizedSize || file.size,
+        reductionPercentage: json.reductionPercentage || 0,
+        optimized: !!json.optimized,
+        fileName: file.name,
+      });
+
       await fetchFiles();
       onChanged?.();
     } catch (e) {
+      clearInterval(progressInterval);
+      setUploadStage('error');
+      setUploadProgress(0);
       setUploadError(e instanceof Error ? e.message : String(e));
     } finally {
       setUploading(false);
+      setUploadingFile(null);
     }
   };
 
@@ -281,7 +363,7 @@ export default function DocumentosMinistro({
                 disabled={uploading}
                 className="px-4 py-2 bg-[#0D2B4E] hover:bg-[#1a4a7a] disabled:opacity-60 text-white text-sm font-semibold rounded-md transition whitespace-nowrap"
               >
-                {uploading ? '⏳ Enviando...' : '📤 Selecionar arquivo'}
+                {uploading ? '⏳ Processando...' : '📤 Selecionar arquivo'}
               </button>
               <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileInput}
                 accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx" />
@@ -298,19 +380,65 @@ export default function DocumentosMinistro({
               />
             )}
 
-            <div
-              onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={handleDrop}
-              className={`border-2 border-dashed rounded-lg p-5 text-center text-sm text-gray-500 transition cursor-pointer ${dragOver ? 'border-[#0D2B4E] bg-blue-50 text-[#0D2B4E]' : 'border-gray-300 hover:border-gray-400'}`}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {uploading
-                ? <span className="text-blue-700 font-semibold">Enviando para o Google Drive...</span>
-                : <span>Arraste um arquivo aqui ou clique para selecionar<br /><span className="text-xs text-gray-400">PDF, imagens, Word — tipo: <strong>{tipoDocumento === 'Outros' && descricaoOutros ? `Outros - ${descricaoOutros}` : tipoDocumento}</strong></span></span>
-              }
-            </div>
+            {uploading ? (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-5 space-y-3">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-[#0D2B4E]">{uploadMessage}</span>
+                  <span className="font-bold text-[#0D2B4E]">{uploadProgress}%</span>
+                </div>
+                {/* Barra de progresso */}
+                <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                  <div 
+                    className="bg-[#0D2B4E] h-2.5 rounded-full transition-all duration-200 ease-out" 
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] text-gray-400 font-mono">
+                  <span>Arquivo: {uploadingFile?.name} [etapa: {uploadStage}]</span>
+                  <span>Tamanho original: {fmtSize(String(uploadingFile?.size || 0))}</span>
+                </div>
+              </div>
+            ) : (
+              <div
+                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+                className={`border-2 border-dashed rounded-lg p-5 text-center text-sm text-gray-500 transition cursor-pointer ${dragOver ? 'border-[#0D2B4E] bg-blue-50 text-[#0D2B4E]' : 'border-gray-300 hover:border-gray-400'}`}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <span>Arraste um arquivo aqui ou clique para selecionar<br /><span className="text-xs text-gray-400">PDF, imagens, Word — tipo: <strong>{tipoDocumento === 'Outros' && descricaoOutros ? `Outros - ${descricaoOutros}` : tipoDocumento}</strong></span></span>
+              </div>
+            )}
             {uploadError && <p className="text-xs text-red-600">{uploadError}</p>}
+            
+            {lastStats && (
+              <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg p-4 text-xs space-y-1">
+                <p className="font-bold flex items-center gap-1 text-sm text-emerald-800">
+                  <span>✨</span> Documento enviado com sucesso
+                </p>
+                <p className="text-emerald-700">Arquivo: <span className="font-semibold text-emerald-950">{lastStats.fileName}</span></p>
+                {lastStats.optimized ? (
+                  <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-emerald-100">
+                    <div>
+                      <span className="text-emerald-600 block">Original</span>
+                      <span className="font-semibold text-emerald-800">{fmtSize(String(lastStats.originalSize))}</span>
+                    </div>
+                    <div>
+                      <span className="text-emerald-600 block">Final</span>
+                      <span className="font-semibold text-emerald-800">{fmtSize(String(lastStats.optimizedSize))}</span>
+                    </div>
+                    <div>
+                      <span className="text-emerald-600 block">Redução</span>
+                      <span className="font-bold text-[#0D2B4E]">-{lastStats.reductionPercentage}%</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-emerald-700 mt-1 pt-1 border-t border-emerald-100">
+                    Documento enviado sem necessidade de otimização. (Tamanho: {fmtSize(String(lastStats.originalSize))})
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* File list */}

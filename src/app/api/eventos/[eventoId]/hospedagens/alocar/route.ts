@@ -61,12 +61,28 @@ export async function POST(
       request: _req,
     });
 
+    const { data: pendentes } = await supabase
+      .from('evento_hospedagens')
+      .select('id, inscricao_id, evento_inscricoes(nome_inscrito, sexo)')
+      .eq('evento_id', eventoId)
+      .eq('status', 'pago_sem_alocacao');
+
+    const detalheResultados = (pendentes ?? []).map(p => {
+      const nome = (p.evento_inscricoes as any)?.nome_inscrito ?? 'Inscrito';
+      return {
+        inscricao_id: p.inscricao_id,
+        nome_inscrito: nome,
+        resultado: 'alojamentos_nao_configurados',
+        motivo: 'Evento sem alojamentos cadastrados',
+      };
+    });
+
     return NextResponse.json({
       ok: true,
-      processados: 0,
+      processados: detalheResultados.length,
       confirmados: 0,
       lista_espera: 0,
-      leitos_atribuidos: 0,
+      detalhes: detalheResultados,
       mensagem: 'EVENTO_SEM_ALOJAMENTOS_CONFIGURADOS',
     });
   }
@@ -387,9 +403,34 @@ export async function POST(
     }> = [];
     const leitosParaLiberar: string[] = [];
 
+    const detalheResultados: Array<{
+      inscricao_id: string;
+      nome_inscrito: string;
+      resultado: 'alocada' | 'enviada_para_lista_espera' | 'sem_alojamento_compativel' | 'sem_vaga_disponivel' | 'sexo_nao_informado' | 'alojamentos_nao_configurados' | 'ja_alocada' | 'erro';
+      motivo: string;
+    }> = [];
+
     for (const hosp of elegiveis) {
       const insc = hosp.evento_inscricoes as unknown as (InscricaoParaHospedagem & { grupo_hospedagem?: string | null }) | null;
-      if (!insc) continue;
+      if (!insc) {
+        detalheResultados.push({
+          inscricao_id: hosp.inscricao_id as string,
+          nome_inscrito: 'Desconhecido',
+          resultado: 'erro',
+          motivo: 'Inscrição inválida ou não encontrada',
+        });
+        continue;
+      }
+
+      if (evento.departamento !== 'AGO' && !insc.sexo) {
+        detalheResultados.push({
+          inscricao_id: hosp.inscricao_id as string,
+          nome_inscrito: insc.nome_inscrito,
+          resultado: 'sexo_nao_informado',
+          motivo: 'Sexo não informado na inscrição',
+        });
+        continue;
+      }
 
       const prioridade = calcularPrioridadeHospedagem(insc);
 
@@ -408,9 +449,13 @@ export async function POST(
           return ratioA - ratioB;
         });
 
-      const sugestao = sugerirAlojamento(insc, candidatos, prioridade);
-
-      if (!sugestao.alojamento_id || sugestao.status === 'lista_espera') {
+      if (evento.departamento !== 'AGO' && candidatos.length === 0) {
+        detalheResultados.push({
+          inscricao_id: hosp.inscricao_id as string,
+          nome_inscrito: insc.nome_inscrito,
+          resultado: 'sem_alojamento_compativel',
+          motivo: `Sem alojamento compatível para sexo ou público`,
+        });
         hospedagensParaAtualizar.push({
           id: hosp.id as string,
           status: 'lista_espera',
@@ -425,7 +470,57 @@ export async function POST(
         continue;
       }
 
+      const alojamentosComVagas = candidatos.filter(a => (a.vagas_livres ?? 0) > 0);
+
+      if (evento.departamento !== 'AGO' && alojamentosComVagas.length === 0) {
+        detalheResultados.push({
+          inscricao_id: hosp.inscricao_id as string,
+          nome_inscrito: insc.nome_inscrito,
+          resultado: 'sem_vaga_disponivel',
+          motivo: `Sem vaga disponível nos alojamentos compatíveis`,
+        });
+        hospedagensParaAtualizar.push({
+          id: hosp.id as string,
+          status: 'lista_espera',
+          alojamento_id: null,
+          tipo_cama: null,
+          numero_cama: null,
+          alocacao_automatica: true,
+        });
+        leitosParaLiberar.push(hosp.inscricao_id as string);
+        semVaga++;
+        lista_espera_count++;
+        continue;
+      }
+
+      const sugestao = sugerirAlojamento(insc, candidatos, prioridade);
+
+      if (!sugestao.alojamento_id || sugestao.status === 'lista_espera') {
+        hospedagensParaAtualizar.push({
+          id: hosp.id as string,
+          status: 'lista_espera',
+          alojamento_id: null,
+          tipo_cama: null,
+          numero_cama: null,
+          alocacao_automatica: true,
+        });
+        leitosParaLiberar.push(hosp.inscricao_id as string);
+        semVaga++;
+        lista_espera_count++;
+
+        if (evento.departamento !== 'AGO') {
+          detalheResultados.push({
+            inscricao_id: hosp.inscricao_id as string,
+            nome_inscrito: insc.nome_inscrito,
+            resultado: 'enviada_para_lista_espera',
+            motivo: `Enviado para lista de espera: vagas esgotadas`,
+          });
+        }
+        continue;
+      }
+
       const alojId = sugestao.alojamento_id;
+      const alojSelecionado = alojamentos.find(a => a.id === alojId);
       leitoNumMap[alojId] = (leitoNumMap[alojId] ?? 0) + 1;
       const numeroCama = formatarNumeroLeitoSequencial(leitoNumMap[alojId]);
       const posicao: 'inferior' | 'superior' | 'unico' =
@@ -461,6 +556,15 @@ export async function POST(
         ocupado: true,
       });
       leitos_atribuidos++;
+
+      if (evento.departamento !== 'AGO') {
+        detalheResultados.push({
+          inscricao_id: hosp.inscricao_id as string,
+          nome_inscrito: insc.nome_inscrito,
+          resultado: 'alocada',
+          motivo: `Alocado no alojamento ${alojSelecionado?.nome ?? alojId} leito ${numeroCama}`,
+        });
+      }
 
       vagasMap[alojId].total--;
       if (sugestao.tipo_cama === 'inferior') vagasMap[alojId].inferiores--;
@@ -580,6 +684,7 @@ export async function POST(
       leitos_atribuidos,
       aguardando_pagamento: pendentesPagamento.length,
       prioridade_sem_leito_inferior: prioridadeSemInferior,
+      detalhes:         evento.departamento !== 'AGO' ? detalheResultados : undefined,
     });
   };
 

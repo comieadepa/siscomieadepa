@@ -1965,17 +1965,17 @@ useEffect(() => {
   const endIndex = startIndex + itemsPerPage;
   const membrosPaginados = membrosFiltrados.slice(startIndex, endIndex);
 
-  const supervisoesOptions = dedupByNome(
-    supervisoes.length
-      ? [...supervisoes]
-      : [...supervisoes, ...supervisoesFromMembers, ...supervisoesFromNomenclaturas]
-  ).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const supervisoesOptions = dedupByNome([
+    ...supervisoes,
+    ...supervisoesFromMembers,
+    ...supervisoesFromNomenclaturas
+  ]).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 
-  const camposOptions = dedupByNome(
-    campos.length
-      ? [...campos]
-      : [...campos, ...camposFromMembers, ...camposFromNomenclaturas]
-  ).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const camposOptions = dedupByNome([
+    ...campos,
+    ...camposFromMembers,
+    ...camposFromNomenclaturas
+  ]).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 
   return (
     <div className="flex h-screen bg-gray-100">

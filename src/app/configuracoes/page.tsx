@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
@@ -66,6 +66,15 @@ export default function ConfiguracoesPage() {
             >
               📝 Nomenclaturas
             </button>
+            <button
+              onClick={() => setActiveTab('armazenamento')}
+              className={`px-6 py-3 font-semibold transition whitespace-nowrap text-sm border-b-3 ${activeTab === 'armazenamento'
+                ? 'text-teal-700 border-teal-600'
+                : 'text-gray-600 border-transparent hover:text-teal-600'
+                }`}
+            >
+              💾 Armazenamento
+            </button>
           </div>
 
           {/* Conteúdo das Abas */}
@@ -82,6 +91,10 @@ export default function ConfiguracoesPage() {
             {/* Aba: Nomenclaturas */}
             {activeTab === 'nomenclaturas' && (
               <NomenclaturaContent onNotification={(title, message, type) => setNotification({ isOpen: true, title, message, type })} />
+            )}
+            {/* Aba: Armazenamento */}
+            {activeTab === 'armazenamento' && (
+              <ArmazenamentoContent onNotification={(title, message, type) => setNotification({ isOpen: true, title, message, type })} />
             )}
           </div>
         </div>
@@ -781,6 +794,132 @@ function NomenclaturaContent({ onNotification }: { onNotification: (title: strin
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function ArmazenamentoContent({ onNotification }: { onNotification: (title: string, message: string, type: 'success' | 'error' | 'warning' | 'info') => void }) {
+  const supabase = createClient();
+  const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState({
+    quality: 'Média',
+    resolution: 200,
+    auto_compression: true,
+  });
+
+  useEffect(() => {
+    async function loadSettings() {
+      try {
+        const { data, error } = await supabase
+          .from('configurations')
+          .select('value')
+          .eq('key', 'storage_settings')
+          .maybeSingle();
+
+        if (error) throw error;
+        if (data?.value) {
+          const val = data.value as any;
+          setSettings({
+            quality: val.quality || 'Média',
+            resolution: Number(val.resolution) || 200,
+            auto_compression: val.auto_compression !== undefined ? !!val.auto_compression : true,
+          });
+        }
+      } catch (err) {
+        console.error('Erro ao carregar configurações de armazenamento:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadSettings();
+  }, [supabase]);
+
+  const handleSave = async () => {
+    try {
+      const { error } = await supabase
+        .from('configurations')
+        .upsert({ key: 'storage_settings', value: settings }, { onConflict: 'key' });
+
+      if (error) throw error;
+      onNotification('Sucesso', 'Configurações de armazenamento salvas com sucesso!', 'success');
+    } catch (err) {
+      console.error('Erro ao salvar configurações de armazenamento:', err);
+      onNotification('Erro', 'Erro ao salvar configurações de armazenamento', 'error');
+    }
+  };
+
+  if (loading) {
+    return <div className="text-center py-8">Carregando configurações...</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-gray-800">💾 Configurações de Armazenamento & Otimização</h2>
+        <p className="text-sm text-gray-500 mt-1">
+          Defina as políticas de compactação automática de documentos PDF para economizar espaço e otimizar downloads.
+        </p>
+      </div>
+
+      <div className="bg-gray-50 p-6 rounded-lg border border-gray-200 space-y-4 max-w-xl">
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={settings.auto_compression}
+            onChange={(e) => setSettings({ ...settings, auto_compression: e.target.checked })}
+            className="w-5 h-5 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+          />
+          <div>
+            <span className="font-semibold text-gray-800 text-sm block">Compactação Automática de PDF</span>
+            <span className="text-xs text-gray-500">Otimiza os arquivos automaticamente ao fazer upload</span>
+          </div>
+        </label>
+
+        {settings.auto_compression && (
+          <>
+            <div className="space-y-2 pt-2">
+              <label className="block text-sm font-semibold text-gray-700">Qualidade de Imagem</label>
+              <select
+                value={settings.quality}
+                onChange={(e) => setSettings({ ...settings, quality: e.target.value })}
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
+              >
+                <option value="Alta">Alta (Menor compactação, melhor fidelidade)</option>
+                <option value="Média">Média (Recomendado, balanço ideal entre tamanho e qualidade)</option>
+                <option value="Máxima Compactação">Máxima Compactação (Redução extrema, menor fidelidade)</option>
+              </select>
+              <p className="text-xs text-gray-400">
+                Determina o nível de compressão a ser aplicado nos elementos visuais do documento.
+              </p>
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <label className="block text-sm font-semibold text-gray-700">Resolução Limite (DPI)</label>
+              <select
+                value={settings.resolution}
+                onChange={(e) => setSettings({ ...settings, resolution: Number(e.target.value) })}
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
+              >
+                <option value="300">300 DPI (Resolução de impressão de alta qualidade)</option>
+                <option value="200">200 DPI (Qualidade padrão de tela e leitura)</option>
+                <option value="150">150 DPI (Otimizado para leitura rápida e web)</option>
+              </select>
+              <p className="text-xs text-gray-400">
+                Imagens no PDF serão redimensionadas para esta resolução limite se excederem o valor.
+              </p>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="flex justify-end max-w-xl">
+        <button
+          onClick={handleSave}
+          className="px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white font-semibold text-sm rounded-md transition shadow-sm"
+        >
+          Salvar Configurações
+        </button>
+      </div>
     </div>
   );
 }

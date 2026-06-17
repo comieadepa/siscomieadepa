@@ -27,6 +27,12 @@ export async function GET(
   if (!guard.ok) return guard.response;
   const supabase = guard.ctx.supabaseAdmin;
 
+  // 1.1. Todos os alojamentos do evento (para calcular motivos)
+  const { data: todosAlojamentos } = await supabase
+    .from('evento_alojamentos')
+    .select('id, nome, publico, sexo, total_vagas, camas_inferiores, camas_superiores, ativo')
+    .eq('evento_id', eventoId);
+
   // 1. Todas as inscrições com hospedagem solicitada
   let inscricoes: any[] = [];
   let insFrom = 0;
@@ -177,6 +183,49 @@ export async function GET(
     if (grupoIncompativel) pendencias.push('grupo_incompativel_alojamento');
     if (alocacaoIncompleta) pendencias.push('sem_numero_leito');
 
+    let motivoNaoAlocado = null;
+    const isPagoOrIsento = ['pago', 'isento'].includes(statusPagamento);
+    const semAloc = !aloc?.alojamento_id;
+
+    if (isPagoOrIsento && semAloc && aloc?.status !== 'lista_espera') {
+      const totalAloj = todosAlojamentos?.length ?? 0;
+      if (totalAloj === 0) {
+        motivoNaoAlocado = 'Evento sem alojamentos cadastrados';
+      } else if (!insc.sexo) {
+        motivoNaoAlocado = 'Sexo não informado';
+      } else {
+        const sexoUpper = (insc.sexo ?? '').toUpperCase();
+        const ativos = (todosAlojamentos ?? []).filter((a: any) => a.ativo);
+        if (ativos.length === 0) {
+          motivoNaoAlocado = 'Aguardando configuração de alojamento';
+        } else {
+          const compats = ativos.filter((a: any) => {
+            if (a.sexo && a.sexo !== sexoUpper) return false;
+            if (a.publico === 'feminino' && sexoUpper !== 'F') return false;
+            if (a.publico === 'masculino_geral' && sexoUpper !== 'M') return false;
+            return true;
+          });
+
+          if (compats.length === 0) {
+            motivoNaoAlocado = `Sem alojamento ${sexoUpper === 'F' ? 'feminino' : 'masculino'} disponível`;
+          } else {
+            const confs = (alocacoes ?? []).filter(a => ['alocada', 'confirmada', 'checkin_realizado'].includes(a.status) && a.alojamento_id);
+            const comVagas = compats.filter((a: any) => {
+              const ocupados = confs.filter((c: any) => c.alojamento_id === a.id).length;
+              return a.total_vagas - ocupados > 0;
+            });
+
+            if (comVagas.length === 0) {
+              const publicoLabel = compats[0].publico === 'feminino' ? 'feminino' : (compats[0].publico === 'masculino_geral' ? 'masculino' : 'misto');
+              motivoNaoAlocado = `Sem vaga no alojamento ${publicoLabel}`;
+            } else {
+              motivoNaoAlocado = 'Aguardando processamento';
+            }
+          }
+        }
+      }
+    }
+
     return {
       id:                    aloc?.id              ?? null,
       inscricao_id:          insc.id,
@@ -212,6 +261,7 @@ export async function GET(
       pendencias,
       // Alojamento
       alojamento_nome:   aloj?.nome             ?? null,
+      motivo_nao_alocado: motivoNaoAlocado,
     };
   });
 

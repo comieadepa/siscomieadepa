@@ -76,6 +76,7 @@ interface DadosMembro {
   observacoes?: string;
   casaDoPastorAcp?: string;
   numeroProcesso?: string;
+  tipoRegistro?: string;
   categoriaRegistro?: string;
   regiao?: string;
 }
@@ -235,6 +236,36 @@ export default function FichaMembro({ membro, dadosIgreja, fotoUrl, isCandidato 
 
         <div style={{ borderTop: '2px solid #0D2B4E', marginBottom: '5px' }} />
 
+        {isCandidato && (
+          <div style={{
+            display: 'flex',
+            width: '100%',
+            border: '2px solid #0D2B4E',
+            backgroundColor: '#e0f2fe',
+            marginBottom: '8px',
+            padding: '6px 10px',
+            borderRadius: '4px',
+            gap: '16px'
+          }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '9px', fontWeight: 'bold', color: '#0D2B4E' }}>Nº DO PROCESSO</div>
+              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#222' }}>{fmt(membro.numeroProcesso) || '—'}</div>
+            </div>
+            <div style={{ flex: 1, borderLeft: '1px solid #93c5fd', paddingLeft: '16px' }}>
+              <div style={{ fontSize: '9px', fontWeight: 'bold', color: '#0D2B4E' }}>TIPO DE REGISTRO</div>
+              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#222' }}>
+                {(() => {
+                  const val = String(membro.tipoRegistro || '').trim().toLowerCase();
+                  if (val === 'chegada' || val === 'novo') return 'CANDIDATO (NOVO CADASTRO)';
+                  if (val === 'progressao' || val === 'existente' || val === 'ministro') return 'PROGRESSÃO (JÁ CADASTRADO)';
+                  if (val === 'filiacao') return 'FILIAÇÃO (CONSAGRADO EM OUTRA INSTITUIÇÃO)';
+                  return fmt(membro.tipoRegistro).toUpperCase() || '—';
+                })()}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* DADOS ECLESIASTICOS */}
         <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '4px' }}>
           <tbody>
@@ -303,15 +334,26 @@ export default function FichaMembro({ membro, dadosIgreja, fotoUrl, isCandidato 
                       <td style={lbl}>Supervisao</td>
                       <td colSpan={3} style={cell}>{fmt(membro.supervisao).toUpperCase()}</td>
                     </tr>
-                    {(membro.numeroProcesso || membro.categoriaRegistro || membro.regiao) && (
-                      <tr>
-                        <td style={lbl}>Processo nº</td>
-                        <td style={cell}>{fmt(membro.numeroProcesso)}</td>
-                        <td style={lbl}>Cat. / Região</td>
-                        <td style={cell}>
-                          {[membro.categoriaRegistro, membro.regiao].filter(Boolean).join(' - ').toUpperCase()}
-                        </td>
-                      </tr>
+                    {isCandidato ? (
+                      (membro.categoriaRegistro || membro.regiao) && (
+                        <tr>
+                          <td style={lbl}>Cat. / Região</td>
+                          <td colSpan={3} style={cell}>
+                            {[membro.categoriaRegistro, membro.regiao].filter(Boolean).join(' - ').toUpperCase()}
+                          </td>
+                        </tr>
+                      )
+                    ) : (
+                      (membro.numeroProcesso || membro.categoriaRegistro || membro.regiao) && (
+                        <tr>
+                          <td style={lbl}>Processo nº</td>
+                          <td style={cell}>{fmt(membro.numeroProcesso)}</td>
+                          <td style={lbl}>Cat. / Região</td>
+                          <td style={cell}>
+                            {[membro.categoriaRegistro, membro.regiao].filter(Boolean).join(' - ').toUpperCase()}
+                          </td>
+                        </tr>
+                      )
                     )}
                   </tbody>
                 </table>

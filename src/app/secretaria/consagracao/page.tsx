@@ -2833,6 +2833,7 @@ export default function ConsagracaoPage() {
                   id: membroImprimindo.member_id || membroImprimindo.id,
                   uniqueId: membroImprimindo.unique_id || '',
                   numeroProcesso: membroImprimindo.numero_processo || '',
+                  tipoRegistro: membroImprimindo.tipo_registro || '',
                   categoriaRegistro: membroImprimindo.regiao || '',
                   nome: membroImprimindo.nome || '',
                   cpf: formatCpf(membroImprimindo.cpf || ''),
