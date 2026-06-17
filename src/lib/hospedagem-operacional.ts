@@ -9,6 +9,7 @@ export const PAGAMENTO_BLOQUEADO = new Set([
 export type StatusOperacionalHospedagem =
   | 'solicitada'
   | 'aguardando_pagamento'
+  | 'pago_sem_alocacao'
   | 'elegivel'
   | 'alocada'
   | 'confirmada'
@@ -60,7 +61,7 @@ export function resolveStatusOperacionalHospedagem(
     return 'alocada';
   }
 
-  return 'elegivel';
+  return 'pago_sem_alocacao';
 }
 
 export function isElegivelAutoalocacao(input: HospedagemStatusInput): boolean {
