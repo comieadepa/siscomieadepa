@@ -1135,6 +1135,10 @@ export default function BalcaoPage() {
   // ─────────────────────────────────────────────────────────
   function imprimirCracha() {
     if (!inscricaoSalva) return;
+    if (inscricaoSalva.status_pagamento !== 'pago' && inscricaoSalva.status_pagamento !== 'isento') {
+      alert('Esta inscrição ainda está pendente de pagamento e não pode ser impressa.');
+      return;
+    }
     window.open(`/eventos/${id}/etiquetas/print?ids=${inscricaoSalva.id}&size=medium`, '_blank', 'width=900,height=700');
   }
 
@@ -1389,25 +1393,32 @@ export default function BalcaoPage() {
   }
 
   async function imprimirEtiqueta(ins: InscricaoResumo) {
+    if (ins.status_pagamento !== 'pago' && ins.status_pagamento !== 'isento') {
+      alert('Esta inscrição ainda está pendente de pagamento e não pode ser impressa.');
+      return;
+    }
+
     let printIds: string[] = [ins.id];
 
     if (ins.lote_id) {
-      // Tenta resolver irmãos já carregados na lista
-      const siblings = inscricoesLista.filter(i => i.lote_id === ins.lote_id);
+      // Tenta resolver irmãos já carregados na lista que estejam pagos/isentos
+      const siblings = inscricoesLista.filter(i => i.lote_id === ins.lote_id && (i.status_pagamento === 'pago' || i.status_pagamento === 'isento'));
       if (siblings.length > 1) {
         printIds = siblings.map(i => i.id);
       } else {
-        // Busca no banco todas as inscrições do lote
+        // Busca no banco todas as inscrições do lote filtrando por status de pagamento
         const { data } = await supabase
           .from('evento_inscricoes')
           .select('id')
-          .eq('lote_id', ins.lote_id);
+          .eq('lote_id', ins.lote_id)
+          .in('status_pagamento', ['pago', 'isento']);
         if (data && data.length > 1) {
           printIds = (data as { id: string }[]).map(r => r.id);
         }
       }
     }
 
+    if (!printIds.length) return;
     window.open(`/eventos/${id}/etiquetas/print?mode=thermal&ids=${printIds.join(',')}`, '_blank', 'width=520,height=420');
   }
 
@@ -3312,15 +3323,32 @@ function ConfirmacaoScreen({
 
   const isGratuito = valorFinal <= 0 || formaPagamento === 'isento';
 
+  const pagamentoConfirmado = inscricao.status_pagamento === 'pago' || inscricao.status_pagamento === 'isento';
+
   return (
     <div className="min-h-[70vh] bg-[#0D2B4E] flex flex-col items-center justify-center p-4">
-      {/* Ícone de sucesso */}
+      {/* Ícone de sucesso / status */}
       <div className="mb-6 text-center">
-        <div className="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center mx-auto mb-3 shadow-lg shadow-emerald-500/30">
-          <span className="text-4xl">✅</span>
-        </div>
-        <h1 className="text-2xl font-black text-white">Inscrição Confirmada!</h1>
-        <p className="text-emerald-400 text-sm mt-1 font-semibold">{contadorTotal} inscri{contadorTotal !== 1 ? 'ções realizadas' : 'ção realizada'} hoje</p>
+        {pagamentoConfirmado ? (
+          <>
+            <div className="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center mx-auto mb-3 shadow-lg shadow-emerald-500/30">
+              <span className="text-4xl">✅</span>
+            </div>
+            <h1 className="text-2xl font-black text-white">Inscrição Confirmada!</h1>
+            <p className="text-emerald-400 text-sm mt-1 font-semibold">{contadorTotal} inscri{contadorTotal !== 1 ? 'ções realizadas' : 'ção realizada'} hoje</p>
+          </>
+        ) : (
+          <>
+            <div className="w-20 h-20 bg-amber-500 rounded-full flex items-center justify-center mx-auto mb-3 shadow-lg shadow-amber-500/30">
+              <span className="text-4xl">⏳</span>
+            </div>
+            <h1 className="text-2xl font-black text-white">Inscrição registrada</h1>
+            <p className="text-amber-400 text-sm mt-1 font-semibold">Aguardando confirmação do pagamento</p>
+            <span className="inline-block bg-amber-500/20 text-amber-300 text-xs font-bold px-3 py-1 rounded-full mt-2 border border-amber-500/30 uppercase">
+              Pendente
+            </span>
+          </>
+        )}
       </div>
 
       {/* Card do inscrito */}
@@ -3375,45 +3403,72 @@ function ConfirmacaoScreen({
             )}
           </div>
         )}
+
+        {/* Aviso de pendência */}
+        {!pagamentoConfirmado && (
+          <div className="px-5 py-3 bg-red-950/40 border-t border-red-900/35 text-red-300 text-xs leading-relaxed text-center font-medium">
+            ⚠️ Esta inscrição só será liberada para crachá, etiqueta e check-in após confirmação do pagamento.
+          </div>
+        )}
       </div>
 
       {/* Ações */}
       <div className="flex flex-col gap-3 w-full max-w-lg">
-        {/* Botão destaque: imprimir + nova */}
-        <button
-          type="button"
-          onClick={() => { onImprimir(); setTimeout(onNova, 600); }}
-          className="w-full bg-[#F39C12] hover:bg-[#D68910] active:scale-95 text-[#0D2B4E] font-black py-4 rounded-xl text-base transition shadow-lg shadow-[#F39C12]/30 flex items-center justify-center gap-2"
-        >
-          🖨️ Imprimir Crachá e Nova Inscrição
-        </button>
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={onImprimir}
-            className="flex-1 border-2 border-[#F39C12]/40 hover:border-[#F39C12] text-[#F39C12] hover:bg-[#F39C12]/10 font-bold py-3 rounded-xl text-sm transition"
-          >
-            🖨️ Só Imprimir
-          </button>
-          <button
-            ref={btnRef}
-            type="button"
-            onClick={onNova}
-            className="flex-1 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white font-black py-3 rounded-xl text-base transition shadow-lg shadow-emerald-500/30"
-            title="Enter"
-          >
-            ➕ Nova Inscrição
-          </button>
-        </div>
+        {pagamentoConfirmado ? (
+          <>
+            {/* Botão destaque: imprimir + nova */}
+            <button
+              type="button"
+              onClick={() => { onImprimir(); setTimeout(onNova, 600); }}
+              className="w-full bg-[#F39C12] hover:bg-[#D68910] active:scale-95 text-[#0D2B4E] font-black py-4 rounded-xl text-base transition shadow-lg shadow-[#F39C12]/30 flex items-center justify-center gap-2"
+            >
+              🖨️ Imprimir Crachá e Nova Inscrição
+            </button>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={onImprimir}
+                className="flex-1 border-2 border-[#F39C12]/40 hover:border-[#F39C12] text-[#F39C12] hover:bg-[#F39C12]/10 font-bold py-3 rounded-xl text-sm transition"
+              >
+                🖨️ Só Imprimir
+              </button>
+              <button
+                ref={btnRef}
+                type="button"
+                onClick={onNova}
+                className="flex-1 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white font-black py-3 rounded-xl text-base transition shadow-lg shadow-emerald-500/30"
+                title="Enter"
+              >
+                ➕ Nova Inscrição
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="flex gap-3">
+            <button
+              ref={btnRef}
+              type="button"
+              onClick={onNova}
+              className="w-full bg-[#F39C12] hover:bg-[#D68910] active:scale-95 text-[#0D2B4E] font-black py-4 rounded-xl text-base transition shadow-lg shadow-[#F39C12]/30 flex items-center justify-center gap-2"
+              title="Enter"
+            >
+              ➕ Nova Inscrição
+            </button>
+          </div>
+        )}
         <button
           type="button"
           onClick={onVerLista}
-          className="w-full border border-white/20 text-white/80 hover:text-white hover:border-white/40 py-3 rounded-xl text-sm font-bold transition"
+          className="w-full border border border-white/20 text-white/80 hover:text-white hover:border-white/40 py-3 rounded-xl text-sm font-bold transition"
         >
           👥 Ver na lista de inscritos
         </button>
       </div>
-      <p className="text-white/30 text-xs mt-3">Enter = Nova inscrição &nbsp;&middot;&nbsp; Ctrl+P = Só imprimir</p>
+      {pagamentoConfirmado ? (
+        <p className="text-white/30 text-xs mt-3">Enter = Nova inscrição &nbsp;&middot;&nbsp; Ctrl+P = Só imprimir</p>
+      ) : (
+        <p className="text-white/30 text-xs mt-3">Enter = Nova inscrição</p>
+      )}
     </div>
   );
 }

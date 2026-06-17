@@ -65,12 +65,17 @@ export default function EtiquetasPrintPage() {
       let inscrQuery = supabase
         .from('evento_inscricoes')
         .select('id,nome_inscrito,cpf,supervisao_id,campo_id,status_pagamento,tipo_inscricao,hospedagem,alimentacao,brinde,qr_code,checkin_realizado,etiqueta_impressa,ministro_id')
-        .eq('evento_id', id)
-        .in('status_pagamento', ['pago', 'isento'])
-        .order('nome_inscrito');
+        .eq('evento_id', id);
 
-      if (ids)                         inscrQuery = inscrQuery.in('id', ids.split(','));
-      else if (apenas === 'pendentes') inscrQuery = inscrQuery.eq('etiqueta_impressa', false);
+      if (ids) {
+        inscrQuery = inscrQuery.in('id', ids.split(','));
+      } else {
+        inscrQuery = inscrQuery.in('status_pagamento', ['pago', 'isento']);
+        if (apenas === 'pendentes') {
+          inscrQuery = inscrQuery.eq('etiqueta_impressa', false);
+        }
+      }
+      inscrQuery = inscrQuery.order('nome_inscrito');
 
       const [evRes, estruturaRes, inscRes] = await Promise.all([
         supabase.from('eventos').select('id,nome,departamento,data_inicio,data_fim,local,cidade').eq('id', id).single(),
@@ -142,9 +147,10 @@ export default function EtiquetasPrintPage() {
   }, [id, ids, apenas, supabase]);
 
   async function marcarImpressas() {
-    if (!inscricoes.length) return;
+    const pagasEIsentas = inscricoes.filter(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento');
+    if (!pagasEIsentas.length) return;
     setMarcando(true);
-    await supabase.from('evento_inscricoes').update({ etiqueta_impressa: true }).in('id', inscricoes.map(i => i.id));
+    await supabase.from('evento_inscricoes').update({ etiqueta_impressa: true }).in('id', pagasEIsentas.map(i => i.id));
     setMarcando(false);
   }
 
@@ -257,45 +263,79 @@ export default function EtiquetasPrintPage() {
         position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50,
         backgroundColor: '#fff', borderBottom: '1px solid #e5e7eb',
         boxShadow: '0 1px 3px rgba(0,0,0,0.1)', padding: '12px 24px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px',
+        display: 'flex', flexDirection: 'column', gap: '8px',
         fontFamily: 'Arial, sans-serif',
       }}>
-        <div>
-          <p style={{ fontWeight: 700, color: '#123b63', fontSize: '14px', margin: 0 }}>{evento.nome}</p>
-          <p style={{ fontSize: '12px', color: '#6b7280', margin: '2px 0 0' }}>
-            {inscricoes.length} etiqueta{inscricoes.length !== 1 ? 's' : ''}
-            {' • '}{isThermal ? 'Térmica 100 × 30 mm (individual)' : 'A4 retrato • CA4362 • 99,1 × 34 mm • 2 col × 8 lin'}
-            {apenas === 'pendentes' ? ' • Somente não impressas' : ''}
-          </p>
-          {!isThermal && (
-            <p style={{ fontSize: '11px', color: '#9ca3af', margin: '1px 0 0' }}>
-              16 etiquetas por página (2 colunas × 8 linhas)
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+          <div>
+            <p style={{ fontWeight: 700, color: '#123b63', fontSize: '14px', margin: 0 }}>{evento.nome}</p>
+            <p style={{ fontSize: '12px', color: '#6b7280', margin: '2px 0 0' }}>
+              {inscricoes.filter(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento').length} etiqueta{inscricoes.filter(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento').length !== 1 ? 's' : ''} liberada{inscricoes.filter(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento').length !== 1 ? 's' : ''}
+              {' • '}{isThermal ? 'Térmica 100 × 30 mm (individual)' : 'A4 retrato • CA4362 • 99,1 × 34 mm • 2 col × 8 lin'}
+              {apenas === 'pendentes' ? ' • Somente não impressas' : ''}
             </p>
-          )}
+            {!isThermal && (
+              <p style={{ fontSize: '11px', color: '#9ca3af', margin: '1px 0 0' }}>
+                16 etiquetas por página (2 colunas × 8 linhas)
+              </p>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button onClick={() => window.history.back()}
+              style={{ padding: '8px 16px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '13px', color: '#374151', backgroundColor: '#fff', cursor: 'pointer', fontFamily: 'Arial' }}>
+              ← Voltar
+            </button>
+            <button onClick={handlePrint} disabled={marcando || !inscricoes.some(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento')}
+              style={{ padding: '8px 20px', borderRadius: '8px', fontSize: '13px', fontWeight: 700, backgroundColor: '#123b63', color: '#fff', border: 'none', cursor: 'pointer', opacity: (marcando || !inscricoes.some(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento')) ? 0.5 : 1, fontFamily: 'Arial' }}>
+              {marcando ? 'Marcando...' : '🖨️ Imprimir e marcar como impressas'}
+            </button>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={() => window.history.back()}
-            style={{ padding: '8px 16px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '13px', color: '#374151', backgroundColor: '#fff', cursor: 'pointer', fontFamily: 'Arial' }}>
-            ← Voltar
-          </button>
-          <button onClick={handlePrint} disabled={marcando}
-            style={{ padding: '8px 20px', borderRadius: '8px', fontSize: '13px', fontWeight: 700, backgroundColor: '#123b63', color: '#fff', border: 'none', cursor: 'pointer', opacity: marcando ? 0.5 : 1, fontFamily: 'Arial' }}>
-            {marcando ? 'Marcando...' : '🖨️ Imprimir e marcar como impressas'}
-          </button>
-        </div>
+
+        {/* Alertas sobre pendentes de pagamento (não imprime) */}
+        {(() => {
+          const totalInscricoes = inscricoes.length;
+          const validas = inscricoes.filter(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento').length;
+          const pendentes = totalInscricoes - validas;
+
+          if (pendentes > 0) {
+            return (
+              <div style={{
+                backgroundColor: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: '6px',
+                padding: '8px 12px',
+                fontSize: '12px',
+                color: '#991b1b',
+                fontWeight: 500,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <span>⚠️</span>
+                <span>
+                  {validas === 0
+                    ? 'Nenhuma etiqueta liberada para impressão. As inscrições selecionadas ainda estão pendentes de pagamento.'
+                    : `${pendentes} inscrição(ões) ignorada(s) por estarem pendentes de pagamento.`}
+                </span>
+              </div>
+            );
+          }
+          return null;
+        })()}
       </div>
 
       {/* ── Área com etiquetas ── */}
       <div
         className="print-area"
         style={isThermal
-          ? { paddingTop: '80px', backgroundColor: '#e5e7eb', minHeight: '100vh', display: 'flex', flexWrap: 'wrap', gap: '16px', padding: '96px 24px 24px' }
-          : { paddingTop: '80px', backgroundColor: '#f3f4f6', minHeight: '100vh' }
+          ? { paddingTop: '120px', backgroundColor: '#e5e7eb', minHeight: '100vh', display: 'flex', flexWrap: 'wrap', gap: '16px', padding: '130px 24px 24px' }
+          : { paddingTop: '120px', backgroundColor: '#f3f4f6', minHeight: '100vh' }
         }
       >
-        {inscricoes.length === 0 ? (
+        {inscricoes.filter(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento').length === 0 ? (
           <div style={{ display: 'flex', minHeight: '60vh', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
-            <p style={{ color: '#9ca3af', fontFamily: 'Arial' }}>Nenhuma etiqueta para imprimir.</p>
+            <p style={{ color: '#9ca3af', fontFamily: 'Arial', fontWeight: 'bold' }}>Nenhuma etiqueta liberada para impressão.</p>
           </div>
         ) : (
           <div
@@ -320,33 +360,35 @@ export default function EtiquetasPrintPage() {
                 }
             }
           >
-            {inscricoes.map(ins => (
-              <div
-                key={ins.id}
-                className="label-item"
-                style={isThermal
-                  ? { boxShadow: '0 2px 8px rgba(0,0,0,0.18)', borderRadius: '1px', flexShrink: 0, transform: 'scale(1.2)', transformOrigin: 'top left' }
-                  : { boxShadow: '0 1px 4px rgba(0,0,0,0.12)' }
-                }
-              >
-                {evento.departamento === 'AGO'
-                  ? <EtiquetaAGO
-                      inscricao={ins as EtiquetaInscricaoAGO}
-                      evento={evento}
-                      nomeSup={nomeSup(ins.supervisao_id)}
-                      nomeCampo={nomeCampo(ins.campo_id)}
-                      variant={isThermal ? 'thermal' : 'a4'}
-                    />
-                  : <EtiquetaDepartamento
-                      inscricao={ins}
-                      evento={evento}
-                      nomeSup={nomeSup(ins.supervisao_id)}
-                      nomeCampo={nomeCampo(ins.campo_id)}
-                      variant={isThermal ? 'thermal' : 'a4'}
-                    />
-                }
-              </div>
-            ))}
+            {inscricoes
+              .filter(ins => ins.status_pagamento === 'pago' || ins.status_pagamento === 'isento')
+              .map(ins => (
+                <div
+                  key={ins.id}
+                  className="label-item"
+                  style={isThermal
+                    ? { boxShadow: '0 2px 8px rgba(0,0,0,0.18)', borderRadius: '1px', flexShrink: 0, transform: 'scale(1.2)', transformOrigin: 'top left' }
+                    : { boxShadow: '0 1px 4px rgba(0,0,0,0.12)' }
+                  }
+                >
+                  {evento.departamento === 'AGO'
+                    ? <EtiquetaAGO
+                        inscricao={ins as EtiquetaInscricaoAGO}
+                        evento={evento}
+                        nomeSup={nomeSup(ins.supervisao_id)}
+                        nomeCampo={nomeCampo(ins.campo_id)}
+                        variant={isThermal ? 'thermal' : 'a4'}
+                      />
+                    : <EtiquetaDepartamento
+                        inscricao={ins}
+                        evento={evento}
+                        nomeSup={nomeSup(ins.supervisao_id)}
+                        nomeCampo={nomeCampo(ins.campo_id)}
+                        variant={isThermal ? 'thermal' : 'a4'}
+                      />
+                  }
+                </div>
+              ))}
           </div>
         )}
       </div>

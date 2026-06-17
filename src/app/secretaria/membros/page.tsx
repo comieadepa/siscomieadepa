@@ -110,6 +110,11 @@ interface DivisaoOption {
   nome: string;
   supervisao_id?: string | null;
   campo_id?: string | null;
+  pastor_member_id?: string | null;
+  pastor_nome?: string | null;
+  presidente_nome?: string | null;
+  presidente_cpf?: string | null;
+  presidente_matricula?: string | null;
 }
 
 export default function MembrosPage() {
@@ -702,7 +707,16 @@ useEffect(() => {
       const congs = (payload?.congregacoes as any[]) || [];
 
       setSupervisoes(supers.map((row: any) => ({ id: row.id, nome: row.nome })));
-      setCampos(camposRows.map((row: any) => ({ id: row.id, nome: row.nome, supervisao_id: row.supervisao_id })));
+      setCampos(camposRows.map((row: any) => ({
+        id: row.id,
+        nome: row.nome,
+        supervisao_id: row.supervisao_id,
+        pastor_member_id: row.pastor_member_id,
+        pastor_nome: row.pastor_nome,
+        presidente_nome: row.presidente_nome,
+        presidente_cpf: row.presidente_cpf,
+        presidente_matricula: row.presidente_matricula
+      })));
       setCongregacoes(congs.map((row: any) => ({ id: row.id, nome: row.nome, supervisao_id: row.supervisao_id, campo_id: row.campo_id })));
     };
 
@@ -1305,8 +1319,46 @@ useEffect(() => {
       posicaoNoCampo: (membro as any).posicaoNoCampo || '',
       numero_cgadb: (membro as any).numero_cgadb || '',
       jubilado: (membro as any).jubilado ?? false,
-      supervisao: membro.supervisao || '',
-      campo: membro.campo || '',
+      supervisao: (() => {
+        if (membro.supervisao) return membro.supervisao;
+        // Fallback: Se não tem supervisao explícita, mas tem campo_id/supervisao_id no banco ou via relacionamento
+        const mSubId = (membro as any).supervisao_id;
+        if (mSubId) {
+          const foundS = supervisoesOptions.find(s => s.id === mSubId);
+          if (foundS) return foundS.nome;
+        }
+        const mCampId = (membro as any).campo_id;
+        if (mCampId) {
+          const foundC = camposOptions.find(c => c.id === mCampId);
+          if (foundC && foundC.supervisao_id) {
+            const foundS = supervisoesOptions.find(s => s.id === foundC.supervisao_id);
+            if (foundS) return foundS.nome;
+          }
+        }
+        return '';
+      })(),
+      campo: (() => {
+        // Regra 4 e 6: Fallback por campo_id, campo_nome, ou como pastor presidente
+        const mCampId = (membro as any).campo_id;
+        if (mCampId) {
+          const found = camposOptions.find(c => c.id === mCampId);
+          if (found) return found.nome;
+        }
+        if (membro.campo) {
+          const foundByName = camposOptions.find(c => c.nome.trim().toUpperCase() === membro.campo.trim().toUpperCase());
+          if (foundByName) return foundByName.nome;
+        }
+        // Se pastorPresidente = true ou presidente de um campo, buscar campo por ID do ministro ou nome
+        if (membro.pastorPresidente || (membro as any).presidente) {
+          const foundByPres = camposOptions.find(c =>
+            c.pastor_member_id === membro.id ||
+            c.presidente_nome === membro.nome ||
+            (c.presidente_cpf && membro.cpf && c.presidente_cpf.replace(/\D/g, '') === membro.cpf.replace(/\D/g, ''))
+          );
+          if (foundByPres) return foundByPres.nome;
+        }
+        return membro.campo || '';
+      })(),
       congregacao: membro.congregacao || '',
       email: membro.email || '',
       celular: membro.celular || '',
@@ -3458,6 +3510,30 @@ useEffect(() => {
                         <h4 className="text-xs font-semibold text-sky-800 mb-3">🏢 Organização Eclesiástica</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Supervisão</label>
+                            <select
+                              value={dadosPessoais.supervisao}
+                              onChange={(e) => {
+                                const newSupervisao = e.target.value;
+                                const selectedSupervisaoId = supervisoesOptions.find((opt) => opt.nome === newSupervisao)?.id;
+                                const campoSelecionado = camposOptions.find((opt) => opt.nome === dadosPessoais.campo);
+                                const pertenceANovaSupervisao = selectedSupervisaoId && campoSelecionado && campoSelecionado.supervisao_id === selectedSupervisaoId;
+
+                                setDadosPessoais({
+                                  ...dadosPessoais,
+                                  supervisao: newSupervisao,
+                                  campo: pertenceANovaSupervisao ? dadosPessoais.campo : '',
+                                });
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                            >
+                              <option value="">Selecione</option>
+                              {supervisoesOptions.map((opt) => (
+                                <option key={opt.id} value={opt.nome}>{opt.nome}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1">Campo</label>
                             <select
                               value={dadosPessoais.campo}
@@ -3485,30 +3561,6 @@ useEffect(() => {
                                 .map((opt) => (
                                   <option key={opt.id} value={opt.nome}>{opt.nome}</option>
                                 ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1">Supervisão</label>
-                            <select
-                              value={dadosPessoais.supervisao}
-                              onChange={(e) => {
-                                const newSupervisao = e.target.value;
-                                const selectedSupervisaoId = supervisoesOptions.find((opt) => opt.nome === newSupervisao)?.id;
-                                const campoSelecionado = camposOptions.find((opt) => opt.nome === dadosPessoais.campo);
-                                const pertenceANovaSupervisao = selectedSupervisaoId && campoSelecionado && campoSelecionado.supervisao_id === selectedSupervisaoId;
-
-                                setDadosPessoais({
-                                  ...dadosPessoais,
-                                  supervisao: newSupervisao,
-                                  campo: pertenceANovaSupervisao ? dadosPessoais.campo : '',
-                                });
-                              }}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                            >
-                              <option value="">Selecione</option>
-                              {supervisoesOptions.map((opt) => (
-                                <option key={opt.id} value={opt.nome}>{opt.nome}</option>
-                              ))}
                             </select>
                           </div>
                         </div>
