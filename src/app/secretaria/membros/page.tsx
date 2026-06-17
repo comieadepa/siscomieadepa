@@ -769,7 +769,19 @@ useEffect(() => {
   );
   const camposFromMembers = dedupByNome(
     (membersApi || [])
-      .map((m: any, idx: number) => ({ id: `legacy-c-${idx}`, nome: sanitizeNome((m?.custom_fields as any)?.campo) }))
+      .map((m: any, idx: number) => {
+        const cNome = sanitizeNome((m?.custom_fields as any)?.campo);
+        const sNome = sanitizeNome((m?.custom_fields as any)?.supervisao);
+        // Achar a supervisao na lista unificada por nome para obter o id
+        const matchedSup = supervisoes.find(s => s.nome.trim().toUpperCase() === sNome.toUpperCase()) ||
+          supervisoesFromMembers.find(s => s.nome.trim().toUpperCase() === sNome.toUpperCase()) ||
+          supervisoesFromNomenclaturas.find(s => s.nome.trim().toUpperCase() === sNome.toUpperCase());
+        return {
+          id: `legacy-c-${idx}`,
+          nome: cNome,
+          supervisao_id: matchedSup?.id || null
+        };
+      })
       .filter((opt: any) => !!opt.nome)
   );
 
@@ -3552,9 +3564,34 @@ useEffect(() => {
                               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                             >
                               <option value="">Selecione</option>
-                              {camposOptions.map((opt) => (
-                                <option key={opt.id} value={opt.nome}>{opt.nome}</option>
-                              ))}
+                              {camposOptions
+                                .filter((opt) => {
+                                  if (!dadosPessoais.supervisao) return true;
+                                  
+                                  const selectSupNormalized = dadosPessoais.supervisao.trim().toUpperCase();
+
+                                  // 1. Achar o registro da supervisão selecionada pelo nome na lista de opções
+                                  const selectedSupervisao = supervisoesOptions.find((s) => s.nome.trim().toUpperCase() === selectSupNormalized);
+                                  
+                                  // 2. Se o campo tem supervisao_id mapeado ao id da supervisão selecionada
+                                  if (selectedSupervisao && opt.supervisao_id && opt.supervisao_id === selectedSupervisao.id) {
+                                    return true;
+                                  }
+
+                                  // 3. Fallback: Cruzamento resiliente pelo nome da supervisão associada ao campo
+                                  // Se o campo do banco tem uma supervisão associada de mesmo nome
+                                  if (opt.supervisao_id) {
+                                    const optSup = supervisoesOptions.find(s => s.id === opt.supervisao_id);
+                                    if (optSup && optSup.nome.trim().toUpperCase() === selectSupNormalized) {
+                                      return true;
+                                    }
+                                  }
+
+                                  return false;
+                                })
+                                .map((opt) => (
+                                  <option key={opt.id} value={opt.nome}>{opt.nome}</option>
+                                ))}
                             </select>
                           </div>
                         </div>
