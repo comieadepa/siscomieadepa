@@ -742,17 +742,28 @@ useEffect(() => {
   const sanitizeNome = (value: unknown) => String(value || '').trim();
 
   const dedupByNome = (items: DivisaoOption[]): DivisaoOption[] => {
-    const seen = new Set<string>();
-    const out: DivisaoOption[] = [];
+    const map = new Map<string, DivisaoOption>();
     items.forEach((item) => {
       const nome = sanitizeNome(item.nome);
       if (!nome) return;
       const key = nome.toUpperCase();
-      if (seen.has(key)) return;
-      seen.add(key);
-      out.push({ ...item, nome });
+      const existing = map.get(key);
+
+      // Priorizar se o item atual tem mais dados estruturados do banco (UUID, supervisao_id, pastor_member_id)
+      if (!existing) {
+        map.set(key, { ...item, nome });
+        return;
+      }
+
+      const isUuid = (id?: string | null) => !!id && !id.startsWith('cfg-') && !id.startsWith('legacy-');
+      const curScore = (isUuid(item.id) ? 4 : 0) + (item.supervisao_id ? 2 : 0) + (item.pastor_member_id ? 1 : 0);
+      const extScore = (isUuid(existing.id) ? 4 : 0) + (existing.supervisao_id ? 2 : 0) + (existing.pastor_member_id ? 1 : 0);
+
+      if (curScore > extScore) {
+        map.set(key, { ...item, nome });
+      }
     });
-    return out;
+    return Array.from(map.values());
   };
 
   const supervisoesFromNomenclaturas = ((orgNomenclaturasRaw?.divisaoPrincipal?.custom || []) as string[])
@@ -1339,6 +1350,14 @@ useEffect(() => {
           const foundS = supervisoesOptions.find(s => s.id === mSubId);
           if (foundS) return foundS.nome;
         }
+
+        // Regra 3: Se o campo resolvido por pastor_member_id possuir supervisao_id, usar correspondente
+        const foundByPastorId = camposOptions.find(c => c.pastor_member_id === membro.id);
+        if (foundByPastorId && foundByPastorId.supervisao_id) {
+          const foundS = supervisoesOptions.find(s => s.id === foundByPastorId.supervisao_id);
+          if (foundS) return foundS.nome;
+        }
+
         const mCampId = (membro as any).campo_id;
         if (mCampId) {
           const foundC = camposOptions.find(c => c.id === mCampId);
@@ -1350,25 +1369,34 @@ useEffect(() => {
         return '';
       })(),
       campo: (() => {
-        // Regra 4 e 6: Fallback por campo_id, campo_nome, ou como pastor presidente
+        // Regra 1: Prioridades de seleção do campo
+        // a) campo_id se existir
         const mCampId = (membro as any).campo_id;
         if (mCampId) {
           const found = camposOptions.find(c => c.id === mCampId);
           if (found) return found.nome;
         }
+
+        // b) custom_fields.campo se existir
         if (membro.campo) {
           const foundByName = camposOptions.find(c => c.nome.trim().toUpperCase() === membro.campo.trim().toUpperCase());
           if (foundByName) return foundByName.nome;
         }
-        // Se pastorPresidente = true ou presidente de um campo, buscar campo por ID do ministro ou nome
-        if (membro.pastorPresidente || (membro as any).presidente) {
-          const foundByPres = camposOptions.find(c =>
-            c.pastor_member_id === membro.id ||
-            c.presidente_nome === membro.nome ||
-            (c.presidente_cpf && membro.cpf && c.presidente_cpf.replace(/\D/g, '') === membro.cpf.replace(/\D/g, ''))
-          );
-          if (foundByPres) return foundByPres.nome;
+
+        // c) campos.find(c => c.pastor_member_id === ministro.id) (vínculo oficial pastor_member_id)
+        const foundByPastorId = camposOptions.find(c => c.pastor_member_id === membro.id);
+        if (foundByPastorId) {
+          return foundByPastorId.nome;
         }
+
+        // d) fallback textual por pastor_nome/presidente_nome/presidente_cpf
+        const foundByPres = camposOptions.find(c =>
+          c.presidente_nome === membro.nome ||
+          c.pastor_nome === membro.nome ||
+          (c.presidente_cpf && membro.cpf && c.presidente_cpf.replace(/\D/g, '') === membro.cpf.replace(/\D/g, ''))
+        );
+        if (foundByPres) return foundByPres.nome;
+
         return membro.campo || '';
       })(),
       congregacao: membro.congregacao || '',
@@ -3566,6 +3594,11 @@ useEffect(() => {
                               <option value="">Selecione</option>
                               {camposOptions
                                 .filter((opt) => {
+                                  // Regra 2: Garantir que o campo atualmente selecionado sempre apareça na lista para evitar falhas de renderização
+                                  if (dadosPessoais.campo && opt.nome.trim().toUpperCase() === dadosPessoais.campo.trim().toUpperCase()) {
+                                    return true;
+                                  }
+
                                   if (!dadosPessoais.supervisao) return true;
                                   
                                   const selectSupNormalized = dadosPessoais.supervisao.trim().toUpperCase();
