@@ -170,6 +170,13 @@ export default function TabHospedagem({
   const [filtroPend,    setFiltroPend]    = useState('');
   const [busca,         setBusca]         = useState('');
   const [filtroSexo,    setFiltroSexo]    = useState('');
+  const [avisoFiltro,   setAvisoFiltro]   = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!avisoFiltro) return;
+    const t = setTimeout(() => setAvisoFiltro(null), 5000);
+    return () => clearTimeout(t);
+  }, [avisoFiltro]);
 
   // Modal edição
   const [editando, setEditando] = useState<Hospedagem | null>(null);
@@ -752,6 +759,13 @@ export default function TabHospedagem({
       {/* ════════════ SUB-ABA: ALOCAÇÕES ════════════════════════ */}
       {subAba === 'hospedagens' && (
         <div className="space-y-4">
+          {avisoFiltro && (
+            <div className="rounded-xl px-5 py-3 flex items-center gap-3 border bg-amber-50 border-amber-200 text-amber-800 text-sm font-semibold transition animate-fade-in">
+              <span>⚠️</span>
+              <span>{avisoFiltro}</span>
+              <button onClick={() => setAvisoFiltro(null)} className="ml-auto text-amber-400 hover:text-amber-600">✕</button>
+            </div>
+          )}
 
           {/* Botão autoalocar + filtros */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-wrap gap-3 items-end">
@@ -774,7 +788,14 @@ export default function TabHospedagem({
             </a>
 
             <div className="flex flex-wrap gap-2 flex-1 min-w-0">
-              <select value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}
+              <select value={filtroStatus} onChange={e => {
+                const val = e.target.value;
+                setFiltroStatus(val);
+                if (val && ['alocada', 'lista_espera', 'checkin_realizado', 'confirmada'].includes(val) && filtroPend) {
+                  setFiltroPend('');
+                  setAvisoFiltro('Os filtros selecionados eram conflitantes e foram ajustados automaticamente.');
+                }
+              }}
                 className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
                 <option value="">Todos os status</option>
                 <option value="aguardando_pagamento">Aguardando pagamento</option>
@@ -821,9 +842,16 @@ export default function TabHospedagem({
                 </select>
               )}
 
-              <select value={filtroPend} onChange={e => setFiltroPend(e.target.value)}
+              <select value={filtroPend} onChange={e => {
+                const val = e.target.value;
+                setFiltroPend(val);
+                if (val && filtroStatus) {
+                  setFiltroStatus('');
+                  setAvisoFiltro('Os filtros selecionados eram conflitantes e foram ajustados automaticamente.');
+                }
+              }}
                 className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-                <option value="">Todas as pendências</option>
+                <option value="">Sem filtro de pendência</option>
                 {Object.entries(PENDENCIA_LABEL).map(([codigo, label]) => (
                   <option key={codigo} value={codigo}>{label}</option>
                 ))}
