@@ -186,6 +186,9 @@ export default function DocumentosMinistro({
         memberName,
         matricula,
       });
+      if (anoReferencia) {
+        params.append('ano', anoReferencia);
+      }
       const res = await fetch(`/api/documentos?${params}`, { headers });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Erro ao listar documentos');
@@ -195,7 +198,7 @@ export default function DocumentosMinistro({
     } finally {
       setLoading(false);
     }
-  }, [entityType, resolvedEntityId, resolvedEntityName, memberId, memberName, matricula, getAuthHeader]);
+  }, [entityType, resolvedEntityId, resolvedEntityName, memberId, memberName, matricula, anoReferencia, getAuthHeader]);
 
   useEffect(() => { fetchFiles(); }, [fetchFiles]);
 

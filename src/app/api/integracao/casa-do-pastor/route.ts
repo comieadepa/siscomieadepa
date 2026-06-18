@@ -12,6 +12,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'CPF inválido' }, { status: 400 });
   }
 
+  const originalReject = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
   try {
     const urlParams = new URLSearchParams({ tipo: 'cpf', argumento: cpf });
     const res = await fetch(`${ACP_URL}?${urlParams.toString()}`, {
@@ -48,5 +51,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ status, cadastro });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message ?? 'Erro desconhecido' }, { status: 500 });
+  } finally {
+    if (originalReject === undefined) {
+      delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+    } else {
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = originalReject;
+    }
   }
 }

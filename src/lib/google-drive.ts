@@ -217,3 +217,33 @@ export async function getDriveStream(
 
   return { stream: res.data as unknown as NodeJS.ReadableStream, mimeType, fileName };
 }
+
+/** Lista os arquivos no Drive de acordo com o tipo da entidade (membro/ministro ou candidato) */
+export async function listDocumentosDrive(
+  entidadeTipo: DocumentoEntidadeTipo,
+  entidadeId: string,
+  entidadeNome: string,
+  matricula?: string,
+  ano?: string,
+): Promise<drive_v3.Schema$File[]> {
+  const drive = getDriveClient();
+  let folderId: string;
+  if (entidadeTipo === 'candidato_consagracao') {
+    folderId = await getOrCreateConsagracaoCandidateFolder({
+      candidatoId: entidadeId,
+      candidatoNome: entidadeNome,
+      ano,
+    });
+  } else {
+    folderId = await getOrCreateMemberFolder(entidadeId, entidadeNome, matricula || '');
+  }
+
+  const res = await drive.files.list({
+    q: `'${folderId}' in parents and trashed = false`,
+    fields: 'files(id, name, mimeType, size, createdTime, webViewLink, webContentLink)',
+    orderBy: 'createdTime desc',
+    spaces: 'drive',
+  });
+
+  return res.data.files || [];
+}
