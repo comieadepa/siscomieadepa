@@ -3,6 +3,8 @@ import './globals.css';
 import { AppDialogProvider } from '@/providers/AppDialogProvider';
 import { AuthProvider } from '@/providers/AuthProvider';
 import { UsuarioProvider } from '@/providers/UsuarioContext';
+import { LayoutProvider } from '@/components/PageLayout';
+import AppLayoutWrapper from '@/components/AppLayoutWrapper';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +29,11 @@ export default function RootLayout({
         <AuthProvider>
           <UsuarioProvider>
             <AppDialogProvider>
-              {children}
+              <LayoutProvider>
+                <AppLayoutWrapper>
+                  {children}
+                </AppLayoutWrapper>
+              </LayoutProvider>
             </AppDialogProvider>
           </UsuarioProvider>
         </AuthProvider>

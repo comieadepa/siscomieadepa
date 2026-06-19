@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase-client';
+import { optimizePdfClient, compressImageClient } from '@/services/clientPdfOptimizer';
 
 interface DriveFile {
   id: string;
@@ -203,10 +204,10 @@ export default function DocumentosMinistro({
   useEffect(() => { fetchFiles(); }, [fetchFiles]);
 
   const handleUpload = async (file: File) => {
-    // Validar tamanho do arquivo no frontend (limite: 100 MB)
-    const maxLimit = 100 * 1024 * 1024;
+    // Limite de segurança de 150 MB
+    const maxLimit = 150 * 1024 * 1024;
     if (file.size > maxLimit) {
-      setUploadError("Arquivo muito grande. O limite atual é 100 MB. Compacte o PDF ou divida em partes menores.");
+      setUploadError("Arquivo muito grande. O limite máximo de segurança é 150 MB.");
       return;
     }
 
@@ -214,85 +215,160 @@ export default function DocumentosMinistro({
     setUploadError('');
     setLastStats(null);
     setUploadingFile(file);
-
-    // Progresso por Etapas (Sprint UX)
-    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-    setUploadStage('validating');
     setUploadProgress(0);
-    setUploadMessage('Validando arquivo...');
 
-    let currentProgress = 0;
-    const progressInterval = setInterval(() => {
-      if (currentProgress < 10) {
-        currentProgress += 2;
-        setUploadStage('validating');
-        setUploadMessage('Validando arquivo...');
-        setUploadProgress(currentProgress);
-      } else if (currentProgress < 45) {
-        setUploadStage('uploading');
-        setUploadMessage(isPdf ? 'Preparando upload...' : 'Preparando documento...');
-        currentProgress += 3;
-        setUploadProgress(Math.min(currentProgress, 45));
-      } else if (isPdf && currentProgress < 75) {
-        setUploadStage('optimizing');
-        setUploadMessage('Otimizando PDF...');
-        currentProgress += 2;
-        setUploadProgress(Math.min(currentProgress, 75));
-      } else if (currentProgress < 95) {
-        setUploadStage('sending_drive');
-        setUploadMessage('Enviando ao Google Drive...');
-        currentProgress += 2;
-        setUploadProgress(Math.min(currentProgress, 95));
-      }
-    }, 100);
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    const isImage = file.type.startsWith('image/');
+    
+    let finalFile = file;
+    let wasOptimized = false;
+    let optStats = { originalSize: file.size, optimizedSize: file.size, reductionPercentage: 0 };
 
     try {
+      // 1. Otimizar documento
+      setUploadStage('optimizing');
+      setUploadMessage('Otimizando documento...');
+      setUploadProgress(15);
+
+      if (isPdf) {
+        const opt = await optimizePdfClient(file);
+        if (opt.success) {
+          finalFile = new File([opt.blob], file.name, { type: 'application/pdf' });
+          optStats = {
+            originalSize: opt.originalSize,
+            optimizedSize: opt.optimizedSize,
+            reductionPercentage: parseFloat((((opt.originalSize - opt.optimizedSize) / opt.originalSize) * 100).toFixed(2))
+          };
+          wasOptimized = true;
+        }
+      } else if (isImage) {
+        const opt = await compressImageClient(file);
+        if (opt.success) {
+          const newName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+          finalFile = new File([opt.blob], `${newName}.jpg`, { type: 'image/jpeg' });
+          optStats = {
+            originalSize: opt.originalSize,
+            optimizedSize: opt.optimizedSize,
+            reductionPercentage: parseFloat((((opt.originalSize - opt.optimizedSize) / opt.originalSize) * 100).toFixed(2))
+          };
+          wasOptimized = true;
+        }
+      }
+
+      setUploadProgress(35);
+
+      // 2. Iniciar sessão de upload resumível na API (passando apenas metadados pequenos!)
+      setUploadMessage('Preparando sessão de upload...');
       const headers = await getAuthHeader();
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('entityType', entityType);
-      formData.append('entityId', resolvedEntityId);
-      formData.append('entityName', resolvedEntityName);
-      formData.append('memberId', memberId);
-      formData.append('memberName', memberName);
-      formData.append('matricula', matricula);
-      if (anoReferencia) formData.append('ano', anoReferencia);
       const tipoFinal = tipoDocumento === 'Outros' && descricaoOutros.trim()
         ? `Outros - ${descricaoOutros.trim()}`
         : tipoDocumento;
-      formData.append('tipoDocumento', tipoFinal);
 
-      const res = await fetch('/api/documentos', { method: 'POST', headers, body: formData });
-      
-      const contentType = res.headers.get('content-type') || '';
-      let json: any = {};
-      if (contentType.includes('application/json')) {
-        json = await res.json();
-      } else {
-        const text = await res.text().catch(() => '');
-        console.error('[UPLOAD ERROR RESPONSE]', text);
-        throw new Error('Não foi possível processar o upload. O servidor recusou o arquivo ou retornou uma resposta inválida.');
+      const initRes = await fetch('/api/documentos', {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'initiate',
+          entityType,
+          entityId: resolvedEntityId,
+          entityName: resolvedEntityName,
+          tipoDocumento: tipoFinal,
+          fileName: finalFile.name,
+          mimeType: finalFile.type,
+          fileSize: finalFile.size,
+          matricula,
+          ano: anoReferencia,
+        }),
+      });
+
+      if (!initRes.ok) {
+        const errJson = await initRes.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Erro ao iniciar sessão de upload no Google Drive');
       }
 
-      if (!res.ok) throw new Error(json.error || 'Erro ao enviar arquivo');
+      const { uploadUrl, fileName: googleFileName } = await initRes.json();
+      setUploadProgress(50);
 
-      clearInterval(progressInterval);
+      // 3. Enviar o arquivo diretamente para o Google Drive usando a URL de upload resumable
+      setUploadStage('sending_drive');
+      setUploadMessage('Enviando ao Google Drive...');
+
+      // Fazer PUT request com progresso do upload
+      const xhr = new XMLHttpRequest();
+      const uploadPromise = new Promise<{ success: boolean; error?: string }>((resolve, reject) => {
+        xhr.open('PUT', uploadUrl);
+        xhr.setRequestHeader('Content-Type', finalFile.type);
+        
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const percentComplete = Math.round((event.loaded / event.total) * 40); // 50% a 90%
+            setUploadProgress(50 + percentComplete);
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status === 200 || xhr.status === 201) {
+            resolve({ success: true });
+          } else {
+            reject(new Error(`Erro ao enviar bytes para o Google Drive: ${xhr.status} ${xhr.statusText}`));
+          }
+        };
+
+        xhr.onerror = () => {
+          reject(new Error('Erro de conexão durante o upload direto ao Google Drive.'));
+        };
+
+        xhr.send(finalFile);
+      });
+
+      await uploadPromise;
+      setUploadProgress(90);
+
+      // 4. Salvar metadados no Supabase (chamando a API Next.js)
+      setUploadStage('uploading');
+      setUploadMessage('Salvando metadados...');
+
+      const saveRes = await fetch('/api/documentos', {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'metadata',
+          entityId: resolvedEntityId,
+          fileName: googleFileName,
+          fileSize: finalFile.size,
+          originalSize: optStats.originalSize,
+          optimizedSize: optStats.optimizedSize,
+          reductionPercentage: optStats.reductionPercentage,
+          optimized: wasOptimized,
+        }),
+      });
+
+      if (!saveRes.ok) {
+        const errJson = await saveRes.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Erro ao registrar metadados do documento no banco.');
+      }
+
       setUploadProgress(100);
       setUploadStage('completed');
       setUploadMessage('Upload concluído com sucesso.');
       
       setLastStats({
-        originalSize: json.originalSize || file.size,
-        optimizedSize: json.optimizedSize || file.size,
-        reductionPercentage: json.reductionPercentage || 0,
-        optimized: !!json.optimized,
+        originalSize: optStats.originalSize,
+        optimizedSize: optStats.optimizedSize,
+        reductionPercentage: optStats.reductionPercentage,
+        optimized: wasOptimized,
         fileName: file.name,
       });
 
       await fetchFiles();
       onChanged?.();
     } catch (e) {
-      clearInterval(progressInterval);
       setUploadStage('error');
       setUploadProgress(0);
       setUploadError(e instanceof Error ? e.message : String(e));

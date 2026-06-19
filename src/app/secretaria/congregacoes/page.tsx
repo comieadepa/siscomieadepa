@@ -3203,6 +3203,18 @@ export default function CongregacoesPage() {
             <div className="bg-white rounded-lg shadow-md p-6">
               {/* Filtros */}
               <div className="flex flex-wrap gap-2 mb-4 items-center">
+                {/* Busca texto */}
+                <div className="relative flex-1 min-w-[200px]">
+                  <input
+                    type="text"
+                    value={searchCampos}
+                    onChange={(e) => { setSearchCampos(e.target.value); setPageCampos(0); }}
+                    placeholder="DIGITE SUA BUSCA..."
+                    className="w-full pl-4 pr-10 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+                </div>
+
                 {/* ESTADO */}
                 <select
                   value={filterUfCampos}
@@ -3226,18 +3238,6 @@ export default function CongregacoesPage() {
                     <option key={s.id} value={s.id}>{s.nome}</option>
                   ))}
                 </select>
-
-                {/* Busca texto */}
-                <div className="relative flex-1 min-w-[200px]">
-                  <input
-                    type="text"
-                    value={searchCampos}
-                    onChange={(e) => { setSearchCampos(e.target.value); setPageCampos(0); }}
-                    placeholder="DIGITE SUA BUSCA..."
-                    className="w-full pl-4 pr-10 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
-                </div>
 
                 {/* CNPJ */}
                 <select
@@ -3715,17 +3715,6 @@ export default function CongregacoesPage() {
             <div className="bg-white rounded-lg shadow-md p-6">
               {/* Filtros */}
               <div className="flex flex-wrap gap-2 mb-4 items-center">
-                <select
-                  value={filterUfSups}
-                  onChange={(e) => { setFilterUfSups(e.target.value); setPageSups(0); }}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
-                >
-                  <option value="">DEFINA O ESTADO:</option>
-                  {Array.from(new Set(divisoes1.map(d => (d as any).uf).filter((v): v is string => !!v))).sort().map(uf => (
-                    <option key={uf} value={uf}>{uf}</option>
-                  ))}
-                </select>
-
                 <div className="relative flex-1 min-w-[200px]">
                   <input
                     type="text"
@@ -3736,6 +3725,17 @@ export default function CongregacoesPage() {
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
                 </div>
+
+                <select
+                  value={filterUfSups}
+                  onChange={(e) => { setFilterUfSups(e.target.value); setPageSups(0); }}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
+                >
+                  <option value="">DEFINA O ESTADO:</option>
+                  {Array.from(new Set(divisoes1.map(d => (d as any).uf).filter((v): v is string => !!v))).sort().map(uf => (
+                    <option key={uf} value={uf}>{uf}</option>
+                  ))}
+                </select>
 
                 <button
                   onClick={() => { setSearchSups(''); setFilterUfSups(''); setPageSups(0); }}

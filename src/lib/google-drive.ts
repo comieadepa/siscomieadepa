@@ -247,3 +247,67 @@ export async function listDocumentosDrive(
 
   return res.data.files || [];
 }
+
+export async function initiateResumableUpload(input: {
+  entidadeTipo: DocumentoEntidadeTipo;
+  entidadeId: string;
+  entidadeNome: string;
+  tipoDocumento?: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  matricula?: string;
+  ano?: string;
+}): Promise<{ uploadUrl: string; folderId: string; fileName: string }> {
+  const tipoPrefixo = input.tipoDocumento ? `[${input.tipoDocumento}] ` : '';
+  const nomeArquivo = `${tipoPrefixo}${input.fileName}`;
+
+  let folderId: string;
+  if (input.entidadeTipo === 'candidato_consagracao') {
+    folderId = await getOrCreateConsagracaoCandidateFolder({
+      candidatoId: input.entidadeId,
+      candidatoNome: input.entidadeNome,
+      ano: input.ano,
+    });
+  } else {
+    folderId = await getOrCreateMemberFolder(
+      input.entidadeId,
+      input.entidadeNome,
+      input.matricula || '',
+    );
+  }
+
+  const oauth2 = getOAuth2Client();
+  const credentials = await oauth2.getAccessToken();
+  const token = credentials.token;
+  if (!token) {
+    throw new Error('Falha ao obter token de acesso do Google Drive.');
+  }
+
+  // Chamar o endpoint da Google para iniciar upload resumable
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json; charset=UTF-8',
+      'X-Upload-Content-Type': input.mimeType,
+      'X-Upload-Content-Length': String(input.fileSize),
+    },
+    body: JSON.stringify({
+      name: nomeArquivo,
+      parents: [folderId],
+    }),
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text().catch(() => '');
+    throw new Error(`Erro da API do Google Drive ao iniciar upload resumível: ${res.status} - ${errorText}`);
+  }
+
+  const uploadUrl = res.headers.get('Location');
+  if (!uploadUrl) {
+    throw new Error('A API do Google Drive não retornou o cabeçalho Location para o upload resumível.');
+  }
+
+  return { uploadUrl, folderId, fileName: nomeArquivo };
+}

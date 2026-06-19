@@ -95,7 +95,7 @@ export default function ConsagracaoPage() {
   const [csvSucesso, setCsvSucesso] = useState('');
   const [importing, setImporting] = useState(false);
 
-  const [activeTab, setActiveTab] = useState('cadastro');
+  const [activeTab, setActiveTab] = useState('registros');
   const [ministryId] = useState<string>('single-tenant');
   const [loadingData, setLoadingData] = useState(true);
 
@@ -106,6 +106,8 @@ export default function ConsagracaoPage() {
   const [cargosMinisteriais] = useState<CargoMinisterial[]>(() => getCargosMinisteriais());
 
   const [registros, setRegistros] = useState<any[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const [showForm, setShowForm] = useState(false);
   const [editingRegistro, setEditingRegistro] = useState<any | null>(null);
   const [statusMensagem, setStatusMensagem] = useState('');
@@ -145,28 +147,9 @@ export default function ConsagracaoPage() {
   }, [supabase]);
 
   const handleImprimirFicha = async (reg: any) => {
-    setFichaAcpStatus('carregando');
-    setFichaAcpLoading(true);
+    setFichaAcpStatus('');
+    setFichaAcpLoading(false);
     setMembroImprimindo(reg);
-    if (reg.cpf) {
-      const cpfLimpo = reg.cpf.replace(/\D/g, '');
-      try {
-        const res = await fetch(`/api/integracao/casa-do-pastor?cpf=${cpfLimpo}`);
-        const data = await res.json();
-        if (res.ok && data?.status) {
-          setFichaAcpStatus(data.status);
-        } else {
-          setFichaAcpStatus('erro');
-        }
-      } catch {
-        setFichaAcpStatus('erro');
-      } finally {
-        setFichaAcpLoading(false);
-      }
-    } else {
-      setFichaAcpStatus('sem_cpf');
-      setFichaAcpLoading(false);
-    }
   };
 
   // Regiões customizadas
@@ -182,6 +165,10 @@ export default function ConsagracaoPage() {
   const [filtroCampo, setFiltroCampo] = useState('');
   const [filtroBusca, setFiltroBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('');
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filtroCategoria, filtroRegiao, filtroSupervisao, filtroCampo, filtroBusca, filtroStatus]);
 
   const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -1054,6 +1041,7 @@ export default function ConsagracaoPage() {
     setStatusMensagem('Registro salvo.');
     resetForm();
     setShowForm(false);
+    setActiveTab('registros');
     await ensureNumeroProcesso();
     const registrosRes = await authenticatedFetch('/api/v1/secretaria/consagracao');
     if (registrosRes.ok) {
@@ -1383,16 +1371,6 @@ export default function ConsagracaoPage() {
         <div className="mb-6 border-b border-gray-300">
           <div className="flex gap-4">
             <button
-              onClick={() => setActiveTab('cadastro')}
-              className={`px-6 py-3 font-semibold border-b-2 transition ${
-                activeTab === 'cadastro'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-600 hover:text-gray-800'
-              }`}
-            >
-              ➕ Cadastro de Processos
-            </button>
-            <button
               onClick={() => setActiveTab('registros')}
               className={`px-6 py-3 font-semibold border-b-2 transition ${
                 activeTab === 'registros'
@@ -1423,7 +1401,7 @@ export default function ConsagracaoPage() {
         )}
 
         {/* ABA: CADASTRO */}
-        {activeTab === 'cadastro' && (
+        {activeTab === 'cadastro' && showForm && (
         <div className="bg-white rounded-lg shadow-md p-6">
 
           {/* Cabeçalho */}
@@ -1437,33 +1415,8 @@ export default function ConsagracaoPage() {
                   {formRegistro.numero_processo}
                 </span>
               )}
-              {!showForm && (
-                <button
-                  className={`text-white px-4 py-2 rounded-lg transition shadow-md font-semibold ${consagracaoModuleReady ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'}`}
-                  onClick={async () => {
-                    setStatusMensagem('');
-                    resetForm();
-                    const next = await getNextProcessNumber();
-                    if (next) {
-                      setFormRegistro((prev) => ({ ...prev, numero_processo: next }));
-                    }
-                    setShowForm(true);
-                  }}
-                  disabled={!consagracaoModuleReady}
-                  title={!consagracaoModuleReady ? 'Aplique as migrations do módulo de Consagração no Supabase' : 'Novo Registro'}
-                >
-                  + Novo Registro
-                </button>
-              )}
             </div>
           </div>
-
-          {!showForm && (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-              <span className="text-5xl mb-4">📋</span>
-              <p className="text-sm">Clique em &quot;+ Novo Registro&quot; para iniciar um cadastro de processo.</p>
-            </div>
-          )}
 
           {showForm && (
               <div className="max-w-6xl mx-auto">
@@ -2189,6 +2142,7 @@ export default function ConsagracaoPage() {
                     onClick={() => {
                       resetForm();
                       setShowForm(false);
+                      setActiveTab('registros');
                     }}
                   >
                     Cancelar
@@ -2384,6 +2338,24 @@ export default function ConsagracaoPage() {
                 Gerar PDF
               </button>
 
+              <button
+                className={`text-white px-4 py-1.5 rounded-lg transition font-semibold text-sm ${consagracaoModuleReady ? 'bg-teal-600 hover:bg-teal-700' : 'bg-gray-400 cursor-not-allowed'}`}
+                onClick={async () => {
+                  setStatusMensagem('');
+                  resetForm();
+                  const next = await getNextProcessNumber();
+                  if (next) {
+                    setFormRegistro((prev) => ({ ...prev, numero_processo: next }));
+                  }
+                  setShowForm(true);
+                  setActiveTab('cadastro');
+                }}
+                disabled={!consagracaoModuleReady}
+                title={!consagracaoModuleReady ? 'Aplique as migrations do módulo de Consagração no Supabase' : 'Novo Registro'}
+              >
+                + Novo Registro
+              </button>
+
               <span className="text-sm text-gray-500 font-medium ml-auto">
                 {registrosFiltrados.length} registro(s)
               </span>
@@ -2398,7 +2370,6 @@ export default function ConsagracaoPage() {
                     <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800 whitespace-nowrap">Nº Processo</th>
                     <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800 whitespace-nowrap">Data Proc.</th>
                     <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">Nome</th>
-                    <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">CPF</th>
                     <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">Categoria</th>
                     <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">Região</th>
                     <th className="px-3 py-3 text-center font-semibold bg-gray-200 text-gray-800">Tipo</th>
@@ -2410,11 +2381,15 @@ export default function ConsagracaoPage() {
                 <tbody>
                   {registrosFiltrados.length === 0 && (
                     <tr>
-                      <td colSpan={11} className="px-4 py-8 text-center text-gray-500">Nenhum registro encontrado.</td>
+                      <td colSpan={10} className="px-4 py-8 text-center text-gray-500">Nenhum registro encontrado.</td>
                     </tr>
                   )}
-                  {registrosFiltrados.map((reg) => (
-                    <tr key={reg.id} className="border-b border-gray-200 hover:bg-gray-50">
+                  {(() => {
+                    const startIndex = (currentPage - 1) * itemsPerPage;
+                    const endIndex = startIndex + itemsPerPage;
+                    const registrosPaginados = registrosFiltrados.slice(startIndex, endIndex);
+                    return registrosPaginados.map((reg) => (
+                      <tr key={reg.id} className="border-b border-gray-200 hover:bg-gray-50">
                       <td className="px-3 py-2">
                         <div className="w-9 h-9 rounded-full overflow-hidden border border-gray-200 bg-gray-100 flex items-center justify-center">
                           {reg.foto_url ? (
@@ -2427,7 +2402,6 @@ export default function ConsagracaoPage() {
                       <td className="px-3 py-2 text-xs font-bold text-gray-700 whitespace-nowrap">{reg.numero_processo || '—'}</td>
                       <td className="px-3 py-2 text-xs text-gray-700 whitespace-nowrap">{reg.data_processo ? new Date(reg.data_processo + 'T00:00:00').toLocaleDateString('pt-BR') : '—'}</td>
                       <td className="px-3 py-2 text-xs font-semibold text-gray-800 uppercase">{reg.nome}</td>
-                      <td className="px-3 py-2 text-xs text-gray-600">{reg.cpf || '—'}</td>
                       <td className="px-3 py-2 text-xs text-gray-600">{reg.categoria_registro || '—'}</td>
                       <td className="px-3 py-2 text-xs text-gray-600">{reg.regiao || '—'}</td>
                       <td className="px-3 py-2 text-xs text-gray-600">{TIPO_REGISTRO_LABELS[reg.tipo_registro] || reg.tipo_registro || '—'}</td>
@@ -2582,10 +2556,75 @@ export default function ConsagracaoPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  ));
+                  })()}
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination Controls */}
+            {(() => {
+              const totalPages = Math.ceil(registrosFiltrados.length / itemsPerPage);
+              return (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-gray-200 pt-4 mt-4">
+                  <span className="text-xs sm:text-sm text-gray-500 font-medium">
+                    Página {currentPage} de {totalPages || 1}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {/* Anterior */}
+                    <button
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="px-3 py-1 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 disabled:opacity-40 disabled:cursor-not-allowed text-sm"
+                    >
+                      ‹
+                    </button>
+
+                    {/* Páginas com ellipsis */}
+                    {(() => {
+                      const pages: (number | string)[] = [];
+                      if (totalPages <= 7) {
+                        for (let i = 1; i <= totalPages; i++) pages.push(i);
+                      } else {
+                        pages.push(1);
+                        if (currentPage > 4) pages.push('...');
+                        const start = Math.max(2, currentPage - 2);
+                        const end = Math.min(totalPages - 1, currentPage + 2);
+                        for (let i = start; i <= end; i++) pages.push(i);
+                        if (currentPage < totalPages - 3) pages.push('...');
+                        pages.push(totalPages);
+                      }
+                      return pages.map((p, idx) =>
+                        p === '...' ? (
+                          <span key={`ellipsis-${idx}`} className="px-2 py-1 text-gray-400 select-none">…</span>
+                        ) : (
+                          <button
+                            key={p}
+                            onClick={() => setCurrentPage(p as number)}
+                            className={`px-3 py-1 rounded text-sm ${
+                              currentPage === p
+                                ? 'bg-teal-600 text-white font-bold'
+                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        )
+                      );
+                    })()}
+
+                    {/* Próximo */}
+                    <button
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages || totalPages === 0}
+                      className="px-3 py-1 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 disabled:opacity-40 disabled:cursor-not-allowed text-sm"
+                    >
+                      ›
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
 

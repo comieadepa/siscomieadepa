@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { logDB } from '@/lib/audit';
 import { enqueueWebhookJobs } from '@/lib/jobs/webhook-jobs';
+import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -239,6 +240,13 @@ export async function POST(request: NextRequest) {
 
     // Enfileira jobs pós-baixa se pago
     if (novoStatus === 'pago') {
+      // Garantir chamada síncrona/imediata da autoalocação
+      try {
+        await alocarLeitoParaInscricao(supabase, ins.id);
+      } catch (alocErr: any) {
+        console.error(`[EVENTOS WEBHOOK] Erro na autoalocação imediata para inscrição ${ins.id}:`, alocErr.message);
+      }
+
       try {
         await enqueueWebhookJobs(supabase, [
           { job_type: 'ALLOCATE_ACCOMMODATION', entity_type: 'inscricao', entity_id: ins.id, external_event_id: eventId, external_payment_id: asaasId },
