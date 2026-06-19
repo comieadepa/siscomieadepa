@@ -351,6 +351,7 @@ export default function UsuariosPage() {
 
     setEditStatus('Usuario atualizado com sucesso.');
     setEditSaving(false);
+    setEditOpen(false);
 
     const { data: sessionData } = await supabase.auth.getSession();
     const refreshToken = sessionData.session?.access_token;
@@ -776,10 +777,10 @@ export default function UsuariosPage() {
                 </span>
               </div>
               
-              {/* Linha 1: Nome + Nível de Acesso */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+              {/* Linha 1: Nome completo e e-mail em duas colunas */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div className="relative">
-                  <label className="block text-sm font-semibold text-[#123b63] mb-2">Nome completo</label>
+                  <label className="block text-sm font-semibold text-[#123b63] mb-1.5">Nome completo</label>
                   <input
                     type="text"
                     placeholder="Digite o nome..."
@@ -817,126 +818,170 @@ export default function UsuariosPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-[#123b63] mb-2">Nível de Acesso</label>
-                  <div className={`flex gap-2`}>
-                    <select
-                      value={formData.nivel}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        handleFormChange('nivel', value);
-                        setSelectedLevel(value);
-                        if (value !== 'inscricao') handleFormChange('subcategoria', '');
-                      }}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-[#0284c7]"
-                    >
-                      <option value="">Selecione um nível</option>
-                      {nivelAcessoInfo.map(nivel => (
-                        <option key={nivel.id} value={nivel.id}>
-                          {nivel.icon} {nivel.nome}
-                        </option>
-                      ))}
-                    </select>
-                    {formData.nivel === 'inscricao' && (
-                      <div className="w-full flex flex-col gap-2 border border-gray-300 rounded-lg p-3 max-h-60 overflow-y-auto">
-                        <div className="flex justify-between items-center pb-2 border-b border-gray-200">
-                          <span className="text-xs font-semibold text-gray-500">Eventos Permitidos</span>
-                          <div className="flex gap-2 text-xs">
-                            <button
-                              type="button"
-                              onClick={() => setFormEventosPermitidos(todosEventos.map(e => e.id))}
-                              className="text-blue-600 hover:underline font-semibold"
+                  <label className="block text-sm font-semibold text-[#123b63] mb-1.5">E-mail</label>
+                  <input
+                    type="email"
+                    placeholder="email@exemplo.com"
+                    value={formData.email}
+                    onChange={(e) => handleFormChange('email', e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-[#0284c7]"
+                  />
+                </div>
+              </div>
+
+              {/* Linha 2: Nível de Acesso e Status em duas colunas */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-semibold text-[#123b63] mb-1.5">Nível de Acesso</label>
+                  <select
+                    value={formData.nivel}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      handleFormChange('nivel', value);
+                      setSelectedLevel(value);
+                      if (value !== 'inscricao') handleFormChange('subcategoria', '');
+                    }}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-[#0284c7] bg-white"
+                  >
+                    <option value="">Selecione um nível</option>
+                    {nivelAcessoInfo.map(nivel => (
+                      <option key={nivel.id} value={nivel.id}>
+                        {nivel.icon} {nivel.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-[#123b63] mb-1.5">Status</label>
+                  <select
+                    disabled
+                    value="ativo"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed"
+                  >
+                    <option value="ativo">✓ Ativo</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Bloco de Eventos Permitidos (Novo Usuário) */}
+              {formData.nivel === 'inscricao' && (
+                <div className="mb-4 border border-gray-200 rounded-xl p-4 bg-gray-50/50">
+                  <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 pb-3 border-b border-gray-200 mb-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-[#123b63]">Eventos Permitidos</h4>
+                      <p className="text-xs text-gray-500">Selecione um ou mais eventos que este usuário poderá acessar.</p>
+                    </div>
+                    <div className="flex gap-2 text-xs self-end sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => setFormEventosPermitidos(todosEventos.map(e => e.id))}
+                        className="text-blue-600 hover:underline font-semibold"
+                      >
+                        Marcar todos
+                      </button>
+                      <span className="text-gray-300">|</span>
+                      <button
+                        type="button"
+                        onClick={() => setFormEventosPermitidos([])}
+                        className="text-blue-600 hover:underline font-semibold"
+                      >
+                        Desmarcar todos
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="max-h-[320px] overflow-y-auto overflow-x-hidden pr-1">
+                    {todosEventos.length === 0 ? (
+                      <div className="text-sm text-gray-400 text-center py-4 bg-white rounded-lg border border-dashed border-gray-300">Nenhum evento disponível para vincular.</div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {todosEventos.map(evt => {
+                          const isChecked = formEventosPermitidos.includes(evt.id);
+                          return (
+                            <label
+                              key={evt.id}
+                              className={`flex items-start gap-3 p-3 bg-white hover:bg-gray-50 border rounded-xl cursor-pointer transition select-none ${
+                                isChecked ? 'border-blue-400 ring-2 ring-blue-500/10' : 'border-gray-200'
+                              }`}
                             >
-                              Marcar todos
-                            </button>
-                            <span className="text-gray-300">|</span>
-                            <button
-                              type="button"
-                              onClick={() => setFormEventosPermitidos([])}
-                              className="text-blue-600 hover:underline font-semibold"
-                            >
-                              Desmarcar todos
-                            </button>
-                          </div>
-                        </div>
-                        {todosEventos.length === 0 ? (
-                          <span className="text-xs text-gray-400">Nenhum evento cadastrado.</span>
-                        ) : (
-                          todosEventos.map(evt => {
-                            const isChecked = formEventosPermitidos.includes(evt.id);
-                            return (
-                              <label key={evt.id} className="flex items-center gap-2 text-xs font-semibold text-[#123b63] cursor-pointer hover:bg-gray-50 p-1 rounded">
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setFormEventosPermitidos(prev => [...prev, evt.id]);
-                                    } else {
-                                      setFormEventosPermitidos(prev => prev.filter(id => id !== evt.id));
-                                    }
-                                  }}
-                                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
-                                />
-                                <div className="flex-1">
-                                  <span>{evt.nome}</span>
-                                  <span className="ml-2 px-1.5 py-0.5 rounded bg-gray-100 text-[10px] text-gray-500 uppercase">{evt.departamento}</span>
-                                  <span className={`ml-1 text-[10px] font-bold ${evt.status === 'programado' ? 'text-green-600' : 'text-gray-400'}`}>
-                                    ({evt.status === 'programado' ? 'Ativo' : 'Inativo'})
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setFormEventosPermitidos(prev => [...prev, evt.id]);
+                                  } else {
+                                    setFormEventosPermitidos(prev => prev.filter(id => id !== evt.id));
+                                  }
+                                }}
+                                className="w-4.5 h-4.5 mt-0.5 rounded text-blue-600 focus:ring-blue-500 border-gray-300"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-xs text-[#123b63] break-words">{evt.nome}</p>
+                                <div className="flex flex-wrap gap-1.5 mt-1 items-center">
+                                  <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[9px] font-bold uppercase tracking-wider">{evt.departamento}</span>
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${evt.status === 'programado' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                    {evt.status === 'programado' ? 'Ativo' : 'Inativo'}
                                   </span>
                                 </div>
-                              </label>
-                            );
-                          })
-                        )}
+                              </div>
+                            </label>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
                 </div>
+              )}
+
+              {/* Linha 3: CPF e celular em duas colunas */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-semibold text-[#123b63] mb-1.5">CPF</label>
+                  <input
+                    type="text"
+                    placeholder="CPF"
+                    value={formData.cpf}
+                    onChange={(e) => { if (!cpfAutoPreenchido) handleFormChange('cpf', maskCpf(e.target.value)); }}
+                    readOnly={cpfAutoPreenchido}
+                    className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-[#0284c7] ${cpfAutoPreenchido ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-[#123b63] mb-1.5">Celular</label>
+                  <input
+                    type="text"
+                    placeholder="Celular"
+                    value={formData.celular}
+                    onChange={(e) => { if (!celularAutoPreenchido) handleFormChange('celular', maskCelular(e.target.value)); }}
+                    readOnly={celularAutoPreenchido}
+                    className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-[#0284c7] ${celularAutoPreenchido ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`}
+                  />
+                </div>
               </div>
 
-              {/* Linha 2: E-mail + CPF + Celular */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <input
-                  type="email"
-                  placeholder="E-mail"
-                  value={formData.email}
-                  onChange={(e) => handleFormChange('email', e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-[#0284c7]"
-                />
-                <input
-                  type="text"
-                  placeholder="CPF"
-                  value={formData.cpf}
-                  onChange={(e) => { if (!cpfAutoPreenchido) handleFormChange('cpf', maskCpf(e.target.value)); }}
-                  readOnly={cpfAutoPreenchido}
-                  className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-[#0284c7] ${cpfAutoPreenchido ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`}
-                />
-                <input
-                  type="text"
-                  placeholder="Celular"
-                  value={formData.celular}
-                  onChange={(e) => { if (!celularAutoPreenchido) handleFormChange('celular', maskCelular(e.target.value)); }}
-                  readOnly={celularAutoPreenchido}
-                  className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-[#0284c7] ${celularAutoPreenchido ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`}
-                />
-              </div>
-
-              {/* Linha 3: Senha + Confirmar Senha */}
+              {/* Linha 4: Senha e confirmar senha em duas colunas */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <input
-                  type="password"
-                  placeholder="Senha"
-                  value={formData.senha}
-                  onChange={(e) => handleFormChange('senha', e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-[#0284c7]"
-                />
-                <input
-                  type="password"
-                  placeholder="Confirmar Senha"
-                  value={formData.confirmar_senha}
-                  onChange={(e) => handleFormChange('confirmar_senha', e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-[#0284c7]"
-                />
+                <div>
+                  <label className="block text-sm font-semibold text-[#123b63] mb-1.5">Senha</label>
+                  <input
+                    type="password"
+                    placeholder="Senha"
+                    value={formData.senha}
+                    onChange={(e) => handleFormChange('senha', e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-[#0284c7]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-[#123b63] mb-1.5">Confirmar senha</label>
+                  <input
+                    type="password"
+                    placeholder="Confirmar Senha"
+                    value={formData.confirmar_senha}
+                    onChange={(e) => handleFormChange('confirmar_senha', e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-[#0284c7]"
+                  />
+                </div>
               </div>
 
               {formError && (
@@ -1118,7 +1163,7 @@ export default function UsuariosPage() {
 
         {editOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden">
+            <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
 
               {/* Header */}
               <div className="bg-gradient-to-r from-[#123b63] to-[#1a5490] px-6 py-5 flex items-center justify-between">
@@ -1139,7 +1184,7 @@ export default function UsuariosPage() {
                 </button>
               </div>
 
-              <div className="p-6 space-y-5">
+              <div className="p-6 space-y-5 overflow-y-auto flex-1">
 
                 {/* Informações básicas */}
                 <div>
@@ -1179,75 +1224,19 @@ export default function UsuariosPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-semibold text-[#123b63] mb-1.5">Nível de Acesso</label>
-                      <div className="flex gap-2">
-                        <select
-                          value={editData.nivel}
-                          onChange={(e) => { handleEditChange('nivel', e.target.value); if (e.target.value !== 'inscricao') handleEditChange('subcategoria', ''); }}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0284c7]/30 focus:border-[#0284c7] text-sm transition bg-white"
-                        >
-                          <option value="">Selecione</option>
-                          {nivelAcessoInfo.map(nivel => (
-                            <option key={nivel.id} value={nivel.id}>
-                              {nivel.icon} {nivel.nome}
-                            </option>
-                          ))}
-                        </select>
-                        {editData.nivel === 'inscricao' && (
-                          <div className="w-full flex flex-col gap-2 border border-gray-300 rounded-xl p-3 max-h-60 overflow-y-auto">
-                            <div className="flex justify-between items-center pb-2 border-b border-gray-200">
-                              <span className="text-xs font-semibold text-gray-500">Eventos Permitidos</span>
-                              <div className="flex gap-2 text-xs">
-                                <button
-                                  type="button"
-                                  onClick={() => setEditEventosPermitidos(todosEventos.map(e => e.id))}
-                                  className="text-blue-600 hover:underline font-semibold"
-                                >
-                                  Marcar todos
-                                </button>
-                                <span className="text-gray-300">|</span>
-                                <button
-                                  type="button"
-                                  onClick={() => setEditEventosPermitidos([])}
-                                  className="text-blue-600 hover:underline font-semibold"
-                                >
-                                  Desmarcar todos
-                                </button>
-                              </div>
-                            </div>
-                            {todosEventos.length === 0 ? (
-                              <span className="text-xs text-gray-400">Nenhum evento cadastrado.</span>
-                            ) : (
-                              todosEventos.map(evt => {
-                                const isChecked = editEventosPermitidos.includes(evt.id);
-                                return (
-                                  <label key={evt.id} className="flex items-center gap-2 text-xs font-semibold text-[#123b63] cursor-pointer hover:bg-gray-50 p-1 rounded">
-                                    <input
-                                      type="checkbox"
-                                      checked={isChecked}
-                                      onChange={(e) => {
-                                        if (e.target.checked) {
-                                          setEditEventosPermitidos(prev => [...prev, evt.id]);
-                                        } else {
-                                          setEditEventosPermitidos(prev => prev.filter(id => id !== evt.id));
-                                        }
-                                      }}
-                                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
-                                    />
-                                    <div className="flex-1">
-                                      <span>{evt.nome}</span>
-                                      <span className="ml-2 px-1.5 py-0.5 rounded bg-gray-100 text-[10px] text-gray-500 uppercase">{evt.departamento}</span>
-                                      <span className={`ml-1 text-[10px] font-bold ${evt.status === 'programado' ? 'text-green-600' : 'text-gray-400'}`}>
-                                        ({evt.status === 'programado' ? 'Ativo' : 'Inativo'})
-                                      </span>
-                                    </div>
-                                  </label>
-                                );
-                              })
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      {editData.nivel && (
+                      <select
+                        value={editData.nivel}
+                        onChange={(e) => { handleEditChange('nivel', e.target.value); if (e.target.value !== 'inscricao') handleEditChange('subcategoria', ''); }}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0284c7]/30 focus:border-[#0284c7] text-sm transition bg-white"
+                      >
+                        <option value="">Selecione</option>
+                        {nivelAcessoInfo.map(nivel => (
+                          <option key={nivel.id} value={nivel.id}>
+                            {nivel.icon} {nivel.nome}
+                          </option>
+                        ))}
+                      </select>
+                      {editData.nivel && editData.nivel !== 'inscricao' && (
                         <p className="text-xs text-gray-500 mt-1">{getNivelInfo(editData.nivel)?.descricao}</p>
                       )}
                     </div>
@@ -1263,6 +1252,77 @@ export default function UsuariosPage() {
                       </select>
                     </div>
                   </div>
+
+                  {/* Bloco de Eventos Permitidos no modal de Edição */}
+                  {editData.nivel === 'inscricao' && (
+                    <div className="mt-4 border border-gray-200 rounded-xl p-4 bg-gray-50/50">
+                      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 pb-3 border-b border-gray-200 mb-3">
+                        <div>
+                          <h4 className="text-sm font-bold text-[#123b63]">Eventos Permitidos</h4>
+                          <p className="text-xs text-gray-500">Selecione um ou mais eventos que este usuário poderá acessar.</p>
+                        </div>
+                        <div className="flex gap-2 text-xs self-end sm:self-auto">
+                          <button
+                            type="button"
+                            onClick={() => setEditEventosPermitidos(todosEventos.map(e => e.id))}
+                            className="text-blue-600 hover:underline font-semibold"
+                          >
+                            Marcar todos
+                          </button>
+                          <span className="text-gray-300">|</span>
+                          <button
+                            type="button"
+                            onClick={() => setEditEventosPermitidos([])}
+                            className="text-blue-600 hover:underline font-semibold"
+                          >
+                            Desmarcar todos
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="max-h-[320px] overflow-y-auto overflow-x-hidden pr-1">
+                        {todosEventos.length === 0 ? (
+                          <div className="text-sm text-gray-400 text-center py-4 bg-white rounded-lg border border-dashed border-gray-300">Nenhum evento disponível para vincular.</div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {todosEventos.map(evt => {
+                              const isChecked = editEventosPermitidos.includes(evt.id);
+                              return (
+                                <label
+                                  key={evt.id}
+                                  className={`flex items-start gap-3 p-3 bg-white hover:bg-gray-50 border rounded-xl cursor-pointer transition select-none ${
+                                    isChecked ? 'border-blue-400 ring-2 ring-blue-500/10' : 'border-gray-200'
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setEditEventosPermitidos(prev => [...prev, evt.id]);
+                                      } else {
+                                        setEditEventosPermitidos(prev => prev.filter(id => id !== evt.id));
+                                      }
+                                    }}
+                                    className="w-4.5 h-4.5 mt-0.5 rounded text-blue-600 focus:ring-blue-500 border-gray-300"
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-semibold text-xs text-[#123b63] break-words">{evt.nome}</p>
+                                    <div className="flex flex-wrap gap-1.5 mt-1 items-center">
+                                      <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[9px] font-bold uppercase tracking-wider">{evt.departamento}</span>
+                                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${evt.status === 'programado' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                        {evt.status === 'programado' ? 'Ativo' : 'Inativo'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* CPF e Celular */}

@@ -164,7 +164,32 @@ async function responderCpfConsulta(
   }
 
   const { data } = await query;
-  const lista = (data ?? []) as Array<Record<string, unknown>>;
+  let lista = (data ?? []) as Array<Record<string, unknown>>;
+
+  // 1. Ordenar por relevância (pago/isento primeiro, depois mais recente)
+  lista.sort((a, b) => {
+    const aPago = ['pago', 'isento'].includes(String(a.status_pagamento || ''));
+    const bPago = ['pago', 'isento'].includes(String(b.status_pagamento || ''));
+    if (aPago !== bPago) return aPago ? -1 : 1;
+
+    const evA = a.eventos as Record<string, any> | null;
+    const evB = b.eventos as Record<string, any> | null;
+    const aData = String(evA?.data_inicio || a.created_at || '');
+    const bData = String(evB?.data_inicio || b.created_at || '');
+    if (aData !== bData) {
+      return bData.localeCompare(aData);
+    }
+    return 0;
+  });
+
+  // 2. Deduplicar por id
+  const seenIds = new Set<string>();
+  lista = lista.filter(item => {
+    const id = String(item.id || '');
+    if (!id || seenIds.has(id)) return false;
+    seenIds.add(id);
+    return true;
+  });
 
   if (lista.length === 0) {
     if (departamento) {
@@ -311,33 +336,58 @@ async function responderConfirmarInscricao(
   let query = supabase
     .from('evento_inscricoes')
     .select(
-      'id,nome_inscrito,status_pagamento,hospedagem,alimentacao,tipo_inscricao,valor_final,eventos!inner(id,nome,departamento,data_inicio,data_fim,permite_hospedagem,permite_alimentacao,suporte_whatsapp)'
+      'id,nome_inscrito,status_pagamento,hospedagem,alimentacao,tipo_inscricao,valor_final,refeicoes_total,refeicoes_utilizadas,quantidade_refeicoes_total,quantidade_refeicoes_usadas,quantidade_refeicoes_saldo,eventos!inner(id,nome,departamento,data_inicio,data_fim,permite_hospedagem,permite_alimentacao,suporte_whatsapp)'
     )
     .eq('cpf', cpf)
     .order('created_at', { ascending: false })
-    .limit(3);
+    .limit(10);
 
   if (departamento) {
     query = query.eq('eventos.departamento', departamento.key);
   }
 
   const { data } = await query;
-  const lista = (data ?? []) as Array<Record<string, unknown>>;
+  let lista = (data ?? []) as Array<Record<string, unknown>>;
 
-  const hospedagemMap = new Map<string, string>();
+  const hospedagemMap = new Map<string, Record<string, any>>();
   const inscricaoIds = lista
     .map(item => String(item.id || ''))
     .filter(Boolean);
   if (inscricaoIds.length > 0) {
-    const { data: hospRows } = await supabase
-      .from('evento_hospedagens')
-      .select('inscricao_id,status')
-      .in('inscricao_id', inscricaoIds);
-    for (const row of hospRows ?? []) {
-      const insId = String((row as Record<string, unknown>).inscricao_id || '');
-      const status = String((row as Record<string, unknown>).status || '');
-      if (!insId || !status) continue;
-      hospedagemMap.set(insId, status);
+    const [hospRows, leitoRows] = await Promise.all([
+      supabase
+        .from('evento_hospedagens')
+        .select(`
+          inscricao_id,
+          status,
+          tipo_cama,
+          numero_cama,
+          grupo_hospedagem,
+          evento_alojamentos ( id, nome, publico )
+        `)
+        .in('inscricao_id', inscricaoIds),
+      supabase
+        .from('evento_hospedagem_leitos')
+        .select('inscricao_id, numero, tipo_leito, posicao')
+        .in('inscricao_id', inscricaoIds)
+    ]);
+
+    const leitoMap = new Map<string, Record<string, any>>();
+    for (const l of leitoRows.data ?? []) {
+      leitoMap.set(l.inscricao_id, l);
+    }
+
+    for (const row of hospRows.data ?? []) {
+      const insId = String((row as Record<string, any>).inscricao_id || '');
+      if (insId) {
+        const leito = leitoMap.get(insId);
+        hospedagemMap.set(insId, {
+          ...row,
+          leito_numero: leito?.numero || row.numero_cama || null,
+          leito_tipo: leito?.tipo_leito || row.tipo_cama || null,
+          leito_posicao: leito?.posicao || row.tipo_cama || null,
+        });
+      }
     }
   }
 
@@ -349,15 +399,46 @@ async function responderConfirmarInscricao(
     };
   }
 
+  // 1. Ordenar por relevância
+  lista.sort((a, b) => {
+    const aPago = ['pago', 'isento'].includes(String(a.status_pagamento || ''));
+    const bPago = ['pago', 'isento'].includes(String(b.status_pagamento || ''));
+    if (aPago !== bPago) return aPago ? -1 : 1;
+
+    const statusA = hospedagemMap.get(String(a.id || ''))?.status || '';
+    const statusB = hospedagemMap.get(String(b.id || ''))?.status || '';
+    const aAlocada = ['alocada', 'confirmada', 'checkin_realizado'].includes(statusA);
+    const bAlocada = ['alocada', 'confirmada', 'checkin_realizado'].includes(statusB);
+    if (aAlocada !== bAlocada) return aAlocada ? -1 : 1;
+
+    const evA = a.eventos as Record<string, any> | null;
+    const evB = b.eventos as Record<string, any> | null;
+    const aData = String(evA?.data_inicio || a.created_at || '');
+    const bData = String(evB?.data_inicio || b.created_at || '');
+    if (aData !== bData) {
+      return bData.localeCompare(aData);
+    }
+    return 0;
+  });
+
+  // 2. Deduplicar por id
+  const seenIds = new Set<string>();
+  lista = lista.filter(item => {
+    const id = String(item.id || '');
+    if (!id || seenIds.has(id)) return false;
+    seenIds.add(id);
+    return true;
+  });
+
   const cards: AssistenteCard[] = lista.map(insc => {
     const ev = insc.eventos as Record<string, unknown>;
     const nomeInscrito = String(insc.nome_inscrito || 'Inscrito');
     const nomeEvento = String(ev?.nome || 'Evento');
     const statusPag = String(insc.status_pagamento || '');
-    const statusHospedagem = hospedagemMap.get(String(insc.id || '')) || null;
-    const temHospedagem = Boolean(insc.hospedagem) || (statusHospedagem !== null && statusHospedagem !== 'recusada');
+    const hospInfo = hospedagemMap.get(String(insc.id || '')) || null;
+    const statusH = hospInfo?.status || null;
+    const temHospedagem = Boolean(insc.hospedagem) || (statusH !== null && statusH !== 'recusada');
     const temAlimentacao = Boolean(insc.alimentacao);
-    const permiteHospedagem = Boolean(ev?.permite_hospedagem);
     const permiteAlimentacao = Boolean(ev?.permite_alimentacao);
     const tipoInscricao = insc.tipo_inscricao ? String(insc.tipo_inscricao) : null;
     const valorFinal = typeof insc.valor_final === 'number' ? insc.valor_final : null;
@@ -369,23 +450,50 @@ async function responderConfirmarInscricao(
       statusPag === 'cancelado' ? '❌ Cancelado' :
       statusPag || 'Sem status';
 
-    const hospLabel = temHospedagem
-      ? '✅ Incluida'
-      : permiteHospedagem
-        ? '❌ Nao incluida (evento oferece hospedagem)'
-        : '➖ Evento nao oferece hospedagem';
-
-    const alimLabel = temAlimentacao
-      ? '✅ Incluida'
-      : permiteAlimentacao
-        ? '❌ Nao incluida (evento oferece alimentacao)'
-        : '➖ Evento nao oferece alimentacao';
-
     const meta: string[] = [`Evento: ${nomeEvento}`, `Pagamento: ${statusLabel}`];
     if (tipoInscricao) meta.push(`Modalidade: ${tipoInscricao}`);
     if (valorFinal !== null) meta.push(`Valor: ${fmtMoeda(valorFinal)}`);
-    meta.push(`Hospedagem: ${hospLabel}`);
-    meta.push(`Alimentacao: ${alimLabel}`);
+
+    // Hospedagem metadata
+    if (!temHospedagem) {
+      meta.push('Hospedagem: Não solicitada');
+    } else if (hospInfo && (statusH === 'alocada' || statusH === 'confirmada' || statusH === 'checkin_realizado')) {
+      const aloj = hospInfo.evento_alojamentos?.nome || 'Não definido';
+      const lei = hospInfo.leito_numero || hospInfo.numero_cama || 'Não definido';
+      const tip = hospInfo.leito_tipo || hospInfo.tipo_cama || 'Não definido';
+      const pos = hospInfo.leito_posicao || hospInfo.tipo_cama || 'Não definido';
+
+      let sit = 'Alocada';
+      if (statusH === 'confirmada') sit = 'Confirmada';
+      if (statusH === 'checkin_realizado') sit = 'Check-in realizado';
+
+      meta.push('Hospedagem: Incluída');
+      meta.push(`Status: ${sit}`);
+      meta.push(`Alojamento: ${aloj}`);
+      meta.push(`Leito: ${lei}`);
+      meta.push(`Tipo de leito: ${tip}`);
+      meta.push(`Posição: ${pos}`);
+    } else if (statusH === 'lista_espera') {
+      meta.push('Hospedagem: Solicitada');
+      meta.push('Status: Lista de espera');
+    } else {
+      meta.push('Hospedagem: Solicitada');
+      meta.push('Status: Aguardando alocação');
+    }
+
+    // Alimentação metadata
+    if (temAlimentacao) {
+      const totalRef = Number(insc.quantidade_refeicoes_total ?? insc.refeicoes_total ?? (ev?.departamento === 'AGO' ? 12 : 0));
+      const usadasRef = Number(insc.quantidade_refeicoes_usadas ?? insc.refeicoes_utilizadas ?? 0);
+      const saldoRef = Number(insc.quantidade_refeicoes_saldo ?? Math.max(0, totalRef - usadasRef));
+
+      meta.push(`Alimentação: ✅ Incluída (Total: ${totalRef} | Usadas: ${usadasRef} | Saldo: ${saldoRef})`);
+    } else {
+      const alimLabel = permiteAlimentacao
+        ? '❌ Não incluída (evento oferece alimentação)'
+        : '➖ Evento não oferece alimentação';
+      meta.push(`Alimentação: ${alimLabel}`);
+    }
 
     return {
       id: String(insc.id || `insc-${Date.now()}`),
@@ -420,37 +528,65 @@ async function responderHospedagemInscricao(inscricaoId: string): Promise<Assist
   const insc = data as Record<string, unknown>;
   const ev = insc.eventos as Record<string, unknown>;
   const nomeEvento = String(ev?.nome || 'Evento');
-  const { data: hospData } = await supabase
-    .from('evento_hospedagens')
-    .select('status')
-    .eq('inscricao_id', inscricaoId)
-    .maybeSingle();
-  const statusHospedagem = hospData ? String((hospData as Record<string, unknown>).status || '') : '';
+
+  const [hospRes, leitoRes] = await Promise.all([
+    supabase
+      .from('evento_hospedagens')
+      .select(`
+        id, status, tipo_cama, numero_cama, grupo_hospedagem,
+        evento_alojamentos ( id, nome, publico )
+      `)
+      .eq('inscricao_id', inscricaoId)
+      .maybeSingle(),
+    supabase
+      .from('evento_hospedagem_leitos')
+      .select('numero, tipo_leito, posicao')
+      .eq('inscricao_id', inscricaoId)
+      .maybeSingle()
+  ]);
+
+  const hospData = hospRes.data;
+  const leitoData = leitoRes.data;
+  const statusHospedagem = hospData ? String(hospData.status || '') : '';
   const temHospedagem = Boolean(insc.hospedagem) || (statusHospedagem !== '' && statusHospedagem !== 'recusada');
   const permiteHospedagem = Boolean(ev?.permite_hospedagem);
 
   if (temHospedagem) {
-    if (statusHospedagem) {
-      if (statusHospedagem === 'confirmada') {
-        return { resposta: `Sim! Sua inscricao em *${nomeEvento}* inclui hospedagem e ja esta confirmada ✅` };
-      }
-      if (statusHospedagem === 'solicitada') {
-        return { resposta: `Sua inscricao em *${nomeEvento}* inclui hospedagem. Aguardando alocacao de alojamento 🛏️` };
-      }
-      if (statusHospedagem === 'lista_espera') {
-        return { resposta: `Sua inscricao inclui hospedagem, porem voce esta na lista de espera por alojamento.` };
-      }
+    if (statusHospedagem === 'alocada' || statusHospedagem === 'confirmada' || statusHospedagem === 'checkin_realizado') {
+      let sitLabel = 'Alocada';
+      if (statusHospedagem === 'confirmada') sitLabel = 'Confirmada';
+      if (statusHospedagem === 'checkin_realizado') sitLabel = 'Check-in realizado';
+
+      const alojamento = (hospData as any)?.evento_alojamentos?.nome || 'não definido';
+      const leitoNum = leitoData?.numero || hospData?.numero_cama || 'não definido';
+      const leitoTipo = leitoData?.tipo_leito || hospData?.tipo_cama || 'não definido';
+      const leitoPosicao = leitoData?.posicao || hospData?.tipo_cama || 'não definido';
+
+      return {
+        resposta: `Sim! Sua inscrição em *${nomeEvento}* inclui hospedagem:
+🏨 **Alojamento:** ${alojamento}
+🛏️ **Leito:** ${leitoNum}
+🛌 **Tipo de leito:** ${leitoTipo}
+📌 **Posição:** ${leitoPosicao}
+✅ **Situação:** ${sitLabel}`
+      };
     }
-    return { resposta: `Sim! Sua inscricao em *${nomeEvento}* inclui hospedagem 🛏️` };
+    if (statusHospedagem === 'solicitada') {
+      return { resposta: `Sua inscrição em *${nomeEvento}* inclui hospedagem.\nStatus: Aguardando alocação` };
+    }
+    if (statusHospedagem === 'lista_espera') {
+      return { resposta: `Sua inscrição em *${nomeEvento}* inclui hospedagem.\nStatus: Lista de espera` };
+    }
+    return { resposta: `Sim! Sua inscrição em *${nomeEvento}* inclui hospedagem 🛏️` };
   }
 
   if (permiteHospedagem) {
     return {
-      resposta: `O evento *${nomeEvento}* oferece hospedagem, mas sua inscricao atual nao inclui essa opcao.\n\nPara mais informacoes, entre em contato com a organizacao.`,
+      resposta: `O evento *${nomeEvento}* oferece hospedagem, mas sua inscrição atual não inclui essa opção.\n\nPara mais informações, entre em contato com a organização.`,
     };
   }
 
-  return { resposta: `O evento *${nomeEvento}* nao oferece hospedagem.` };
+  return { resposta: `O evento *${nomeEvento}* não oferece hospedagem.` };
 }
 
 async function responderAlimentacaoInscricao(inscricaoId: string): Promise<AssistenteResposta> {

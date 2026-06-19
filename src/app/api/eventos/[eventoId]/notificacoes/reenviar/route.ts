@@ -37,22 +37,44 @@ function fmtMoeda(v: number) {
 
 function buildConfirmacaoEmail(evento: EventoRow, inscricao: InscricaoRow) {
   const isIsento = inscricao.status_pagamento === 'isento';
-  const assunto = `Inscricao confirmada - ${evento.nome}`;
+  const finalNome = (evento.nome || '').toUpperCase().includes('UMADESPA') ? 'CONGRESSO UMADESPA 2026 - BELÉM' : (evento.nome || '');
+  const assunto = `Inscricao confirmada - ${finalNome}`;
   const vars = {
+    // Campos planos legado
     NOME: inscricao.nome_inscrito,
-    EVENTO: evento.nome,
+    EVENTO: finalNome,
+    NOME_DO_EVENTO: finalNome,
     LINK_GRUPO: evento.link_whatsapp ?? '',
+    LINK_WHATSAPP: evento.link_whatsapp ?? '',
     QR_CODE: inscricao.qr_code ?? '',
+    CODIGO_CHECKIN: inscricao.qr_code ?? '',
     STATUS_PAGAMENTO: inscricao.status_pagamento,
     LOCAL: evento.local ?? '',
+    LOCAL_EVENTO: evento.local ?? '',
     DATA_EVENTO: fmtData(evento.data_inicio),
+
+    // Objetos estruturados
+    evento: {
+      nome: finalNome,
+      link_whatsapp: evento.link_whatsapp,
+      local: evento.local,
+      data_inicio: evento.data_inicio,
+      data_fim: evento.data_fim,
+    },
+    inscricao: {
+      nome: inscricao.nome_inscrito,
+      nome_inscrito: inscricao.nome_inscrito,
+      qr_code: inscricao.qr_code,
+      codigo_checkin: inscricao.qr_code,
+      status_pagamento: inscricao.status_pagamento,
+    }
   };
 
   let mensagem = `Ola, ${inscricao.nome_inscrito}!\n\n`;
   if (isIsento) {
-    mensagem += `Sua inscricao para o evento *${evento.nome}* foi confirmada.`;
+    mensagem += `Sua inscricao para o evento *${finalNome}* foi confirmada.`;
   } else {
-    mensagem += `Seu pagamento para o evento *${evento.nome}* foi confirmado.`;
+    mensagem += `Seu pagamento para o evento *${finalNome}* foi confirmado.`;
   }
   mensagem += `\n\nCodigo de check-in: ${inscricao.qr_code ?? '-'}`;
 

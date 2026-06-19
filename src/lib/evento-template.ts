@@ -20,27 +20,98 @@ const STATUS_LABELS: Record<string, string> = {
   cancelado: 'Cancelado ❌',
 };
 
+
+function formatarDataBr(d: string | null | undefined): string {
+  if (!d) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+    const [y, m, day] = d.split('-');
+    return `${day}/${m}/${y}`;
+  }
+  return d;
+}
+
+/**
+ * Substitui variáveis/placeholders em formatos simples ou duplos.
+ * Exemplo: {NOME_DO_EVENTO} ou {{NOME_DO_EVENTO}}
+ */
+export function renderTemplate(
+  template: string,
+  dados: any
+): string {
+  if (!template) return '';
+
+  // Garante mapeamento de aliases de dados, suportando flat object ou nested object
+  const resolvedName = String(
+    dados.evento?.nome || 
+    dados.EVENTO || 
+    dados.NOME_DO_EVENTO || 
+    dados.nomeEvento ||
+    ''
+  );
+
+  let finalEvento = resolvedName;
+  // Caso específico UMADESPA
+  if (resolvedName.toUpperCase().includes('UMADESPA')) {
+    finalEvento = 'CONGRESSO UMADESPA 2026 - BELÉM';
+  }
+
+  const resolvedStatus = String(dados.inscricao?.status_pagamento || dados.STATUS_PAGAMENTO || dados.status_pagamento || '');
+
+  // Formatação robusta de datas
+  let dataStr = '';
+  if (dados.evento?.data_inicio) {
+    const inicio = formatarDataBr(dados.evento.data_inicio);
+    const fim = dados.evento.data_fim ? formatarDataBr(dados.evento.data_fim) : '';
+    dataStr = (fim && fim !== inicio) ? `${inicio} a ${fim}` : inicio;
+  } else {
+    dataStr = formatarDataBr(dados.DATA_EVENTO || dados.data_evento || '');
+  }
+
+  const resolved: Record<string, string> = {
+    NOME_DO_EVENTO:   finalEvento,
+    EVENTO:           finalEvento,
+    NOME:             String(dados.inscricao?.nome || dados.inscricao?.nome_inscrito || dados.NOME || dados.nome || ''),
+    CODIGO_CHECKIN:   String(dados.inscricao?.codigo_checkin || dados.inscricao?.qr_code || dados.QR_CODE || dados.CODIGO_CHECKIN || dados.qrCode || ''),
+    QR_CODE:          String(dados.inscricao?.codigo_checkin || dados.inscricao?.qr_code || dados.QR_CODE || dados.CODIGO_CHECKIN || dados.qrCode || ''),
+    STATUS_PAGAMENTO: STATUS_LABELS[resolvedStatus] ?? resolvedStatus,
+    LINK_WHATSAPP:    String(dados.evento?.link_whatsapp || dados.LINK_WHATSAPP || dados.LINK_GRUPO || dados.linkWhatsapp || ''),
+    LINK_GRUPO:       String(dados.evento?.link_whatsapp || dados.LINK_WHATSAPP || dados.LINK_GRUPO || dados.linkWhatsapp || ''),
+    DATA_EVENTO:      dataStr,
+    LOCAL_EVENTO:     String(dados.evento?.local || dados.LOCAL_EVENTO || dados.LOCAL || dados.local || ''),
+    LOCAL:            String(dados.evento?.local || dados.LOCAL_EVENTO || dados.LOCAL || dados.local || ''),
+  };
+
+  let output = template;
+
+  // Substitui {{VAR}} e depois {VAR}
+  output = output.replace(/\{\{([A-Z0-9_]+)\}\}/g, (match, key) =>
+    key in resolved ? resolved[key] : match
+  );
+  output = output.replace(/\{([A-Z0-9_]+)\}/g, (match, key) =>
+    key in resolved ? resolved[key] : match
+  );
+
+  // Validação: Não enviar placeholder cru ao inscrito
+  const placeholderRegex = /\{[{]?[A-Z0-9_]+[}]?\}/g;
+  const matches = output.match(placeholderRegex);
+  if (matches && matches.length > 0) {
+    console.warn(`[renderTemplate] Placeholders restantes limpos:`, matches);
+    output = output.replace(placeholderRegex, '');
+  }
+
+  return output;
+}
+
+
 /**
  * Substitui variáveis {CHAVE} no template pelo valor correspondente.
- * Variáveis desconhecidas são mantidas como estão.
+ * Variáveis desconhecidas são limpas ou mantidas se não listadas.
  */
 export function parseEventoTemplate(
   template: string,
   vars: EventoTemplateVars
 ): string {
-  const resolved: Record<string, string> = {
-    NOME:             vars.NOME             ?? '',
-    EVENTO:           vars.EVENTO           ?? '',
-    LINK_GRUPO:       vars.LINK_GRUPO       ?? '',
-    QR_CODE:          vars.QR_CODE          ?? '',
-    STATUS_PAGAMENTO: STATUS_LABELS[vars.STATUS_PAGAMENTO ?? ''] ?? (vars.STATUS_PAGAMENTO ?? ''),
-    LOCAL:            vars.LOCAL            ?? '',
-    DATA_EVENTO:      vars.DATA_EVENTO      ?? '',
-  };
-
-  return template.replace(/\{([A-Z_]+)\}/g, (match, key) =>
-    key in resolved ? resolved[key] : match
-  );
+  return renderTemplate(template, vars);
 }
 
 /**

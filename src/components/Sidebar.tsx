@@ -53,9 +53,9 @@ type MenuSection = {
 // Quais menus de topo (por id) cada nível pode ver. 'super' vê tudo.
 const MENU_POR_NIVEL: Record<string, string[]> = {
   super: ['*'],
-  administrador: ['dashboard', 'secretaria', 'conec', 'cgadb', 'comissao', 'patrimonio', 'missoes', 'configuracoes'],
+  administrador: ['dashboard', 'secretaria', 'cgadb', 'comissao', 'patrimonio', 'missoes', 'configuracoes'],
   cgadb: ['cgadb'],
-  comissao: ['dashboard', 'secretaria', 'conec', 'comissao'],
+  comissao: ['dashboard', 'secretaria', 'comissao'],
   inscricao: ['eventos'],
   financeiro: ['financeiro'],
 };
@@ -134,7 +134,6 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
     const menusComSubmenu: Record<string, string[]> = {
       secretaria: ['estrutura-hierarquica', 'membros', 'funcionarios', 'consagracao', 'cartas', 'permutas', 'impressoes-credenciais'],
       cgadb: ['cgadb-dashboard', 'cgadb-debitos', 'cgadb-relatorios', 'cgadb-historico'],
-      eventos: ['eventos-lista', 'eventos-dashboard'],
       configuracoes: ['config-geral', 'importar-membros', 'config-certificados', 'config-cartoes', 'config-video-presidente'],
     };
     for (const [parent, children] of Object.entries(menusComSubmenu)) {
@@ -182,17 +181,7 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
           ],
         },
         { id: 'financeiro', label: 'Financeiro', icon: CreditCard, path: '/financeiro' },
-        {
-          id: 'eventos',
-          label: 'Eventos',
-          icon: Clock,
-          path: '/eventos',
-          badge: menuBadges.eventos ?? null,
-          submenu: [
-            { id: 'eventos-dashboard', label: 'Dashboard Geral', icon: BarChart3, path: '/eventos/dashboard' },
-            { id: 'eventos-lista', label: 'Todos os Eventos', icon: FileText, path: '/eventos' },
-          ],
-        },
+        { id: 'eventos', label: 'Eventos', icon: Clock, path: '/eventos', badge: menuBadges.eventos ?? null },
         { id: 'comissao', label: 'Comissão', icon: Users, path: '/comissao' },
         { id: 'patrimonio', label: 'Patrimônio', icon: Building2, path: '/patrimonio' },
         { id: 'missoes', label: 'Missões', icon: ArrowRight, path: '/missoes' },
@@ -242,10 +231,6 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
 
   const handleNavigate = (id: string, path: string) => {
     let targetPath = path;
-    if (id === 'eventos') {
-      const isAdmin = nivelUsuario === 'administrador' || nivelUsuario === 'super';
-      targetPath = isAdmin ? '/eventos/dashboard' : '/eventos';
-    }
     setActiveMenu(id);
     router.push(targetPath);
     setIsMobileMenuOpen(false);

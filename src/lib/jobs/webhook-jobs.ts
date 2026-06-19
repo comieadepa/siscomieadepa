@@ -3,10 +3,11 @@ import { sendEmail } from '@/services/email';
 import { registrarHistoricoMinisterial } from '@/lib/historico-ministerial';
 import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
 import { cleanCpf } from '@/lib/cpf';
+import { renderTemplate } from '@/lib/evento-template';
 
 // ── Substitui {VAR} no template ──────────────────────────────
-function subst(msg: string, vars: Record<string, string>): string {
-  return msg.replace(/\{([A-Z_]+)\}/g, (_, k) => vars[k] ?? `{${k}}`);
+function subst(msg: string, vars: any): string {
+  return renderTemplate(msg, vars);
 }
 
 function formatarPeriodoEvento(dataInicio?: string | null, dataFim?: string | null): string | null {
@@ -31,13 +32,47 @@ async function enviarEmailComDeduplicacao(
     nomeEvento: string;
     mensagemConfirmacao: string | null;
     linkWhatsapp: string | null;
+    dataInicio?: string | null;
+    dataFim?: string | null;
+    local?: string | null;
   }
 ): Promise<void> {
-  const { inscricaoId, eventoId, nome, email, qrCode, nomeEvento, mensagemConfirmacao, linkWhatsapp } = params;
+  const { inscricaoId, eventoId, nome, email, qrCode, nomeEvento, mensagemConfirmacao, linkWhatsapp, dataInicio, dataFim, local } = params;
 
-  const assunto = `✅ Inscrição confirmada — ${nomeEvento}`;
-  const vars = { NOME: nome, EVENTO: nomeEvento, QR_CODE: qrCode, LINK_GRUPO: linkWhatsapp ?? '(em breve)' };
-  let mensagem = `Olá, ${nome}!\n\nSeu pagamento para o evento *${nomeEvento}* foi confirmado. ✅\n\n🎫 Código de check-in: ${qrCode}`;
+  const finalNomeEvento = nomeEvento.toUpperCase().includes('UMADESPA') ? 'CONGRESSO UMADESPA 2026 - BELÉM' : nomeEvento;
+
+  const assunto = `✅ Inscrição confirmada — ${finalNomeEvento}`;
+
+  const vars = {
+    // Campos planos legado
+    NOME: nome,
+    EVENTO: finalNomeEvento,
+    NOME_DO_EVENTO: finalNomeEvento,
+    QR_CODE: qrCode,
+    CODIGO_CHECKIN: qrCode,
+    LINK_GRUPO: linkWhatsapp ?? '(em breve)',
+    LINK_WHATSAPP: linkWhatsapp ?? '(em breve)',
+    LOCAL: local ?? '',
+    LOCAL_EVENTO: local ?? '',
+
+    // Objetos estruturados
+    evento: {
+      nome: finalNomeEvento,
+      link_whatsapp: linkWhatsapp,
+      data_inicio: dataInicio,
+      data_fim: dataFim,
+      local: local,
+    },
+    inscricao: {
+      nome: nome,
+      nome_inscrito: nome,
+      qr_code: qrCode,
+      codigo_checkin: qrCode,
+      status_pagamento: 'pago',
+    }
+  };
+
+  let mensagem = `Olá, ${nome}!\n\nSeu pagamento para o evento *${finalNomeEvento}* foi confirmado. ✅\n\n🎫 Código de check-in: ${qrCode}`;
   if (mensagemConfirmacao) mensagem += `\n\n${subst(mensagemConfirmacao, vars)}`;
   if (linkWhatsapp)        mensagem += `\n\n📲 Grupo do WhatsApp: ${linkWhatsapp}`;
 
@@ -240,7 +275,7 @@ export async function processSingleWebhookJob(supabase: SupabaseClient, job: any
 
       const { data: evData, error: evErr } = await supabase
         .from('eventos')
-        .select('nome, mensagem_confirmacao, link_whatsapp, data_inicio, data_fim')
+        .select('nome, mensagem_confirmacao, link_whatsapp, data_inicio, data_fim, local')
         .eq('id', fullIns.evento_id)
         .single();
       if (evErr || !evData) {
@@ -257,6 +292,9 @@ export async function processSingleWebhookJob(supabase: SupabaseClient, job: any
           nomeEvento:          evData.nome,
           mensagemConfirmacao: evData.mensagem_confirmacao,
           linkWhatsapp:        evData.link_whatsapp,
+          dataInicio:          evData.data_inicio,
+          dataFim:             evData.data_fim,
+          local:               evData.local,
         });
       } else {
         console.warn(`[WEBHOOK JOBS] Job ${job.id} ignorado por e-mail ausente.`);
