@@ -100,30 +100,41 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    // Buscar congregação de cada usuário (se tiver congregacao_id em algum lugar futuro)
-    const congregacaoIds: string[] = [];
-    const congregacaoMap = new Map<string, string>();
-    if (congregacaoIds.length > 0) {
-      const { data: congregacoes } = await admin
-        .from('congregacoes')
-        .select('id, nome')
-        .in('id', congregacaoIds);
-      (congregacoes || []).forEach((c: any) => congregacaoMap.set(String(c.id), String(c.nome || '')));
-    }
+    // Buscar múltiplos eventos permitidos para todos os usuários
+    const { data: todosPermitidos } = await admin
+      .from('usuario_eventos_permitidos')
+      .select('usuario_id, evento_id');
+    const permitidosMap = new Map<string, string[]>();
+    (todosPermitidos || []).forEach((item: any) => {
+      const list = permitidosMap.get(item.usuario_id) || [];
+      list.push(item.evento_id);
+      permitidosMap.set(item.usuario_id, list);
+    });
 
-    const usuarios: (UsuarioResponse & { cpf?: string; celular?: string })[] = authResults.map(({ row, user }) => ({
-      id: String(row.id),
-      nome: resolveNome(user) || String(row.name || row.email || ''),
-      email: String(user?.email || row.email || ''),
-      email_confirmed: resolveEmailConfirmed(user),
-      nivel: mapNivel(row.role),
-      congregacao: undefined,
-      congregacao_id: null,
-      status: row.is_active === false ? 'inativo' : resolveStatus(user),
-      cpf: String(user?.user_metadata?.cpf || ''),
-      celular: String(user?.user_metadata?.celular || ''),
-      subcategoria: String(user?.user_metadata?.subcategoria || ''),
-    }));
+    const usuarios: (UsuarioResponse & { cpf?: string; celular?: string; eventos_permitidos?: string[] })[] = authResults.map(({ row, user }) => {
+      const uid = String(row.id);
+      // Fallback para subcategoria se não houver registros na nova tabela
+      let evs = permitidosMap.get(uid) || [];
+      const subcategoriaVal = String(user?.user_metadata?.subcategoria || '');
+      if (evs.length === 0 && subcategoriaVal && subcategoriaVal !== 'TODOS') {
+        evs = [subcategoriaVal];
+      }
+
+      return {
+        id: uid,
+        nome: resolveNome(user) || String(row.name || row.email || ''),
+        email: String(user?.email || row.email || ''),
+        email_confirmed: resolveEmailConfirmed(user),
+        nivel: mapNivel(row.role),
+        congregacao: undefined,
+        congregacao_id: null,
+        status: row.is_active === false ? 'inativo' : resolveStatus(user),
+        cpf: String(user?.user_metadata?.cpf || ''),
+        celular: String(user?.user_metadata?.celular || ''),
+        subcategoria: subcategoriaVal,
+        eventos_permitidos: evs,
+      };
+    });
 
     return NextResponse.json({ data: usuarios });
   } catch (e) {
@@ -141,7 +152,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const body = (await request.json()) as Partial<UsuarioCreateBody> & { cpf?: string; celular?: string; subcategoria?: string };
+    const body = (await request.json()) as Partial<UsuarioCreateBody> & { cpf?: string; celular?: string; subcategoria?: string; eventos_permitidos?: string[] };
     const nome = String(body?.nome || '').trim();
     const email = String(body?.email || '').trim();
     const senha = String(body?.senha || '').trim();
@@ -150,6 +161,7 @@ export async function POST(request: NextRequest) {
     const cpfCreate = body?.cpf ? String(body.cpf).trim() : '';
     const celularCreate = body?.celular ? String(body.celular).trim() : '';
     const subcategoriaCreate = body?.subcategoria ? String(body.subcategoria).trim() : '';
+    const eventosPermitidos = body?.eventos_permitidos || [];
 
     if (!nome || !email || !senha || !nivel) {
       return NextResponse.json({ error: 'nome, email, senha e nivel sao obrigatorios' }, { status: 400 });
@@ -161,11 +173,16 @@ export async function POST(request: NextRequest) {
 
     const admin = createServerClient();
 
+    // Compatibilidade reversa: se eventos_permitidos tiver exatamente 1 item, salva-o em subcategoria.
+    const subcategoriaFinal = nivel === 'inscricao' 
+      ? (eventosPermitidos.length === 1 ? eventosPermitidos[0] : subcategoriaCreate)
+      : '';
+
     const { data: authUser, error: authError } = await admin.auth.admin.createUser({
       email,
       password: senha,
       email_confirm: true,
-      user_metadata: { full_name: nome, nivel, cpf: cpfCreate, celular: celularCreate, subcategoria: subcategoriaCreate },
+      user_metadata: { full_name: nome, nivel, cpf: cpfCreate, celular: celularCreate, subcategoria: subcategoriaFinal },
     });
 
     if (authError || !authUser?.user) {
@@ -186,6 +203,15 @@ export async function POST(request: NextRequest) {
     if (insertError) {
       await admin.auth.admin.deleteUser(authUser.user.id);
       return NextResponse.json({ error: insertError.message }, { status: 400 });
+    }
+
+    // Persistir múltiplos eventos permitidos se for nível inscrição
+    if (nivel === 'inscricao' && eventosPermitidos.length > 0) {
+      const inserts = eventosPermitidos.map((evtId) => ({
+        usuario_id: authUser.user.id,
+        evento_id: evtId,
+      }));
+      await admin.from('usuario_eventos_permitidos').insert(inserts);
     }
 
     void congregacaoId; // reservado para uso futuro
@@ -225,7 +251,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const body = (await request.json()) as Partial<UsuarioUpdateBody> & { cpf?: string; celular?: string; subcategoria?: string };
+    const body = (await request.json()) as Partial<UsuarioUpdateBody> & { cpf?: string; celular?: string; subcategoria?: string; eventos_permitidos?: string[] };
     const userId = String(body?.user_id || '').trim();
     const nome = String(body?.nome || '').trim();
     const email = String(body?.email || '').trim();
@@ -236,6 +262,7 @@ export async function PUT(request: NextRequest) {
     const cpf = body?.cpf ? String(body.cpf).trim() : '';
     const celular = body?.celular ? String(body.celular).trim() : '';
     const subcategoria = body?.subcategoria ? String(body.subcategoria).trim() : '';
+    const eventosPermitidos = body?.eventos_permitidos || [];
 
     if (!userId || !nome || !email || !nivel) {
       return NextResponse.json({ error: 'user_id, nome, email e nivel sao obrigatorios' }, { status: 400 });
@@ -259,9 +286,14 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Email nao confirmado. Nao e possivel alterar o email.' }, { status: 400 });
     }
 
+    // Compatibilidade reversa: se eventos_permitidos tiver exatamente 1 item, salva-o em subcategoria.
+    const subcategoriaFinal = nivel === 'inscricao'
+      ? (eventosPermitidos.length === 1 ? eventosPermitidos[0] : subcategoria)
+      : '';
+
     const updatePayload: Record<string, any> = {
       email,
-      user_metadata: { full_name: nome, nivel, cpf, celular, subcategoria },
+      user_metadata: { full_name: nome, nivel, cpf, celular, subcategoria: subcategoriaFinal },
       email_confirm: true,
     };
 
@@ -286,6 +318,23 @@ export async function PUT(request: NextRequest) {
 
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 400 });
+    }
+
+    // Persistir múltiplos eventos permitidos se for nível inscrição (atualiza registros)
+    if (nivel === 'inscricao') {
+      // Remove vínculos anteriores
+      await admin
+        .from('usuario_eventos_permitidos')
+        .delete()
+        .eq('usuario_id', userId);
+
+      if (eventosPermitidos.length > 0) {
+        const inserts = eventosPermitidos.map((evtId) => ({
+          usuario_id: userId,
+          evento_id: evtId,
+        }));
+        await admin.from('usuario_eventos_permitidos').insert(inserts);
+      }
     }
 
     void congregacaoId; // reservado para uso futuro

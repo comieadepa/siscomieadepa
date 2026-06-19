@@ -61,6 +61,7 @@ export default function UsuariosPage() {
     confirmar_senha: '',
     subcategoria: '',
   });
+  const [formEventosPermitidos, setFormEventosPermitidos] = useState<string[]>([]);
   const [formError, setFormError] = useState('');
   const [formStatus, setFormStatus] = useState('');
   const [creatingUser, setCreatingUser] = useState(false);
@@ -89,6 +90,8 @@ export default function UsuariosPage() {
     senha: '',
     confirmar_senha: '',
   });
+  const [editEventosPermitidos, setEditEventosPermitidos] = useState<string[]>([]);
+  const [todosEventos, setTodosEventos] = useState<{ id: string; nome: string; departamento: string; status: string }[]>([]);
 
   const [showForm, setShowForm] = useState(false);
   const [_selectedLevel, setSelectedLevel] = useState<string>(''); void _selectedLevel;
@@ -204,7 +207,18 @@ export default function UsuariosPage() {
       setUsuariosLoading(false);
     };
 
+    const loadEventos = async () => {
+      const { data: rows } = await supabase
+        .from('eventos')
+        .select('id, nome, departamento, status')
+        .order('data_inicio', { ascending: false });
+      if (rows) {
+        setTodosEventos(rows);
+      }
+    };
+
     loadUsuarios();
+    loadEventos();
   }, [authLoading, roleLoading, podeAcessar, supabase]);
 
   useEffect(() => {
@@ -250,7 +264,7 @@ export default function UsuariosPage() {
   }
 
 
-  const openEditModal = (usuario: Usuario & { congregacao_id?: string | null }) => {
+  const openEditModal = (usuario: Usuario & { congregacao_id?: string | null; eventos_permitidos?: string[] }) => {
     setEditError('');
     setEditStatus('');
     setEditEmailConfirmed(Boolean(usuario.email_confirmed));
@@ -268,6 +282,7 @@ export default function UsuariosPage() {
       senha: '',
       confirmar_senha: '',
     });
+    setEditEventosPermitidos(usuario.eventos_permitidos || []);
     setEditOpen(true);
   };
 
@@ -323,6 +338,7 @@ export default function UsuariosPage() {
         cpf: editData.cpf || '',
         celular: editData.celular || '',
         subcategoria: editData.subcategoria || '',
+        eventos_permitidos: editEventosPermitidos,
       })
     });
 
@@ -660,6 +676,7 @@ export default function UsuariosPage() {
         cpf: formData.cpf || '',
         celular: formData.celular || '',
         subcategoria: formData.subcategoria || '',
+        eventos_permitidos: formEventosPermitidos,
       })
     });
 
@@ -683,6 +700,7 @@ export default function UsuariosPage() {
       confirmar_senha: '',
       subcategoria: '',
     });
+    setFormEventosPermitidos([]);
     setSelectedLevel('');
     setNomeSugestoes([]);
     setCreatingUser(false);
@@ -819,19 +837,58 @@ export default function UsuariosPage() {
                       ))}
                     </select>
                     {formData.nivel === 'inscricao' && (
-                      <select
-                        value={formData.subcategoria}
-                        onChange={(e) => handleFormChange('subcategoria', e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-[#0284c7]"
-                      >
-                        <option value="">Sub-categoria</option>
-                        <option value="TODOS">TODOS OS DEPARTAMENTOS</option>
-                        <option value="AGO">AGO</option>
-                        <option value="UMADESPA">UMADESPA</option>
-                        <option value="COADESPA">COADESPA</option>
-                        <option value="SEIADEPA">SEIADEPA</option>
-                        <option value="AVULSO">AVULSO</option>
-                      </select>
+                      <div className="w-full flex flex-col gap-2 border border-gray-300 rounded-lg p-3 max-h-60 overflow-y-auto">
+                        <div className="flex justify-between items-center pb-2 border-b border-gray-200">
+                          <span className="text-xs font-semibold text-gray-500">Eventos Permitidos</span>
+                          <div className="flex gap-2 text-xs">
+                            <button
+                              type="button"
+                              onClick={() => setFormEventosPermitidos(todosEventos.map(e => e.id))}
+                              className="text-blue-600 hover:underline font-semibold"
+                            >
+                              Marcar todos
+                            </button>
+                            <span className="text-gray-300">|</span>
+                            <button
+                              type="button"
+                              onClick={() => setFormEventosPermitidos([])}
+                              className="text-blue-600 hover:underline font-semibold"
+                            >
+                              Desmarcar todos
+                            </button>
+                          </div>
+                        </div>
+                        {todosEventos.length === 0 ? (
+                          <span className="text-xs text-gray-400">Nenhum evento cadastrado.</span>
+                        ) : (
+                          todosEventos.map(evt => {
+                            const isChecked = formEventosPermitidos.includes(evt.id);
+                            return (
+                              <label key={evt.id} className="flex items-center gap-2 text-xs font-semibold text-[#123b63] cursor-pointer hover:bg-gray-50 p-1 rounded">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setFormEventosPermitidos(prev => [...prev, evt.id]);
+                                    } else {
+                                      setFormEventosPermitidos(prev => prev.filter(id => id !== evt.id));
+                                    }
+                                  }}
+                                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                                />
+                                <div className="flex-1">
+                                  <span>{evt.nome}</span>
+                                  <span className="ml-2 px-1.5 py-0.5 rounded bg-gray-100 text-[10px] text-gray-500 uppercase">{evt.departamento}</span>
+                                  <span className={`ml-1 text-[10px] font-bold ${evt.status === 'programado' ? 'text-green-600' : 'text-gray-400'}`}>
+                                    ({evt.status === 'programado' ? 'Ativo' : 'Inativo'})
+                                  </span>
+                                </div>
+                              </label>
+                            );
+                          })
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1136,18 +1193,58 @@ export default function UsuariosPage() {
                           ))}
                         </select>
                         {editData.nivel === 'inscricao' && (
-                          <select
-                            value={editData.subcategoria}
-                            onChange={(e) => handleEditChange('subcategoria', e.target.value)}
-                            className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0284c7]/30 focus:border-[#0284c7] text-sm transition bg-white"
-                          >
-                            <option value="">Sub-categoria</option>
-                            <option value="AGO">AGO</option>
-                            <option value="UMADESPA">UMADESPA</option>
-                            <option value="COADESPA">COADESPA</option>
-                            <option value="SEIADEPA">SEIADEPA</option>
-                            <option value="AVULSO">AVULSO</option>
-                          </select>
+                          <div className="w-full flex flex-col gap-2 border border-gray-300 rounded-xl p-3 max-h-60 overflow-y-auto">
+                            <div className="flex justify-between items-center pb-2 border-b border-gray-200">
+                              <span className="text-xs font-semibold text-gray-500">Eventos Permitidos</span>
+                              <div className="flex gap-2 text-xs">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditEventosPermitidos(todosEventos.map(e => e.id))}
+                                  className="text-blue-600 hover:underline font-semibold"
+                                >
+                                  Marcar todos
+                                </button>
+                                <span className="text-gray-300">|</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditEventosPermitidos([])}
+                                  className="text-blue-600 hover:underline font-semibold"
+                                >
+                                  Desmarcar todos
+                                </button>
+                              </div>
+                            </div>
+                            {todosEventos.length === 0 ? (
+                              <span className="text-xs text-gray-400">Nenhum evento cadastrado.</span>
+                            ) : (
+                              todosEventos.map(evt => {
+                                const isChecked = editEventosPermitidos.includes(evt.id);
+                                return (
+                                  <label key={evt.id} className="flex items-center gap-2 text-xs font-semibold text-[#123b63] cursor-pointer hover:bg-gray-50 p-1 rounded">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setEditEventosPermitidos(prev => [...prev, evt.id]);
+                                        } else {
+                                          setEditEventosPermitidos(prev => prev.filter(id => id !== evt.id));
+                                        }
+                                      }}
+                                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <div className="flex-1">
+                                      <span>{evt.nome}</span>
+                                      <span className="ml-2 px-1.5 py-0.5 rounded bg-gray-100 text-[10px] text-gray-500 uppercase">{evt.departamento}</span>
+                                      <span className={`ml-1 text-[10px] font-bold ${evt.status === 'programado' ? 'text-green-600' : 'text-gray-400'}`}>
+                                        ({evt.status === 'programado' ? 'Ativo' : 'Inativo'})
+                                      </span>
+                                    </div>
+                                  </label>
+                                );
+                              })
+                            )}
+                          </div>
                         )}
                       </div>
                       {editData.nivel && (

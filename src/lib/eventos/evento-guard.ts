@@ -166,17 +166,45 @@ async function resolveUserRole(args: {
   const nivel = normalizeRole((args.user.user_metadata?.nivel as string | undefined) ?? '');
   const departamento = (args.user.user_metadata?.subcategoria as string | undefined) ?? '';
   const isGlobal = nivel === 'super' || nivel === 'administrador';
-  const isDeptAdmin = nivel === 'inscricao' && !!departamento;
 
   if (isGlobal) {
     return { role: 'admin_evento', source: 'global' };
   }
 
-  if (isDeptAdmin) {
-    if (departamento !== 'TODOS' && args.evento.departamento !== departamento) {
-      return null;
+  if (nivel === 'inscricao') {
+    // 1. Verificar nova tabela usuario_eventos_permitidos
+    const { data: permitido } = await args.supabaseAdmin
+      .from('usuario_eventos_permitidos')
+      .select('id')
+      .eq('usuario_id', args.user.id)
+      .eq('evento_id', args.evento.id)
+      .maybeSingle();
+
+    if (permitido) {
+      return { role: 'admin_evento', source: 'usuario_evento' };
     }
-    return { role: 'admin_evento', source: 'departamento' };
+
+    // 2. Fallback temporário por subcategoria (somente se não houver registros na nova tabela para este usuário)
+    const { count } = await args.supabaseAdmin
+      .from('usuario_eventos_permitidos')
+      .select('id', { count: 'exact', head: true })
+      .eq('usuario_id', args.user.id);
+
+    if ((count ?? 0) === 0 && departamento) {
+      if (departamento === 'TODOS') {
+        return { role: 'admin_evento', source: 'departamento' };
+      }
+      // Se subcategoria for exatamente o UUID do evento
+      if (departamento === args.evento.id) {
+        return { role: 'admin_evento', source: 'usuario_evento' };
+      }
+      // Se subcategoria for o nome de um departamento (AGO, UMADESPA, etc)
+      if (args.evento.departamento === departamento) {
+        return { role: 'admin_evento', source: 'departamento' };
+      }
+    }
+
+    return null;
   }
 
   const { data: vinculo } = await args.supabaseAdmin

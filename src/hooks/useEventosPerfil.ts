@@ -137,8 +137,8 @@ export function useEventosPerfil(): EventosPerfil {
           return;
         }
 
-        // 2b. Se admin de departamento (inscricao + subcategoria), acessa todos os eventos do dept
-        const isDeptAdmin = nivel === 'inscricao' && !!departamento;
+        // 2b. Se admin de departamento (inscricao + subcategoria = TODOS), acessa todos os eventos do dept
+        const isDeptAdmin = nivel === 'inscricao' && departamento === 'TODOS';
         if (isDeptAdmin) {
           setEventoIds(null); // sem restrição por ID — filtro por dept feito na query
           setPermissoesPorEvento({});
@@ -146,21 +146,52 @@ export function useEventosPerfil(): EventosPerfil {
           return;
         }
 
-        // 3. Busca vínculos usuario_eventos para usuário 'inscricao'
+        // 3. Busca múltiplos eventos permitidos para o usuário de inscrição
+        const { data: permitidos } = await supabase
+          .from('usuario_eventos_permitidos')
+          .select('evento_id')
+          .eq('usuario_id', user.id);
+
+        const map: Record<string, EventoRole> = {};
+        const ids: string[] = [];
+
+        if (permitidos && permitidos.length > 0) {
+          for (const p of permitidos) {
+            map[p.evento_id] = 'admin_evento';
+            ids.push(p.evento_id);
+          }
+        } else if (nivel === 'inscricao' && departamento) {
+          // Fallback por subcategoria
+          if (departamento.includes('-') || departamento.length > 15) {
+            // Se subcategoria for exatamente o UUID de um evento
+            map[departamento] = 'admin_evento';
+            ids.push(departamento);
+          } else {
+            // Se for nome de departamento (AGO, UMADESPA, etc), buscamos os eventos correspondentes
+            const { data: evsFiltrados } = await supabase
+              .from('eventos')
+              .select('id')
+              .eq('departamento', departamento);
+            for (const e of (evsFiltrados || [])) {
+              map[e.id] = 'admin_evento';
+              ids.push(e.id);
+            }
+          }
+        }
+
+        // Também busca em usuario_eventos para perfis como equipe/operadores
         const { data: vinculos } = await supabase
           .from('usuario_eventos')
           .select('evento_id, permissao')
           .eq('user_id', user.id);
 
-        if (cancelled) return;
-
-        const map: Record<string, EventoRole> = {};
-        const ids: string[] = [];
         for (const v of (vinculos || [])) {
           const perm = normalizeEventoRole(v.permissao as string | null | undefined);
           if (!perm) continue;
           map[v.evento_id] = perm;
-          ids.push(v.evento_id);
+          if (!ids.includes(v.evento_id)) {
+            ids.push(v.evento_id);
+          }
         }
 
         setPermissoesPorEvento(map);
