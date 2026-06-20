@@ -22,10 +22,14 @@ type AssistenteAction = {
 
 type AssistenteCard = {
   id: string;
+  inscricao_id?: string;
   title: string;
   subtitle?: string;
   meta?: string[];
   actions?: AssistenteAction[];
+  status_pagamento?: string;
+  status_hospedagem?: string;
+  numero_leito?: string;
 };
 
 type AssistenteResposta = {
@@ -497,10 +501,32 @@ async function responderConfirmarInscricao(
 
     return {
       id: String(insc.id || `insc-${Date.now()}`),
+      inscricao_id: String(insc.id || ''),
       title: `📋 ${nomeInscrito}`,
       subtitle: 'Inscricao localizada',
       meta,
+      status_pagamento: statusPag,
+      status_hospedagem: statusH || undefined,
+      numero_leito: hospInfo?.leito_numero || hospInfo?.numero_cama || undefined,
     };
+  });
+
+  // 5. Proteção extra na API
+  const totalEncontrados = cards.length;
+  const seen = new Set();
+  const resultadoFinal = cards.filter(item => {
+    const id = item.inscricao_id || item.id;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+  const totalRenderizados = resultadoFinal.length;
+
+  // 6. Log temporário
+  console.log({
+    totalEncontrados,
+    totalRenderizados,
+    ids: resultadoFinal.map(x => x.id)
   });
 
   const primeiro = lista[0];
@@ -508,7 +534,7 @@ async function responderConfirmarInscricao(
     resposta: lista.length === 1
       ? 'Encontrei sua inscricao 😊'
       : `Encontrei ${lista.length} inscricoes para este CPF 😊`,
-    cards,
+    cards: resultadoFinal,
     _ctx: { cpf, inscricao_id: String(primeiro.id || '') },
   };
 }

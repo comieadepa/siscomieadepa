@@ -14,10 +14,17 @@ type AssistenteAction = {
 
 type AssistenteCard = {
   id: string;
+  inscricao_id?: string;
   title: string;
   subtitle?: string;
   meta?: string[];
   actions?: AssistenteAction[];
+  status_pagamento?: string;
+  status_hospedagem?: string;
+  numero_leito?: string;
+  inscricao?: {
+    id: string;
+  };
 };
 
 type Message = {
@@ -231,61 +238,99 @@ export default function PublicAssistenteWidget({ scope, departamento }: Props) {
           </div>
         </div>
 
-        {!isUser && msg.cards && msg.cards.length > 0 ? (
-          <div className="mt-3 ml-9 space-y-2">
-            {msg.cards.map(card => (
-              <div key={card.id} className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-                <div className="text-sm font-semibold text-gray-900">{card.title}</div>
-                {card.subtitle ? (
-                  <div className="mt-1 text-xs text-gray-500">{card.subtitle}</div>
-                ) : null}
-                {card.meta && card.meta.length > 0 ? (
-                  <div className="mt-2 space-y-1 text-xs text-gray-600">
-                    {card.meta.map((line, idx) => (
-                      <div key={`${card.id}-meta-${idx}`}>{line}</div>
-                    ))}
-                  </div>
-                ) : null}
-                {card.actions && card.actions.length > 0 ? (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {card.actions.map((action, idx) => {
-                      const actionKey = `${msg.id}-${card.id}-${idx}`;
-                      const label = copiadoId === actionKey ? 'Copiado!' : action.label;
-                      const baseClass = action.variant === 'primary'
-                        ? 'bg-[#123b63] text-white hover:bg-[#0f2a45]'
-                        : 'bg-white text-gray-700 border border-gray-200 hover:border-[#123b63] hover:text-[#123b63]';
+        {!isUser && msg.cards && msg.cards.length > 0 ? (() => {
+          // 2. Deduplicação FINAL
+          const map = new Map<string, AssistenteCard>();
+          for (const item of msg.cards) {
+            // 3. Chave oficial: inscricao.id -> inscricao_id -> id
+            const key = item.inscricao?.id ?? item.inscricao_id ?? item.id;
 
-                      if (action.href) {
+            const existing = map.get(key);
+            if (!existing) {
+              map.set(key, item);
+              continue;
+            }
+
+            // 4. Caso exista atualização da mesma inscrição:
+            // priorizar o que possuir: pagamento = pago/isento + status_hospedagem = alocada/checkin + numero_leito preenchido
+            const getScore = (c: AssistenteCard) => {
+              const pag = String(c.status_pagamento || '').toLowerCase();
+              const hosp = String(c.status_hospedagem || '').toLowerCase();
+              const lei = String(c.numero_leito || '').trim();
+
+              const isPago = pag === 'pago' || pag === 'isento';
+              const isHosp = hosp === 'alocada' || hosp === 'confirmada' || hosp.includes('checkin') || hosp.includes('check-in') || hosp.includes('check_in');
+              const hasLeito = lei !== '' && lei !== 'não definido' && lei !== 'nao definido' && lei !== 'não definido';
+
+              let score = 0;
+              if (isPago) score += 4;
+              if (isHosp) score += 2;
+              if (hasLeito) score += 1;
+              return score;
+            };
+
+            if (getScore(item) > getScore(existing)) {
+              map.set(key, item);
+            }
+          }
+          const unique = Array.from(map.values());
+
+          return (
+            <div className="mt-3 ml-9 space-y-2">
+              {unique.map(card => (
+                <div key={card.id} className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                  <div className="text-sm font-semibold text-gray-900">{card.title}</div>
+                  {card.subtitle ? (
+                    <div className="mt-1 text-xs text-gray-500">{card.subtitle}</div>
+                  ) : null}
+                  {card.meta && card.meta.length > 0 ? (
+                    <div className="mt-2 space-y-1 text-xs text-gray-600">
+                      {card.meta.map((line, idx) => (
+                        <div key={`${card.id}-meta-${idx}`}>{line}</div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {card.actions && card.actions.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {card.actions.map((action, idx) => {
+                        const actionKey = `${msg.id}-${card.id}-${idx}`;
+                        const label = copiadoId === actionKey ? 'Copiado!' : action.label;
+                        const baseClass = action.variant === 'primary'
+                          ? 'bg-[#123b63] text-white hover:bg-[#0f2a45]'
+                          : 'bg-white text-gray-700 border border-gray-200 hover:border-[#123b63] hover:text-[#123b63]';
+
+                        if (action.href) {
+                          return (
+                            <a
+                              key={actionKey}
+                              href={action.href}
+                              target="_blank"
+                              rel="noreferrer"
+                              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${baseClass}`}
+                            >
+                              {label}
+                            </a>
+                          );
+                        }
+
                         return (
-                          <a
+                          <button
                             key={actionKey}
-                            href={action.href}
-                            target="_blank"
-                            rel="noreferrer"
+                            type="button"
+                            onClick={() => handleAction(action, actionKey)}
                             className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${baseClass}`}
                           >
                             {label}
-                          </a>
+                          </button>
                         );
-                      }
-
-                      return (
-                        <button
-                          key={actionKey}
-                          type="button"
-                          onClick={() => handleAction(action, actionKey)}
-                          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${baseClass}`}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : null}
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          );
+        })() : null}
       </div>
     );
   }
