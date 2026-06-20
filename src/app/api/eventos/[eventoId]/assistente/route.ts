@@ -533,16 +533,36 @@ export async function POST(
     const programacao = (progRes.data ?? []) as Record<string, unknown>[];
     const intentFinal = intentFromContext ?? inferIntent(pergunta);
 
-    // ── Busca inscrição pelo CPF (se informado) ────────────────
+    // ── Busca inscrição pelo CPF ou Nome (se informado) ────────
     let inscricao: Record<string, unknown> | null = null;
     let hospedagemInfo: Record<string, unknown> | null = null;
-    if (cpf.length === 11) {
-      const { data: insData } = await supabase
+
+    const isCpf = cpf.length === 11 ? cpf : (cpfFromPergunta || null);
+    let nomeBusca: string | null = null;
+
+    if (!isCpf) {
+      const cleanPergunta = normalizeTexto(pergunta);
+      const isCmd = hasAny(cleanPergunta, ['ola', 'oi', 'ajuda', 'programacao', 'agenda', 'local', 'onde', 'quando', 'valor', 'preco', 'contato', 'suporte']);
+      if (cpfRaw && cpfRaw.replace(/\D/g, '').length !== 11 && cpfRaw.trim().length > 3) {
+        nomeBusca = cpfRaw.trim();
+      } else if (!isCmd && pergunta.trim().length > 3 && pergunta.trim().split(/\s+/).length >= 2) {
+        nomeBusca = pergunta.trim();
+      }
+    }
+
+    if (isCpf || nomeBusca) {
+      let query = supabase
         .from('evento_inscricoes')
         .select('id,nome_inscrito,cpf,status_pagamento,hospedagem,alimentacao,brinde,created_at,forma_pagamento,valor_final,invoice_url,pix_copia_cola,pix_qr_code,asaas_due_date,refeicoes_total,refeicoes_utilizadas,quantidade_refeicoes_total,quantidade_refeicoes_usadas,quantidade_refeicoes_saldo')
-        .eq('evento_id', eventoId)
-        .eq('cpf', cpf)
-        .order('created_at', { ascending: false });
+        .eq('evento_id', eventoId);
+
+      if (isCpf) {
+        query = query.eq('cpf', isCpf);
+      } else if (nomeBusca) {
+        query = query.ilike('nome_inscrito', `%${nomeBusca}%`);
+      }
+
+      const { data: insData } = await query.order('created_at', { ascending: false });
 
       const rows = insData ?? [];
       if (rows.length > 0) {
@@ -610,10 +630,10 @@ export async function POST(
       }
     }
 
-    if ((intentFinal === 'segunda_via' || intentFinal === 'consulta_inscricao') && cpf.length !== 11) {
-      const respostaDireta = intentFinal === 'segunda_via'
-        ? 'Claro 😊\nMe informe seu CPF para localizar sua inscrição.'
-        : 'Para consultar sua inscrição, informe seu CPF na caixa de texto (ex: "CPF: 000.000.000-00"). Assim posso verificar sua situação no evento.';
+    const hasSearchAttempt = !!(isCpf || nomeBusca);
+
+    if ((intentFinal === 'segunda_via' || intentFinal === 'consulta_inscricao') && !hasSearchAttempt) {
+      const respostaDireta = 'Claro! Para localizar sua inscrição, informe seu CPF ou nome completo.';
 
       supabase
         .from('evento_assistente_logs')
@@ -623,32 +643,36 @@ export async function POST(
       return NextResponse.json({ resposta: respostaDireta, modo: 'fallback' });
     }
 
-    if (intentFinal === 'segunda_via' && cpf.length === 11) {
+    if (intentFinal === 'segunda_via' && hasSearchAttempt) {
       const respostaDireta = inscricao
         ? respostaSegundaVia(inscricao, evento)
-        : respostaCpfConsulta(evento.nome as string, cpf, inscricao, evento, hospedagemInfo);
+        : `Não localizei nenhuma inscrição com o ${isCpf ? 'CPF' : 'nome'} informado. Verifique os dados ou entre em contato com o suporte.`;
       supabase
         .from('evento_assistente_logs')
-        .insert([{ evento_id: eventoId, pergunta, resposta: respostaDireta, cpf, modo: 'fallback' }])
+        .insert([{ evento_id: eventoId, pergunta, resposta: respostaDireta, cpf: isCpf || null, modo: 'fallback' }])
         .then(() => {/* fire and forget */})
         .then(undefined, () => {/* ignora erro */});
       return NextResponse.json({ resposta: respostaDireta, modo: 'fallback' });
     }
 
-    if (intentFinal === 'consulta_inscricao' && cpf.length === 11) {
-      const respostaDireta = respostaCpfConsulta(evento.nome as string, cpf, inscricao, evento, hospedagemInfo);
+    if (intentFinal === 'consulta_inscricao' && hasSearchAttempt) {
+      const respostaDireta = inscricao
+        ? respostaCpfConsulta(evento.nome as string, isCpf || String(inscricao.cpf || ''), inscricao, evento, hospedagemInfo)
+        : `Não localizei nenhuma inscrição com o ${isCpf ? 'CPF' : 'nome'} informado. Verifique os dados ou entre em contato com o suporte.`;
       supabase
         .from('evento_assistente_logs')
-        .insert([{ evento_id: eventoId, pergunta, resposta: respostaDireta, cpf, modo: 'fallback' }])
+        .insert([{ evento_id: eventoId, pergunta, resposta: respostaDireta, cpf: isCpf || null, modo: 'fallback' }])
         .then(() => {/* fire and forget */})
         .then(undefined, () => {/* ignora erro */});
       return NextResponse.json({ resposta: respostaDireta, modo: 'fallback' });
     }
-    if ((cpfEncontradoNaPergunta || perguntaIsCpf) && cpf.length === 11 && !intentFinal) {
-      const respostaDireta = respostaCpfConsulta(evento.nome as string, cpf, inscricao, evento, hospedagemInfo);
+    if ((cpfEncontradoNaPergunta || perguntaIsCpf || nomeBusca) && hasSearchAttempt && !intentFinal) {
+      const respostaDireta = inscricao
+        ? respostaCpfConsulta(evento.nome as string, isCpf || String(inscricao.cpf || ''), inscricao, evento, hospedagemInfo)
+        : `Não localizei nenhuma inscrição com o ${isCpf ? 'CPF' : 'nome'} informado. Verifique os dados ou entre em contato com o suporte.`;
       supabase
         .from('evento_assistente_logs')
-        .insert([{ evento_id: eventoId, pergunta, resposta: respostaDireta, cpf, modo: 'fallback' }])
+        .insert([{ evento_id: eventoId, pergunta, resposta: respostaDireta, cpf: isCpf || null, modo: 'fallback' }])
         .then(() => {/* fire and forget */})
         .then(undefined, () => {/* ignora erro */});
       return NextResponse.json({ resposta: respostaDireta, modo: 'fallback' });

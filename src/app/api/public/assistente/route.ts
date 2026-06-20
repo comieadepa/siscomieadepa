@@ -159,9 +159,15 @@ async function responderCpfConsulta(
   const supabase = createServerClient();
   let query = supabase
     .from('evento_inscricoes')
-    .select('id, nome_inscrito, status_pagamento, invoice_url, pix_copia_cola, valor_final, created_at, updated_at, asaas_due_date, eventos!inner(id,nome,slug,departamento,data_inicio,data_fim,suporte_whatsapp)')
-    .eq('cpf', cpf)
-    .order('created_at', { ascending: false });
+    .select('id, nome_inscrito, status_pagamento, invoice_url, pix_copia_cola, valor_final, created_at, updated_at, asaas_due_date, eventos!inner(id,nome,slug,departamento,data_inicio,data_fim,suporte_whatsapp)');
+
+  const cleanCpf = cpf.replace(/\D/g, '');
+  if (cleanCpf.length === 11) {
+    query = query.eq('cpf', cleanCpf);
+  } else {
+    query = query.ilike('nome_inscrito', `%${cpf.trim()}%`);
+  }
+  query = query.order('created_at', { ascending: false });
 
   if (departamento) {
     query = query.eq('eventos.departamento', departamento.key);
@@ -342,9 +348,13 @@ async function responderConfirmarInscricao(
     .select(
       'id,nome_inscrito,status_pagamento,hospedagem,alimentacao,tipo_inscricao,valor_final,refeicoes_total,refeicoes_utilizadas,quantidade_refeicoes_total,quantidade_refeicoes_usadas,quantidade_refeicoes_saldo,eventos!inner(id,nome,departamento,data_inicio,data_fim,permite_hospedagem,permite_alimentacao,suporte_whatsapp)'
     )
-    .eq('cpf', cpf)
-    .order('created_at', { ascending: false })
-    .limit(10);
+  const cleanCpf = cpf.replace(/\D/g, '');
+  if (cleanCpf.length === 11) {
+    query = query.eq('cpf', cleanCpf);
+  } else {
+    query = query.ilike('nome_inscrito', `%${cpf.trim()}%`);
+  }
+  query = query.order('created_at', { ascending: false }).limit(10);
 
   if (departamento) {
     query = query.eq('eventos.departamento', departamento.key);
@@ -916,67 +926,83 @@ export async function POST(req: NextRequest) {
       cpfDetectado && `cpf(${cpfDetectado})`,
     ].filter(Boolean).join(' | ') || 'fallback'}`);
 
-    if (isSegundaVia) {
-      if (!cpfDetectado) {
-        return NextResponse.json({ resposta: 'Claro! Me informe seu CPF para localizar sua inscricao.' });
-      }
-      const resposta = await responderCpfConsulta(cpfDetectado, departamento);
-      return NextResponse.json(resposta);
-    }
+    // 1. Criar detector simples de intenção
+    const termosConsultaNorm = [
+      'inscricao', 'minha inscricao', 'consultar inscricao', 'ver inscricao',
+      'pagamento', 'hospedagem', 'alojamento', 'leito', 'check-in', 'checkin',
+      'cracha', 'confirmar', 'confirmado', 'status'
+    ];
+    const isNovoCadastro = querOrientacaoInscricao || querEventosAbertos || hasAny(pergunta, [
+      'como se inscrever', 'como fazer a inscricao', 'como fazer inscricao', 'como faco a', 'como faco para', 'fazer nova', 'nova inscricao'
+    ]);
+    const isDuvidaPagamento = hasAny(pergunta, ['como pagar', 'formas de', 'opcoes de', 'quais formas']);
+    const consulta_inscricao = !isNovoCadastro && !isDuvidaPagamento && termosConsultaNorm.some(t => pergunta.includes(t));
 
-    if (querConfirmarInscricao) {
-      const cpfParaUsar = cpfDetectado ?? ctxCpf;
-      if (!cpfParaUsar) {
+    // Determinar CPF ou Nome
+    let cleanedForName = normalizeText(perguntaRaw);
+    const wordsToRemove = [
+      'confirmar', 'confirmado', 'status', 'ver', 'consultar', 'minha', 'meu', 'de', 'do', 'da', 'o', 'a', 'em',
+      'inscricao', 'pagamento', 'hospedagem', 'alojamento', 'leito', 'check-in', 'checkin', 'cracha', 'queria', 'quero'
+    ];
+    for (const w of wordsToRemove) {
+      cleanedForName = cleanedForName.replace(new RegExp(`\\b${w}\\b`, 'g'), '');
+    }
+    const cleanRemaining = cleanedForName.replace(/\s+/g, ' ').trim();
+    const hasNomeSuficiente = cleanRemaining.length >= 4 && /[a-zA-Z]/.test(cleanRemaining);
+
+    const isContinuation = ctxPendingIntent === 'confirmar_inscricao' || ctxPendingIntent === 'hospedagem' || ctxPendingIntent === 'alimentacao' || ctxPendingIntent === 'segunda_via';
+
+    const queryBusca = cpfDetectado || 
+      (hasNomeSuficiente ? perguntaRaw.trim() : null) || 
+      (isContinuation && !consulta_inscricao && perguntaRaw.trim().length >= 2 ? perguntaRaw.trim() : null);
+
+    // Se detectou intenção de consulta (ou continuação de fluxo)
+    if (consulta_inscricao || isContinuation) {
+      if (!queryBusca) {
+        // 2. Se detectar intenção de consulta e ainda não houver CPF/nome suficiente:
         return NextResponse.json({
-          resposta: 'Para confirmar sua inscricao, preciso do seu CPF. Me informe apenas os 11 numeros.',
+          resposta: 'Claro! Para localizar sua inscrição, informe seu CPF ou nome completo.',
           _ctx: { pending_intent: 'confirmar_inscricao' },
         });
       }
-      const resposta = await responderConfirmarInscricao(cpfParaUsar, departamento);
-      return NextResponse.json(resposta);
-    }
 
-    if (isPagamento) {
-      const intro = 'Apos selecionar a modalidade da inscricao, o sistema exibira as opcoes de pagamento disponiveis 😊';
-      const resposta = await responderEventosComIntro(
-        departamento,
-        `${intro}\n\nEscolha um dos eventos disponiveis para continuar.`
-      );
-      return NextResponse.json(resposta);
-    }
-
-    if (querHospedagem) {
-      if (ctxInscricaoId) {
-        const resposta = await responderHospedagemInscricao(ctxInscricaoId);
-        return NextResponse.json({ ...resposta, _ctx: { cpf: ctxCpf ?? undefined, inscricao_id: ctxInscricaoId } });
+      // Se o usuário pediu especificamente segunda via de pagamento
+      if (isSegundaVia || ctxPendingIntent === 'segunda_via') {
+        const resposta = await responderCpfConsulta(queryBusca, departamento);
+        return NextResponse.json(resposta);
       }
-      const cpfParaUsar = cpfDetectado ?? ctxCpf;
-      if (cpfParaUsar) {
-        const infoInscricao = await responderConfirmarInscricao(cpfParaUsar, departamento);
+
+      // Se o usuário pediu especificamente hospedagem
+      if (querHospedagem || ctxPendingIntent === 'hospedagem') {
+        if (ctxInscricaoId && !cpfDetectado) {
+          const resposta = await responderHospedagemInscricao(ctxInscricaoId);
+          return NextResponse.json({ ...resposta, _ctx: { cpf: ctxCpf ?? undefined, inscricao_id: ctxInscricaoId } });
+        }
+        const infoInscricao = await responderConfirmarInscricao(queryBusca, departamento);
         if (infoInscricao._ctx?.inscricao_id) {
           const respHosp = await responderHospedagemInscricao(infoInscricao._ctx.inscricao_id);
           return NextResponse.json({ ...respHosp, _ctx: infoInscricao._ctx });
         }
         return NextResponse.json(infoInscricao);
       }
-      return NextResponse.json({ resposta: 'Para verificar a hospedagem da sua inscricao, me informe seu CPF (11 digitos).', _ctx: { pending_intent: 'hospedagem' } });
-    }
 
-    if (querAlimentacao) {
-      if (ctxInscricaoId) {
-        const resposta = await responderAlimentacaoInscricao(ctxInscricaoId);
-        return NextResponse.json({ ...resposta, _ctx: { cpf: ctxCpf ?? undefined, inscricao_id: ctxInscricaoId } });
-      }
-      const cpfParaUsar = cpfDetectado ?? ctxCpf;
-      if (cpfParaUsar) {
-        const infoInscricao = await responderConfirmarInscricao(cpfParaUsar, departamento);
+      // Se o usuário pediu especificamente alimentação
+      if (querAlimentacao || ctxPendingIntent === 'alimentacao') {
+        if (ctxInscricaoId && !cpfDetectado) {
+          const resposta = await responderAlimentacaoInscricao(ctxInscricaoId);
+          return NextResponse.json({ ...resposta, _ctx: { cpf: ctxCpf ?? undefined, inscricao_id: ctxInscricaoId } });
+        }
+        const infoInscricao = await responderConfirmarInscricao(queryBusca, departamento);
         if (infoInscricao._ctx?.inscricao_id) {
           const respAlim = await responderAlimentacaoInscricao(infoInscricao._ctx.inscricao_id);
           return NextResponse.json({ ...respAlim, _ctx: infoInscricao._ctx });
         }
         return NextResponse.json(infoInscricao);
       }
-      return NextResponse.json({ resposta: 'Para verificar a alimentacao da sua inscricao, me informe seu CPF (11 digitos).', _ctx: { pending_intent: 'alimentacao' } });
+
+      // Consulta de inscrição geral / status / confirmação
+      const resposta = await responderConfirmarInscricao(queryBusca, departamento);
+      return NextResponse.json(resposta);
     }
 
     if (querContinuidade) {
