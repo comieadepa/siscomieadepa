@@ -134,7 +134,7 @@ export default function CheckinMobilePage() {
   const supabase = useMemo(() => createClient(), []);
 
   const [equipeSessao, setEquipeSessao] = useState<EquipeSession | null>(null);
-  const [codigoAcesso, setCodigoAcesso] = useState('');
+  const [emailAcesso, setEmailAcesso] = useState('');
   const [solicitando, setSolicitando] = useState(false);
   const [gateMsg, setGateMsg] = useState<string | null>(null);
   const [gateMsgTipo, setGateMsgTipo] = useState<'success' | 'error'>('success');
@@ -311,14 +311,14 @@ export default function CheckinMobilePage() {
       setGateMsgTipo('error');
       return;
     }
-    const codigo = codigoAcesso.trim();
-    if (!codigo) {
-      setGateMsg('Informe o codigo de acesso.');
+    const email = emailAcesso.trim().toLowerCase();
+    if (!email) {
+      setGateMsg('Informe o e-mail cadastrado.');
       setGateMsgTipo('error');
       return;
     }
-    if (!/^\d{4}$/.test(codigo)) {
-      setGateMsg('Codigo invalido. Use os 4 digitos enviados por e-mail.');
+    if (!/\S+@\S+\.\S+/.test(email)) {
+      setGateMsg('E-mail inválido.');
       setGateMsgTipo('error');
       return;
     }
@@ -329,7 +329,7 @@ export default function CheckinMobilePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          codigo,
+          email,
           funcao: modoCheckin === 'refeitorio' ? 'checkin_refeitorio' : 'checkin',
         }),
       });
@@ -351,7 +351,7 @@ export default function CheckinMobilePage() {
       setAcessoNegado(false);
       setAcessoMotivo(null);
       setLoadingEvento(true); // força spinner enquanto o evento carrega após gate
-      setCodigoAcesso('');
+      setEmailAcesso('');
       setGateMsg('Acesso liberado. Abrindo check-in...');
       setGateMsgTipo('success');
     } catch {
@@ -682,18 +682,15 @@ export default function CheckinMobilePage() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 w-full max-w-md text-center text-gray-800">
           <div className="text-3xl mb-3">🔐</div>
           <h1 className="text-lg font-bold text-[#123b63]">Acesso ao Check-in</h1>
-          <p className="text-sm text-gray-500 mt-2">Informe o codigo de 4 digitos enviado por e-mail.</p>
+          <p className="text-sm text-gray-500 mt-2">Informe o e-mail cadastrado na equipe do evento.</p>
 
           <form onSubmit={solicitarAcesso} className="mt-4 space-y-3">
             <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={4}
-              placeholder="0000"
-              value={codigoAcesso}
-              onChange={e => setCodigoAcesso(e.target.value.replace(/\D/g, '').slice(0, 4))}
-              className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] text-center tracking-widest"
+              type="email"
+              placeholder="seu-email@exemplo.com"
+              value={emailAcesso}
+              onChange={e => setEmailAcesso(e.target.value)}
+              className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] text-center"
               required
             />
             <button
