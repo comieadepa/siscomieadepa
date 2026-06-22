@@ -93,10 +93,12 @@ export default function EtiquetasPrintPage() {
       const inscBase = (inscRes.data ?? []) as InscricaoLabel[];
       const dept = (evRes.data as EventoData | null)?.departamento;
 
-      if (dept === 'AGO' && inscBase.length > 0) {
+      if (inscBase.length > 0) {
         // Enriquecer com dados hospedagem + matrícula
         const inscIds    = inscBase.map(i => i.id);
-        const ministroIds = [...new Set(inscBase.map(i => i.ministro_id).filter((x): x is string => !!x))];
+        const ministroIds = dept === 'AGO'
+          ? [...new Set(inscBase.map(i => i.ministro_id).filter((x): x is string => !!x))]
+          : [];
 
         const [hospRes, membersRes] = await Promise.all([
           supabase.from('evento_hospedagens')
@@ -167,13 +169,13 @@ export default function EtiquetasPrintPage() {
     ? `
       @media print {
         @page {
-          size: 100mm 30mm;
+          size: 85mm 30mm;
           margin: 0;
         }
         html, body {
           margin: 0 !important;
           padding: 0 !important;
-          width: 100mm !important;
+          width: 85mm !important;
           height: 30mm !important;
           overflow: hidden !important;
           background: #fff !important;
@@ -192,12 +194,12 @@ export default function EtiquetasPrintPage() {
           display: block !important;
           padding: 0 !important;
           margin: 0 !important;
-          width: 100mm !important;
+          width: 85mm !important;
           height: 30mm !important;
         }
         .label-item {
           display: block !important;
-          width: 100mm !important;
+          width: 85mm !important;
           height: 30mm !important;
           overflow: hidden !important;
           margin: 0 !important;
@@ -271,7 +273,7 @@ export default function EtiquetasPrintPage() {
             <p style={{ fontWeight: 700, color: '#123b63', fontSize: '14px', margin: 0 }}>{evento.nome}</p>
             <p style={{ fontSize: '12px', color: '#6b7280', margin: '2px 0 0' }}>
               {inscricoes.filter(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento').length} etiqueta{inscricoes.filter(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento').length !== 1 ? 's' : ''} liberada{inscricoes.filter(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento').length !== 1 ? 's' : ''}
-              {' • '}{isThermal ? 'Térmica 100 × 30 mm (individual)' : 'A4 retrato • CA4362 • 99,1 × 34 mm • 2 col × 8 lin'}
+              {' • '}{isThermal ? 'Térmica 85 × 30 mm (individual)' : 'A4 retrato • CA4362 • 99,1 × 34 mm • 2 col × 8 lin'}
               {apenas === 'pendentes' ? ' • Somente não impressas' : ''}
             </p>
             {!isThermal && (

@@ -83,12 +83,13 @@ export default function HospedagemCheckinPage() {
 
   const semAcessoDireto = !authLoading && !perfil.loading && !perfil.isGlobal && !!eventoId && !perfil.podeAcessarEvento(eventoId);
   const permissaoEvento = eventoId ? perfil.permissaoParaEvento(eventoId) : null;
-  const perfilBloqueado = !perfil.loading && !perfil.isGlobal && !equipeSessao && (permissaoEvento === 'operador' || permissaoEvento === 'checkin');
+  const rolesPermitidos = ['admin_evento', 'operador', 'checkin', 'hospedagem', 'checkin_hospedagem'];
+  const perfilBloqueado = !perfil.loading && !perfil.isGlobal && !equipeSessao && !!permissaoEvento && !rolesPermitidos.includes(permissaoEvento);
   const precisaGate = !authLoading && !perfil.loading && !equipeSessao && (!user || semAcessoDireto);
 
   useEffect(() => {
     const sess = getEquipeSession();
-    if (sess && sess.eventoId === eventoId && (sess.tipo === 'checkin_hospedagem' || sess.tipo === 'hospedagem' || sess.tipo === 'operador')) {
+    if (sess && sess.eventoId === eventoId && (sess.tipo === 'checkin_hospedagem' || sess.tipo === 'hospedagem' || sess.tipo === 'operador' || sess.tipo === 'checkin')) {
       setEquipeSessaoState(sess);
     } else {
       setEquipeSessaoState(null);
@@ -262,7 +263,7 @@ export default function HospedagemCheckinPage() {
         {/* Input de busca */}
         <div className="w-full bg-white rounded-2xl shadow-lg p-5 space-y-4">
           <p className="text-sm text-gray-500 text-center">
-            Escaneie o QR code ou digite CPF / ID da inscrição
+            Digite o CPF ou ID da inscrição
           </p>
           <div className="flex gap-2">
             <input
@@ -412,9 +413,8 @@ export default function HospedagemCheckinPage() {
         {/* Sem dados */}
         {!data && !buscando && !erro && !sucessoMsg && (
           <div className="text-white/50 text-center text-sm mt-4">
-            <p className="text-5xl mb-3">📱</p>
-            <p>Aponte o leitor QR code ou</p>
-            <p>digite o CPF do participante acima</p>
+            <p className="text-5xl mb-3">🔍</p>
+            <p>Digite o CPF ou ID do participante acima</p>
           </div>
         )}
       </main>

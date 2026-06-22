@@ -231,6 +231,12 @@ export default function BalcaoPage() {
   const [filtroPag, setFiltroPag] = useState('');
   const [filtroSup, setFiltroSup] = useState('');
   const [filtroCampo, setFiltroCampo] = useState('');
+  const [pagina, setPagina] = useState(1);
+  const POR_PAG = 50;
+
+  useEffect(() => {
+    setPagina(1);
+  }, [buscaLista, filtroPag, filtroSup, filtroCampo]);
   const [destacarId, setDestacarId] = useState<string | null>(null);
   const [listaMsg, setListaMsg] = useState<{ tipo: 'ok' | 'erro' | 'aviso'; texto: string } | null>(null);
   const [enviandoEmail, setEnviandoEmail] = useState<Record<string, boolean>>({});
@@ -1299,6 +1305,11 @@ export default function BalcaoPage() {
       return true;
     });
   }, [inscricoesLista, buscaLista, filtroSup, filtroCampo, filtroPag]);
+
+  const totalPaginas = Math.ceil(inscritosFiltrados.length / POR_PAG);
+  const inscritosPaginados = useMemo(() => {
+    return inscritosFiltrados.slice((pagina - 1) * POR_PAG, pagina * POR_PAG);
+  }, [inscritosFiltrados, pagina]);
 
   function definirMsgLista(tipo: 'ok' | 'erro' | 'aviso', texto: string) {
     setListaMsg({ tipo, texto });
@@ -2537,7 +2548,8 @@ export default function BalcaoPage() {
                   Nenhum inscrito encontrado com os filtros atuais.
                 </div>
               ) : (
-                <div className="bg-[#123b63] rounded-2xl border border-white/10 overflow-x-auto">
+                <>
+                  <div className="bg-[#123b63] rounded-2xl border border-white/10 overflow-x-auto">
                   <table className="min-w-[1100px] w-full text-sm">
                     <thead className="bg-[#0a2040] text-white/70">
                       <tr>
@@ -2547,7 +2559,7 @@ export default function BalcaoPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {inscritosFiltrados.map(ins => {
+                      {inscritosPaginados.map(ins => {
                         const pagCfg = PAGAMENTO_CFG[ins.status_pagamento] ?? PAGAMENTO_CFG.pendente;
                         const valorExib = ins.valor_pago ?? ins.valor_final ?? 0;
                         const isDestaque = ins.id === destacarId;
@@ -2667,7 +2679,33 @@ export default function BalcaoPage() {
                     </tbody>
                   </table>
                 </div>
-              )}
+
+                {/* Paginação */}
+                {!loadingLista && totalPaginas > 1 && (
+                  <div className="flex items-center justify-between mt-4 px-2">
+                    <p className="text-xs text-white/50">Página {pagina} de {totalPaginas}</p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPagina(p => Math.max(1, p - 1))}
+                        disabled={pagina === 1}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 disabled:opacity-40 transition"
+                      >
+                        ← Anterior
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))}
+                        disabled={pagina === totalPaginas}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 disabled:opacity-40 transition"
+                      >
+                        Próxima →
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
             </div>
           )}
 

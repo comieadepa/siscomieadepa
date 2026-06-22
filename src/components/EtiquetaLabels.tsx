@@ -26,6 +26,10 @@ export interface EtiquetaInscricao {
   alimentacao?: boolean;
   brinde?: boolean;
   qr_code?: string | null;
+  numero_cama?: string | null;
+  tipo_cama?: string | null;
+  hosp_status?: string | null;
+  nome_alojamento?: string | null;
 }
 
 export interface EtiquetaEvento {
@@ -137,7 +141,7 @@ export function EtiquetaLabelA4({
   );
 }
 
-// ─── Etiqueta Térmica — 100 × 30 mm ─────────────────────────
+// ─── Etiqueta Térmica — 85 × 30 mm ─────────────────────────
 export function EtiquetaLabelThermal({
   inscricao, evento, nomeSup, nomeCampo,
 }: {
@@ -150,8 +154,8 @@ export function EtiquetaLabelThermal({
 
   return (
     <div style={{
-      width: '100mm', height: '30mm',
-      border: '0.4mm solid #d1d5db',
+      width: '85mm', height: '30mm',
+      border: 'none',
       overflow: 'hidden', fontFamily: 'Arial, Helvetica, sans-serif',
       backgroundColor: '#ffffff', display: 'flex', flexDirection: 'column',
       boxSizing: 'border-box', breakInside: 'avoid', pageBreakInside: 'avoid',
@@ -326,11 +330,11 @@ export function EtiquetaAGO({
 }) {
   const isThermal = variant === 'thermal';
   const qr        = resolveQrValue(inscricao.qr_code ?? inscricao.id);
-  const temHosp   = !!(inscricao.numero_cama && inscricao.hosp_status === 'confirmada');
+  const temHosp   = !!(inscricao.numero_cama && (inscricao.hosp_status === 'confirmada' || inscricao.hosp_status === 'alocada' || inscricao.hosp_status === 'checkin_realizado'));
   const statusCfg = STATUS_CFG[inscricao.status_pagamento] ?? { label: inscricao.status_pagamento.toUpperCase(), color: '#6b7280' };
   const matricula = inscricao.matricula || '—';
 
-  const W        = isThermal ? '100mm' : '99.1mm';
+  const W        = isThermal ? '85mm'  : '99.1mm';
   const H        = isThermal ? '30mm'  : '34mm';
   const HEADER_H = '7mm';
   const QR_PX    = isThermal ? 84       : 56;
@@ -341,107 +345,110 @@ export function EtiquetaAGO({
     return (
       <div style={{
         width: W, height: H,
-        border: '0.4mm solid #1e293b',
+        border: 'none',
         overflow: 'hidden', fontFamily: 'Arial, Helvetica, sans-serif',
-        backgroundColor: '#ffffff', display: 'flex', flexDirection: 'row',
+        backgroundColor: '#ffffff', display: 'flex', flexDirection: 'column',
         boxSizing: 'border-box', breakInside: 'avoid', pageBreakInside: 'avoid',
       }}>
+        {/* Corpo principal */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'row', minHeight: 0, overflow: 'hidden' }}>
+          {/* Coluna QR */}
+          <div style={{
+            width: QR_W, flexShrink: 0,
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            padding: '0.5mm 0.4mm', gap: '0.3mm',
+          }}>
+            <QRCodeCanvas value={qr} sizePx={QR_PX} />
+            <p style={{ fontSize: '3.4pt', color: '#9ca3af', margin: 0, textAlign: 'center', letterSpacing: '0.5px' }}>
+              {qr.slice(-6).toUpperCase()}
+            </p>
+          </div>
 
-        {/* Coluna QR + hospedagem */}
-        <div style={{
-          width: QR_W, flexShrink: 0,
-          display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center',
-          padding: '0.5mm 0.4mm', gap: '0.3mm',
-        }}>
-          <QRCodeCanvas value={qr} sizePx={QR_PX} />
-          <p style={{ fontSize: '3.4pt', color: '#9ca3af', margin: 0, textAlign: 'center', letterSpacing: '0.5px' }}>
-            {qr.slice(-6).toUpperCase()}
-          </p>
-          {temHosp && (
-            <div style={{ width: '100%', marginTop: '0.4mm', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3mm' }}>
-              <span style={{
-                backgroundColor: '#111827', color: '#F39C12',
-                fontSize: '3.8pt', fontWeight: 900,
-                padding: '0.3mm 0.6mm', borderRadius: '0.5mm',
-                whiteSpace: 'nowrap', textTransform: 'uppercase',
+          {/* Coluna informações */}
+          <div style={{
+            flex: 1, minWidth: 0,
+            padding: '0.9mm 1.4mm',
+            display: 'flex', flexDirection: 'column',
+            justifyContent: 'center', gap: '0.4mm',
+          }}>
+            {/* Nome */}
+            <div>
+              <p style={{ fontSize: '3.6pt', color: '#9ca3af', margin: '0 0 0.2mm', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                NOME
+              </p>
+              <p style={{
+                fontSize: '11.6pt', fontWeight: 950, color: '#111827',
+                margin: 0, lineHeight: 1.05,
+                overflow: 'hidden', textOverflow: 'ellipsis',
+                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
               }}>
-                HOSP {inscricao.numero_cama}
-              </span>
-              {inscricao.nome_alojamento && (
-                <span style={{
-                  fontSize: '3.4pt', fontWeight: 700, color: '#374151',
-                  textAlign: 'center', lineHeight: 1.1,
-                  overflow: 'hidden', textOverflow: 'ellipsis',
-                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                }}>
-                  {inscricao.nome_alojamento}
-                </span>
-              )}
+                {inscricao.nome_inscrito}
+              </p>
             </div>
-          )}
-        </div>
 
-        {/* Coluna informações */}
-        <div style={{
-          flex: 1, minWidth: 0,
-          padding: '0.9mm 1.4mm',
-          display: 'flex', flexDirection: 'column',
-          justifyContent: 'center', gap: '0.4mm',
-        }}>
-          {/* Nome */}
-          <div>
-            <p style={{ fontSize: '3.6pt', color: '#9ca3af', margin: '0 0 0.2mm', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              NOME
-            </p>
-            <p style={{
-              fontSize: '11.6pt', fontWeight: 900, color: '#111827',
-              margin: 0, lineHeight: 1.05,
-              overflow: 'hidden', textOverflow: 'ellipsis',
-              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-            }}>
-              {inscricao.nome_inscrito}
-            </p>
-          </div>
+            {/* Matrícula */}
+            <div>
+              <p style={{ fontSize: '3.6pt', color: '#9ca3af', margin: '0 0 0.2mm', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                MATRÍCULA
+              </p>
+              <p style={{ fontSize: '6.6pt', fontWeight: 800, color: '#0D2B4E', margin: 0 }}>
+                {matricula}
+              </p>
+            </div>
 
-          {/* Matrícula */}
-          <div>
-            <p style={{ fontSize: '3.6pt', color: '#9ca3af', margin: '0 0 0.2mm', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              MATRÍCULA
-            </p>
-            <p style={{ fontSize: '6.6pt', fontWeight: 800, color: '#0D2B4E', margin: 0 }}>
-              {matricula}
-            </p>
-          </div>
+            {/* Supervisão */}
+            <div>
+              <p style={{ fontSize: '3.6pt', color: '#9ca3af', margin: '0 0 0.2mm', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                SUPERVISÃO
+              </p>
+              <p style={{
+                fontSize: '6.1pt', fontWeight: 700, color: '#111827', margin: 0,
+                overflow: 'hidden', textOverflow: 'ellipsis',
+                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+              }}>
+                {nomeSup}
+              </p>
+            </div>
 
-          {/* Supervisão */}
-          <div>
-            <p style={{ fontSize: '3.6pt', color: '#9ca3af', margin: '0 0 0.2mm', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              SUPERVISÃO
-            </p>
-            <p style={{
-              fontSize: '6.1pt', fontWeight: 700, color: '#111827', margin: 0,
-              overflow: 'hidden', textOverflow: 'ellipsis',
-              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-            }}>
-              {nomeSup}
-            </p>
-          </div>
-
-          {/* Campo */}
-          <div>
-            <p style={{ fontSize: '3.6pt', color: '#9ca3af', margin: '0 0 0.2mm', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              CAMPO
-            </p>
-            <p style={{
-              fontSize: '6.1pt', fontWeight: 700, color: '#111827', margin: 0,
-              overflow: 'hidden', textOverflow: 'ellipsis',
-              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-            }}>
-              {nomeCampo}
-            </p>
+            {/* Campo */}
+            <div>
+              <p style={{ fontSize: '3.6pt', color: '#9ca3af', margin: '0 0 0.2mm', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                CAMPO
+              </p>
+              <p style={{
+                fontSize: '6.1pt', fontWeight: 700, color: '#111827', margin: 0,
+                overflow: 'hidden', textOverflow: 'ellipsis',
+                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+              }}>
+                {nomeCampo}
+              </p>
+            </div>
           </div>
         </div>
+
+        {/* Rodapé Hospedagem */}
+        {temHosp && (
+          <div style={{
+            backgroundColor: '#111827', height: '4.5mm',
+            display: 'flex', alignItems: 'center',
+            padding: '0 2.5mm', gap: '3mm', flexShrink: 0,
+          }}>
+            <span style={{
+              color: '#F39C12', fontSize: '4.2pt',
+              fontWeight: 900, whiteSpace: 'nowrap', textTransform: 'uppercase',
+            }}>HOSP: {inscricao.numero_cama}</span>
+            {inscricao.nome_alojamento && (
+              <>
+                <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '5pt' }}>|</span>
+                <span style={{
+                  color: '#ffffff', fontSize: '4.2pt',
+                  fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>{inscricao.nome_alojamento}</span>
+              </>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -583,7 +590,7 @@ export function EtiquetaPreviewAGO({
   scale?: number;
 }) {
   const [natW, natH] = variant === 'thermal'
-    ? [100 * PX_PER_MM, 30 * PX_PER_MM]
+    ? [85 * PX_PER_MM, 30 * PX_PER_MM]
     : [99.1 * PX_PER_MM, 34  * PX_PER_MM];
   return (
     <div style={{ width: natW * scale, height: natH * scale, overflow: 'hidden', position: 'relative', flexShrink: 0 }}>
@@ -609,9 +616,9 @@ export function EtiquetaDepartamento({
   const isThermal = variant === 'thermal';
   const qr        = resolveQrValue(inscricao.qr_code ?? inscricao.id);
 
-  const W      = isThermal ? '100mm' : '99.1mm';
+  const W      = isThermal ? '85mm'  : '99.1mm';
   const H      = isThermal ? '30mm'  : '34mm';
-  const QR_PX  = isThermal ? 92      : 60;
+  const QR_PX  = isThermal ? 84      : 60;
   const QR_W   = isThermal ? '26mm'  : '24mm';
 
   const NOME_FS   = isThermal ? '11.4pt'  : '8.5pt';
@@ -621,95 +628,122 @@ export function EtiquetaDepartamento({
   const PAD_BODY  = isThermal ? '0.9mm 1.4mm' : '1.5mm 2.5mm';
   const FIELD_LINES = isThermal ? 2 : 1;
 
+  const temHosp = !!(inscricao.numero_cama && (inscricao.hosp_status === 'confirmada' || inscricao.hosp_status === 'alocada' || inscricao.hosp_status === 'checkin_realizado'));
+
   return (
     <div style={{
       width: W, height: H,
-      border: '0.35mm solid #d1d5db',
+      border: isThermal ? 'none' : '0.35mm solid #d1d5db',
       overflow: 'hidden', fontFamily: 'Arial, Helvetica, sans-serif',
-      backgroundColor: '#ffffff', display: 'flex', flexDirection: 'row',
+      backgroundColor: '#ffffff', display: 'flex', flexDirection: 'column',
       boxSizing: 'border-box', breakInside: 'avoid', pageBreakInside: 'avoid',
     }}>
-
-      {/* ── Coluna QR ── */}
-      <div style={{
-        width: QR_W, flexShrink: 0,
-        display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        borderRight: isThermal ? 'none' : '0.3mm solid #e5e7eb',
-        padding: isThermal ? '0.5mm 0.4mm' : '2mm',
-        gap: '0.4mm',
-      }}>
-        <QRCodeCanvas value={qr} sizePx={QR_PX} />
-        <p style={{
-          fontSize: '3.2pt', color: '#adb5bd', margin: 0,
-          letterSpacing: '0.5px', textAlign: 'center', lineHeight: 1,
+      {/* ── Corpo ── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'row', minHeight: 0, overflow: 'hidden' }}>
+        {/* ── Coluna QR ── */}
+        <div style={{
+          width: QR_W, flexShrink: 0,
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          borderRight: isThermal ? 'none' : '0.3mm solid #e5e7eb',
+          padding: isThermal ? '0.5mm 0.4mm' : '2mm',
+          gap: '0.4mm',
         }}>
-          {qr.slice(-6).toUpperCase()}
-        </p>
+          <QRCodeCanvas value={qr} sizePx={QR_PX} />
+          <p style={{
+            fontSize: '3.2pt', color: '#adb5bd', margin: 0,
+            letterSpacing: '0.5px', textAlign: 'center', lineHeight: 1,
+          }}>
+            {qr.slice(-6).toUpperCase()}
+          </p>
+        </div>
+
+        {/* ── Coluna informações ── */}
+        <div style={{
+          flex: 1, minWidth: 0,
+          padding: PAD_BODY,
+          display: 'flex', flexDirection: 'column',
+          justifyContent: 'center', gap: GAP,
+        }}>
+
+          {/* NOME */}
+          <div>
+            <p style={{
+              fontSize: LABEL_FS, color: '#9ca3af', margin: '0 0 0.4mm',
+              fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px',
+            }}>
+              NOME
+            </p>
+            <p style={{
+              fontSize: NOME_FS, fontWeight: 900, color: '#111827',
+              margin: 0, lineHeight: 1.1,
+              overflow: 'hidden', textOverflow: 'ellipsis',
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+            }}>
+              {inscricao.nome_inscrito}
+            </p>
+          </div>
+
+          {/* SUPERVISÃO */}
+          <div>
+            <p style={{
+              fontSize: LABEL_FS, color: '#9ca3af', margin: '0 0 0.3mm',
+              fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px',
+            }}>
+              SUPERVISÃO
+            </p>
+            <p style={{
+              fontSize: FIELD_FS, fontWeight: 700, color: '#111827',
+              margin: 0, overflow: 'hidden', textOverflow: 'ellipsis',
+              display: '-webkit-box', WebkitLineClamp: FIELD_LINES, WebkitBoxOrient: 'vertical',
+            }}>
+              {nomeSup}
+            </p>
+          </div>
+
+          {/* CAMPO */}
+          <div>
+            <p style={{
+              fontSize: LABEL_FS, color: '#9ca3af', margin: '0 0 0.3mm',
+              fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px',
+            }}>
+              CAMPO
+            </p>
+            <p style={{
+              fontSize: FIELD_FS, fontWeight: 700, color: '#111827',
+              margin: 0, overflow: 'hidden', textOverflow: 'ellipsis',
+              display: '-webkit-box', WebkitLineClamp: FIELD_LINES, WebkitBoxOrient: 'vertical',
+            }}>
+              {nomeCampo}
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* ── Coluna informações ── */}
-      <div style={{
-        flex: 1, minWidth: 0,
-        padding: PAD_BODY,
-        display: 'flex', flexDirection: 'column',
-        justifyContent: 'center', gap: GAP,
-      }}>
-
-        {/* NOME */}
-        <div>
-          <p style={{
-            fontSize: LABEL_FS, color: '#9ca3af', margin: '0 0 0.4mm',
-            fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px',
-          }}>
-            NOME
-          </p>
-          <p style={{
-            fontSize: NOME_FS, fontWeight: 900, color: '#111827',
-            margin: 0, lineHeight: 1.1,
-            overflow: 'hidden', textOverflow: 'ellipsis',
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-          }}>
-            {inscricao.nome_inscrito}
-          </p>
+      {/* Rodapé Hospedagem */}
+      {temHosp && (
+        <div style={{
+          backgroundColor: '#111827', height: isThermal ? '4.5mm' : '5mm',
+          display: 'flex', alignItems: 'center',
+          padding: '0 2.5mm', gap: '3mm', flexShrink: 0,
+        }}>
+          <span style={{
+            color: '#F39C12', fontSize: isThermal ? '4.2pt' : '4pt',
+            fontWeight: 900, whiteSpace: 'nowrap', textTransform: 'uppercase',
+          }}>HOSP: {inscricao.numero_cama}</span>
+          {inscricao.nome_alojamento && (
+            <>
+              <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '5pt' }}>|</span>
+              <span style={{
+                color: '#ffffff', fontSize: isThermal ? '4.2pt' : '4pt',
+                fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>{inscricao.nome_alojamento}</span>
+            </>
+          )}
         </div>
-
-        {/* SUPERVISÃO */}
-        <div>
-          <p style={{
-            fontSize: LABEL_FS, color: '#9ca3af', margin: '0 0 0.3mm',
-            fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px',
-          }}>
-            SUPERVISÃO
-          </p>
-          <p style={{
-            fontSize: FIELD_FS, fontWeight: 700, color: '#111827',
-            margin: 0, overflow: 'hidden', textOverflow: 'ellipsis',
-            display: '-webkit-box', WebkitLineClamp: FIELD_LINES, WebkitBoxOrient: 'vertical',
-          }}>
-            {nomeSup}
-          </p>
-        </div>
-
-        {/* CAMPO */}
-        <div>
-          <p style={{
-            fontSize: LABEL_FS, color: '#9ca3af', margin: '0 0 0.3mm',
-            fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px',
-          }}>
-            CAMPO
-          </p>
-          <p style={{
-            fontSize: FIELD_FS, fontWeight: 700, color: '#111827',
-            margin: 0, overflow: 'hidden', textOverflow: 'ellipsis',
-            display: '-webkit-box', WebkitLineClamp: FIELD_LINES, WebkitBoxOrient: 'vertical',
-          }}>
-            {nomeCampo}
-          </p>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -722,7 +756,7 @@ export function EtiquetaPreviewDepartamento({
   variant: 'thermal' | 'a4'; scale?: number;
 }) {
   const [natW, natH] = variant === 'thermal'
-    ? [100 * PX_PER_MM, 30 * PX_PER_MM]
+    ? [85 * PX_PER_MM, 30 * PX_PER_MM]
     : [99.1 * PX_PER_MM, 34  * PX_PER_MM];
   return (
     <div style={{ width: natW * scale, height: natH * scale, overflow: 'hidden', position: 'relative', flexShrink: 0 }}>

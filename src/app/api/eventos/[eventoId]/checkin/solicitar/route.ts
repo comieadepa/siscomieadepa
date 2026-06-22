@@ -78,15 +78,23 @@ export async function POST(
     return NextResponse.json({ error: 'Check-in desativado.' }, { status: 403 });
   }
 
-  const equipeQuery = supabase
+  let query = supabase
     .from('evento_equipe')
     .select('id,evento_id,email,tipo,ativo,convite_token,convite_expira_em')
-    .eq('evento_id', eventoId)
-    .eq('tipo', funcao);
+    .eq('evento_id', eventoId);
+
+  if (funcao === 'checkin_hospedagem') {
+    query = query.in('tipo', ['checkin_hospedagem', 'hospedagem', 'operador', 'checkin']);
+  } else if (funcao === 'checkin_refeitorio') {
+    query = query.eq('tipo', 'checkin_refeitorio');
+  } else {
+    // funcao === 'checkin'
+    query = query.in('tipo', ['checkin', 'operador']);
+  }
 
   const { data: equipe } = codigo
-    ? await equipeQuery.eq('convite_token', codigo).maybeSingle()
-    : await equipeQuery.eq('email', email).maybeSingle();
+    ? await query.eq('convite_token', codigo).maybeSingle()
+    : await query.eq('email', email).maybeSingle();
 
   if (!equipe || equipe.ativo !== true) {
     void logDB({

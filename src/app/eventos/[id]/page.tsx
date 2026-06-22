@@ -1667,7 +1667,6 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
       return `
         <tr>
           <td>${escHtml(i.nome_inscrito)}</td>
-          <td>${escHtml(i.cpf ?? '-')}</td>
           <td>${escHtml(i.whatsapp ?? '-')}</td>
           <td>${escHtml(nomeSup(i.supervisao_id))}</td>
           <td>${escHtml(nomeCampo(i.campo_id))}</td>
@@ -1723,7 +1722,6 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
     <thead>
       <tr>
         <th>Nome</th>
-        <th>CPF</th>
         <th>WhatsApp</th>
         <th>Supervisao</th>
         <th>Campo</th>
@@ -1951,7 +1949,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
             <table className="w-full min-w-[1100px] text-sm">
               <thead>
                 <tr className="border-b border-[#D4DCEA] bg-[#E3ECF7]">
-                  {['Nome', 'CPF', 'Supervisão', 'Campo', 'Valor', 'Pagamento', 'Etiq.', 'Ações'].map(h => (
+                  {['Nome', 'Supervisão', 'Campo', 'Valor', 'Pagamento', 'Etiq.', 'Ações'].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-600 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -1968,7 +1966,6 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                   return (
                     <tr key={ins.id} className="border-b border-gray-50 hover:bg-gray-50 transition">
                       <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{ins.nome_inscrito}</td>
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{ins.cpf || '-'}</td>
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{nomeSup(ins.supervisao_id)}</td>
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{nomeCampo(ins.campo_id)}</td>
                       <td className="px-4 py-3 text-gray-800 font-medium whitespace-nowrap">
