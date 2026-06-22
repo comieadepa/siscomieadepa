@@ -263,7 +263,7 @@ export default function FichaMembro({ membro, dadosIgreja, fotoUrl, isCandidato 
               Nº DO PROCESSO: <span style={{ color: '#222', marginLeft: '4px' }}>{fmt(membro.numeroProcesso) || '—'}</span>
             </div>
             <div>
-              CATEGORIA DO REGISTRO: <span style={{ color: '#222', marginLeft: '4px' }}>
+              TIPO DE REGISTRO: <span style={{ color: '#222', marginLeft: '4px' }}>
                 {(() => {
                   const val = String(membro.tipoRegistro || '').trim().toLowerCase();
                   if (val === 'chegada' || val === 'novo') return 'CANDIDATO (NOVO CADASTRO)';
