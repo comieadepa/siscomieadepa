@@ -1938,9 +1938,9 @@ export default function ConsagracaoPage() {
                             }}
                           >
                             <option value="">Selecione</option>
-                            {cargosMinisteriais.filter((c) => c.ativo).map((cargo) => (
-                              <option key={cargo.id} value={cargo.nome}>{cargo.nome}</option>
-                            ))}
+                            <option value="Evangelista Autorizado">Evangelista Autorizado</option>
+                            <option value="Evangelista Consagrado">Evangelista Consagrado</option>
+                            <option value="Pastor">Pastor</option>
                           </select>
                           {fieldErrors.cargo_pretendido && (
                             <p className="mt-1 text-xs text-red-600">{fieldErrors.cargo_pretendido}</p>
