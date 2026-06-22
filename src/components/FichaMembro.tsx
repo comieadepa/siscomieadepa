@@ -263,15 +263,7 @@ export default function FichaMembro({ membro, dadosIgreja, fotoUrl, isCandidato 
               Nº DO PROCESSO: <span style={{ color: '#222', marginLeft: '4px' }}>{fmt(membro.numeroProcesso) || '—'}</span>
             </div>
             <div>
-              TIPO DE REGISTRO: <span style={{ color: '#222', marginLeft: '4px' }}>
-                {(() => {
-                  const val = String(membro.tipoRegistro || '').trim().toLowerCase();
-                  if (val === 'chegada' || val === 'novo') return 'CANDIDATO (NOVO CADASTRO)';
-                  if (val === 'progressao' || val === 'existente' || val === 'ministro') return 'PROGRESSÃO (JÁ CADASTRADO)';
-                  if (val === 'filiacao') return 'FILIAÇÃO (CONSAGRADO EM OUTRA INSTITUIÇÃO)';
-                  return fmt(membro.tipoRegistro).toUpperCase() || '—';
-                })()}
-              </span>
+              CATEGORIA DE REGISTRO: <span style={{ color: '#222', marginLeft: '4px' }}>{fmt(membro.categoriaRegistro).toUpperCase() || '—'}</span>
             </div>
           </div>
         )}

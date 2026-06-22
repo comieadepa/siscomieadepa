@@ -74,9 +74,10 @@ export function useEventosPerfil(): EventosPerfil {
   const [loading,              setLoading]              = useState(true);
   const [userId,               setUserId]               = useState<string | null>(null);
   const [nivelSistema,         setNivelSistema]         = useState<string | null>(null);
-    const [departamentoUsuario,  setDepartamentoUsuario]  = useState<string | null>(null);
-    const [permissoesPorEvento,  setPermissoesPorEvento]  = useState<Record<string, EventoRole>>({});
-    const [eventoIds,            setEventoIds]            = useState<string[] | null>(null);
+  const [departamentoUsuario,  setDepartamentoUsuario]  = useState<string | null>(null);
+  const [permissoesPorEvento,  setPermissoesPorEvento]  = useState<Record<string, EventoRole>>({});
+  const [eventoIds,            setEventoIds]            = useState<string[] | null>(null);
+  const [hasExplicitPerms,     setHasExplicitPerms]     = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,6 +87,7 @@ export function useEventosPerfil(): EventosPerfil {
         const { data: authData } = await supabase.auth.getUser();
         const user = authData?.user;
         if (!user || cancelled) {
+          setHasExplicitPerms(false);
           const sess = getEquipeSession();
           if (sess && !cancelled) {
             const perm = normalizeEventoRole(sess.tipo);
@@ -131,6 +133,7 @@ export function useEventosPerfil(): EventosPerfil {
         // 2. Se global (super/admin), não precisa buscar vínculos
         const isGlobal = nivel === 'super' || nivel === 'administrador';
         if (isGlobal) {
+          setHasExplicitPerms(false);
           setEventoIds(null);
           setPermissoesPorEvento({});
           setLoading(false);
@@ -140,6 +143,7 @@ export function useEventosPerfil(): EventosPerfil {
         // 2b. Se admin de departamento (inscricao + subcategoria = TODOS), acessa todos os eventos do dept
         const isDeptAdmin = nivel === 'inscricao' && departamento === 'TODOS';
         if (isDeptAdmin) {
+          setHasExplicitPerms(false);
           setEventoIds(null); // sem restrição por ID — filtro por dept feito na query
           setPermissoesPorEvento({});
           setLoading(false);
@@ -156,25 +160,29 @@ export function useEventosPerfil(): EventosPerfil {
         const ids: string[] = [];
 
         if (permitidos && permitidos.length > 0) {
+          setHasExplicitPerms(true);
           for (const p of permitidos) {
             map[p.evento_id] = 'admin_evento';
             ids.push(p.evento_id);
           }
-        } else if (nivel === 'inscricao' && departamento) {
-          // Fallback por subcategoria
-          if (departamento.includes('-') || departamento.length > 15) {
-            // Se subcategoria for exatamente o UUID de um evento
-            map[departamento] = 'admin_evento';
-            ids.push(departamento);
-          } else {
-            // Se for nome de departamento (AGO, UMADESPA, etc), buscamos os eventos correspondentes
-            const { data: evsFiltrados } = await supabase
-              .from('eventos')
-              .select('id')
-              .eq('departamento', departamento);
-            for (const e of (evsFiltrados || [])) {
-              map[e.id] = 'admin_evento';
-              ids.push(e.id);
+        } else {
+          setHasExplicitPerms(false);
+          if (nivel === 'inscricao' && departamento) {
+            // Fallback por subcategoria
+            if (departamento.includes('-') || departamento.length > 15) {
+              // Se subcategoria for exatamente o UUID de um evento
+              map[departamento] = 'admin_evento';
+              ids.push(departamento);
+            } else {
+              // Se for nome de departamento (AGO, UMADESPA, etc), buscamos os eventos correspondentes
+              const { data: evsFiltrados } = await supabase
+                .from('eventos')
+                .select('id')
+                .eq('departamento', departamento);
+              for (const e of (evsFiltrados || [])) {
+                map[e.id] = 'admin_evento';
+                ids.push(e.id);
+              }
             }
           }
         }
@@ -220,7 +228,10 @@ export function useEventosPerfil(): EventosPerfil {
 
   // ── Derivações ────────────────────────────────────────────
   const isGlobal    = nivelSistema === 'super' || nivelSistema === 'administrador';
-  const isDeptAdmin = nivelSistema === 'inscricao' && !!departamentoUsuario;
+  const isDeptAdmin = nivelSistema === 'inscricao' && 
+                      !!departamentoUsuario && 
+                      !hasExplicitPerms && 
+                      !(departamentoUsuario.includes('-') || departamentoUsuario.length > 15);
 
   // Permissão mais ampla do usuário (para decidir tabs padrão)
   const permissaoEvento = useMemo<EventoRole | null>(() => {

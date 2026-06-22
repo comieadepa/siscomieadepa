@@ -2873,7 +2873,7 @@ export default function ConsagracaoPage() {
                   uniqueId: membroImprimindo.unique_id || '',
                   numeroProcesso: membroImprimindo.numero_processo || '',
                   tipoRegistro: membroImprimindo.tipo_registro || '',
-                  categoriaRegistro: membroImprimindo.regiao || '',
+                  categoriaRegistro: membroImprimindo.categoria_registro || '',
                   nome: membroImprimindo.nome || '',
                   cpf: formatCpf(membroImprimindo.cpf || ''),
                   tipoCadastro: 'ministro',
