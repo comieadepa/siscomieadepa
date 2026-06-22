@@ -1057,6 +1057,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   const [filtroCI,    setFiltroCI]    = useState('');
   const [filtroHosp,  setFiltroHosp]  = useState('');
   const [filtroAlim,  setFiltroAlim]  = useState('');
+  const [filtroSexo,  setFiltroSexo]  = useState('');
   const [pagina,      setPagina]      = useState(1);
   const [salvando,    setSalvando]    = useState<string | null>(null);
   const [enviandoCert, setEnviandoCert] = useState<Record<string, boolean>>({});
@@ -1094,14 +1095,15 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
       if (filtroCI    && String(i.checkin_realizado) !== filtroCI) return false;
       if (filtroHosp  && String(i.hospedagem) !== filtroHosp)     return false;
       if (filtroAlim  && String(i.alimentacao) !== filtroAlim)    return false;
+      if (filtroSexo  && i.sexo !== filtroSexo)           return false;
       return true;
     });
-  }, [inscricoes, busca, filtroSup, filtroCampo, filtroPag, filtroCI, filtroHosp, filtroAlim]);
+  }, [inscricoes, busca, filtroSup, filtroCampo, filtroPag, filtroCI, filtroHosp, filtroAlim, filtroSexo]);
 
   const totalPags = Math.max(1, Math.ceil(filtrados.length / POR_PAG));
   const paginados = filtrados.slice((pagina - 1) * POR_PAG, pagina * POR_PAG);
 
-  useEffect(() => { setPagina(1); }, [busca, filtroSup, filtroCampo, filtroPag, filtroCI, filtroHosp, filtroAlim]);
+  useEffect(() => { setPagina(1); }, [busca, filtroSup, filtroCampo, filtroPag, filtroCI, filtroHosp, filtroAlim, filtroSexo]);
 
   useEffect(() => () => {
     timeoutsRef.current.forEach(t => clearTimeout(t));
@@ -1653,6 +1655,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
     setFiltroCI('');
     setFiltroHosp('');
     setFiltroAlim('');
+    setFiltroSexo('');
   }
 
   function imprimirLista() {
@@ -1921,6 +1924,12 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
             <option value="">Alimentação</option>
             <option value="true">Sim</option>
             <option value="false">Não</option>
+          </select>
+          <select value={filtroSexo} onChange={e => setFiltroSexo(e.target.value)}
+            className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+            <option value="">Sexo</option>
+            <option value="M">Masculino</option>
+            <option value="F">Feminino</option>
           </select>
           <button type="button" onClick={limparFiltros}
             className="w-full sm:w-auto px-4 py-2 text-sm rounded-lg border border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100 transition">
