@@ -1169,7 +1169,7 @@ export default function BalcaoPage() {
     try {
       const { data, error } = await supabase
         .from('evento_inscricoes')
-        .select('id,lote_id,nome_inscrito,cpf,whatsapp,email,supervisao_id,campo_id,tipo_inscricao,valor_final,valor_pago,status_pagamento,forma_pagamento,hospedagem,alimentacao,asaas_payment_id,invoice_url,checkin_realizado,checkin_at,etiqueta_impressa,certificado_enviado,created_at,responsavel_pagamento,valor_original')
+        .select('id,lote_id,nome_inscrito,cpf,whatsapp,email,supervisao_id,campo_id,tipo_inscricao,valor_final,valor_pago,status_pagamento,forma_pagamento,hospedagem,alimentacao,asaas_payment_id,invoice_url,checkin_realizado,checkin_at,etiqueta_impressa,certificado_enviado,created_at,valor_original')
         .eq('evento_id', id)
         .order('created_at', { ascending: false });
       if (error) {
