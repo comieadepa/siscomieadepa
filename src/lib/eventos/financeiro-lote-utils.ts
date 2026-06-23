@@ -98,18 +98,18 @@ export function formatarValorUI(
     valor_pago: number | null;
     nome_inscrito: string;
     cpf?: string | null;
+    valor_original?: number | null;
   },
-  lote: LoteFinanceiro | null,
-  outrasInscricoesDoLote?: { id: string; nome_inscrito: string; cpf?: string | null; responsavel_pagamento?: boolean | null }[]
+  _lote: LoteFinanceiro | null,
+  _outrasInscricoesDoLote?: { id: string; nome_inscrito: string; cpf?: string | null; responsavel_pagamento?: boolean | null }[]
 ): string {
   if (inscricao.lote_id) {
-    const isResp = identificarResponsavelFinanceiro(inscricao, lote, outrasInscricoesDoLote);
-    if (isResp) {
-      const v = lote ? lote.valor_total : 0;
-      return `${v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (lote)`;
-    } else {
-      return 'Pago no lote';
-    }
+    const val = inscricao.valor_final !== null && inscricao.valor_final !== undefined
+      ? inscricao.valor_final
+      : (inscricao.valor_original !== null && inscricao.valor_original !== undefined
+        ? inscricao.valor_original
+        : (inscricao.valor_pago !== null && inscricao.valor_pago !== undefined ? inscricao.valor_pago : 0));
+    return `${val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (Lote)`;
   } else {
     const val = inscricao.valor_final !== null && inscricao.valor_final !== undefined
       ? inscricao.valor_final

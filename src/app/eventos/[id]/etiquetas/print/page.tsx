@@ -59,6 +59,10 @@ export default function EtiquetasPrintPage() {
   const [campos,      setCampos]      = useState<Campo[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [marcando,    setMarcando]    = useState(false);
+  const [statusImpressao, setStatusImpressao] = useState<{
+    tipo: 'sucesso' | 'erro' | 'parcial' | null;
+    mensagem: string;
+  } | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -149,11 +153,88 @@ export default function EtiquetasPrintPage() {
   }, [id, ids, apenas, supabase]);
 
   async function marcarImpressas() {
+    setStatusImpressao(null);
     const pagasEIsentas = inscricoes.filter(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento');
-    if (!pagasEIsentas.length) return;
+    const idsValidosRenderizados = pagasEIsentas.map(i => i.id);
+    if (!idsValidosRenderizados.length) return;
+
     setMarcando(true);
-    await supabase.from('evento_inscricoes').update({ etiqueta_impressa: true }).in('id', pagasEIsentas.map(i => i.id));
-    setMarcando(false);
+    const idsParaMarcar = [...idsValidosRenderizados];
+
+    // Confirmar que IDs renderizados === IDs enviados para marcação
+    const confirmacaoValida = idsValidosRenderizados.length === idsParaMarcar.length && 
+      idsValidosRenderizados.every((val, index) => val === idsParaMarcar[index]);
+
+    if (!confirmacaoValida) {
+      console.error("[PROTEÇÃO] Divergência entre IDs renderizados e IDs enviados para marcação!");
+      setStatusImpressao({
+        tipo: 'erro',
+        mensagem: 'Erro de validação de IDs de etiquetas. Operação abortada.'
+      });
+      setMarcando(false);
+      return;
+    }
+
+    // Logar no console em desenvolvimento
+    if (process.env.NODE_ENV === 'development' || (typeof window !== 'undefined' && window.location.hostname === 'localhost')) {
+      console.log({
+        etiquetasRenderizadas: idsValidosRenderizados,
+        idsMarcados: idsParaMarcar
+      });
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('evento_inscricoes')
+        .update({ etiqueta_impressa: true })
+        .in('id', idsParaMarcar)
+        .select('id');
+
+      if (error) {
+        console.error("Erro ao marcar etiquetas como impressas:", error);
+        setStatusImpressao({
+          tipo: 'erro',
+          mensagem: `Falha ao marcar as etiquetas. Verifique a lista.`
+        });
+      } else {
+        const marcadosComSucesso = data ? data.map((d: any) => d.id) : [];
+        const totalSolicitados = idsParaMarcar.length;
+        const totalMarcados = marcadosComSucesso.length;
+
+        // Atualizar estado local
+        setInscricoes(prev => prev.map(i => {
+          if (marcadosComSucesso.includes(i.id)) {
+            return { ...i, etiqueta_impressa: true };
+          }
+          return i;
+        }));
+
+        if (totalMarcados === totalSolicitados) {
+          setStatusImpressao({
+            tipo: 'sucesso',
+            mensagem: `${totalSolicitados} etiqueta(s) marcada(s) como impressa(s).`
+          });
+        } else if (totalMarcados > 0) {
+          setStatusImpressao({
+            tipo: 'parcial',
+            mensagem: `${totalMarcados} de ${totalSolicitados} etiqueta(s) marcada(s). Verifique a lista.`
+          });
+        } else {
+          setStatusImpressao({
+            tipo: 'sucesso',
+            mensagem: `${totalSolicitados} etiqueta(s) marcada(s) como impressa(s).`
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Erro ao marcar etiquetas:", err);
+      setStatusImpressao({
+        tipo: 'erro',
+        mensagem: 'Erro ao marcar etiquetas.'
+      });
+    } finally {
+      setMarcando(false);
+    }
   }
 
   function handlePrint() {
@@ -176,8 +257,8 @@ export default function EtiquetasPrintPage() {
           margin: 0 !important;
           padding: 0 !important;
           width: 85mm !important;
-          height: 30mm !important;
-          overflow: hidden !important;
+          height: auto !important;
+          overflow: visible !important;
           background: #fff !important;
           -webkit-print-color-adjust: exact !important;
           print-color-adjust: exact !important;
@@ -195,7 +276,7 @@ export default function EtiquetasPrintPage() {
           padding: 0 !important;
           margin: 0 !important;
           width: 85mm !important;
-          height: 30mm !important;
+          height: auto !important;
         }
         .label-item {
           display: block !important;
@@ -293,6 +374,25 @@ export default function EtiquetasPrintPage() {
             </button>
           </div>
         </div>
+        
+        {statusImpressao && (
+          <div style={{
+            backgroundColor: statusImpressao.tipo === 'sucesso' ? '#ecfdf5' : statusImpressao.tipo === 'parcial' ? '#fffbeb' : '#fef2f2',
+            border: `1px solid ${statusImpressao.tipo === 'sucesso' ? '#a7f3d0' : statusImpressao.tipo === 'parcial' ? '#fde68a' : '#fecaca'}`,
+            borderRadius: '6px',
+            padding: '8px 12px',
+            fontSize: '12px',
+            color: statusImpressao.tipo === 'sucesso' ? '#065f46' : statusImpressao.tipo === 'parcial' ? '#92400e' : '#991b1b',
+            fontWeight: 500,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginTop: '4px'
+          }}>
+            <span>{statusImpressao.tipo === 'sucesso' ? '✅' : '⚠️'}</span>
+            <span>{statusImpressao.mensagem}</span>
+          </div>
+        )}
 
         {/* Alertas sobre pendentes de pagamento (não imprime) */}
         {(() => {

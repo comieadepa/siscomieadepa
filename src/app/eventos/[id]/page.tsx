@@ -3937,9 +3937,25 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
                     <td className={`${tdCls} font-medium`}>{i.nome_inscrito}</td>
                     <td className={tdCls}>{i.cpf ?? '-'}</td>
                     <td className={`${tdNumCls} ${i.status_pagamento === 'pago' ? 'text-emerald-700' : 'text-gray-500'}`}>
-                      {formatarValorUI(i, i.lote || null, i.lote_id ? filtradas.filter(o => o.lote_id === i.lote_id) : [])}
+                      {(() => {
+                        const val = i.lote_id ? (i.valor_final ?? i.valor_original ?? i.valor_pago ?? 0) : (i.valor_pago ?? i.valor_final ?? 0);
+                        if (i.lote_id) {
+                          return (
+                            <div 
+                              className="flex flex-col items-end text-right cursor-help" 
+                              title={`Pago em lote\nLote: ${i.lote?.codigo || '—'}\nValor individual: ${val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}\nValor total do lote: ${(i.lote?.valor_total ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}\nQuantidade de inscrições: ${i.lote_id ? filtradas.filter(x => x.lote_id === i.lote_id).length : 0}`}
+                            >
+                              <span className="font-semibold text-emerald-700">{val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                              <span className="text-[10px] text-gray-500 block">Pago em lote 🏷️</span>
+                            </div>
+                          );
+                        }
+                        return formatarValorUI(i, i.lote || null, i.lote_id ? filtradas.filter(o => o.lote_id === i.lote_id) : []);
+                      })()}
                     </td>
-                    <td className={`${tdCls} text-gray-500`}>{i.forma_pagamento ?? '-'}</td>
+                    <td className={`${tdCls} text-gray-500`}>
+                      {i.lote_id ? (i.forma_pagamento ? (i.forma_pagamento.toLowerCase().includes('lote') ? i.forma_pagamento : `${i.forma_pagamento}/lote`) : 'ASAAS/lote') : (i.forma_pagamento ?? '-')}
+                    </td>
                     <td className={tdCls}>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${STATUS_PAG_CFG[i.status_pagamento]?.cls ?? ''}`}>
                         {STATUS_PAG_CFG[i.status_pagamento]?.label ?? i.status_pagamento}
@@ -4177,12 +4193,28 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{nomeSup(ins.supervisao_id)}</td>
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{nomeCampo(ins.campo_id)}</td>
                   <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
-                    {formatarValorUI(ins, ins.lote || null, ins.lote_id ? filtradas.filter(o => o.lote_id === ins.lote_id) : [])}
+                    {(() => {
+                      const val = ins.lote_id ? (ins.valor_final ?? ins.valor_original ?? ins.valor_pago ?? 0) : (ins.valor_pago ?? ins.valor_final ?? 0);
+                      if (ins.lote_id) {
+                        return (
+                          <div 
+                            className="flex flex-col text-left cursor-help" 
+                            title={`Pago em lote\nLote: ${ins.lote?.codigo || '—'}\nValor individual: ${val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}\nValor total do lote: ${(ins.lote?.valor_total ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}\nQuantidade de inscrições: ${ins.lote_id ? filtradas.filter(x => x.lote_id === ins.lote_id).length : 0}`}
+                          >
+                            <span className="font-semibold text-emerald-600">{val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                            <span className="text-[10px] text-gray-500 block">Pago em lote 🏷️</span>
+                          </div>
+                        );
+                      }
+                      return formatarValorUI(ins, ins.lote || null, ins.lote_id ? filtradas.filter(o => o.lote_id === ins.lote_id) : []);
+                    })()}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${pagCfg.cls}`}>{pagCfg.label}</span>
                   </td>
-                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{ins.forma_pagamento || '-'}</td>
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                    {ins.lote_id ? (ins.forma_pagamento ? (ins.forma_pagamento.toLowerCase().includes('lote') ? ins.forma_pagamento : `${ins.forma_pagamento}/lote`) : 'ASAAS/lote') : (ins.forma_pagamento || '-')}
+                  </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <div className="flex flex-wrap items-center gap-2 min-w-[140px] md:min-w-[180px]">
                       {ins.status_pagamento !== 'pago' && ins.status_pagamento !== 'isento' && (

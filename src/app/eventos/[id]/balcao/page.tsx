@@ -72,6 +72,8 @@ interface InscricaoSalva {
 interface InscricaoResumo {
   id: string;
   lote_id?: string | null;
+  lote?: any;
+  responsavel_pagamento?: boolean | null;
   nome_inscrito: string;
   cpf: string | null;
   whatsapp: string | null;
@@ -79,6 +81,7 @@ interface InscricaoResumo {
   supervisao_id: string | null;
   campo_id: string | null;
   tipo_inscricao: string | null;
+  valor_original?: number | null;
   valor_final: number | null;
   valor_pago: number | null;
   status_pagamento: string;
@@ -111,6 +114,12 @@ interface DadosOperacionais {
   refeicoesTotal: number | null;
   refeicoesUsadas: number | null;
   refeicoesSaldo: number | null;
+  lote_id?: string | null;
+  loteTotal?: number | null;
+  formaPagamento?: string | null;
+  loteCodigo?: string | null;
+  loteCount?: number;
+  valorOriginal?: number | null;
 }
 
 interface EditFormBalcao {
@@ -1160,14 +1169,32 @@ export default function BalcaoPage() {
     try {
       const { data, error } = await supabase
         .from('evento_inscricoes')
-        .select('id,lote_id,nome_inscrito,cpf,whatsapp,email,supervisao_id,campo_id,tipo_inscricao,valor_final,valor_pago,status_pagamento,forma_pagamento,hospedagem,alimentacao,asaas_payment_id,invoice_url,checkin_realizado,checkin_at,etiqueta_impressa,certificado_enviado,created_at')
+        .select('id,lote_id,nome_inscrito,cpf,whatsapp,email,supervisao_id,campo_id,tipo_inscricao,valor_final,valor_pago,status_pagamento,forma_pagamento,hospedagem,alimentacao,asaas_payment_id,invoice_url,checkin_realizado,checkin_at,etiqueta_impressa,certificado_enviado,created_at,responsavel_pagamento,valor_original')
         .eq('evento_id', id)
         .order('created_at', { ascending: false });
       if (error) {
         setListaErro('Erro ao carregar inscritos.');
         return;
       }
-      setInscricoesLista((data as InscricaoResumo[]) || []);
+      
+      const { data: lotesData } = await supabase
+        .from('evento_lotes_inscricao')
+        .select('*')
+        .eq('evento_id', id);
+
+      const lotesMap: Record<string, any> = {};
+      if (lotesData) {
+        lotesData.forEach((l: any) => {
+          lotesMap[l.id] = l;
+        });
+      }
+
+      const enriched = ((data as any[]) || []).map(i => ({
+        ...i,
+        lote: i.lote_id ? (lotesMap[i.lote_id] || null) : null,
+      }));
+
+      setInscricoesLista(enriched);
       setPrecisaAtualizar(false);
     } catch {
       setListaErro('Erro ao carregar inscritos.');
@@ -1469,13 +1496,30 @@ export default function BalcaoPage() {
     try {
       const { data: insc, error: errInsc } = await supabase
         .from('evento_inscricoes')
-        .select('tipo_inscricao, valor_final, valor_pago, status_pagamento, hospedagem, alimentacao, quantidade_refeicoes_total, quantidade_refeicoes_usadas, quantidade_refeicoes_saldo, refeicoes_total, refeicoes_utilizadas, grupo_hospedagem')
+        .select('tipo_inscricao, valor_final, valor_pago, status_pagamento, hospedagem, alimentacao, quantidade_refeicoes_total, quantidade_refeicoes_usadas, quantidade_refeicoes_saldo, refeicoes_total, refeicoes_utilizadas, grupo_hospedagem, lote_id, forma_pagamento, valor_original')
         .eq('id', inscricaoId)
         .single();
 
       if (errInsc || !insc) {
         console.error('Erro ao buscar inscricao para dados operacionais:', errInsc);
         return;
+      }
+
+      let loteCodigo: string | null = null;
+      let loteTotal: number | null = null;
+      let loteCount: number = 0;
+      if (insc.lote_id) {
+        const [loteRes, countRes] = await Promise.all([
+          supabase.from('evento_lotes_inscricao').select('codigo, valor_total').eq('id', insc.lote_id).single(),
+          supabase.from('evento_inscricoes').select('id', { count: 'exact', head: true }).eq('lote_id', insc.lote_id)
+        ]);
+        if (loteRes.data) {
+          loteCodigo = loteRes.data.codigo;
+          loteTotal = loteRes.data.valor_total;
+        }
+        if (countRes.count !== null) {
+          loteCount = countRes.count;
+        }
       }
 
       const { data: hosp } = await supabase
@@ -1561,7 +1605,7 @@ export default function BalcaoPage() {
 
       setDadosOperacionais({
         tipoInscricao: insc.tipo_inscricao || null,
-        valorInscricao: insc.valor_final ?? insc.valor_pago ?? null,
+        valorInscricao: insc.valor_final ?? insc.valor_original ?? insc.valor_pago ?? null,
         statusPagamento: insc.status_pagamento,
         hospedagem: hospedagemSolicitada,
         statusHospedagem,
@@ -1577,6 +1621,12 @@ export default function BalcaoPage() {
         refeicoesTotal: total,
         refeicoesUsadas: usadas,
         refeicoesSaldo: saldo,
+        lote_id: insc.lote_id,
+        loteTotal,
+        formaPagamento: insc.forma_pagamento,
+        loteCodigo,
+        loteCount,
+        valorOriginal: insc.valor_original,
       });
     } catch (err) {
       console.error('Erro ao carregar dados operacionais:', err);
@@ -2561,7 +2611,9 @@ export default function BalcaoPage() {
                     <tbody>
                       {inscritosPaginados.map(ins => {
                         const pagCfg = PAGAMENTO_CFG[ins.status_pagamento] ?? PAGAMENTO_CFG.pendente;
-                        const valorExib = ins.valor_pago ?? ins.valor_final ?? 0;
+                        const valorExib = ins.lote_id 
+                          ? (ins.valor_final ?? ins.valor_original ?? ins.valor_pago ?? 0)
+                          : (ins.valor_pago ?? ins.valor_final ?? 0);
                         const isDestaque = ins.id === destacarId;
                         const podeCert = perfil.podeCertificados && evento.gerar_certificado;
                         const elegivelCheckin = ['pago', 'isento'].includes(ins.status_pagamento);
@@ -2587,9 +2639,28 @@ export default function BalcaoPage() {
                               )}
                             </td>
                             <td className="px-3 py-3 text-white/70 whitespace-nowrap">{nomeCampo(ins.campo_id) || '-'}</td>
-                            <td className="px-3 py-3 text-white whitespace-nowrap">{fmtMoeda(valorExib)}</td>
+                            <td className="px-3 py-3 text-white whitespace-nowrap">
+                              {ins.lote_id ? (
+                                <div 
+                                  className="flex flex-col text-left cursor-help" 
+                                  title={`Pago em lote\nLote: ${ins.lote?.codigo || '—'}\nValor individual: ${fmtMoeda(valorExib)}\nValor total do lote: ${fmtMoeda(ins.lote?.valor_total ?? 0)}\nQuantidade de inscrições: ${ins.lote_id ? inscricoesLista.filter(x => x.lote_id === ins.lote_id).length : 0}`}
+                                >
+                                  <span className="font-semibold text-emerald-400">{fmtMoeda(valorExib)}</span>
+                                  <span className="text-[10px] text-white/50 block">Pago em lote 🏷️</span>
+                                </div>
+                              ) : (
+                                fmtMoeda(valorExib)
+                              )}
+                            </td>
                             <td className="px-3 py-3 whitespace-nowrap">
-                               <span className={`text-xs font-bold px-2 py-1 rounded-full ${pagCfg.cls}`}>{pagCfg.label}</span>
+                              <div className="flex flex-col gap-0.5 items-start">
+                                <span className={`text-xs font-bold px-2 py-1 rounded-full text-center ${pagCfg.cls}`}>{pagCfg.label}</span>
+                                {ins.lote_id && (
+                                  <span className="text-[10px] text-white/40 block text-center mt-0.5">
+                                    {ins.forma_pagamento ? (ins.forma_pagamento.toLowerCase().includes('lote') ? ins.forma_pagamento : `${ins.forma_pagamento}/lote`) : 'ASAAS/lote'}
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="px-3 py-3 whitespace-nowrap">
                                {ins.etiqueta_impressa ? '🏷️' : <span className="text-white/30">—</span>}
@@ -2806,11 +2877,28 @@ export default function BalcaoPage() {
                           </div>
                           <div>
                             <span className="text-white/50 block">Valor</span>
-                            <span className="text-white font-medium">{dadosOperacionais.valorInscricao !== null ? fmtMoeda(dadosOperacionais.valorInscricao) : '-'}</span>
+                            {dadosOperacionais.lote_id ? (
+                              <div 
+                                className="cursor-help font-medium flex flex-col" 
+                                title={`Pago em lote\nLote: ${dadosOperacionais.loteCodigo || '—'}\nValor individual: ${fmtMoeda(dadosOperacionais.valorInscricao ?? 0)}\nValor total do lote: ${fmtMoeda(dadosOperacionais.loteTotal ?? 0)}\nQuantidade de inscrições: ${dadosOperacionais.loteCount ?? 0}`}
+                              >
+                                <span className="text-white font-medium">{dadosOperacionais.valorInscricao !== null ? fmtMoeda(dadosOperacionais.valorInscricao) : '-'}</span>
+                                <span className="text-emerald-400 text-[10px] font-semibold mt-0.5">Pago em lote 🏷️</span>
+                              </div>
+                            ) : (
+                              <span className="text-white font-medium">{dadosOperacionais.valorInscricao !== null ? fmtMoeda(dadosOperacionais.valorInscricao) : '-'}</span>
+                            )}
                           </div>
                           <div>
                             <span className="text-white/50 block">Pagamento</span>
-                            <span className="text-white font-medium">{PAGAMENTO_CFG[dadosOperacionais.statusPagamento]?.label ?? dadosOperacionais.statusPagamento}</span>
+                            <div className="flex flex-col">
+                              <span className="text-white font-medium">{PAGAMENTO_CFG[dadosOperacionais.statusPagamento]?.label ?? dadosOperacionais.statusPagamento}</span>
+                              {dadosOperacionais.lote_id && (
+                                <span className="text-white/40 text-[10px] mt-0.5">
+                                  Forma: {dadosOperacionais.formaPagamento ? (dadosOperacionais.formaPagamento.toLowerCase().includes('lote') ? dadosOperacionais.formaPagamento : `${dadosOperacionais.formaPagamento}/lote`) : 'ASAAS/lote'}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
