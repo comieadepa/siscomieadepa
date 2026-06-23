@@ -1436,28 +1436,7 @@ export default function BalcaoPage() {
       return;
     }
 
-    let printIds: string[] = [ins.id];
-
-    if (ins.lote_id) {
-      // Tenta resolver irmãos já carregados na lista que estejam pagos/isentos
-      const siblings = inscricoesLista.filter(i => i.lote_id === ins.lote_id && (i.status_pagamento === 'pago' || i.status_pagamento === 'isento'));
-      if (siblings.length > 1) {
-        printIds = siblings.map(i => i.id);
-      } else {
-        // Busca no banco todas as inscrições do lote filtrando por status de pagamento
-        const { data } = await supabase
-          .from('evento_inscricoes')
-          .select('id')
-          .eq('lote_id', ins.lote_id)
-          .in('status_pagamento', ['pago', 'isento']);
-        if (data && data.length > 1) {
-          printIds = (data as { id: string }[]).map(r => r.id);
-        }
-      }
-    }
-
-    if (!printIds.length) return;
-    window.open(`/eventos/${id}/etiquetas/print?mode=thermal&ids=${printIds.join(',')}`, '_blank', 'width=520,height=420');
+    window.open(`/eventos/${id}/etiquetas/print?mode=thermal&ids=${ins.id}`, '_blank', 'width=520,height=420');
   }
 
   async function alternarEtiquetaImpressa(ins: InscricaoResumo) {
@@ -2683,7 +2662,7 @@ export default function BalcaoPage() {
                                   className="px-2 py-1 text-xs font-bold rounded-md bg-purple-500/20 text-purple-200 hover:bg-purple-500/30"
                                   title="Imprimir etiqueta"
                                 >
-                                  🏷️
+                                  🖨️
                                 </button>
                                 {perfil.podeEditarInscricoes && (
                                   <button
