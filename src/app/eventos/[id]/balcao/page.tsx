@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useEventosPerfil } from '@/hooks/useEventosPerfil';
 import { createClient } from '@/lib/supabase-client';
-import { clearEquipeSession } from '@/lib/equipe-session';
+import { clearEquipeSession, getEquipeSession } from '@/lib/equipe-session';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { normalizePayloadUppercase } from '@/lib/text';
 import { EventBadge } from '@/components/EventBadge';
@@ -195,6 +195,10 @@ export default function BalcaoPage() {
     router.replace(`/eventos/${id}/operador`);
   }, [id, router, supabase]);
   const permissaoEvento = useMemo(() => (id ? perfil.permissaoParaEvento(id) : null), [id, perfil]);
+  const isOperadorEquipe = useMemo(() => {
+    const sess = getEquipeSession();
+    return !!(sess && sess.eventoId === id);
+  }, [id]);
   const podeCheckinManual = perfil.isGlobal || perfil.isDeptAdmin || permissaoEvento === 'admin_evento' || permissaoEvento === 'operador';
 
   // ── Estado geral ──────────────────────────────────────────
@@ -2427,7 +2431,7 @@ export default function BalcaoPage() {
               <span className="w-6 h-6 bg-[#F39C12] text-[#0D2B4E] rounded-full flex items-center justify-center text-xs font-black">5</span>
               Pagamento
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 mb-4">
+            <div className={`grid grid-cols-1 sm:grid-cols-2 ${isOperadorEquipe ? 'lg:grid-cols-5' : 'lg:grid-cols-6'} gap-2 mb-4`}>
               {[
                 { id: 'dinheiro',     label: '💵 Dinheiro'  },
                 { id: 'pix_manual',   label: '📱 PIX Manual' },
@@ -2435,7 +2439,10 @@ export default function BalcaoPage() {
                 { id: 'isento',       label: '🎟️ Isento'    },
                 { id: 'equipe_apoio', label: '👥 Equipe Apoio' },
                 { id: 'asaas',        label: '🔗 ASAAS'     },
-              ].map(op => (
+              ].filter(op => {
+                if (op.id === 'equipe_apoio' && isOperadorEquipe) return false;
+                return true;
+              }).map(op => (
                 <button
                   key={op.id}
                   type="button"

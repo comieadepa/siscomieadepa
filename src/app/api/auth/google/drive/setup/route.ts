@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 
   const secret = process.env.GOOGLE_SETUP_SECRET;
   if (secret) {
-    const provided = request.headers.get('x-google-setup-secret') || '';
+    const provided = request.headers.get('x-google-setup-secret') || request.nextUrl.searchParams.get('secret') || '';
     if (provided !== secret) {
       return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
     }
