@@ -287,6 +287,7 @@ export default function MembrosPage() {
       municipioEleitoral: String(member.municipio_eleitoral || (cf as any).municipioEleitoral || ''),
       posicaoNoCampo: String(member.posicao_no_campo || (cf as any).posicaoNoCampo || ''),
       numero_cgadb: String(member.numero_cgadb || (cf as any).numero_cgadb || ''),
+      registroCgadb: String(member.numero_cgadb || (cf as any).registroCgadb || (cf as any).cgadb || (cf as any).numeroCgadb || ''),
       localBatismo: String(member.local_batismo || (cf as any).localBatismo || ''),
       dataFiliacao: String(member.data_filiacao || (cf as any).dataFiliacao || ''),
       evAutorizadoData: String(member.ev_autorizado_data || (cf as any).evAutorizadoData || ''),
@@ -2734,6 +2735,7 @@ useEffect(() => {
                   qualFuncao: membroImprimindo.qualFuncao || '',
                   setorDepartamento: membroImprimindo.setorDepartamento || '',
                   cargo: membroImprimindo.cargoMinisterial || '',
+                  status: membroImprimindo.status || '',
                   numero_cgadb: (membroImprimindo as any).numero_cgadb || '',
                   posicaoNoCampo: (membroImprimindo as any).posicaoNoCampo || '',
                   casaDoPastorAcp: fichaAcpLoading ? 'carregando' : (fichaAcpStatus || undefined),
@@ -4209,9 +4211,11 @@ useEffect(() => {
                             className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                           >
                             <option value="">- Selecionar -</option>
-                            <option value="Evangelista Autorizado">Evangelista Autorizado</option>
-                            <option value="Evangelista Consagrado">Evangelista Consagrado</option>
-                            <option value="Pastor">Pastor</option>
+                            {cargosMinisteriais.map((c) => (
+                              <option key={c.id || c.nome} value={c.nome}>
+                                {c.nome}
+                              </option>
+                            ))}
                           </select>
                         </div>
                         <div>
