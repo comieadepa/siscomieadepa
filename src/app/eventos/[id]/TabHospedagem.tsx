@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/lib/supabase-client';
+import { getEquipeSession } from '@/lib/equipe-session';
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 interface Evento {
@@ -153,6 +154,18 @@ export default function TabHospedagem({
   supabase: ReturnType<typeof createClient>;
 }) {
   const [subAba, setSubAba] = useState<SubAba>('hospedagens');
+
+  // Local fetch wrapper to automatically inject equipeId for operator sessions
+  const fetch = useCallback((input: RequestInfo | URL, init?: RequestInit) => {
+    const equipeSessao = getEquipeSession();
+    if (equipeSessao && equipeSessao.eventoId === eventoId) {
+      const urlStr = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : (input as Request).url);
+      const u = new URL(urlStr, window.location.origin);
+      u.searchParams.set('equipeId', equipeSessao.equipeId);
+      return window.fetch(u.pathname + u.search, init);
+    }
+    return window.fetch(input, init);
+  }, [eventoId]);
 
   const [alojamentos,     setAlojamentos]     = useState<Alojamento[]>([]);
   const [hospedagens,     setHospedagens]     = useState<Hospedagem[]>([]);

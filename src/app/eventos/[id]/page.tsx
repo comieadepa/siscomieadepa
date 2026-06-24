@@ -542,7 +542,7 @@ export default function GerenciarEventoPage() {
 
     Promise.all([
       fetchEvento(),
-      (permissaoNesseEvento === 'hospedagem' || permissaoNesseEvento === 'checkin_refeitorio' || permissaoNesseEvento === 'checkin_hospedagem') ? Promise.resolve() : fetchInscricoes(),
+      (permissaoNesseEvento === 'checkin_refeitorio') ? Promise.resolve() : fetchInscricoes(),
       (permissaoNesseEvento === 'hospedagem' || permissaoNesseEvento === 'checkin_refeitorio' || permissaoNesseEvento === 'checkin_hospedagem') ? Promise.resolve() : fetchEquipe(),
       authenticatedFetch('/api/v1/estrutura').then(async (res) => {
         if (!res.ok) return;
