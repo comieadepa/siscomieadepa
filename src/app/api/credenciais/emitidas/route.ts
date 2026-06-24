@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
          members!inner(
            id, name, cpf, matricula, unique_id, tipo_cadastro, status,
            cargo_ministerial, data_nascimento, sexo,
-           tipo_sanguineo, estado_civil, nome_pai, nome_mae, naturalidade, nacionalidade,
+           tipo_sanguineo, estado_civil, nome_pai, nome_mae, naturalidade, nacionalidade, numero_cgadb,
            data_batismo_aguas, data_batismo_espirito_santo, email, phone, celular, whatsapp,
            logradouro, numero, bairro, cidade, qual_funcao, foto_url,
            custom_fields, cred_validade, profissao

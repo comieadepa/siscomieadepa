@@ -32,7 +32,8 @@ const PLACEHOLDERS = [
   { campo: 'celular', placeholder: '{celular}' },
   { campo: 'whatsapp', placeholder: '{whatsapp}' },
   { campo: 'endereco', placeholder: '{endereco}' },
-  { campo: 'uniqueId', placeholder: '{uniqueId}' }
+  { campo: 'uniqueId', placeholder: '{uniqueId}' },
+  { campo: 'registroCgadb', placeholder: '{registro_cgadb}' }
 ];
 
 function substituirPlaceholders(texto: string, membro: any, nomenclaturas?: any): string {

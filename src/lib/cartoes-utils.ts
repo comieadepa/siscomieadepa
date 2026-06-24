@@ -19,7 +19,7 @@ export const PLACEHOLDERS_CONFIG = [
   { campo: 'dataBatismoEspiritoSanto', placeholder: '{dataBatismoEspiritoSanto}', label: 'Batismo no Espírito Santo' },
   { campo: 'validade', placeholder: '{validade}', label: 'Validade' },
   { campo: 'naturalidade', placeholder: '{naturalidade}', label: 'Naturalidade' },
-  { campo: 'nacionalidade', placeholder: '{nacionalidade}', label: 'Nacionalidade' },
+  { campo: 'registroCgadb', placeholder: '{registro_cgadb}', label: 'Registro CGADB' },
   { campo: 'estadoCivil', placeholder: '{estadoCivil}', label: 'Estado Civil' },
   { campo: 'tipoSanguineo', placeholder: '{tipoSanguineo}', label: 'Tipo Sanguíneo' },
   { campo: 'dataNascimento', placeholder: '{dataNascimento}', label: 'Data de Nascimento' },

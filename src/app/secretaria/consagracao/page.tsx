@@ -2877,6 +2877,7 @@ export default function ConsagracaoPage() {
                   nome: membroImprimindo.nome || '',
                   cpf: formatCpf(membroImprimindo.cpf || ''),
                   tipoCadastro: 'ministro',
+                  status: membroImprimindo.status || '',
                   dataNascimento: membroImprimindo.data_nascimento || '',
                   sexo: membroImprimindo.sexo || '',
                   tipoSanguineo: membroImprimindo.tipo_sanguineo || '',

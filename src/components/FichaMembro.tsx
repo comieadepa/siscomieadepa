@@ -294,8 +294,8 @@ export default function FichaMembro({ membro, dadosIgreja, fotoUrl, isCandidato 
                       <td style={lbl}>Data de Filiação</td>
                       <td style={cell}>{fmtDate(membro.data_filiacao)}</td>
                       <td style={lbl}>Status</td>
-                      <td style={{ ...cell, fontWeight: 'bold', color: membro.status === 'ativo' ? '#16a34a' : '#dc2626' }}>
-                        {(membro.status || 'ativo').toUpperCase()}
+                      <td style={{ ...cell, fontWeight: 'bold', color: String(membro.status || 'ativo').toLowerCase() === 'ativo' ? '#16a34a' : '#dc2626' }}>
+                        {String(membro.status || 'ativo').toUpperCase()}
                       </td>
                     </tr>
                     <tr>

@@ -106,6 +106,7 @@ const memberToMembro = (member: Member): Membro => {
     nomeMae: String(member.nome_mae || (cf as any).nomeMae || ''),
     naturalidade: String(member.naturalidade || (cf as any).naturalidade || ''),
     nacionalidade: String(member.nacionalidade || (cf as any).nacionalidade || ''),
+    registroCgadb: String(member.numero_cgadb || (cf as any).registroCgadb || (cf as any).cgadb || (cf as any).numeroCgadb || ''),
     dataBatismoAguas: String(member.data_batismo_aguas || (cf as any).dataBatismoAguas || ''),
     dataBatismoEspiritoSanto: String(member.data_batismo_espirito_santo || (cf as any).dataBatismoEspiritoSanto || ''),
     email: String(member.email || (cf as any).email || ''),

@@ -112,7 +112,7 @@ const PLACEHOLDERS_DISPONIVEIS = [
   { campo: 'estadoCivil', label: 'Estado Civil', placeholder: '{estadoCivil}' },
   { campo: 'tipoSanguineo', label: 'Tipo Sanguíneo', placeholder: '{tipoSanguineo}' },
   { campo: 'naturalidade', label: 'Naturalidade', placeholder: '{naturalidade}' },
-  { campo: 'nacionalidade', label: 'Nacionalidade', placeholder: '{nacionalidade}' },
+  { campo: 'registroCgadb', label: 'Registro CGADB', placeholder: '{registro_cgadb}' },
   { campo: 'email', label: 'Email', placeholder: '{email}' },
   { campo: 'celular', label: 'Celular', placeholder: '{celular}' },
   { campo: 'whatsapp', label: 'WhatsApp', placeholder: '{whatsapp}' },
