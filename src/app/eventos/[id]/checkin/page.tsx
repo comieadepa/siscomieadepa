@@ -466,9 +466,14 @@ export default function CheckinMobilePage() {
         return;
       }
 
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (equipeSessao?.equipeId) {
+        headers['x-evento-equipe-id'] = equipeSessao.equipeId;
+      }
+
       const res = await fetch(`/api/eventos/${id}/checkin/registrar`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           qr: qrToken,
           equipe_id: equipeSessao?.equipeId,
