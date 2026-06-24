@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createServerClientFromRequest } from '@/lib/supabase-server';
+import { createServerClient, createServerClientFromRequest, createServerClientFromCookies } from '@/lib/supabase-server';
 import {
   canAccessModule,
   hasRole,
@@ -10,8 +10,8 @@ import {
 import { requireEventoAccess } from '@/lib/evento-guard';
 
 export type AuthContext = {
-  supabase: ReturnType<typeof createServerClientFromRequest>;
-  user: NonNullable<Awaited<ReturnType<ReturnType<typeof createServerClientFromRequest>['auth']['getUser']>>['data']['user']>;
+  supabase: any;
+  user: any;
   userId: string;
   role: CanonicalRole | null;
   rawRole: string | null;
@@ -27,7 +27,7 @@ async function resolveRoleFromDb(userId: string): Promise<string | null> {
   return data?.role ? String(data.role) : null;
 }
 
-function extractRawRole(user: AuthContext['user']): string | null {
+function extractRawRole(user: any): string | null {
   const meta = user.user_metadata || {};
   const raw = (meta.nivel || meta.role || user.app_metadata?.role) as string | undefined;
   return raw ? String(raw) : null;
@@ -36,7 +36,8 @@ function extractRawRole(user: AuthContext['user']): string | null {
 export async function requireUser(
   request: NextRequest
 ): Promise<{ ok: true; ctx: AuthContext } | { ok: false; response: NextResponse }> {
-  const supabase = createServerClientFromRequest(request);
+  const authHeader = request.headers.get('Authorization') || request.headers.get('authorization') || '';
+  const supabase = authHeader ? createServerClientFromRequest(request) : await createServerClientFromCookies();
   const { data } = await supabase.auth.getUser();
   if (!data?.user) {
     return {
