@@ -38,10 +38,11 @@ export async function GET() {
       .from('consagracao_registros')
       .select('status_processo');
 
-    const statusCounts = {};
+    const statusCounts: Record<string, number> = {};
     if (allStatuses) {
       allStatuses.forEach(r => {
-        statusCounts[r.status_processo] = (statusCounts[r.status_processo] || 0) + 1;
+        const status = String(r.status_processo || 'unknown');
+        statusCounts[status] = (statusCounts[status] || 0) + 1;
       });
     }
 
