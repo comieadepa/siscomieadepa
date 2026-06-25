@@ -105,7 +105,7 @@ export function resolveGrupoHospedagemAGO(input: HospedagemAGOInput): string {
   const ehEsposaOuViuva = tipo.includes('esposa') || tipo.includes('viuva') || tipo.includes('viúva');
   if (sexo === 'F' || ehEsposaOuViuva) return 'Mulheres';
 
-  if (tipo.includes('presidente') || tipo.includes('jubilado')) {
+  if (tipo.includes('presidente') || tipo.includes('jubilado') || tipo.includes('campo missionario')) {
     return 'Pastor Presidente / Pastor Jubilado';
   }
 
@@ -142,10 +142,13 @@ function calcularIdade(dataNascimento: string | null): number | null {
 type PerfilAGO = 'feminino' | 'presidentes' | 'jubilados' | 'masculino_geral' | 'misto';
 
 export function detectarPerfilAGO(inscricao: InscricaoParaHospedagem): PerfilAGO {
-  const tipoLower = (inscricao.tipo_inscricao ?? '').toLowerCase();
+  const tipoLower = (inscricao.tipo_inscricao ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
   const sexo = inscricao.sexo?.toUpperCase();
 
-  if (tipoLower.includes('presidente')) return 'presidentes';
+  if (tipoLower.includes('presidente') || tipoLower.includes('campo missionario')) return 'presidentes';
   if (tipoLower.includes('jubilado'))   return 'jubilados';
   if (sexo === 'F')                     return 'feminino';
   return 'masculino_geral';
