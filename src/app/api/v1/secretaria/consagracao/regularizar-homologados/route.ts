@@ -229,7 +229,6 @@ export async function POST(request: NextRequest) {
           whatsapp: processRecord.telefone || null,
           // Geolocalização
           supervisao_id: processRecord.supervisao_id || null,
-          campo_id: processRecord.campo_id || null,
           congregacao_id: processRecord.congregacao_id || null,
           // Ministerial
           cargo_ministerial: cargoPretendido || null,
