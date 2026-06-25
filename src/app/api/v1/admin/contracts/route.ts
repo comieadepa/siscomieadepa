@@ -2,9 +2,10 @@ import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin-guard';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
+const getSupabaseAdmin = () => createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 // Gerar número de contrato
 function generateContractNumber() {
@@ -319,7 +320,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Obter dados do pré-registro
-    const { data: preReg, error: preRegError } = await supabaseAdmin
+    const { data: preReg, error: preRegError } = await getSupabaseAdmin()
       .from('pre_registrations')
       .select('*')
       .eq('id', pre_registration_id)
@@ -353,7 +354,7 @@ export async function POST(request: NextRequest) {
     const contractHTML = generateContractHTML(contractData);
 
     // Salvar contrato no banco (sem arquivo, apenas HTML)
-    const { data: contract, error: contractError } = await supabaseAdmin
+    const { data: contract, error: contractError } = await getSupabaseAdmin()
       .from('generated_contracts')
       .insert({
         pre_registration_id,
@@ -410,7 +411,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { data: contract, error } = await supabaseAdmin
+    const { data: contract, error } = await getSupabaseAdmin()
       .from('generated_contracts')
       .select('*')
       .eq('id', id)

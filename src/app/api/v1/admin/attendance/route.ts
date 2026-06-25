@@ -2,9 +2,22 @@ import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin-guard'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
+let _supabaseAdminInstance: any = null;
+const getSupabaseAdmin = () => {
+  if (!_supabaseAdminInstance) {
+    _supabaseAdminInstance = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+  }
+  return _supabaseAdminInstance;
+};
+
+const supabaseAdmin = new Proxy({} as any, {
+  get(_target, prop, receiver) {
+    return Reflect.get(getSupabaseAdmin(), prop, receiver);
+  }
+});
 
 // Tipos de status disponíveis
 export const ATTENDANCE_STATUSES = {

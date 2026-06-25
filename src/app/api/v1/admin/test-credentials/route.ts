@@ -5,10 +5,23 @@ import bcrypt from 'bcrypt';
 import { requireAdmin } from '@/lib/admin-guard';
 import { consumeRateLimit } from '@/lib/rate-limit-db';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 import { buildUrl, getAppBaseUrl } from '@/lib/urls'
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
+let _supabaseAdminInstance: any = null;
+const getSupabaseAdmin = () => {
+  if (!_supabaseAdminInstance) {
+    _supabaseAdminInstance = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+  }
+  return _supabaseAdminInstance;
+};
+
+const supabaseAdmin = new Proxy({} as any, {
+  get(_target, prop, receiver) {
+    return Reflect.get(getSupabaseAdmin(), prop, receiver);
+  }
+});
 
 // Gerar senha temporária aleatória
 function generatePassword(length = 12) {

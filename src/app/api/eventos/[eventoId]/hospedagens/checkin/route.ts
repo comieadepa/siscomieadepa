@@ -10,7 +10,7 @@ import { requireEventoPermission } from '@/lib/evento-guard';
  * Body: { inscricao_id, acao: 'checkin'|'checkout', operador? }
  */
 
-// ─── GET: busca por UUID ou CPF ──────────────────────────────
+// ─── GET: busca por UUID, CPF, Nome ou QR Code ──────────────────
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ eventoId: string }> },
@@ -26,92 +26,99 @@ export async function GET(
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(q);
   const cpfNorm = q.replace(/\D/g, '');
 
-  // Busca por QR code, inscricao_id ou CPF
+  // Busca flexível de inscrições (sem o filtro de hospedagem=true para podermos alertar adequadamente)
   let query = supabase
     .from('evento_inscricoes')
     .select(`
       id, nome_inscrito, cpf, sexo, tipo_inscricao,
       supervisao_id, campo_id, status_pagamento,
-      hosp_necessidade_especial, hosp_cama_inferior
+      hospedagem, alimentacao,
+      evento_hospedagens (
+        id, status, alojamento_id, tipo_cama, numero_cama,
+        checkin_at, checkout_at, checkin_operador, checkout_operador,
+        evento_alojamentos ( nome, publico )
+      ),
+      evento_hospedagem_leitos (
+        numero, tipo_leito, posicao
+      )
     `)
-    .eq('evento_id', eventoId)
-    .eq('hospedagem', true);
+    .eq('evento_id', eventoId);
 
   if (isUuid) {
     query = query.eq('id', q);
-  } else if (cpfNorm.length >= 6) {
+  } else if (cpfNorm && cpfNorm.length >= 11) {
     query = query.eq('cpf', cpfNorm);
   } else {
-    // Busca por qr_code (token)
-    query = query.eq('qr_code', q);
+    // Busca flexível: por Nome parcial, QR Code exato, ou CPF parcial se for numérico
+    const orParts = [`nome_inscrito.ilike.%${q}%`, `qr_code.eq.${q}`];
+    if (cpfNorm) {
+      orParts.push(`cpf.eq.${cpfNorm}`);
+    }
+    query = query.or(orParts.join(','));
   }
 
-  const { data: inscricoes } = await query.limit(1);
+  const { data: inscricoes, error: queryError } = await query.limit(30);
 
-  if (!inscricoes?.length) {
+  if (queryError) {
+    console.error('[HOSPEDAGEM CHECKIN] Erro query:', queryError);
+    return NextResponse.json({ error: queryError.message }, { status: 500 });
+  }
+
+  if (!inscricoes || inscricoes.length === 0) {
     return NextResponse.json(
-      { error: 'Inscrição não encontrada ou não solicitou hospedagem.' },
+      { error: 'Nenhum inscrito encontrado com esse termo.' },
       { status: 404 },
     );
   }
 
-  const insc = inscricoes[0];
+  // Mapeia e normaliza os resultados retornando relações aninhadas
+  const results = inscricoes.map((insc: any) => {
+    const hospRaw = insc.evento_hospedagens;
+    const hospedagem = Array.isArray(hospRaw) ? (hospRaw[0] ?? null) : (hospRaw ?? null);
 
-  // Busca hospedagem
-  const { data: hospedagem } = await supabase
-    .from('evento_hospedagens')
-    .select(`
-      id, status, alojamento_id, tipo_cama, numero_cama,
-      checkin_at, checkout_at, checkin_operador, checkout_operador,
-      evento_alojamentos ( nome, publico )
-    `)
-    .eq('evento_id', eventoId)
-    .eq('inscricao_id', insc.id)
-    .maybeSingle();
+    const leitoRaw = insc.evento_hospedagem_leitos;
+    const leito = Array.isArray(leitoRaw) ? (leitoRaw[0] ?? null) : (leitoRaw ?? null);
 
-  // Busca leito individual
-  const { data: leito } = await supabase
-    .from('evento_hospedagem_leitos')
-    .select('numero, tipo_leito, posicao')
-    .eq('evento_id', eventoId)
-    .eq('inscricao_id', insc.id)
-    .maybeSingle();
+    const alojRaw = hospedagem?.evento_alojamentos;
+    const alojObj = Array.isArray(alojRaw) ? (alojRaw[0] ?? null) : (alojRaw ?? null);
 
-  const alojRaw = hospedagem?.evento_alojamentos;
-  const alojObj = (Array.isArray(alojRaw) ? (alojRaw[0] ?? null) : (alojRaw ?? null)) as { nome: string; publico: string } | null;
-
-  return NextResponse.json({
-    inscricao: {
-      id:            insc.id,
-      nome:          insc.nome_inscrito,
-      cpf:           insc.cpf,
-      sexo:          insc.sexo,
-      categoria:     insc.tipo_inscricao,
-      supervisao_id: insc.supervisao_id,
-      campo_id:      insc.campo_id,
-      status_pagamento: insc.status_pagamento,
-    },
-    hospedagem: hospedagem
-      ? {
-          id:               hospedagem.id,
-          status:           hospedagem.status,
-          alojamento_nome:  alojObj?.nome ?? null,
-          tipo_cama:        hospedagem.tipo_cama,
-          numero_cama:      hospedagem.numero_cama,
-          checkin_at:       hospedagem.checkin_at,
-          checkout_at:      hospedagem.checkout_at,
-          checkin_operador: hospedagem.checkin_operador,
-          checkout_operador: hospedagem.checkout_operador,
-        }
-      : null,
-    leito: leito
-      ? {
-          numero:     leito.numero,
-          tipo_leito: leito.tipo_leito,
-          posicao:    leito.posicao,
-        }
-      : null,
+    return {
+      inscricao: {
+        id: insc.id,
+        nome: insc.nome_inscrito,
+        cpf: insc.cpf,
+        sexo: insc.sexo,
+        categoria: insc.tipo_inscricao,
+        supervisao_id: insc.supervisao_id,
+        campo_id: insc.campo_id,
+        status_pagamento: insc.status_pagamento,
+        hospedagem: !!insc.hospedagem,
+        alimentacao: insc.alimentacao,
+      },
+      hospedagem: hospedagem
+        ? {
+            id: hospedagem.id,
+            status: hospedagem.status,
+            alojamento_nome: alojObj?.nome ?? null,
+            tipo_cama: hospedagem.tipo_cama,
+            numero_cama: hospedagem.numero_cama,
+            checkin_at: hospedagem.checkin_at,
+            checkout_at: hospedagem.checkout_at,
+            checkin_operador: hospedagem.checkin_operador,
+            checkout_operador: hospedagem.checkout_operador,
+          }
+        : null,
+      leito: leito
+        ? {
+            numero: leito.numero,
+            tipo_leito: leito.tipo_leito,
+            posicao: leito.posicao,
+          }
+        : null,
+    };
   });
+
+  return NextResponse.json({ results });
 }
 
 // ─── POST: confirma check-in ou checkout ─────────────────────
@@ -121,6 +128,12 @@ export async function POST(
 ) {
   const { eventoId } = await params;
 
+  // O requireEventoPermission é executado primeiro. Se o header x-evento-equipe-id estiver presente,
+  // a sessão será resolvida imediatamente a partir do header sem ler o body stream, prevenindo conflito de stream.
+  const guard = await requireEventoPermission(req, eventoId, 'hospedagem_checkin');
+  if (!guard.ok) return guard.response;
+  const supabase = guard.ctx.supabaseAdmin;
+
   const body = await req.json().catch(() => ({}));
   const { inscricao_id, acao, operador } = body as {
     inscricao_id?: string;
@@ -128,10 +141,6 @@ export async function POST(
     operador?: string;
     equipe_id?: string;
   };
-
-  const guard = await requireEventoPermission(req, eventoId, 'hospedagem_checkin');
-  if (!guard.ok) return guard.response;
-  const supabase = guard.ctx.supabaseAdmin;
 
   if (!inscricao_id || !acao) {
     return NextResponse.json(
@@ -151,7 +160,7 @@ export async function POST(
     .maybeSingle();
 
   if (!hospedagem) {
-    return NextResponse.json({ error: 'Hospedagem não encontrada.' }, { status: 404 });
+    return NextResponse.json({ error: 'Hospedagem não encontrada para esta inscrição.' }, { status: 404 });
   }
 
   const now = new Date().toISOString();
@@ -162,8 +171,8 @@ export async function POST(
       return NextResponse.json({ error: 'Check-in já realizado anteriormente.' }, { status: 409 });
     }
     update = {
-      status:           'checkin_realizado',
-      checkin_at:       now,
+      status: 'checkin_realizado',
+      checkin_at: now,
       checkin_operador: operador ?? null,
     };
   } else {
@@ -174,8 +183,8 @@ export async function POST(
       );
     }
     update = {
-      status:            'checkout_realizado',
-      checkout_at:       now,
+      status: 'checkout_realizado',
+      checkout_at: now,
       checkout_operador: operador ?? null,
     };
   }

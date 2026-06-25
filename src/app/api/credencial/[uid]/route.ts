@@ -8,17 +8,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
 const SELECT_COLS = 'id, unique_id, name, matricula, cargo_ministerial, tipo_sanguineo, data_nascimento, foto_url, custom_fields, status, cred_validade, orden_pastor_data, ev_consagrado_data, cons_missionario_data, ev_autorizado_data, rg, cpf, naturalidade, numero_cgadb, nome_pai, nome_mae';
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ uid: string }> }
 ) {
+  const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
   const { uid: uidRaw } = await params;
   const uid = uidRaw?.trim();
   const isDebug = req.nextUrl.searchParams.get('debug') === '1';

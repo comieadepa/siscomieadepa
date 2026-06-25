@@ -18,6 +18,8 @@ interface CheckinData {
     supervisao_id: string | null;
     campo_id: string | null;
     status_pagamento: string;
+    hospedagem: boolean;
+    alimentacao: boolean | string | null;
   };
   hospedagem: {
     id: string;
@@ -70,16 +72,17 @@ export default function HospedagemCheckinPage() {
 
   const inputRef  = useRef<HTMLInputElement>(null);
 
-  const [query,        setQuery]        = useState('');
-  const [buscando,     setBuscando]     = useState(false);
-  const [data,         setData]         = useState<CheckinData | null>(null);
-  const [erro,         setErro]         = useState<string | null>(null);
-  const [equipeSessao, setEquipeSessaoState] = useState<EquipeSession | null>(null);
-  const [emailAcesso, setEmailAcesso] = useState('');
+  const [query,          setQuery]          = useState('');
+  const [buscando,       setBuscando]       = useState(false);
+  const [searchResults,  setSearchResults]  = useState<CheckinData[]>([]);
+  const [data,           setData]           = useState<CheckinData | null>(null);
+  const [erro,           setErro]           = useState<string | null>(null);
+  const [equipeSessao,   setEquipeSessaoState] = useState<EquipeSession | null>(null);
+  const [emailAcesso,    setEmailAcesso]    = useState('');
   const [solicitandoAcesso, setSolicitandoAcesso] = useState(false);
-  const [operador,     setOperador]     = useState('');
-  const [confirmando,  setConfirmando]  = useState(false);
-  const [sucessoMsg,   setSucessoMsg]   = useState<string | null>(null);
+  const [operador,       setOperador]       = useState('');
+  const [confirmando,    setConfirmando]    = useState(false);
+  const [sucessoMsg,     setSucessoMsg]     = useState<string | null>(null);
 
   const semAcessoDireto = !authLoading && !perfil.loading && !perfil.isGlobal && !!eventoId && !perfil.podeAcessarEvento(eventoId);
   const permissaoEvento = eventoId ? perfil.permissaoParaEvento(eventoId) : null;
@@ -111,7 +114,7 @@ export default function HospedagemCheckinPage() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.ok) {
-        setErro((json as { error?: string }).error || 'E-mail não autorizado para esta função.');
+        setErro((json as { error?: string }).error || 'E-mail não authorized para esta função.');
         return;
       }
       const sessao: EquipeSession = {
@@ -138,6 +141,7 @@ export default function HospedagemCheckinPage() {
     const t = setTimeout(() => {
       setSucessoMsg(null);
       setData(null);
+      setSearchResults([]);
       setQuery('');
       inputRef.current?.focus();
     }, 3000);
@@ -150,29 +154,45 @@ export default function HospedagemCheckinPage() {
     setBuscando(true);
     setErro(null);
     setData(null);
+    setSearchResults([]);
     setSucessoMsg(null);
     try {
+      const headers: Record<string, string> = {};
+      if (equipeSessao?.equipeId) {
+        headers['x-evento-equipe-id'] = equipeSessao.equipeId;
+      }
       const res = await fetch(
         `/api/eventos/${eventoId}/hospedagens/checkin?q=${encodeURIComponent(trimmed)}${equipeSessao ? `&equipe_id=${encodeURIComponent(equipeSessao.equipeId)}` : ''}`,
+        { headers }
       );
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? 'Não encontrado.');
-      setData(json as CheckinData);
+      
+      const list = (json.results || []) as CheckinData[];
+      setSearchResults(list);
+      
+      if (list.length === 1) {
+        setData(list[0]);
+      }
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao buscar.');
     } finally {
       setBuscando(false);
     }
-  }, [eventoId]);
+  }, [eventoId, equipeSessao]);
 
   async function confirmar(acao: 'checkin' | 'checkout') {
     if (!data) return;
     setConfirmando(true);
     setErro(null);
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (equipeSessao?.equipeId) {
+        headers['x-evento-equipe-id'] = equipeSessao.equipeId;
+      }
       const res = await fetch(`/api/eventos/${eventoId}/hospedagens/checkin`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           inscricao_id: data.inscricao.id,
           acao,
@@ -180,6 +200,7 @@ export default function HospedagemCheckinPage() {
           equipe_id: equipeSessao?.equipeId || null,
         }),
       });
+
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? 'Erro ao confirmar.');
       setSucessoMsg(
@@ -194,9 +215,15 @@ export default function HospedagemCheckinPage() {
     }
   }
 
-  const status  = data?.hospedagem?.status;
-  const podeCheckin  = data?.hospedagem && !['checkin_realizado','checkout_realizado','lista_espera','cancelada'].includes(status ?? '');
-  const podeCheckout = status === 'checkin_realizado';
+  const status = data?.hospedagem?.status;
+  const pagoConfirmado = data && ['pago', 'isento'].includes(data.inscricao.status_pagamento);
+  const temHospedagemSolicitada = data?.inscricao.hospedagem === true;
+  
+  // Condições de bloqueio e liberação de check-in
+  const bloqueadoPorPagamento = data && !pagoConfirmado;
+  const bloqueadoPorSemHospedagem = data && !temHospedagemSolicitada;
+  const podeCheckin = data && temHospedagemSolicitada && pagoConfirmado && data.hospedagem && !['checkin_realizado','checkout_realizado','lista_espera','cancelada'].includes(status ?? '');
+  const podeCheckout = data && status === 'checkin_realizado';
 
   if (precisaGate) {
     return (
@@ -263,7 +290,7 @@ export default function HospedagemCheckinPage() {
         {/* Input de busca */}
         <div className="w-full bg-white rounded-2xl shadow-lg p-5 space-y-4">
           <p className="text-sm text-gray-500 text-center">
-            Digite o CPF ou ID da inscrição
+            Digite nome, CPF ou código da inscrição
           </p>
           <div className="flex gap-2">
             <input
@@ -272,7 +299,7 @@ export default function HospedagemCheckinPage() {
               value={query}
               onChange={e => setQuery(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') buscar(query); }}
-              placeholder="CPF ou ID da inscrição…"
+              placeholder="Digite nome, CPF ou código da inscrição..."
               className="flex-1 border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
             />
             <button
@@ -298,25 +325,66 @@ export default function HospedagemCheckinPage() {
           </div>
         )}
 
-        {/* Card do participante */}
+        {/* Múltiplos resultados */}
+        {searchResults.length > 1 && !data && !sucessoMsg && (
+          <div className="w-full bg-white rounded-2xl shadow-lg p-5 space-y-3">
+            <h2 className="text-sm font-bold text-gray-700 border-b pb-2">
+              Resultados encontrados ({searchResults.length}):
+            </h2>
+            <div className="max-h-60 overflow-y-auto divide-y divide-gray-100">
+              {searchResults.map(res => (
+                <button
+                  key={res.inscricao.id}
+                  onClick={() => setData(res)}
+                  className="w-full text-left py-3 px-2 hover:bg-gray-50 flex flex-col gap-1 transition rounded-lg"
+                >
+                  <span className="font-bold text-gray-800 text-sm">{res.inscricao.nome}</span>
+                  <span className="text-xs text-gray-500 flex gap-2">
+                    <span>CPF: {res.inscricao.cpf ?? '—'}</span>
+                    <span>·</span>
+                    <span>{res.inscricao.categoria ?? '—'}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Card do participante selecionado */}
         {data && !sucessoMsg && (
           <div className="w-full bg-white rounded-2xl shadow-lg overflow-hidden">
             {/* Cabeçalho */}
-            <div className="bg-[#123b63] px-5 py-4">
-              <p className="text-white font-black text-lg leading-tight">{data.inscricao.nome}</p>
-              <p className="text-blue-200 text-xs mt-0.5">{data.inscricao.categoria ?? '—'} · {data.inscricao.sexo === 'M' ? 'Masculino' : data.inscricao.sexo === 'F' ? 'Feminino' : '—'}</p>
+            <div className="bg-[#123b63] px-5 py-4 flex justify-between items-start">
+              <div>
+                <p className="text-white font-black text-lg leading-tight">{data.inscricao.nome}</p>
+                <p className="text-blue-200 text-xs mt-0.5">{data.inscricao.categoria ?? '—'} · {data.inscricao.sexo === 'M' ? 'Masculino' : data.inscricao.sexo === 'F' ? 'Feminino' : '—'}</p>
+              </div>
+              {searchResults.length > 1 && (
+                <button
+                  onClick={() => setData(null)}
+                  className="text-xs bg-white/20 hover:bg-white/35 text-white font-semibold px-2.5 py-1 rounded-lg transition"
+                >
+                  Voltar à lista
+                </button>
+              )}
             </div>
 
             {/* Status */}
-            <div className="px-5 pt-4">
-              <span className={`text-sm font-bold px-3 py-1 rounded-full ${
+            <div className="px-5 pt-4 flex gap-2 flex-wrap">
+              <span className={`text-xs font-bold px-3 py-1 rounded-full ${
                 status === 'checkin_realizado'  ? 'bg-emerald-100 text-emerald-700' :
                 status === 'checkout_realizado' ? 'bg-gray-100 text-gray-600'      :
                 status === 'confirmada'         ? 'bg-blue-100 text-blue-700'      :
                 status === 'lista_espera'       ? 'bg-orange-100 text-orange-700'  :
                 'bg-yellow-100 text-yellow-700'
               }`}>
-                {STATUS_LABEL[status ?? ''] ?? status}
+                {STATUS_LABEL[status ?? ''] ?? 'Não Alocado'}
+              </span>
+              
+              <span className={`text-xs font-bold px-3 py-1 rounded-full ${
+                pagoConfirmado ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+              }`}>
+                💳 Pagamento: {String(data.inscricao.status_pagamento).toUpperCase()}
               </span>
             </div>
 
@@ -324,12 +392,14 @@ export default function HospedagemCheckinPage() {
             <div className="px-5 py-4 space-y-2">
               {[
                 { label: 'CPF',           value: data.inscricao.cpf ?? '—' },
+                { label: 'Hospedagem Solicitada', value: temHospedagemSolicitada ? 'Sim' : 'Não' },
                 { label: 'Alojamento',    value: data.hospedagem?.alojamento_nome ?? 'Não alocado' },
                 { label: 'Leito nº',      value: data.hospedagem?.numero_cama ?? data.leito?.numero ?? '—' },
                 { label: 'Tipo de leito', value: data.leito ? TIPO_LEITO[data.leito.tipo_leito] ?? data.leito.tipo_leito : (data.hospedagem?.tipo_cama ?? '—') },
                 { label: 'Posição',       value: data.leito ? POSICAO[data.leito.posicao] ?? data.leito.posicao : '—' },
+                { label: 'Alimentação',   value: data.inscricao.alimentacao === true || String(data.inscricao.alimentacao).toLowerCase() === 'sim' ? 'Sim' : 'Não' },
               ].map(r => (
-                <div key={r.label} className="flex justify-between items-baseline border-b border-gray-50 pb-1.5">
+                <div key={r.label} className="flex justify-between items-baseline border-b border-gray-55 pb-1.5">
                   <span className="text-xs text-gray-500 font-medium">{r.label}</span>
                   <span className="text-sm font-semibold text-gray-800">{r.value}</span>
                 </div>
@@ -368,11 +438,24 @@ export default function HospedagemCheckinPage() {
               </div>
             )}
 
-            {/* Botões */}
+            {/* Alertas e Botões */}
             <div className="px-5 pb-5 flex flex-col gap-3">
-              {data.hospedagem === null && (
-                <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3 text-sm text-center">
-                  ⚠️ Participante ainda não foi alocado em nenhum alojamento.
+              
+              {bloqueadoPorPagamento && (
+                <div className="bg-red-50 border border-red-200 text-red-850 rounded-xl px-4 py-3.5 text-sm font-semibold text-center">
+                  ⚠️ Inscrição encontrada, mas hospedagem não liberada porque o pagamento ainda está pendente.
+                </div>
+              )}
+
+              {bloqueadoPorSemHospedagem && !bloqueadoPorPagamento && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl px-4 py-3.5 text-sm font-semibold text-center">
+                  ⚠️ Inscrição encontrada, mas não possui hospedagem solicitada.
+                </div>
+              )}
+
+              {temHospedagemSolicitada && pagoConfirmado && data.hospedagem === null && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl px-4 py-3 text-sm text-center">
+                  ⚠️ Participante ainda não foi alocado em nenhum alojamento. Aloque no painel operacional antes de fazer check-in.
                 </div>
               )}
 
@@ -382,7 +465,7 @@ export default function HospedagemCheckinPage() {
                   disabled={confirmando}
                   className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black text-base hover:bg-emerald-700 transition disabled:opacity-50 tracking-wide"
                 >
-                  {confirmando ? '⏳ Registrando...' : '✅ CONFIRMAR ENTRADA'}
+                  {confirmando ? '⏳ Registrando...' : '✅ CONFIRMAR CHECK-IN DE HOSPEDAGEM'}
                 </button>
               )}
 
@@ -392,13 +475,13 @@ export default function HospedagemCheckinPage() {
                   disabled={confirmando}
                   className="w-full bg-rose-600 text-white py-4 rounded-xl font-black text-base hover:bg-rose-700 transition disabled:opacity-50 tracking-wide"
                 >
-                  {confirmando ? '⏳ Registrando...' : '🔴 CONFIRMAR SAÍDA'}
+                  {confirmando ? '⏳ Registrando...' : '🔴 CONFIRMAR SAÍDA (CHECK-OUT)'}
                 </button>
               )}
 
               {status === 'checkout_realizado' && (
                 <div className="bg-gray-100 text-gray-500 rounded-xl px-4 py-3 text-sm text-center">
-                  Participante já realizou check-out.
+                  Check-out já realizado para este participante.
                 </div>
               )}
               {status === 'lista_espera' && (
@@ -411,10 +494,10 @@ export default function HospedagemCheckinPage() {
         )}
 
         {/* Sem dados */}
-        {!data && !buscando && !erro && !sucessoMsg && (
+        {!data && searchResults.length <= 1 && !buscando && !erro && !sucessoMsg && (
           <div className="text-white/50 text-center text-sm mt-4">
             <p className="text-5xl mb-3">🔍</p>
-            <p>Digite o CPF ou ID do participante acima</p>
+            <p>Digite o nome, CPF ou código do participante acima</p>
           </div>
         )}
       </main>

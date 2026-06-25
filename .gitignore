@@ -49,3 +49,4 @@ tsconfig.tsbuildinfo
 
 # Supabase CLI binaries (arquivos grandes)
 /tools/supabase/
+.env*.local
