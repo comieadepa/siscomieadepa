@@ -222,6 +222,51 @@ export default function TabHospedagem({
   const [salvandoReal,    setSalvandoReal]    = useState(false);
   const [erroReal,        setErroReal]        = useState<string | null>(null);
 
+  // Transferência Campo Missionário
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [loadingTransferPreview, setLoadingTransferPreview] = useState(false);
+  const [executingTransfer, setExecutingTransfer] = useState(false);
+  const [transferPreview, setTransferPreview] = useState<{
+    totalEncontrados: number;
+    candidatos: {
+      inscricao_id: string;
+      nome_inscrito: string;
+      sexo: string;
+      tipo_inscricao: string;
+      alojamento_atual_nome: string;
+      alojamento_destino_provavel: string;
+      alojamento_destino_provavel_id: string | null;
+    }[];
+    alojamentosDestino: {
+      id: string;
+      nome: string;
+      total_vagas: number;
+      vagas_livres: number;
+    }[];
+  } | null>(null);
+  const [transferResult, setTransferResult] = useState<{
+    transferidos: {
+      inscricao_id: string;
+      nome_inscrito: string;
+      de_alojamento: string;
+      para_alojamento: string;
+      leito: string;
+    }[];
+    semVaga: {
+      inscricao_id: string;
+      nome_inscrito: string;
+      motivo: string;
+    }[];
+    erros: {
+      inscricao_id: string;
+      nome_inscrito: string;
+      erro: string;
+    }[];
+    leitosLiberados: number;
+  } | null>(null);
+  const [transferOp, setTransferOp] = useState('');
+  const [errorTransfer, setErrorTransfer] = useState<string | null>(null);
+
   // ── Sincronização setores AGO ──────────────────────────
   const [sincronizando, setSincronizando] = useState(false);
   const autoSincronizadoRef = useRef(false);
@@ -371,6 +416,7 @@ export default function TabHospedagem({
     const map: Record<string, number> = {};
     for (const h of hospedagensSexFiltered) {
       for (const p of h.pendencias ?? []) {
+        if (p === 'solicitou_sem_pagamento') continue; // Oculta aviso de solicitação sem pagamento
         map[p] = (map[p] ?? 0) + 1;
       }
     }
@@ -619,6 +665,51 @@ export default function TabHospedagem({
     }
   }
 
+  // ── Transferência Campo Missionário ────────────────────────
+  async function abrirTransferirCampoMissionario() {
+    setShowTransferModal(true);
+    setLoadingTransferPreview(true);
+    setTransferPreview(null);
+    setTransferResult(null);
+    setErrorTransfer(null);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/hospedagens/transferir-campo-missionario`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'preview' }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Erro ao buscar prévia');
+      setTransferPreview(json);
+    } catch (err) {
+      setErrorTransfer(err instanceof Error ? err.message : 'Erro ao buscar prévia');
+    } finally {
+      setLoadingTransferPreview(false);
+    }
+  }
+
+  async function executarTransferenciaCampoMissionario() {
+    setExecutingTransfer(true);
+    setErrorTransfer(null);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/hospedagens/transferir-campo-missionario`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'execute', operador: transferOp }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Erro ao executar transferência');
+      setTransferResult(json);
+      // Recarregar os dados principais da hospedagem e alojamentos
+      fetchHospedagens();
+      fetchAlojamentos();
+    } catch (err) {
+      setErrorTransfer(err instanceof Error ? err.message : 'Erro ao executar transferência');
+    } finally {
+      setExecutingTransfer(false);
+    }
+  }
+
   // ── Exportar CSV ───────────────────────────────────────────
   function exportarCSV(lista: Hospedagem[], nome: string) {    baixarCSV(`hospedagem_${nome}_${eventoId}.csv`,
       ['Nome', 'CPF', 'Categoria', 'Sexo', 'Data Nasc.', 'Supervisão', 'Campo', 'Grupo', 'Alojamento', 'Nº Leito', 'Tipo Cama', 'Status', 'Prioridade', 'Nec. Especial', 'Desc. Necessidade', 'Comorbidade', 'Desc. Comorbidade', 'Cama Inferior', 'Observações'],
@@ -799,6 +890,15 @@ export default function TabHospedagem({
             >
               📱 Tela Check-in
             </a>
+
+            {evento.departamento === 'AGO' && (
+              <button
+                onClick={abrirTransferirCampoMissionario}
+                className="w-full sm:w-auto flex items-center gap-2 bg-violet-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-violet-800 transition"
+              >
+                🔄 Transferir Campo Missionário
+              </button>
+            )}
 
             <div className="flex flex-wrap gap-2 flex-1 min-w-0">
               <select value={filtroStatus} onChange={e => {
@@ -1312,6 +1412,222 @@ export default function TabHospedagem({
       )}
 
       {/* ════════════ MODAL REALOCAÇÃO ══════════════════════════ */}
+      {/* ════════════ MODAL TRANSFERIR CAMPO MISSIONÁRIO ══════════ */}
+      {showTransferModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b pb-3 mb-4">
+              <h2 className="text-base font-black text-[#0D2B4E]">🔄 Transferir Campo Missionário</h2>
+              <button onClick={() => setShowTransferModal(false)} className="text-gray-400 hover:text-gray-600 font-bold text-lg">✕</button>
+            </div>
+
+            {errorTransfer && (
+              <div className="mb-3 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">⚠️ {errorTransfer}</div>
+            )}
+
+            <div className="flex-1 overflow-y-auto pr-1 space-y-4">
+              {loadingTransferPreview ? (
+                <div className="flex flex-col items-center justify-center py-12 space-y-2">
+                  <span className="text-2xl animate-spin">⏳</span>
+                  <p className="text-sm text-gray-500 font-medium">Buscando prévia de transferências...</p>
+                </div>
+              ) : transferResult ? (
+                // Exibir resumo após execução
+                <div className="space-y-4">
+                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 p-4 rounded-xl">
+                    <h3 className="font-bold text-sm mb-1">✅ Processamento de transferência concluído!</h3>
+                    <p className="text-xs">
+                      Total de leitos antigos liberados com sucesso: <strong className="text-sm">{transferResult.leitosLiberados}</strong>
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="bg-emerald-100/50 p-3 rounded-lg border border-emerald-200">
+                      <p className="text-xs text-emerald-800 font-bold uppercase">Transferidos</p>
+                      <p className="text-2xl font-black text-emerald-900">{transferResult.transferidos.length}</p>
+                    </div>
+                    <div className="bg-orange-100/50 p-3 rounded-lg border border-orange-200">
+                      <p className="text-xs text-orange-800 font-bold uppercase">Sem Vaga</p>
+                      <p className="text-2xl font-black text-orange-900">{transferResult.semVaga.length}</p>
+                    </div>
+                    <div className="bg-rose-100/50 p-3 rounded-lg border border-rose-200">
+                      <p className="text-xs text-rose-800 font-bold uppercase">Erros</p>
+                      <p className="text-2xl font-black text-rose-900">{transferResult.erros.length}</p>
+                    </div>
+                  </div>
+
+                  {transferResult.transferidos.length > 0 && (
+                    <div>
+                      <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider mb-2">Sucessos ({transferResult.transferidos.length})</h4>
+                      <div className="border rounded-lg overflow-hidden max-h-40 overflow-y-auto">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-gray-50 border-b">
+                            <tr>
+                              <th className="p-2 font-bold text-gray-600">Inscrito</th>
+                              <th className="p-2 font-bold text-gray-600">De (Anterior)</th>
+                              <th className="p-2 font-bold text-gray-600">Para (Novo)</th>
+                              <th className="p-2 font-bold text-gray-600">Leito</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {transferResult.transferidos.map((t, i) => (
+                              <tr key={i} className="border-b hover:bg-gray-50">
+                                <td className="p-2 font-medium text-gray-800">{t.nome_inscrito}</td>
+                                <td className="p-2 text-gray-600">{t.de_alojamento}</td>
+                                <td className="p-2 text-indigo-700 font-semibold">{t.para_alojamento}</td>
+                                <td className="p-2 text-gray-600">{t.leito}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {transferResult.semVaga.length > 0 && (
+                    <div>
+                      <h4 className="font-bold text-xs text-orange-800 uppercase tracking-wider mb-2">Sem Vagas ({transferResult.semVaga.length})</h4>
+                      <div className="bg-orange-50 border border-orange-100 rounded-lg p-3 space-y-1.5 text-xs text-orange-950">
+                        {transferResult.semVaga.map((t, i) => (
+                          <div key={i} className="flex justify-between">
+                            <span className="font-semibold">{t.nome_inscrito}</span>
+                            <span className="text-orange-800 italic">{t.motivo}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {transferResult.erros.length > 0 && (
+                    <div>
+                      <h4 className="font-bold text-xs text-rose-800 uppercase tracking-wider mb-2">Falhas de Operação ({transferResult.erros.length})</h4>
+                      <div className="bg-rose-50 border border-rose-100 rounded-lg p-3 space-y-1.5 text-xs text-rose-950">
+                        {transferResult.erros.map((t, i) => (
+                          <div key={i} className="flex justify-between">
+                            <span className="font-semibold">{t.nome_inscrito}</span>
+                            <span className="text-rose-800 font-mono">{t.erro}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                // Exibir prévia antes de executar
+                <div className="space-y-4">
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-xs text-blue-900 space-y-1">
+                    <p className="font-bold text-sm">ℹ️ Sobre esta rotina:</p>
+                    <p>Esta ferramenta identifica inscritos da categoria <strong>CAMPO MISSIONÁRIO</strong> alocados incorretamente em alojamentos que não pertencem ao grupo de Pastor Presidente.</p>
+                    <p>Ao executar, o sistema irá liberar as vagas incorretas nos alojamentos antigos e alocá-los em leitos livres compatíveis nos prédios <strong>AAME</strong> ou <strong>NOVO</strong>, registrando auditoria.</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Resumo de Vagas de Destino */}
+                    <div className="bg-white border rounded-xl p-3 space-y-2">
+                      <h4 className="font-bold text-xs text-gray-500 uppercase tracking-wider">Alojamentos Destino (Pastor Presidente)</h4>
+                      <div className="space-y-1.5">
+                        {transferPreview?.alojamentosDestino.map(a => (
+                          <div key={a.id} className="flex justify-between text-xs items-center border-b pb-1">
+                            <span className="font-medium text-gray-800">{a.nome}</span>
+                            <span className={`font-bold ${a.vagas_livres > 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                              {a.vagas_livres} / {a.total_vagas} livres
+                            </span>
+                          </div>
+                        ))}
+                        {transferPreview?.alojamentosDestino.length === 0 && (
+                          <p className="text-xs text-gray-400 italic">Nenhum alojamento de destino disponível.</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Resumo Geral da Simulação */}
+                    <div className="bg-white border rounded-xl p-3 flex flex-col justify-center text-center">
+                      <p className="text-xs text-gray-400 uppercase tracking-wider font-bold mb-1">Inscritos para transferir</p>
+                      <p className="text-4xl font-black text-violet-800">{transferPreview?.totalEncontrados ?? 0}</p>
+                      <p className="text-xs text-gray-500 mt-1">Aguardando execução</p>
+                    </div>
+                  </div>
+
+                  {/* Lista de Candidatos */}
+                  {transferPreview && transferPreview.candidatos.length > 0 ? (
+                    <div>
+                      <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider mb-2">Fila de Transferência</h4>
+                      <div className="border rounded-lg overflow-hidden max-h-56 overflow-y-auto">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-gray-50 border-b">
+                            <tr>
+                              <th className="p-2 font-bold text-gray-600">Participante</th>
+                              <th className="p-2 font-bold text-gray-600">Alojamento Atual</th>
+                              <th className="p-2 font-bold text-gray-600">Destino Provável</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {transferPreview.candidatos.map((c, idx) => (
+                              <tr key={idx} className="border-b hover:bg-gray-50">
+                                <td className="p-2 font-medium text-gray-800">{c.nome_inscrito}</td>
+                                <td className="p-2 text-gray-500">{c.alojamento_atual_nome}</td>
+                                <td className={`p-2 font-semibold ${c.alojamento_destino_provavel_id ? 'text-violet-700' : 'text-rose-600'}`}>
+                                  {c.alojamento_destino_provavel}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-400 italic text-center py-6">Nenhum inscrito elegível encontrado para transferência incorreta.</p>
+                  )}
+
+                  {/* Input do Operador */}
+                  {transferPreview && transferPreview.candidatos.length > 0 && (
+                    <div className="bg-gray-50 p-3 rounded-xl border">
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Nome do Operador / Responsável *</label>
+                      <input
+                        type="text"
+                        value={transferOp}
+                        onChange={e => setTransferOp(e.target.value)}
+                        placeholder="Identifique-se para o log de auditoria"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-violet-600 bg-white"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 mt-5 pt-3 border-t">
+              {transferResult ? (
+                <button
+                  onClick={() => setShowTransferModal(false)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-gray-800 text-white text-sm font-bold hover:bg-gray-900 transition"
+                >
+                  Concluir e Fechar
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setShowTransferModal(false)}
+                    disabled={executingTransfer}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition"
+                  >
+                    Cancelar
+                  </button>
+                  {transferPreview && transferPreview.candidatos.length > 0 && (
+                    <button
+                      onClick={executarTransferenciaCampoMissionario}
+                      disabled={executingTransfer || !transferOp.trim()}
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-violet-700 text-white text-sm font-bold hover:bg-violet-800 transition disabled:opacity-50"
+                    >
+                      {executingTransfer ? '⏳ Transferindo...' : '🚀 Executar Transferências'}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {modalRealocar && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">

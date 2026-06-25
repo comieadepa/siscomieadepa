@@ -3,6 +3,7 @@
 import Sidebar from '@/components/Sidebar';
 import { ReactNode, useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase-client';
+import { getEquipeSession } from '@/lib/equipe-session';
 
 interface PageLayoutProps {
   title: string;
@@ -34,10 +35,20 @@ export default function PageLayout({
     });
   }, []);
 
+  const [isHospedagemEquipe, setIsHospedagemEquipe] = useState(false);
+
+  useEffect(() => {
+    // Check if the current user session is an active team session for 'hospedagem'
+    const equipeSessao = getEquipeSession();
+    if (equipeSessao && (equipeSessao.tipo === 'hospedagem' || equipeSessao.tipo === 'checkin_hospedagem')) {
+      setIsHospedagemEquipe(true);
+    }
+  }, []);
+
   return (
     <div className="flex min-h-screen bg-gray-100 overflow-x-hidden">
       {/* SIDEBAR */}
-      <Sidebar activeMenu={sidebarActive} setActiveMenu={setSidebarActive} />
+      {!isHospedagemEquipe && <Sidebar activeMenu={sidebarActive} setActiveMenu={setSidebarActive} />}
 
       {/* MAIN CONTENT */}
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">

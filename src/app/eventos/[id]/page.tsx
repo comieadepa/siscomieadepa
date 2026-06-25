@@ -679,56 +679,60 @@ export default function GerenciarEventoPage() {
 
           {/* Botões de ação — agrupados à direita */}
           <div className="flex flex-wrap gap-2 px-5 pt-2 pb-5 md:px-6 md:pb-6 border-t border-gray-100 lg:border-t-0 lg:mt-0 lg:pt-6 lg:pb-0 lg:pr-6 lg:pl-0 lg:flex-col lg:flex-nowrap lg:items-end lg:self-start">
-            <button
-              onClick={() => router.push('/eventos')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-gray-600 hover:bg-gray-50 border border-gray-200 transition"
-            >
-              ← Voltar
-            </button>
-            {perfil.podeEditar && (
-              <button onClick={() => router.push(`/eventos/${id}/editar`)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200 transition">
-                ✏️ Editar
-              </button>
-            )}
-            <a href={`/inscricao/${evento.slug}`} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition">
-              🌐 Pág. Pública
-            </a>
-            <a href={`/eventos/${id}/display`} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#0D2B4E] text-white hover:bg-[#0a1e38] transition">
-              📺 Display
-            </a>
-            <a href={`/eventos/${id}/balcao`} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#D9A520] text-white hover:bg-[#b8861a] transition">
-              🏪 Balcão
-            </a>
-            {isAGO && evento.status === 'programado' && perfil.podeEditar && (
-              <button
-                onClick={() => setShowEncerrarModal(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-red-700 text-white hover:bg-red-800 transition"
-              >
-                🔒 Encerrar AGO
-              </button>
-            )}
-            {perfil.podeEditar && evento.status === 'programado' && (
-              <button
-                onClick={toggleInscricoes}
-                disabled={pausandoInscricoes}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition disabled:opacity-60 ${
-                  evento.inscricoes_abertas
-                    ? 'bg-amber-500 text-white hover:bg-amber-600'
-                    : 'bg-emerald-600 text-white hover:bg-emerald-700'
-                }`}
-                title={evento.inscricoes_abertas ? 'Pausar inscrições (emergência ASAAS/Webhook)' : 'Retomar inscrições'}
-              >
-                {pausandoInscricoes
-                  ? '...'
-                  : evento.inscricoes_abertas
-                    ? '⏸ Pausar Inscrições'
-                    : '▶ Retomar Inscrições'
-                }
-              </button>
+            {!(equipeSessao && (equipeSessao.tipo === 'hospedagem' || equipeSessao.tipo === 'checkin_hospedagem')) && (
+              <>
+                <button
+                  onClick={() => router.push('/eventos')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-gray-600 hover:bg-gray-50 border border-gray-200 transition"
+                >
+                  ← Voltar
+                </button>
+                {perfil.podeEditar && (
+                  <button onClick={() => router.push(`/eventos/${id}/editar`)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200 transition">
+                    ✏️ Editar
+                  </button>
+                )}
+                <a href={`/inscricao/${evento.slug}`} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition">
+                  🌐 Pág. Pública
+                </a>
+                <a href={`/eventos/${id}/display`} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#0D2B4E] text-white hover:bg-[#0a1e38] transition">
+                  📺 Display
+                </a>
+                <a href={`/eventos/${id}/balcao`} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#D9A520] text-white hover:bg-[#b8861a] transition">
+                  🏪 Balcão
+                </a>
+                {isAGO && evento.status === 'programado' && perfil.podeEditar && (
+                  <button
+                    onClick={() => setShowEncerrarModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-red-700 text-white hover:bg-red-800 transition"
+                  >
+                    🔒 Encerrar AGO
+                  </button>
+                )}
+                {perfil.podeEditar && evento.status === 'programado' && (
+                  <button
+                    onClick={toggleInscricoes}
+                    disabled={pausandoInscricoes}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition disabled:opacity-60 ${
+                      evento.inscricoes_abertas
+                        ? 'bg-amber-500 text-white hover:bg-amber-600'
+                        : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                    }`}
+                    title={evento.inscricoes_abertas ? 'Pausar inscrições (emergência ASAAS/Webhook)' : 'Retomar inscrições'}
+                  >
+                    {pausandoInscricoes
+                      ? '...'
+                      : evento.inscricoes_abertas
+                        ? '⏸ Pausar Inscrições'
+                        : '▶ Retomar Inscrições'
+                    }
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

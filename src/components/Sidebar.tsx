@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef, type ComponentType } from 'react'
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
 import { normalizeRole } from '@/lib/auth/roles';
+import { getEquipeSession } from '@/lib/equipe-session';
 import {
   AlertTriangle,
   ArrowRight,
@@ -482,6 +483,19 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
       </div>
     </div>
   );
+
+  const [isHospedagemEquipe, setIsHospedagemEquipe] = useState(false);
+
+  useEffect(() => {
+    const sess = getEquipeSession();
+    if (sess && (sess.tipo === 'hospedagem' || sess.tipo === 'checkin_hospedagem')) {
+      setIsHospedagemEquipe(true);
+    }
+  }, []);
+
+  if (isHospedagemEquipe) {
+    return null;
+  }
 
   return (
     <>
