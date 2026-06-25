@@ -2,8 +2,6 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
-import { useEventosPerfil } from '@/hooks/useEventosPerfil';
 import { clearEquipeSession, getEquipeSession, setEquipeSession } from '@/lib/equipe-session';
 import type { EquipeSession } from '@/lib/equipe-session';
 
@@ -67,8 +65,6 @@ export default function HospedagemCheckinPage() {
   const params  = useParams<{ id: string }>();
   const router  = useRouter();
   const eventoId = params.id;
-  const { user, loading: authLoading } = useRequireSupabaseAuth({ allowEquipeSession: { eventoId }, allowAnonymous: false });
-  const perfil = useEventosPerfil();
 
   const inputRef  = useRef<HTMLInputElement>(null);
 
@@ -83,12 +79,9 @@ export default function HospedagemCheckinPage() {
   const [operador,       setOperador]       = useState('');
   const [confirmando,    setConfirmando]    = useState(false);
   const [sucessoMsg,     setSucessoMsg]     = useState<string | null>(null);
+  const [verificandoSessao, setVerificandoSessao] = useState(true);
 
-  const semAcessoDireto = !authLoading && !perfil.loading && !perfil.isGlobal && !!eventoId && !perfil.podeAcessarEvento(eventoId);
-  const permissaoEvento = eventoId ? perfil.permissaoParaEvento(eventoId) : null;
-  const rolesPermitidos = ['admin_evento', 'operador', 'checkin', 'hospedagem', 'checkin_hospedagem'];
-  const perfilBloqueado = !perfil.loading && !perfil.isGlobal && !equipeSessao && !!permissaoEvento && !rolesPermitidos.includes(permissaoEvento);
-  const precisaGate = !authLoading && !perfil.loading && !equipeSessao && (!user || semAcessoDireto);
+  const precisaGate = !verificandoSessao && !equipeSessao;
 
   useEffect(() => {
     const sess = getEquipeSession();
@@ -97,6 +90,7 @@ export default function HospedagemCheckinPage() {
     } else {
       setEquipeSessaoState(null);
     }
+    setVerificandoSessao(false);
   }, [eventoId]);
 
   async function solicitarAcesso() {
@@ -266,16 +260,7 @@ export default function HospedagemCheckinPage() {
     );
   }
 
-  if (perfilBloqueado) {
-    return (
-      <div className="min-h-screen bg-[#0D2B4E] flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-lg w-full max-w-md p-6 text-center">
-          <h1 className="text-lg font-bold text-[#123b63] mb-2">Acesso não autorizado para esta função.</h1>
-          <p className="text-sm text-gray-600">Use o acesso de Hospedagem ou Check-in de Hospedagem.</p>
-        </div>
-      </div>
-    );
-  }
+
 
   return (
     <div className="min-h-screen bg-[#0D2B4E] flex flex-col">

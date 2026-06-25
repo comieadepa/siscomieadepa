@@ -2,8 +2,6 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback, type FormEvent } from 'react';
 import { useRouter, useParams, usePathname, useSearchParams } from 'next/navigation';
-import { useEventosPerfil } from '@/hooks/useEventosPerfil';
-import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { createClient } from '@/lib/supabase-client';
 import { clearEquipeSession, getEquipeSession, setEquipeSession } from '@/lib/equipe-session';
 import type { EquipeSession } from '@/lib/equipe-session';
@@ -182,8 +180,6 @@ function vibrar(tipo: 'sucesso' | 'erro') {
 export default function CheckinMobilePage() {
   const params = useParams();
   const id = params?.id as string;
-  const { user, loading: authLoading } = useRequireSupabaseAuth({ allowEquipeSession: { eventoId: id }, allowAnonymous: true });
-  const perfil = useEventosPerfil();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -245,17 +241,18 @@ export default function CheckinMobilePage() {
   const [cameraMsg, setCameraMsg] = useState<string | null>(null);
   const cameraErroRef = useRef<string | null>(null);
   const iniciandoRef = useRef(false);
+  const [verificandoSessao, setVerificandoSessao] = useState(true);
 
-  const semAcessoDireto = !authLoading && !perfil.loading && !perfil.isGlobal && !!id && !perfil.podeAcessarEvento(id);
-  const precisaGate = !authLoading && !perfil.loading && !equipeSessao && (!user || semAcessoDireto);
+  const precisaGate = !verificandoSessao && !equipeSessao;
 
   useEffect(() => {
     const sess = getEquipeSession();
-    if (sess && sess.eventoId === id && sess.tipo === 'checkin') {
+    if (sess && sess.eventoId === id && (sess.tipo === 'checkin' || sess.tipo === 'checkin_refeitorio' || sess.tipo === 'operador')) {
       setEquipeSessao(sess);
     } else {
       setEquipeSessao(null);
     }
+    setVerificandoSessao(false);
   }, [id]);
 
   const carregarContadores = useCallback(async () => {
@@ -271,13 +268,13 @@ export default function CheckinMobilePage() {
     setUltimosCheckins((data ?? []) as Inscricao[]);
   }, [id, supabase]);
 
-  const validarSessaoEquipe = useCallback(async (): Promise<Evento | null> => {
-    if (!equipeSessao || !id) return null;
+  const validarSessaoEquipe = useCallback(async (sess: EquipeSession): Promise<Evento | null> => {
+    if (!sess || !id) return null;
     try {
       const res = await fetch(`/api/eventos/${id}/checkin/validar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ equipe_id: equipeSessao.equipeId, area: modoCheckin === 'refeitorio' ? 'refeitorio' : 'checkin' }),
+        body: JSON.stringify({ equipe_id: sess.equipeId, area: modoCheckin === 'refeitorio' ? 'refeitorio' : 'checkin' }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.ok) {
@@ -306,23 +303,21 @@ export default function CheckinMobilePage() {
       setLoadingEvento(false);
       return null;
     }
-  }, [equipeSessao, id, modoCheckin]);
+  }, [id, modoCheckin]);
 
   // ── Carrega evento e dados base ───────────────────────────
   useEffect(() => {
-    if (authLoading || perfil.loading) return;
+    if (verificandoSessao) return;
 
     if (precisaGate) {
       setLoadingEvento(false);
       return;
     }
 
-    // Gate de acesso (departamento admin com evento de outro dept)
-
     async function load() {
       let eventoEquipe: Evento | null = null;
       if (equipeSessao) {
-        eventoEquipe = await validarSessaoEquipe();
+        eventoEquipe = await validarSessaoEquipe(equipeSessao);
         if (!eventoEquipe) return;
       }
       const [evRes, estruturaRes] = await Promise.all([
@@ -344,11 +339,6 @@ export default function CheckinMobilePage() {
         setLoadingEvento(false);
         return;
       }
-      // Gate de departamento: isDeptAdmin só acessa eventos do seu dept (exceto subcategoria TODOS)
-      if (eventoData && perfil.isDeptAdmin && perfil.departamentoUsuario !== 'TODOS' && eventoData.departamento !== perfil.departamentoUsuario) {
-        setAcessoMotivo('nao_autorizado');
-        setAcessoNegado(true); setLoadingEvento(false); return;
-      }
       if (eventoData) setEvento(eventoData);
       if (estruturaRes.ok) {
         const estrutura = await estruturaRes.json().catch(() => null as any);
@@ -359,7 +349,7 @@ export default function CheckinMobilePage() {
       await carregarContadores();
     }
     load();
-  }, [authLoading, perfil.loading, perfil.isGlobal, perfil.isDeptAdmin, perfil.departamentoUsuario, id, supabase, precisaGate, perfil.podeAcessarEvento, carregarContadores, equipeSessao, validarSessaoEquipe]);
+  }, [verificandoSessao, id, supabase, precisaGate, carregarContadores, equipeSessao, validarSessaoEquipe]);
 
   async function solicitarAcesso(e: FormEvent) {
     e.preventDefault();
@@ -677,7 +667,7 @@ export default function CheckinMobilePage() {
     const now = new Date().toISOString();
     try {
       if (equipeSessao) {
-        const ok = await validarSessaoEquipe();
+        const ok = await validarSessaoEquipe(equipeSessao);
         if (!ok) return;
       }
 
@@ -801,7 +791,7 @@ export default function CheckinMobilePage() {
     );
   }
 
-  if (authLoading || perfil.loading || loadingEvento) {
+  if (verificandoSessao || loadingEvento) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
         <div className="text-white text-center">
