@@ -288,7 +288,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 1. Atualizar o processo de consagração com os vínculos
-      const { error: updateProcessError } = await supabase
+      const { data: updatedRows, error: updateProcessError } = await supabase
         .from('consagracao_registros')
         .update({
           member_id: memberId,
@@ -297,10 +297,15 @@ export async function POST(request: NextRequest) {
           homologado_em: new Date().toISOString(),
           homologado_por: userId
         })
-        .eq('id', id);
+        .eq('id', id)
+        .select('id');
 
       if (updateProcessError) {
         throw new Error(`Erro ao vincular processo: ${updateProcessError.message}`);
+      }
+
+      if (!updatedRows || updatedRows.length === 0) {
+        throw new Error(`Erro de RLS ou permissão: O processo não pôde ser atualizado no banco de dados (0 linhas afetadas). Verifique se o operador possui as permissões necessárias ou se a service_role key está ativa.`);
       }
 
       // Processa documentos
@@ -373,7 +378,7 @@ export async function POST(request: NextRequest) {
 
           // Atualiza dados na tabela candidato_documentos
           const nowIso = new Date().toISOString();
-          const { error: updateDocError } = await supabase
+          const { data: updatedDocs, error: updateDocError } = await supabase
             .from('candidato_documentos')
             .update({
               member_id: memberId,
@@ -381,10 +386,13 @@ export async function POST(request: NextRequest) {
               homologado_em: nowIso,
               homologado_por: userId
             })
-            .eq('drive_file_id', driveFileId);
+            .eq('drive_file_id', driveFileId)
+            .select('id');
 
           if (updateDocError) {
             console.error(`[regularizar_homologados] erro ao atualizar doc ${driveFileId}:`, updateDocError.message);
+          } else if (!updatedDocs || updatedDocs.length === 0) {
+            console.error(`[regularizar_homologados] aviso: 0 linhas afetadas ao atualizar doc ${driveFileId} (possível bloqueio de RLS).`);
           }
 
           const originalBytes = dbDoc.arquivo_original_bytes || parseInt(driveFile.size || '0') || 0;
