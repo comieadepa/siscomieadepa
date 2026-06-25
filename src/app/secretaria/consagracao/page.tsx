@@ -2835,18 +2835,16 @@ export default function ConsagracaoPage() {
           )}
 
           {sucessoReg && (
-            <div className="text-green-700 text-sm bg-green-50 border border-green-200 rounded-lg px-4 py-3 font-semibold">
+            <div className={`text-sm rounded-lg px-4 py-3 border ${
+              sucessoReg.includes('Regularizando')
+                ? 'bg-blue-50 border-blue-200 text-blue-800'
+                : 'bg-green-50 border-green-200 text-green-800'
+            }`}>
               {sucessoReg}
             </div>
           )}
 
-          {loadingReg ? (
-            <div className="text-center py-8 text-gray-500">Buscando candidatos elegíveis no banco...</div>
-          ) : candidatosReg.length === 0 ? (
-            <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
-              Nenhum processo antigo "órfão" (status homologado e sem ministro vinculado) foi encontrado.
-            </div>
-          ) : (
+          {candidatosReg.length > 0 && (
             <div className="space-y-4">
               <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
                 <span className="text-sm font-semibold text-amber-900">
@@ -2861,7 +2859,7 @@ export default function ConsagracaoPage() {
 
                     setExecutandoReg(true);
                     setErrosReg([]);
-                    setSucessoReg('');
+                    setSucessoReg('Regularizando homologados...');
 
                     try {
                       const res = await authenticatedFetch('/api/v1/secretaria/consagracao/regularizar-homologados', {
@@ -2871,7 +2869,7 @@ export default function ConsagracaoPage() {
                       const payload = await res.json();
                       if (res.ok && payload.ok) {
                         setSucessoReg(
-                          `Regularização concluída! Sucesso: ${payload.regularizados}, Ignorados: ${payload.ignorados}, Erros: ${payload.erros}.`
+                          `Regularização concluída! Sucesso: ${payload.regularizados || 0}, Ignorados: ${payload.ignorados || 0}, Erros: ${payload.erros || 0}.`
                         );
                         if (payload.erros_detalhes && payload.erros_detalhes.length > 0) {
                           setErrosReg(payload.erros_detalhes);
@@ -2880,9 +2878,12 @@ export default function ConsagracaoPage() {
                         loadInitialData();
                         carregarCandidatosRegularizacao();
                       } else {
+                        setSucessoReg('');
                         setErrosReg([payload.error || 'Erro ao executar rotina de regularização.']);
                       }
-                    } catch {
+                    } catch (fetchErr) {
+                      console.error('[regularizar_homologados] Falha catastrófica:', fetchErr);
+                      setSucessoReg('');
                       setErrosReg(['Erro de conexão ou timeout durante a execução da rotina.']);
                     } finally {
                       setExecutandoReg(false);
