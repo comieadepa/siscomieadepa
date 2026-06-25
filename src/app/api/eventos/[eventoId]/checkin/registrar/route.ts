@@ -91,12 +91,49 @@ export async function POST(
     return NextResponse.json({ error: 'Check-in desativado.' }, { status: 403 });
 
   // ── Busca inscricao ──────────────────────────────────────
-  const { data: inscricao } = await supabase
+  let targetQrToken = qrToken;
+  let { data: inscricao } = (await supabase
     .from('evento_inscricoes')
     .select(SELECT_INSC)
     .eq('evento_id', eventoId)
-    .or(`qr_code.eq.${qrToken},id.eq.${qrToken}`)
-    .maybeSingle();
+    .or(`qr_code.eq.${targetQrToken},id.eq.${targetQrToken}`)
+    .maybeSingle()) as any;
+
+  // Se não encontrou a inscrição diretamente pelo token, tenta buscar se o token é uma Credencial de Ministro permanente
+  if (!inscricao) {
+    const { data: qrTokenRecord } = (await supabase
+      .from('credencial_qr_tokens')
+      .select('ministro_id')
+      .eq('token', qrToken)
+      .maybeSingle()) as any;
+
+    if (qrTokenRecord) {
+      // Busca o Ministro associado para obter o seu CPF
+      const { data: ministro } = (await supabase
+        .from('members')
+        .select('cpf')
+        .eq('id', qrTokenRecord.ministro_id)
+        .maybeSingle()) as any;
+
+      if (ministro?.cpf) {
+        const cpfLimpo = String(ministro.cpf).replace(/\D/g, '');
+        if (cpfLimpo) {
+          // Busca a inscrição na AGO associada a este CPF
+          const { data: inscByCpf } = (await supabase
+            .from('evento_inscricoes')
+            .select(SELECT_INSC)
+            .eq('evento_id', eventoId)
+            .eq('cpf', cpfLimpo)
+            .maybeSingle()) as any;
+
+          if (inscByCpf) {
+            inscricao = inscByCpf;
+            targetQrToken = inscByCpf.qr_code || targetQrToken;
+          }
+        }
+      }
+    }
+  }
 
   if (!inscricao) {
     const { data: outra } = await supabase

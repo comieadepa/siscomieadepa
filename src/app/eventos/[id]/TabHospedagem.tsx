@@ -271,6 +271,9 @@ export default function TabHospedagem({
   const [sincronizando, setSincronizando] = useState(false);
   const autoSincronizadoRef = useRef(false);
 
+  // Paginação
+  const [paginaHosp, setPaginaHosp] = useState(1);
+
   // ── Fetch ──────────────────────────────────────────────────
   const fetchAlojamentos = useCallback(async (): Promise<Alojamento[]> => {
     setLoadingAloj(true);
@@ -355,6 +358,11 @@ export default function TabHospedagem({
     }
     return list;
   }, [hospedagens, filtroSexo]);
+
+  // Resetar página quando filtros mudam
+  useEffect(() => {
+    setPaginaHosp(1);
+  }, [filtroStatus, filtroAloj, filtroSup, filtroNecEsp, filtroGrupo, filtroPend, busca, filtroSexo]);
 
   const hospFiltradas = useMemo(() => {
     let list = hospedagensSexFiltered;
@@ -872,117 +880,159 @@ export default function TabHospedagem({
           )}
 
           {/* Botão autoalocar + filtros */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-wrap gap-3 items-end">
-            <button
-              onClick={autoalocar}
-              disabled={autoalocando || stats.elegiveis === 0}
-              title="Processa TODAS as pendências do evento, ignorando filtros visuais."
-              className="w-full sm:w-auto flex items-center gap-2 bg-[#0D2B4E] text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-[#0a1e38] transition disabled:opacity-50"
-            >
-              {autoalocando ? '⏳ Alocando...' : '🤖 Processar pendências'}
-            </button>
-
-            <a
-              href={`/eventos/${eventoId}/hospedagem/checkin`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full sm:w-auto flex items-center gap-2 bg-teal-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-teal-700 transition"
-            >
-              📱 Tela Check-in
-            </a>
-
-            {evento.departamento === 'AGO' && (
-              <button
-                onClick={abrirTransferirCampoMissionario}
-                className="w-full sm:w-auto flex items-center gap-2 bg-violet-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-violet-800 transition"
-              >
-                🔄 Transferir Campo Missionário
-              </button>
-            )}
-
-            <div className="flex flex-wrap gap-2 flex-1 min-w-0">
-              <select value={filtroStatus} onChange={e => {
-                const val = e.target.value;
-                setFiltroStatus(val);
-                if (val && ['alocada', 'lista_espera', 'checkin_realizado', 'confirmada'].includes(val) && filtroPend) {
-                  setFiltroPend('');
-                  setAvisoFiltro('Os filtros selecionados eram conflitantes e foram ajustados automaticamente.');
-                }
-              }}
-                className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-                <option value="">Todos os status</option>
-                <option value="aguardando_pagamento">Aguardando pagamento</option>
-                <option value="elegivel">Elegível para alocação</option>
-                <option value="pago_sem_alocacao">Pago sem alocação</option>
-                <option value="alocada">Alocada</option>
-                <option value="confirmada">Confirmada</option>
-                <option value="checkin_realizado">Check-in Realizado</option>
-                <option value="lista_espera">Lista Espera</option>
-              </select>
-
-              <select value={filtroSexo} onChange={e => setFiltroSexo(e.target.value)}
-                className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-                <option value="">Todos os sexos</option>
-                <option value="M">Masculino</option>
-                <option value="F">Feminino</option>
-                <option value="N">Não informado</option>
-              </select>
-
-              <select value={filtroAloj} onChange={e => setFiltroAloj(e.target.value)}
-                className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-                <option value="">Todos os alojamentos</option>
-                {alojamentos.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
-              </select>
-
-              <select value={filtroSup} onChange={e => setFiltroSup(e.target.value)}
-                className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-                <option value="">Toda supervisão</option>
-                {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
-              </select>
-
-              <select value={filtroNecEsp} onChange={e => setFiltroNecEsp(e.target.value)}
-                className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-                <option value="">Nec. especial?</option>
-                <option value="1">Sim</option>
-                <option value="0">Não</option>
-              </select>
-
-              {gruposDisponiveis.length > 0 && (
-                <select value={filtroGrupo} onChange={e => setFiltroGrupo(e.target.value)}
-                  className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-                  <option value="">Todos os grupos</option>
-                  {gruposDisponiveis.map(g => <option key={g} value={g}>{g}</option>)}
-                </select>
-              )}
-
-              <select value={filtroPend} onChange={e => {
-                const val = e.target.value;
-                setFiltroPend(val);
-                if (val && filtroStatus) {
-                  setFiltroStatus('');
-                  setAvisoFiltro('Os filtros selecionados eram conflitantes e foram ajustados automaticamente.');
-                }
-              }}
-                className="w-full sm:w-auto border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-                <option value="">Sem filtro de pendência</option>
-                {Object.entries(PENDENCIA_LABEL).map(([codigo, label]) => (
-                  <option key={codigo} value={codigo}>{label}</option>
-                ))}
-              </select>
-
-              <input
-                type="text"
-                value={busca}
-                onChange={e => setBusca(e.target.value)}
-                placeholder="Buscar nome ou CPF..."
-                className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]"
-              />
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col gap-4">
+            {/* Busca no topo */}
+            <div className="w-full">
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                  🔍
+                </span>
+                <input
+                  type="text"
+                  value={busca}
+                  onChange={e => setBusca(e.target.value)}
+                  placeholder="Buscar nome ou CPF..."
+                  className="w-full border border-gray-200 rounded-lg pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                />
+              </div>
             </div>
 
-            <button onClick={() => exportarCSV(hospFiltradas, 'geral')}
-              className="w-full sm:w-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition">
-              📥 CSV
-            </button>
+            {/* Ações empilhadas + Filtros distribuídos */}
+            <div className="flex flex-col md:flex-row gap-4">
+              {/* Botões de Ação Empilhados */}
+              <div className="flex flex-col gap-2 w-full md:w-64 shrink-0">
+                <button
+                  onClick={autoalocar}
+                  disabled={autoalocando || stats.elegiveis === 0}
+                  title="Processa TODAS as pendências do evento, ignorando filtros visuais."
+                  className="w-full flex items-center justify-center gap-2 bg-[#0D2B4E] text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-[#0a1e38] transition disabled:opacity-50"
+                >
+                  {autoalocando ? '⏳ Alocando...' : '🤖 Processar pendências'}
+                </button>
+
+                <a
+                  href={`/eventos/${eventoId}/hospedagem/checkin`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full flex items-center justify-center gap-2 bg-teal-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-teal-700 transition"
+                >
+                  📱 Tela Check-in
+                </a>
+
+                {evento.departamento === 'AGO' && (
+                  <button
+                    onClick={abrirTransferirCampoMissionario}
+                    className="w-full flex items-center justify-center gap-2 bg-violet-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-violet-800 transition"
+                  >
+                    🔄 Transferir Campo Missionário
+                  </button>
+                )}
+              </div>
+
+              {/* Filtros Dropdowns e CSV */}
+              <div className="flex-1 flex flex-col justify-between gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  <select
+                    value={filtroStatus}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setFiltroStatus(val);
+                      if (val && ['alocada', 'lista_espera', 'checkin_realizado', 'confirmada'].includes(val) && filtroPend) {
+                        setFiltroPend('');
+                        setAvisoFiltro('Os filtros selecionados eram conflitantes e foram ajustados automaticamente.');
+                      }
+                    }}
+                    className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+                  >
+                    <option value="">Todos os status</option>
+                    <option value="aguardando_pagamento">Aguardando pagamento</option>
+                    <option value="elegivel">Elegível para alocação</option>
+                    <option value="pago_sem_alocacao">Pago sem alocação</option>
+                    <option value="alocada">Alocada</option>
+                    <option value="confirmada">Confirmada</option>
+                    <option value="checkin_realizado">Check-in Realizado</option>
+                    <option value="lista_espera">Lista Espera</option>
+                  </select>
+
+                  <select
+                    value={filtroSexo}
+                    onChange={e => setFiltroSexo(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+                  >
+                    <option value="">Todos os sexos</option>
+                    <option value="M">Masculino</option>
+                    <option value="F">Feminino</option>
+                    <option value="N">Não informado</option>
+                  </select>
+
+                  <select
+                    value={filtroAloj}
+                    onChange={e => setFiltroAloj(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+                  >
+                    <option value="">Todos os alojamentos</option>
+                    {alojamentos.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
+                  </select>
+
+                  <select
+                    value={filtroSup}
+                    onChange={e => setFiltroSup(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+                  >
+                    <option value="">Toda supervisão</option>
+                    {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                  </select>
+
+                  <select
+                    value={filtroNecEsp}
+                    onChange={e => setFiltroNecEsp(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+                  >
+                    <option value="">Nec. especial?</option>
+                    <option value="1">Sim</option>
+                    <option value="0">Não</option>
+                  </select>
+
+                  {gruposDisponiveis.length > 0 && (
+                    <select
+                      value={filtroGrupo}
+                      onChange={e => setFiltroGrupo(e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+                    >
+                      <option value="">Todos os grupos</option>
+                      {gruposDisponiveis.map(g => <option key={g} value={g}>{g}</option>)}
+                    </select>
+                  )}
+
+                  <select
+                    value={filtroPend}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setFiltroPend(val);
+                      if (val && filtroStatus) {
+                        setFiltroStatus('');
+                        setAvisoFiltro('Os filtros selecionados eram conflitantes e foram ajustados automaticamente.');
+                      }
+                    }}
+                    className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+                  >
+                    <option value="">Sem filtro de pendência</option>
+                    {Object.entries(PENDENCIA_LABEL).map(([codigo, label]) => (
+                      <option key={codigo} value={codigo}>{label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => exportarCSV(hospFiltradas, 'geral')}
+                    className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition bg-white"
+                  >
+                    📥 Exportar CSV
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Pendências de hospedagem */}
@@ -1027,151 +1077,172 @@ export default function TabHospedagem({
               </p>
             </div>
           ) : (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
-              <table className="w-full min-w-[1260px] text-sm">
-                <thead>
-                  <tr>
-                    <th className={thCls}>Nome</th>
-                    <th className={thCls}>Categoria</th>
-                    <th className={thCls}>Sx / Idade</th>
-                    <th className={thCls}>Campo</th>
-                    <th className={thCls}>Supervisão</th>
-                    <th className={thCls}>Grupo</th>
-                    <th className={thCls}>Alojamento</th>
-                    <th className={thCls}>Motivo</th>
-                    <th className={thCls}>Status</th>
-                    <th className={thCls + ' text-center'}>🦽</th>
-                    <th className={thCls + ' text-center'}>🩺</th>
-                    <th className={thCls + ' text-center'}>⬇</th>
-                    <th className={thCls}>Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {hospFiltradas.map(h => {
-                    const statusRef = h.status_operacional ?? h.status;
-                    const stCfg = STATUS_HOSP_CFG[statusRef] ?? STATUS_HOSP_CFG.solicitada;
-                    const carregando = salvandoId === h.inscricao_id;
-                    const idade = h.data_nascimento
-                      ? (() => {
-                          const hoje = new Date();
-                          const nasc = new Date(h.data_nascimento);
-                          let i = hoje.getFullYear() - nasc.getFullYear();
-                          const m = hoje.getMonth() - nasc.getMonth();
-                          if (m < 0 || (m === 0 && hoje.getDate() < nasc.getDate())) i--;
-                          return i;
-                        })()
-                      : null;
-                    return (
-                      <tr key={h.inscricao_id} className={`border-t border-gray-50 hover:bg-gray-50 transition ${carregando ? 'opacity-60' : ''}`}>
-                        <td className={tdCls + ' font-medium text-gray-900 max-w-[160px] truncate'} title={h.nome_inscrito}>{h.nome_inscrito ?? '-'}</td>
-                        <td className={tdCls + ' text-xs text-gray-500 max-w-[120px] truncate'} title={h.tipo_inscricao ?? ''}>{h.tipo_inscricao ?? <span className="text-gray-300">—</span>}</td>
-                        <td className={tdCls + ' text-xs'}>{h.sexo ?? '—'}{idade !== null ? ` / ${idade}a` : ''}</td>
-                        <td className={tdCls + ' text-xs text-gray-500'}>{nomeCampo(h.campo_id ?? null)}</td>
-                        <td className={tdCls + ' text-xs text-gray-500'}>{nomeSup(h.supervisao_id ?? null)}</td>
-                        <td className={tdCls + ' text-xs'}>{h.grupo_hospedagem ?? <span className="text-gray-300">—</span>}</td>
-                        <td className={tdCls}>{h.alojamento_nome ?? <span className="text-gray-400 italic text-xs">Não alocado</span>}</td>
-                        <td className={tdCls + ' text-xs text-amber-700 max-w-[150px] truncate'} title={h.motivo_nao_alocado ?? ''}>{h.motivo_nao_alocado ?? <span className="text-gray-300">—</span>}</td>
-                        <td className={tdCls}>
-                          <div className="space-y-1">
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${stCfg.cls}`}>{stCfg.label}</span>
-                            {(h.pendencias ?? []).length > 0 && (
-                              <p className="text-[10px] text-rose-600 font-semibold" title={(h.pendencias ?? []).map(p => PENDENCIA_LABEL[p] ?? p).join(' | ')}>
-                                {(h.pendencias ?? []).length} pendência(s)
-                              </p>
-                            )}
-                          </div>
-                        </td>
-                        <td className={tdCls + ' text-center'}>
-                          {h.necessidade_especial ? (
-                            <span title={h.descricao_necessidade ?? ''} className="cursor-help">🦽</span>
-                          ) : '—'}
-                        </td>
-                        <td className={tdCls + ' text-center'}>
-                          {h.possui_comorbidade ? (
-                            <span title={h.descricao_comorbidade ?? ''} className="cursor-help">🩺</span>
-                          ) : '—'}
-                        </td>
-                        <td className={tdCls + ' text-center'}>
-                          {h.cama_inferior ? '↓' : '—'}
-                        </td>
-                        <td className={tdCls}>
-                          <div className="flex gap-1 items-center">
-                            {h.status !== 'confirmada' && (
+            <div className="space-y-4">
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+                <table className="w-full min-w-[900px] text-sm">
+                  <thead>
+                    <tr>
+                      <th className={thCls}>Nome</th>
+                      <th className={thCls}>Categoria</th>
+                      <th className={thCls}>Sx / Idade</th>
+                      <th className={thCls}>Grupo</th>
+                      <th className={thCls}>Alojamento</th>
+                      <th className={thCls}>Status</th>
+                      <th className={thCls + ' text-center'}>🦽</th>
+                      <th className={thCls + ' text-center'}>🩺</th>
+                      <th className={thCls + ' text-center'}>⬇</th>
+                      <th className={thCls}>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hospFiltradas.slice((paginaHosp - 1) * 20, paginaHosp * 20).map(h => {
+                      const statusRef = h.status_operacional ?? h.status;
+                      const stCfg = STATUS_HOSP_CFG[statusRef] ?? STATUS_HOSP_CFG.solicitada;
+                      const carregando = salvandoId === h.inscricao_id;
+                      const idade = h.data_nascimento
+                        ? (() => {
+                            const hoje = new Date();
+                            const nasc = new Date(h.data_nascimento);
+                            let i = hoje.getFullYear() - nasc.getFullYear();
+                            const m = hoje.getMonth() - nasc.getMonth();
+                            if (m < 0 || (m === 0 && hoje.getDate() < nasc.getDate())) i--;
+                            return i;
+                          })()
+                        : null;
+                      return (
+                        <tr key={h.inscricao_id} className={`border-t border-gray-50 hover:bg-gray-50 transition ${carregando ? 'opacity-60' : ''}`}>
+                          <td className={tdCls + ' font-medium text-gray-900 max-w-[200px] truncate'} title={h.nome_inscrito}>{h.nome_inscrito ?? '-'}</td>
+                          <td className={tdCls + ' text-xs text-gray-500 max-w-[150px] truncate'} title={h.tipo_inscricao ?? ''}>{h.tipo_inscricao ?? <span className="text-gray-300">—</span>}</td>
+                          <td className={tdCls + ' text-xs'}>{h.sexo ?? '—'}{idade !== null ? ` / ${idade}a` : ''}</td>
+                          <td className={tdCls + ' text-xs'}>{h.grupo_hospedagem ?? <span className="text-gray-300">—</span>}</td>
+                          <td className={tdCls}>{h.alojamento_nome ?? <span className="text-gray-400 italic text-xs">Não alocado</span>}</td>
+                          <td className={tdCls}>
+                            <div className="space-y-1">
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${stCfg.cls}`}>{stCfg.label}</span>
+                              {(h.pendencias ?? []).length > 0 && (
+                                <p className="text-[10px] text-rose-600 font-semibold" title={(h.pendencias ?? []).map(p => PENDENCIA_LABEL[p] ?? p).join(' | ')}>
+                                  {(h.pendencias ?? []).length} pendência(s)
+                                </p>
+                              )}
+                            </div>
+                          </td>
+                          <td className={tdCls + ' text-center'}>
+                            {h.necessidade_especial ? (
+                              <span title={h.descricao_necessidade ?? ''} className="cursor-help">🦽</span>
+                            ) : '—'}
+                          </td>
+                          <td className={tdCls + ' text-center'}>
+                            {h.possui_comorbidade ? (
+                              <span title={h.descricao_comorbidade ?? ''} className="cursor-help">🩺</span>
+                            ) : '—'}
+                          </td>
+                          <td className={tdCls + ' text-center'}>
+                            {h.cama_inferior ? '↓' : '—'}
+                          </td>
+                          <td className={tdCls}>
+                            <div className="flex gap-1 items-center">
+                              {h.status !== 'confirmada' && (
+                                <button
+                                  onClick={() => acaoRapida(h, 'confirmada')}
+                                  disabled={carregando}
+                                  title="Confirmar hospedagem"
+                                  className="text-xs px-2 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition disabled:opacity-40">
+                                  ✅
+                                </button>
+                              )}
+                              {h.status !== 'lista_espera' && (
+                                <button
+                                  onClick={() => acaoRapida(h, 'lista_espera')}
+                                  disabled={carregando}
+                                  title="Mover para lista de espera"
+                                  className="text-xs px-2 py-1 rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition disabled:opacity-40">
+                                  ⏳
+                                </button>
+                              )}
                               <button
-                                onClick={() => acaoRapida(h, 'confirmada')}
-                                disabled={carregando}
-                                title="Confirmar hospedagem"
-                                className="text-xs px-2 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition disabled:opacity-40">
-                                ✅
+                                  onClick={() => abrirEdicao(h)}
+                                  disabled={carregando}
+                                  title="Alocar / Editar leito"
+                                  className="text-xs px-2 py-1 rounded-lg bg-[#123b63] text-white hover:bg-[#0f2a45] transition disabled:opacity-40">
+                                ✏️
                               </button>
-                            )}
-                            {h.status !== 'lista_espera' && (
-                              <button
-                                onClick={() => acaoRapida(h, 'lista_espera')}
-                                disabled={carregando}
-                                title="Mover para lista de espera"
-                                className="text-xs px-2 py-1 rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition disabled:opacity-40">
-                                ⏳
-                              </button>
-                            )}
-                            <button
-                              onClick={() => abrirEdicao(h)}
-                              disabled={carregando}
-                              title="Alocar / Editar leito"
-                              className="text-xs px-2 py-1 rounded-lg bg-[#123b63] text-white hover:bg-[#0f2a45] transition disabled:opacity-40">
-                              ✏️
-                            </button>
-                            {h.id && (
-                              <button
-                                onClick={() => removerHospedagem(h)}
-                                disabled={carregando}
-                                title="Remover alocação"
-                                className="text-xs px-2 py-1 rounded-lg bg-red-500 text-white hover:bg-red-600 transition disabled:opacity-40">
-                                🗑️
-                              </button>
-                            )}
-                            {/* Check-in / Checkout rápido */}
-                            {(h.status === 'confirmada' || h.status === 'alocada') && (
-                              <button
-                                onClick={() => acaoCheckin(h, 'checkin')}
-                                disabled={salvandoId === h.inscricao_id}
-                                title="Registrar check-in"
-                                className="text-xs px-2 py-1 rounded-lg bg-teal-600 text-white hover:bg-teal-700 transition disabled:opacity-40">
-                                🏠
-                              </button>
-                            )}
-                            {h.status === 'checkin_realizado' && (
-                              <button
-                                onClick={() => acaoCheckin(h, 'checkout')}
-                                disabled={salvandoId === h.inscricao_id}
-                                title="Registrar checkout"
-                                className="text-xs px-2 py-1 rounded-lg bg-gray-500 text-white hover:bg-gray-600 transition disabled:opacity-40">
-                                🚪
-                              </button>
-                            )}
-                            {h.id && (
-                              <button
-                                onClick={() => abrirOcorrencia(h)}
-                                title="Registrar ocorrência"
-                                className="text-xs px-2 py-1 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition">
-                                📝
-                              </button>
-                            )}
-                            {h.id && (
-                              <button
-                                onClick={() => abrirRealocar(h)}
-                                title="Realocar participante"
-                                className="text-xs px-2 py-1 rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition">
-                                🔄
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                              {h.id && (
+                                <button
+                                  onClick={() => removerHospedagem(h)}
+                                  disabled={carregando}
+                                  title="Remover alocação"
+                                  className="text-xs px-2 py-1 rounded-lg bg-red-500 text-white hover:bg-red-600 transition disabled:opacity-40">
+                                  🗑️
+                                </button>
+                              )}
+                              {/* Check-in / Checkout rápido */}
+                              {(h.status === 'confirmada' || h.status === 'alocada') && (
+                                <button
+                                  onClick={() => acaoCheckin(h, 'checkin')}
+                                  disabled={salvandoId === h.inscricao_id}
+                                  title="Registrar check-in"
+                                  className="text-xs px-2 py-1 rounded-lg bg-teal-600 text-white hover:bg-teal-700 transition disabled:opacity-40">
+                                  🏠
+                                </button>
+                              )}
+                              {h.status === 'checkin_realizado' && (
+                                <button
+                                  onClick={() => acaoCheckin(h, 'checkout')}
+                                  disabled={salvandoId === h.inscricao_id}
+                                  title="Registrar checkout"
+                                  className="text-xs px-2 py-1 rounded-lg bg-gray-500 text-white hover:bg-gray-600 transition disabled:opacity-40">
+                                  🚪
+                                </button>
+                              )}
+                              {h.id && (
+                                <button
+                                  onClick={() => abrirOcorrencia(h)}
+                                  title="Registrar ocorrência"
+                                  className="text-xs px-2 py-1 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition">
+                                  📝
+                                </button>
+                              )}
+                              {h.id && (
+                                <button
+                                  onClick={() => abrirRealocar(h)}
+                                  title="Realocar participante"
+                                  className="text-xs px-2 py-1 rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition">
+                                  🔄
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Controles de Paginação */}
+              {hospFiltradas.length > 20 && (
+                <div className="flex items-center justify-between bg-white px-4 py-3 rounded-xl border border-gray-200 shadow-sm text-sm">
+                  <div className="text-gray-500">
+                    Mostrando <span className="font-semibold">{Math.min(hospFiltradas.length, (paginaHosp - 1) * 20 + 1)}</span> a <span className="font-semibold">{Math.min(hospFiltradas.length, paginaHosp * 20)}</span> de <span className="font-semibold">{hospFiltradas.length}</span> solicitações
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setPaginaHosp(p => Math.max(1, p - 1))}
+                      disabled={paginaHosp === 1}
+                      className="px-3 py-1.5 rounded-lg border border-gray-200 font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:hover:bg-white transition"
+                    >
+                      Anterior
+                    </button>
+                    <button
+                      onClick={() => setPaginaHosp(p => Math.min(Math.ceil(hospFiltradas.length / 20), p + 1))}
+                      disabled={paginaHosp >= Math.ceil(hospFiltradas.length / 20)}
+                      className="px-3 py-1.5 rounded-lg border border-gray-200 font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:hover:bg-white transition"
+                    >
+                      Próxima
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
