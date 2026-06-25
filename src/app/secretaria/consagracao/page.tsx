@@ -227,6 +227,39 @@ export default function ConsagracaoPage() {
     regiao: ''
   });
 
+  // Regularização de Homologados
+  const [candidatosReg, setCandidatosReg] = useState<any[]>([]);
+  const [loadingReg, setLoadingReg] = useState(false);
+  const [errosReg, setErrosReg] = useState<string[]>([]);
+  const [sucessoReg, setSucessoReg] = useState('');
+  const [executandoReg, setExecutandoReg] = useState(false);
+
+  const carregarCandidatosRegularizacao = async () => {
+    setLoadingReg(true);
+    setErrosReg([]);
+    setSucessoReg('');
+    try {
+      const res = await authenticatedFetch('/api/v1/secretaria/consagracao/regularizar-homologados');
+      if (res.ok) {
+        const payload = await res.json();
+        setCandidatosReg(payload.data || []);
+      } else {
+        setErrosReg(['Falha ao carregar candidatos elegíveis.']);
+      }
+    } catch {
+      setErrosReg(['Erro de conexão ao buscar candidatos elegíveis.']);
+    } finally {
+      setLoadingReg(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'regularizar') {
+      carregarCandidatosRegularizacao();
+    }
+  }, [activeTab]);
+
+
 
 
   const loadInitialData = async () => {
@@ -1367,6 +1400,16 @@ export default function ConsagracaoPage() {
               }`}
             >
               📥 Importar CSV
+            </button>
+            <button
+              onClick={() => setActiveTab('regularizar')}
+              className={`px-6 py-3 font-semibold border-b-2 transition ${
+                activeTab === 'regularizar'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              🛠️ Regularizar Homologados
             </button>
           </div>
         </div>
@@ -2764,7 +2807,146 @@ export default function ConsagracaoPage() {
           )}
         </div>
         )}
+
+        {/* ABA: REGULARIZAR HOMOLOGADOS */}
+        {activeTab === 'regularizar' && (
+        <div className="bg-white rounded-lg shadow-md p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-gray-800">Regularizar Homologados Legados</h2>
+              <p className="text-xs text-gray-500 max-w-2xl mt-1">
+                Localiza processos homologados antigos que ficaram órfãos (sem cadastro ministerial, históricos ou documentos vinculados). 
+                Esta rotina criará ou associará o ministro oficial, moverá os documentos para o Google Drive e gerará o Registro COMIEADEPA e históricos de forma automatizada e idempotente.
+              </p>
+            </div>
+            <button
+              onClick={carregarCandidatosRegularizacao}
+              disabled={loadingReg || executandoReg}
+              className="px-4 py-2 text-sm font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition"
+            >
+              🔄 Recarregar Lista
+            </button>
+          </div>
+
+          {errosReg.length > 0 && (
+            <div className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg px-4 py-3 space-y-1">
+              {errosReg.map((err, idx) => <p key={idx}>{err}</p>)}
+            </div>
+          )}
+
+          {sucessoReg && (
+            <div className="text-green-700 text-sm bg-green-50 border border-green-200 rounded-lg px-4 py-3 font-semibold">
+              {sucessoReg}
+            </div>
+          )}
+
+          {loadingReg ? (
+            <div className="text-center py-8 text-gray-500">Buscando candidatos elegíveis no banco...</div>
+          ) : candidatosReg.length === 0 ? (
+            <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
+              Nenhum processo antigo "órfão" (status homologado e sem ministro vinculado) foi encontrado.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+                <span className="text-sm font-semibold text-amber-900">
+                  ⚠️ Encontrado(s) {candidatosReg.length} processo(s) elegível(is) para regularização.
+                </span>
+                <button
+                  onClick={async () => {
+                    const confirmResult = window.confirm(
+                      `Deseja iniciar a regularização em lote de ${candidatosReg.length} processo(s)? Esta ação executará a homologação completa com geração de registros, pastas de drive e históricos.`
+                    );
+                    if (!confirmResult) return;
+
+                    setExecutandoReg(true);
+                    setErrosReg([]);
+                    setSucessoReg('');
+
+                    try {
+                      const res = await authenticatedFetch('/api/v1/secretaria/consagracao/regularizar-homologados', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                      });
+                      const payload = await res.json();
+                      if (res.ok && payload.ok) {
+                        setSucessoReg(
+                          `Regularização concluída! Sucesso: ${payload.regularizados}, Ignorados: ${payload.ignorados}, Erros: ${payload.erros}.`
+                        );
+                        if (payload.erros_detalhes && payload.erros_detalhes.length > 0) {
+                          setErrosReg(payload.erros_detalhes);
+                        }
+                        // Recarrega registros principal e lista de regularização
+                        loadInitialData();
+                        carregarCandidatosRegularizacao();
+                      } else {
+                        setErrosReg([payload.error || 'Erro ao executar rotina de regularização.']);
+                      }
+                    } catch {
+                      setErrosReg(['Erro de conexão ou timeout durante a execução da rotina.']);
+                    } finally {
+                      setExecutandoReg(false);
+                    }
+                  }}
+                  disabled={executandoReg}
+                  className="px-5 py-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white font-bold text-sm rounded-lg shadow transition disabled:opacity-50"
+                >
+                  {executandoReg ? 'Processando Regularização...' : 'Executar Regularização em Lote'}
+                </button>
+              </div>
+
+              <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-100 border-b border-gray-200 text-gray-700">
+                      <th className="px-3 py-2 text-left font-semibold">Nº Processo</th>
+                      <th className="px-3 py-2 text-left font-semibold">Nome</th>
+                      <th className="px-3 py-2 text-left font-semibold">CPF</th>
+                      <th className="px-3 py-2 text-left font-semibold">Categoria</th>
+                      <th className="px-3 py-2 text-left font-semibold">Cargo</th>
+                      <th className="px-3 py-2 text-center font-semibold">Possui Docs?</th>
+                      <th className="px-3 py-2 text-left font-semibold">Ministro no Cadastro?</th>
+                      <th className="px-3 py-2 text-left font-semibold">Status Previsto</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {candidatosReg.map((c, i) => (
+                      <tr key={i} className="border-b border-gray-150 hover:bg-gray-50 text-gray-700">
+                        <td className="px-3 py-2.5 font-bold">{c.numero_processo || '—'}</td>
+                        <td className="px-3 py-2.5 font-semibold uppercase">{c.nome}</td>
+                        <td className="px-3 py-2.5">{c.cpf || '—'}</td>
+                        <td className="px-3 py-2.5">{c.categoria_registro || 'CONSAGRAÇÃO'}</td>
+                        <td className="px-3 py-2.5">{c.cargo_pretendido || '—'}</td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span className={`px-2 py-0.5 rounded font-bold ${c.possui_documentos ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                            {c.possui_documentos ? 'Sim' : 'Não'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {c.existe_ministro_mesmo_cpf ? (
+                            <span className="text-amber-700 font-semibold" title={`Matrícula: ${c.ministro_existente_info?.matricula}`}>
+                              ⚠️ Sim (Registro: {c.ministro_existente_info?.matricula})
+                            </span>
+                          ) : (
+                            <span className="text-gray-500">Não localizado</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className={`px-2 py-0.5 rounded font-bold ${c.existe_ministro_mesmo_cpf ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>
+                            {c.status_previsto}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+        )}
       </div>
+
 
       <input
         ref={fileInputRef}

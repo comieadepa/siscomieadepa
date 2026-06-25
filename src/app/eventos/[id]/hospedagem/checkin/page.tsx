@@ -67,7 +67,7 @@ export default function HospedagemCheckinPage() {
   const params  = useParams<{ id: string }>();
   const router  = useRouter();
   const eventoId = params.id;
-  const { user, loading: authLoading } = useRequireSupabaseAuth({ allowEquipeSession: { eventoId }, allowAnonymous: true });
+  const { user, loading: authLoading } = useRequireSupabaseAuth({ allowEquipeSession: { eventoId }, allowAnonymous: false });
   const perfil = useEventosPerfil();
 
   const inputRef  = useRef<HTMLInputElement>(null);
