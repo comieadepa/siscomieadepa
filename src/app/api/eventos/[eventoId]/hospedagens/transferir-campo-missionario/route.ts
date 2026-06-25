@@ -29,12 +29,12 @@ export async function POST(
     );
   }
 
-  // 1. Buscar todos os alojamentos do grupo Pastor Presidente que sejam "Prédio AAME" ou "Prédio NOVO"
+  // 1. Buscar todos os alojamentos do grupo Pastor Presidente ou Jubilados que sejam "Prédio AAME" ou "Prédio NOVO"
   const { data: alojamentos, error: alojError } = await supabase
     .from('evento_alojamentos')
     .select('id, nome, publico, sexo, total_vagas, camas_inferiores, camas_superiores, ativo')
     .eq('evento_id', eventoId)
-    .eq('publico', 'presidentes')
+    .in('publico', ['presidentes', 'jubilados'])
     .eq('ativo', true)
     .or('nome.ilike.%AAME%,nome.ilike.%NOVO%');
 
@@ -47,7 +47,7 @@ export async function POST(
 
   if (alojamentosDestino.length === 0) {
     return NextResponse.json(
-      { error: 'Nenhum alojamento de Pastor Presidente (Prédio AAME ou Prédio NOVO) cadastrado ou ativo.' },
+      { error: 'Nenhum alojamento de Pastor Presidente ou Jubilados (Prédio AAME ou Prédio NOVO) cadastrado ou ativo.' },
       { status: 404 },
     );
   }
