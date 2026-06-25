@@ -163,8 +163,10 @@ async function resolveUserRole(args: {
   user: User;
   evento: EventoRow;
 }): Promise<{ role: EventoRole; source: EventoGuardContext['source'] } | null> {
-  const nivel = normalizeRole((args.user.user_metadata?.nivel as string | undefined) ?? '');
-  const departamento = (args.user.user_metadata?.subcategoria as string | undefined) ?? '';
+  const meta = args.user.user_metadata || {};
+  const rawNivel = (meta.nivel || meta.role || args.user.app_metadata?.role) as string | undefined;
+  const nivel = normalizeRole(rawNivel ?? '');
+  const departamento = (meta.subcategoria as string | undefined) ?? '';
   const isGlobal = nivel === 'super' || nivel === 'administrador';
 
   if (isGlobal) {

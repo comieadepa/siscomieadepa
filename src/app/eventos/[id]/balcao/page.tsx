@@ -399,8 +399,9 @@ export default function BalcaoPage() {
 
   const temTipos = (evento?.usar_tipos_inscricao ?? false) && tiposParaExibir.length > 0;
   const podeHospedagem = useMemo(() => {
-    if (form.tipo_id === 'equipe_apoio') return false;
-    return !!evento?.permite_hospedagem && (
+    if (!evento?.permite_hospedagem) return false;
+    if (form.tipo_id === 'equipe_apoio') return true;
+    return (
       evento.departamento === 'AGO'
         ? true
         : (tipoSel ? !!tipoSel.inclui_hospedagem : !temTipos)
@@ -2132,7 +2133,7 @@ export default function BalcaoPage() {
                       <p className="font-semibold text-sm">{t.nome}</p>
                       <p className="text-xs mt-0.5 opacity-70">
                         {(() => {
-                          if (t.id === 'equipe_apoio') return 'Gratuito • Sem hospedagem';
+                          if (t.id === 'equipe_apoio') return 'Gratuito';
                           const isPPT = /pastor\s*presidente/i.test(t.nome) && !/esposa|viuva/i.test(t.nome);
                           let vExib = t.valor;
                           if (descontoCampoMissionario && isPPT && evento?.configuracoes_ago) {

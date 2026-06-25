@@ -1887,60 +1887,70 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
     <div>
       {/* Filtros */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4">
-        <div className="flex flex-wrap gap-3">
-          <input type="text" placeholder="🔍 Buscar nome, CPF, WhatsApp..." value={busca}
-            onChange={e => setBusca(e.target.value)}
-            className="w-full sm:flex-1 sm:min-w-[220px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]" />
-          <select value={filtroSup} onChange={e => { setFiltroSup(e.target.value); setFiltroCampo(''); }}
-            className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-            <option value="">Todas supervisões</option>
-            {supervisoesDisponiveis.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
-          </select>
-          <select value={filtroCampo} onChange={e => setFiltroCampo(e.target.value)}
-            className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-            <option value="">Todos campos</option>
-            {camposFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-          </select>
-          <select value={filtroPag} onChange={e => setFiltroPag(e.target.value)}
-            className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-            <option value="">Pagamento</option>
-            <option value="pendente">Pendente</option>
-            <option value="pago">Pago</option>
-            <option value="isento">Isento</option>
-            <option value="cancelado">Cancelado</option>
-          </select>
-          <select value={filtroCI} onChange={e => setFiltroCI(e.target.value)}
-            className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-            <option value="">Check-in</option>
-            <option value="true">Realizado</option>
-            <option value="false">Pendente</option>
-          </select>
-          <select value={filtroHosp} onChange={e => setFiltroHosp(e.target.value)}
-            className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-            <option value="">Hospedagem</option>
-            <option value="true">Sim</option>
-            <option value="false">Não</option>
-          </select>
-          <select value={filtroAlim} onChange={e => setFiltroAlim(e.target.value)}
-            className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-            <option value="">Alimentação</option>
-            <option value="true">Sim</option>
-            <option value="false">Não</option>
-          </select>
-          <select value={filtroSexo} onChange={e => setFiltroSexo(e.target.value)}
-            className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-            <option value="">Sexo</option>
-            <option value="M">Masculino</option>
-            <option value="F">Feminino</option>
-          </select>
-          <button type="button" onClick={limparFiltros}
-            className="w-full sm:w-auto px-4 py-2 text-sm rounded-lg border border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100 transition">
-            Limpar
-          </button>
-          <button type="button" onClick={imprimirLista}
-            className="w-full sm:w-auto px-4 py-2 text-sm rounded-lg bg-[#123b63] text-white font-semibold hover:bg-[#0f2a45] transition">
-            🖨️ Imprimir
-          </button>
+        <div className="flex flex-col gap-3">
+          {/* Primeira Linha: Principais Filtros */}
+          <div className="grid grid-cols-1 md:grid-cols-[2fr,1fr,1fr] gap-3">
+            <input type="text" placeholder="🔍 Buscar nome, CPF, WhatsApp..." value={busca}
+              onChange={e => setBusca(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]" />
+            <select value={filtroSup} onChange={e => { setFiltroSup(e.target.value); setFiltroCampo(''); }}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+              <option value="">Todas supervisões</option>
+              {supervisoesDisponiveis.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+            </select>
+            <select value={filtroCampo} onChange={e => setFiltroCampo(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+              <option value="">Todos campos</option>
+              {camposFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          </div>
+
+          {/* Segunda Linha: Filtros Secundários e Ações */}
+          <div className="flex flex-wrap gap-3 items-center">
+            <select value={filtroPag} onChange={e => setFiltroPag(e.target.value)}
+              className="flex-1 sm:flex-initial border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+              <option value="">Pagamento</option>
+              <option value="pendente">Pendente</option>
+              <option value="pago">Pago</option>
+              <option value="isento">Isento</option>
+              <option value="cancelado">Cancelado</option>
+            </select>
+            <select value={filtroCI} onChange={e => setFiltroCI(e.target.value)}
+              className="flex-1 sm:flex-initial border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+              <option value="">Check-in</option>
+              <option value="true">Realizado</option>
+              <option value="false">Pendente</option>
+            </select>
+            <select value={filtroHosp} onChange={e => setFiltroHosp(e.target.value)}
+              className="flex-1 sm:flex-initial border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+              <option value="">Hospedagem</option>
+              <option value="true">Sim</option>
+              <option value="false">Não</option>
+            </select>
+            <select value={filtroAlim} onChange={e => setFiltroAlim(e.target.value)}
+              className="flex-1 sm:flex-initial border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+              <option value="">Alimentação</option>
+              <option value="true">Sim</option>
+              <option value="false">Não</option>
+            </select>
+            <select value={filtroSexo} onChange={e => setFiltroSexo(e.target.value)}
+              className="flex-1 sm:flex-initial border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+              <option value="">Sexo</option>
+              <option value="M">Masculino</option>
+              <option value="F">Feminino</option>
+            </select>
+            
+            <div className="flex gap-3 ml-auto w-full sm:w-auto">
+              <button type="button" onClick={limparFiltros}
+                className="flex-1 sm:flex-initial px-4 py-2 text-sm rounded-lg border border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100 transition">
+                Limpar
+              </button>
+              <button type="button" onClick={imprimirLista}
+                className="flex-1 sm:flex-initial px-4 py-2 text-sm rounded-lg bg-[#123b63] text-white font-semibold hover:bg-[#0f2a45] transition whitespace-nowrap">
+                🖨️ Imprimir
+              </button>
+            </div>
+          </div>
         </div>
         <p className="text-xs text-gray-500 mt-2">{filtrados.length} resultado(s)</p>
       </div>
