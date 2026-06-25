@@ -26,7 +26,7 @@ type UploadDocumentoDriveInput = {
   ano?: string;
 };
 
-function getOAuth2Client() {
+export function getOAuth2Client() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   const refreshToken = process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
@@ -48,7 +48,7 @@ function getOAuth2Client() {
   return oauth2;
 }
 
-function getDriveClient(): drive_v3.Drive {
+export function getDriveClient(): drive_v3.Drive {
   return google.drive({ version: 'v3', auth: getOAuth2Client() });
 }
 
@@ -105,7 +105,7 @@ async function getOrCreateFolder(parentId: string, folderName: string): Promise<
   return folder.data.id!;
 }
 
-async function getOrCreateConsagracaoCandidateFolder(input: {
+export async function getOrCreateConsagracaoCandidateFolder(input: {
   candidatoId: string;
   candidatoNome: string;
   ano?: string;

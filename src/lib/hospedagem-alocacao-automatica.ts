@@ -554,6 +554,13 @@ export async function alocarLeitoParaInscricaoEventoComum(
   // 5. Filtra alojamentos compatíveis por sexo/público
   const sexoUpper = (inscricao.sexo ?? '').toUpperCase();
   const candidatos = alojamentosRaw.filter((a: any) => {
+    const nameUpper = String(a.nome || '').toUpperCase();
+    if (sexoUpper === 'M' && (nameUpper.includes('MASCULINO') || a.sexo === 'M' || a.publico === 'masculino_geral')) {
+      return true;
+    }
+    if (sexoUpper === 'F' && (nameUpper.includes('FEMININO') || a.sexo === 'F' || a.publico === 'feminino')) {
+      return true;
+    }
     if (a.sexo && a.sexo !== sexoUpper) return false;
     if (a.publico === 'feminino' && sexoUpper !== 'F') return false;
     if (a.publico === 'masculino_geral' && sexoUpper !== 'M') return false;

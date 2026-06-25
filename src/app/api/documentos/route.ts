@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
-import { listDocumentosDrive, uploadDocumentoDrive, DocumentoEntidadeTipo, initiateResumableUpload } from '@/lib/google-drive';
+import { listDocumentosDrive, uploadDocumentoDrive, DocumentoEntidadeTipo, initiateResumableUpload, getDriveClient, getOrCreateConsagracaoCandidateFolder } from '@/lib/google-drive';
 import { requireUser } from '@/lib/auth/require-auth';
 import { optimizePdf } from '@/services/pdfOptimizer';
-
 export const dynamic = 'force-dynamic';
 
 const DOCUMENTOS_ROLES = ['super', 'administrador'] as const;
@@ -152,26 +151,81 @@ export async function POST(request: NextRequest) {
         const auth = await requireDocumentAccess(request, entityId);
         if (!auth.ok) return auth.response;
 
-        // Auto-log no histórico do ministro/candidato
+        // Auto-log no histórico do ministro/candidato ou candidato_documentos
         try {
           const db = createServerClient();
           let logDesc = `Documento "${fileName}" enviado para o Google Drive.`;
           if (optimized) {
             logDesc += ` (Otimizado no navegador: de ${(originalSize / 1024).toFixed(1)} KB para ${(optimizedSize / 1024).toFixed(1)} KB, -${reductionPercentage}%)`;
           }
-          await db.from('member_history').insert({
-            member_id: entityId,
-            tipo: 'Documento adicionado',
-            descricao: logDesc,
-            usuario_id: auth.ctx!.user.id,
-            ocorrencia: new Date().toISOString().split('T')[0],
-            arquivo_original_bytes: originalSize || fileSize,
-            arquivo_otimizado_bytes: optimizedSize || fileSize,
-            percentual_reducao: reductionPercentage || 0,
-            processado_em: new Date().toISOString()
-          } as any);
+
+          // Detect if this is a candidate or a member
+          const { data: candidate } = await db
+            .from('consagracao_registros')
+            .select('id, nome, numero_processo, data_processo')
+            .eq('id', entityId)
+            .maybeSingle();
+
+          if (candidate) {
+            // It's a candidate! Save to candidato_documentos
+            // First, find the file in Google Drive to get the file ID and URL
+            let driveFileId = '';
+            let driveUrl = '';
+            let mimeType = '';
+            try {
+              const drive = getDriveClient();
+              const folderId = await getOrCreateConsagracaoCandidateFolder({
+                candidatoId: entityId,
+                candidatoNome: candidate.nome,
+                ano: String(candidate.data_processo || '').slice(0, 4) || undefined,
+              });
+              const driveRes = await drive.files.list({
+                q: `name = '${fileName.replace(/'/g, "\\'")}' and '${folderId}' in parents and trashed = false`,
+                fields: 'files(id, webViewLink, mimeType, size)',
+              });
+              if (driveRes.data.files && driveRes.data.files.length > 0) {
+                driveFileId = driveRes.data.files[0].id || '';
+                driveUrl = driveRes.data.files[0].webViewLink || '';
+                mimeType = driveRes.data.files[0].mimeType || '';
+              }
+            } catch (err) {
+              console.error('Erro ao buscar arquivo no Drive:', err);
+            }
+
+            const match = fileName.match(/^\[([^\]]+)\]/);
+            const tipoDocumento = match ? match[1] : 'Outros';
+            const nomeArquivoLimpo = fileName.replace(/^\[[^\]]+\]\s*/, '');
+
+            await db.from('candidato_documentos').insert({
+              candidato_id: entityId,
+              tipo_documento: tipoDocumento,
+              nome_arquivo: nomeArquivoLimpo,
+              drive_file_id: driveFileId || `temp-${Date.now()}`,
+              drive_url: driveUrl || null,
+              mime_type: mimeType || null,
+              tamanho: fileSize || null,
+              uploaded_by: auth.ctx!.user.id,
+              arquivo_original_bytes: originalSize || fileSize,
+              arquivo_otimizado_bytes: optimizedSize || fileSize,
+              percentual_reducao: reductionPercentage || 0,
+              processado_em: new Date().toISOString()
+            } as any);
+          } else {
+            // It's a member! Save to member_history
+            await db.from('member_history').insert({
+              member_id: entityId,
+              tipo: 'Documento adicionado',
+              descricao: logDesc,
+              usuario_id: auth.ctx!.user.id,
+              ocorrencia: new Date().toISOString().split('T')[0],
+              arquivo_original_bytes: originalSize || fileSize,
+              arquivo_otimizado_bytes: optimizedSize || fileSize,
+              percentual_reducao: reductionPercentage || 0,
+              processado_em: new Date().toISOString()
+            } as any);
+          }
         } catch (err) {
-          console.error('Erro ao salvar no historico:', err);
+          console.error('Erro ao salvar no historico/documentos:', err);
         }
 
         return NextResponse.json({
@@ -239,19 +293,50 @@ export async function POST(request: NextRequest) {
       if (optimized) {
         logDesc += ` (PDF Otimizado: de ${(originalSize / 1024).toFixed(1)} KB para ${(optimizedSize / 1024).toFixed(1)} KB, -${reductionPercentage}%)`;
       }
-      await db.from('member_history').insert({
-        member_id: entityId,
-        tipo: 'Documento adicionado',
-        descricao: logDesc,
-        usuario_id: auth.ctx!.user.id,
-        ocorrencia: new Date().toISOString().split('T')[0],
-        arquivo_original_bytes: originalSize,
-        arquivo_otimizado_bytes: optimizedSize,
-        percentual_reducao: reductionPercentage,
-        processado_em: new Date().toISOString()
-      } as any);
+
+      // Detect if this is a candidate or a member
+      const { data: candidate } = await db
+        .from('consagracao_registros')
+        .select('id, nome')
+        .eq('id', entityId)
+        .maybeSingle();
+
+      if (candidate) {
+        // It's a candidate! Save to candidato_documentos
+        const match = result.name?.match(/^\[([^\]]+)\]/);
+        const tipoDocumentoDet = match ? match[1] : (tipoDocumento || 'Outros');
+        const nomeArquivoLimpo = result.name?.replace(/^\[[^\]]+\]\s*/, '') || file.name;
+
+        await db.from('candidato_documentos').insert({
+          candidato_id: entityId,
+          tipo_documento: tipoDocumentoDet,
+          nome_arquivo: nomeArquivoLimpo,
+          drive_file_id: result.id || '',
+          drive_url: result.webViewLink || null,
+          mime_type: result.mimeType || null,
+          tamanho: optimizedSize,
+          uploaded_by: auth.ctx!.user.id,
+          arquivo_original_bytes: originalSize,
+          arquivo_otimizado_bytes: optimizedSize,
+          percentual_reducao: reductionPercentage,
+          processado_em: new Date().toISOString()
+        } as any);
+      } else {
+        // It's a member! Save to member_history
+        await db.from('member_history').insert({
+          member_id: entityId,
+          tipo: 'Documento adicionado',
+          descricao: logDesc,
+          usuario_id: auth.ctx!.user.id,
+          ocorrencia: new Date().toISOString().split('T')[0],
+          arquivo_original_bytes: originalSize,
+          arquivo_otimizado_bytes: optimizedSize,
+          percentual_reducao: reductionPercentage,
+          processado_em: new Date().toISOString()
+        } as any);
+      }
     } catch (err) {
-      console.error('Erro ao salvar no historico:', err);
+      console.error('Erro ao salvar no historico/documentos:', err);
     }
 
     return NextResponse.json({

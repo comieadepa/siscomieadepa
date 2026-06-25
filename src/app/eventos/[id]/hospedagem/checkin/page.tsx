@@ -100,28 +100,35 @@ export default function HospedagemCheckinPage() {
   }, [eventoId]);
 
   async function solicitarAcesso() {
-    if (!emailAcesso.trim()) {
-      setErro('Informe o e-mail cadastrado.');
+    const emailTrimmed = emailAcesso.trim().toLowerCase();
+    if (!emailTrimmed) {
+      setErro('Informe o e-mail cadastrado na equipe do evento.');
+      return;
+    }
+    if (!/\S+@\S+\.\S+/.test(emailTrimmed)) {
+      setErro('E-mail inválido.');
       return;
     }
     setSolicitandoAcesso(true);
     setErro(null);
     try {
-      const res = await fetch(`/api/eventos/${eventoId}/checkin/solicitar`, {
+      const res = await fetch(`/api/eventos/${eventoId}/equipe/acesso-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: emailAcesso.trim(), funcao: 'checkin_hospedagem' }),
+        body: JSON.stringify({ email: emailTrimmed, funcao: 'checkin_hospedagem' }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.ok) {
-        setErro((json as { error?: string }).error || 'E-mail não authorized para esta função.');
+        setErro((json as { error?: string }).error || 'E-mail não autorizado para esta função.');
         return;
       }
       const sessao: EquipeSession = {
         eventoId,
         equipeId: json.equipe_id as string,
-        tipo: 'checkin_hospedagem',
+        tipo: (json.tipo as EquipeSession['tipo']) ?? 'checkin_hospedagem',
         expiraEm: (json.expira_em as string) || new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
+        email: emailTrimmed,
+        nome: (json.nome as string | null) ?? undefined,
       };
       setEquipeSession(sessao);
       setEquipeSessaoState(sessao);

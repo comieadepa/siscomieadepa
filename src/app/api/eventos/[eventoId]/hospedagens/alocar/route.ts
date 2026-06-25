@@ -307,8 +307,11 @@ export async function POST(
       .filter(h => {
         const insc = h.evento_inscricoes as unknown as Record<string, unknown> | null;
         if (evento.departamento !== 'AGO') {
-          // Processar apenas registros com status pago_sem_alocacao
-          return h.status === 'pago_sem_alocacao';
+          const statusPag = (insc?.status_pagamento as string | null) ?? '';
+          const isPago = ['pago', 'isento'].includes(statusPag.toLowerCase());
+          const jaAlocado = !!h.alojamento_id;
+          const statusValido = ['solicitada', 'pago_sem_alocacao', 'lista_espera'].includes(String(h.status || '').toLowerCase());
+          return isPago && !jaAlocado && statusValido;
         }
         return isElegivelAutoalocacao({
           hospedagem: true,

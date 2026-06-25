@@ -49,6 +49,42 @@ interface ResultadoScan {
   nomeCampo?: string;
   saldoRestante?: number | null;
   dataPlenaria?: string;
+  message?: string;
+}
+
+interface PendingConfirm {
+  inscricao: Inscricao & {
+    foto_url?: string | null;
+    tipo_inscricao?: string | null;
+    alimentacao?: boolean | null;
+    hospedagem?: boolean | null;
+    quantidade_refeicoes_total?: number | null;
+    quantidade_refeicoes_usadas?: number | null;
+    quantidade_refeicoes_saldo?: number | null;
+  };
+  qrToken: string;
+  nomeSup: string;
+  nomeCampo: string;
+  contexto: {
+    modo: string;
+    data_plenaria: string;
+    sessao: string | null;
+    // true = mesmo dia + mesma sessão → bloqueia confirmação
+    plenaria_hoje: boolean;
+    plenaria_hoje_at: string | null;       // horário do registro da sessão atual
+    plenaria_hoje_operador: string | null;  // operador do registro da sessão atual
+    // último registro em dia/sessão diferente → apenas informativo
+    plenaria_ultimo_at: string | null;
+    plenaria_ultimo_data: string | null;
+    // retrocompatibilidade
+    ja_presente_plenaria: boolean;
+    // Refeitório
+    pagamento_pendente: boolean;
+    sem_alimentacao: boolean;
+    refeicoes_total: number;
+    refeicoes_usadas: number;
+    refeicoes_saldo: number;
+  };
 }
 
 type AcessoMotivo = 'nao_autorizado' | 'evento_encerrado' | 'checkin_desativado';
@@ -69,23 +105,43 @@ const PAGAMENTO_LABELS: Record<string, string> = {
 const MIN_BUSCA_MANUAL = 3;
 const DEBOUNCE_MANUAL_MS = 400;
 
-function extractQrToken(raw: string): string {
-  const value = raw.trim();
-  if (!value) return '';
-  if (!/^https?:\/\//i.test(value)) return value;
+/**
+ * Extrai o token do QR Code em qualquer formato:
+ *  - token puro / UUID puro
+ *  - https://app.siscomieadepa.org/qr/{token}
+ *  - qualquer URL com /qr/{token} no path
+ *  - ?token=... / ?id=... / ?qr=... / ?code=...
+ */
+function extractQrToken(raw: string): string | null {
+  const value = decodeURIComponent(raw.trim()).trim();
+  if (!value) return null;
+
+  // Não é URL — retorna direto (UUID, token curto, etc.)
+  if (!/^https?:\/\//i.test(value)) {
+    return value || null;
+  }
 
   try {
     const url = new URL(value);
-    const fromQuery = url.searchParams.get('qr') || url.searchParams.get('token') || url.searchParams.get('code');
-    if (fromQuery) return fromQuery;
+    // 1. Querystring prioritária
+    const fromQuery =
+      url.searchParams.get('token') ||
+      url.searchParams.get('id') ||
+      url.searchParams.get('qr') ||
+      url.searchParams.get('code');
+    if (fromQuery) return fromQuery.trim();
 
-    const match = url.pathname.match(/\/qr\/([^/]+)/i);
-    if (match?.[1]) return decodeURIComponent(match[1]);
+    // 2. Segmento /qr/{token}
+    const match = url.pathname.match(/\/qr\/([^/?#]+)/i);
+    if (match?.[1]) return decodeURIComponent(match[1]).trim();
 
+    // 3. Último segmento do path (nunca retorna URL inteira)
     const parts = url.pathname.split('/').filter(Boolean);
-    return parts.length ? decodeURIComponent(parts[parts.length - 1]) : value;
+    if (parts.length) return decodeURIComponent(parts[parts.length - 1]).trim();
+
+    return null; // URL sem path reconhecível
   } catch {
-    return value;
+    return value; // fallback: retorna como está
   }
 }
 
@@ -170,10 +226,13 @@ export default function CheckinMobilePage() {
   const [scannerAtivo,  setScannerAtivo]  = useState(false);
   const [resultado,     setResultado]     = useState<ResultadoScan | null>(null);
   const [processando,   setProcessando]   = useState(false);
-  const [ultimoQr, setUltimoQr] = useState<{ raw: string; token: string } | null>(null);
+  const [ultimoQr, setUltimoQr] = useState<{ raw: string; token: string | null } | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
+  const [confirmando, setConfirmando] = useState(false);
   const scannerRef = useRef<unknown>(null);
   const scannerElementId = 'qr-scanner-region';
   const ignorandoRef = useRef(false); // evita double-scan
+  const lastTokenRef = useRef<{ token: string; at: number } | null>(null); // anti-duplicidade 3s
 
   // Busca manual
   const [modoManual,  setModoManual]  = useState(false);
@@ -345,6 +404,7 @@ export default function CheckinMobilePage() {
         equipeId: json.equipe_id,
         tipo: 'checkin',
         expiraEm,
+        email,
       };
       setEquipeSession(sessao);
       setEquipeSessao(sessao);
@@ -440,36 +500,102 @@ export default function CheckinMobilePage() {
     return () => { void stopScanner(false); };
   }, [stopScanner]);
 
-  // ── Processa QR Code lido ─────────────────────────────────
+  // ── FASE 1: Lê QR → Lookup (sem registrar) ───────────────
   async function onQRCodeSuccess(qrText: string) {
-    if (ignorandoRef.current || processando) return;
+    if (ignorandoRef.current || processando || pendingConfirm) return;
+
+    // Anti-duplicidade: ignora mesmo token por 3 segundos
+    const rawText = String(qrText || '').trim();
+    const qrToken = extractQrToken(rawText);
+    if (qrToken && lastTokenRef.current) {
+      const deltaMs = Date.now() - lastTokenRef.current.at;
+      if (lastTokenRef.current.token === qrToken && deltaMs < 3000) return;
+    }
+    if (qrToken) lastTokenRef.current = { token: qrToken, at: Date.now() };
+
     ignorandoRef.current = true;
     setProcessando(true);
     emitirSom('leitura');
 
     // Pausa o scanner enquanto processa
     if (scannerRef.current) {
-      try {
-        await (scannerRef.current as { pause: () => void }).pause();
-      } catch { /* ignora */ }
+      try { await (scannerRef.current as { pause: () => void }).pause(); } catch { /* ignora */ }
+    }
+
+    setUltimoQr({ raw: rawText, token: qrToken });
+
+    if (!qrToken) {
+      setResultado({ estado: 'invalid', message: 'QR Code não reconhecido.' });
+      emitirSom('erro'); vibrar('erro');
+      setProcessando(false);
+      setTimeout(() => voltarParaScan(), 3000);
+      return;
     }
 
     try {
-      const rawText = String(qrText || '').trim();
-      const qrToken = extractQrToken(rawText);
-      setUltimoQr({ raw: rawText, token: qrToken });
-      if (!qrToken) {
-        setResultado({ estado: 'invalid' });
-        emitirSom('erro');
-        vibrar('erro');
-        setTimeout(() => voltarParaScan(), 4000);
+      const dataPlenaria = new Date().toISOString().slice(0, 10);
+      const params = new URLSearchParams({
+        token: qrToken,
+        modo: modoCheckin,
+        data_plenaria: dataPlenaria,
+      });
+      const headers: Record<string, string> = {};
+      if (equipeSessao?.equipeId) headers['x-evento-equipe-id'] = equipeSessao.equipeId;
+
+      const res = await fetch(`/api/eventos/${id}/checkin/lookup?${params}`, { headers });
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setResultado({ estado: 'invalid', message: json?.message || 'Erro ao consultar inscrição.' });
+        emitirSom('erro'); vibrar('erro');
+        setTimeout(() => voltarParaScan(), 3000);
         return;
       }
 
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (equipeSessao?.equipeId) {
-        headers['x-evento-equipe-id'] = equipeSessao.equipeId;
+      const status: string = json?.status ?? 'not_found';
+
+      if (status === 'not_found') {
+        setResultado({ estado: 'invalid', message: json?.message || 'Inscrição não localizada para este QR Code.' });
+        emitirSom('erro'); vibrar('erro');
+        setTimeout(() => voltarParaScan(), 3000);
+        return;
       }
+
+      if (status === 'wrong_event') {
+        const ins = json?.inscricao as Inscricao;
+        setResultado({ estado: 'wrong_event', inscricao: ins, message: 'Inscrição não pertence a este evento.' });
+        emitirSom('erro'); vibrar('erro');
+        setTimeout(() => voltarParaScan(), 3000);
+        return;
+      }
+
+      const ins = json?.inscricao as Inscricao & { foto_url?: string | null; tipo_inscricao?: string | null; alimentacao?: boolean | null; hospedagem?: boolean | null; quantidade_refeicoes_total?: number | null; quantidade_refeicoes_usadas?: number | null; quantidade_refeicoes_saldo?: number | null; };
+      const ctx = json?.contexto as PendingConfirm['contexto'];
+      const nomeSup   = supervisoes.find(s => s.id === ins.supervisao_id)?.nome ?? '-';
+      const nomeCampo = campos.find(c => c.id === ins.campo_id)?.nome ?? '-';
+
+      // Exibe card de confirmação (SEM registrar nada ainda)
+      setPendingConfirm({ inscricao: ins, qrToken, nomeSup, nomeCampo, contexto: ctx });
+
+    } catch {
+      setResultado({ estado: 'invalid', message: 'Erro de conexão ao consultar inscrição.' });
+      emitirSom('erro'); vibrar('erro');
+      setTimeout(() => voltarParaScan(), 3000);
+    } finally {
+      setProcessando(false);
+    }
+  }
+
+  // ── FASE 2: Operador confirma → registrar ─────────────────
+  async function confirmarCheckin() {
+    if (!pendingConfirm || confirmando) return;
+    setConfirmando(true);
+
+    const { inscricao, qrToken, nomeSup, nomeCampo, contexto } = pendingConfirm;
+
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (equipeSessao?.equipeId) headers['x-evento-equipe-id'] = equipeSessao.equipeId;
 
       const res = await fetch(`/api/eventos/${id}/checkin/registrar`, {
         method: 'POST',
@@ -478,112 +604,69 @@ export default function CheckinMobilePage() {
           qr: qrToken,
           equipe_id: equipeSessao?.equipeId,
           tipo_checkin: modoCheckin,
-          data_plenaria: modoCheckin === 'plenaria' ? new Date().toISOString().slice(0, 10) : undefined,
+          data_plenaria: contexto.data_plenaria,
+          sessao: contexto.sessao,
         }),
       });
       const json = await res.json().catch(() => ({}));
 
+      setPendingConfirm(null);
+
       if (!res.ok) {
-        setResultado({ estado: 'invalid' });
-        emitirSom('erro');
-        vibrar('erro');
-        setTimeout(() => voltarParaScan(), 1500);
-        return;
-      }
-
-      const status = (json?.status as EstadoScan | undefined) ?? 'invalid';
-      const inscricao = (json?.inscricao as Inscricao | undefined) ?? undefined;
-
-      if (status === 'invalid' || !inscricao) {
-        setResultado({ estado: 'invalid' });
-        emitirSom('erro');
-        vibrar('erro');
-        setTimeout(() => voltarParaScan(), 1500);
-        return;
-      }
-
-      const nomeSup   = supervisoes.find(s => s.id === inscricao.supervisao_id)?.nome ?? '-';
-      const nomeCampo = campos.find(c => c.id === inscricao.campo_id)?.nome ?? '-';
-
-      if (status === 'wrong_event') {
-        setResultado({ estado: 'wrong_event', inscricao, nomeSup, nomeCampo });
-        emitirSom('erro');
-        vibrar('erro');
-        setTimeout(() => voltarParaScan(), 2000);
-        return;
-      }
-
-      if (status === 'already') {
-        setResultado({ estado: 'already', inscricao, nomeSup, nomeCampo });
-        emitirSom('erro');
-        vibrar('erro');
-        setTimeout(() => voltarParaScan(), 2000);
-        return;
-      }
-
-      if (status === 'sem_saldo') {
-        setResultado({ estado: 'sem_saldo', inscricao, nomeSup, nomeCampo, saldoRestante: 0 });
-        emitirSom('erro');
-        vibrar('erro');
+        setResultado({ estado: 'invalid', message: json?.message || 'Erro ao registrar.' });
+        emitirSom('erro'); vibrar('erro');
         setTimeout(() => voltarParaScan(), 3000);
         return;
       }
 
-      if (status === 'sem_alimentacao') {
-        setResultado({ estado: 'sem_alimentacao', inscricao, nomeSup, nomeCampo });
-        emitirSom('erro');
-        vibrar('erro');
-        setTimeout(() => voltarParaScan(), 3200);
+      const status = (json?.status as EstadoScan | undefined) ?? 'invalid';
+
+      if (status === 'already' || status === 'already_plenaria') {
+        setResultado({ estado: status, inscricao, nomeSup, nomeCampo, dataPlenaria: json?.data_plenaria });
+        emitirSom('erro'); vibrar('erro');
+        setTimeout(() => voltarParaScan(), 3000);
         return;
       }
 
-      if (status === 'pagamento_pendente') {
-        setResultado({ estado: 'pagamento_pendente', inscricao, nomeSup, nomeCampo });
-        emitirSom('erro');
-        vibrar('erro');
-        setTimeout(() => voltarParaScan(), 3200);
+      if (status === 'sem_saldo' || status === 'sem_alimentacao' || status === 'pagamento_pendente' || status === 'duplicate_rapida') {
+        setResultado({ estado: status, inscricao, nomeSup, nomeCampo, saldoRestante: json?.saldo_depois ?? null });
+        emitirSom('erro'); vibrar('erro');
+        setTimeout(() => voltarParaScan(), 3000);
         return;
       }
 
-      if (status === 'duplicate_rapida') {
-        setResultado({ estado: 'duplicate_rapida', inscricao, nomeSup, nomeCampo, saldoRestante: (json?.saldo_depois as number | null | undefined) ?? null });
-        emitirSom('erro');
-        vibrar('erro');
-        setTimeout(() => voltarParaScan(), 2200);
-        return;
-      }
-
-      if (status === 'already_plenaria') {
-        setResultado({ estado: 'already_plenaria', inscricao, nomeSup, nomeCampo, dataPlenaria: (json?.data_plenaria as string | undefined) });
-        emitirSom('erro');
-        vibrar('erro');
-        setTimeout(() => voltarParaScan(), 2500);
-        return;
-      }
-
-      setResultado({ estado: 'success', inscricao, nomeSup, nomeCampo, saldoRestante: (json?.saldo_depois as number | null | undefined) ?? null });
-      emitirSom('sucesso');
-      vibrar('sucesso');
+      setResultado({
+        estado: 'success',
+        inscricao: json?.inscricao ?? inscricao,
+        nomeSup,
+        nomeCampo,
+        saldoRestante: json?.saldo_depois ?? null,
+      });
+      emitirSom('sucesso'); vibrar('sucesso');
       void carregarContadores();
-      setTimeout(() => voltarParaScan(), 1500);
+      setTimeout(() => voltarParaScan(), 2000);
 
     } catch {
-      setResultado({ estado: 'invalid' });
-      emitirSom('erro');
-      vibrar('erro');
-      setTimeout(() => voltarParaScan(), 4000);
+      setPendingConfirm(null);
+      setResultado({ estado: 'invalid', message: 'Erro de conexão ao confirmar.' });
+      emitirSom('erro'); vibrar('erro');
+      setTimeout(() => voltarParaScan(), 3000);
     } finally {
-      setProcessando(false);
+      setConfirmando(false);
     }
+  }
+
+  function cancelarConfirmacao() {
+    setPendingConfirm(null);
+    voltarParaScan();
   }
 
   function voltarParaScan() {
     setResultado(null);
+    setPendingConfirm(null);
     ignorandoRef.current = false;
     if (scannerRef.current) {
-      try {
-        (scannerRef.current as { resume: () => void }).resume();
-      } catch { /* ignora */ }
+      try { (scannerRef.current as { resume: () => void }).resume(); } catch { /* ignora */ }
     }
   }
 
@@ -761,17 +844,176 @@ export default function CheckinMobilePage() {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // OVERLAY DE RESULTADO
+  // CARD DE CONFIRMAÇÃO (Fase 1 → aguarda operador confirmar)
+  // ═══════════════════════════════════════════════════════════
+  const CardConfirmacao = () => {
+    if (!pendingConfirm) return null;
+    const { inscricao: ins, nomeSup: ns, nomeCampo: nc, contexto: ctx } = pendingConfirm;
+    const isRefeitorio = modoCheckin === 'refeitorio';
+    const isPlenaria   = modoCheckin === 'plenaria';
+    const statusPago   = ['pago', 'isento'].includes(String(ins.status_pagamento || '').toLowerCase());
+
+    const statusColor = statusPago ? 'bg-emerald-500' : 'bg-amber-500';
+    const statusLabel = PAGAMENTO_LABELS[ins.status_pagamento] ?? ins.status_pagamento;
+
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-4 bg-gray-950/95">
+        <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden">
+          {/* Cabeçalho colorido */}
+          <div className="bg-[#0D2B4E] px-6 py-4 text-center">
+            <p className="text-white/70 text-xs font-semibold uppercase tracking-widest mb-1">
+              {isPlenaria ? '🏛️ Check-in Plenária' : isRefeitorio ? '🍽️ Refeição' : '🎫 Credenciamento'}
+            </p>
+            <p className="text-white text-xl font-black leading-tight">{ins.nome_inscrito}</p>
+          </div>
+
+          {/* Foto (se existir) */}
+          {ins.foto_url && (
+            <div className="flex justify-center -mt-1 bg-[#0D2B4E] pb-3">
+              <img
+                src={ins.foto_url}
+                alt={ins.nome_inscrito}
+                className="w-20 h-20 rounded-full object-cover border-4 border-white shadow-lg"
+                onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            </div>
+          )}
+
+          {/* Dados */}
+          <div className="px-5 py-4 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Supervisão</span>
+              <span className="font-semibold text-gray-900 text-right max-w-[60%]">{ns}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Campo</span>
+              <span className="font-semibold text-gray-900 text-right max-w-[60%]">{nc}</span>
+            </div>
+            {ins.tipo_inscricao && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Tipo</span>
+                <span className="font-semibold text-gray-900">{ins.tipo_inscricao}</span>
+              </div>
+            )}
+            <div className="flex justify-between items-center">
+              <span className="text-gray-500">Pagamento</span>
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full text-white ${statusColor}`}>
+                {statusLabel}
+              </span>
+            </div>
+            {ins.hospedagem !== undefined && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Hospedagem</span>
+                <span className="font-semibold">{ins.hospedagem ? '✅ Sim' : '—'}</span>
+              </div>
+            )}
+            {ins.alimentacao !== undefined && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Alimentação</span>
+                <span className="font-semibold">{ins.alimentacao ? '✅ Sim' : '❌ Não'}</span>
+              </div>
+            )}
+            {isRefeitorio && (
+              <div className="mt-2 bg-gray-50 rounded-xl px-4 py-3 flex justify-around text-center">
+                <div>
+                  <p className="text-xs text-gray-400">Total</p>
+                  <p className="text-xl font-black text-gray-800">{ctx.refeicoes_total}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400">Usadas</p>
+                  <p className="text-xl font-black text-amber-600">{ctx.refeicoes_usadas}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400">Saldo</p>
+                  <p className={`text-xl font-black ${ctx.refeicoes_saldo > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {ctx.refeicoes_saldo}
+                  </p>
+                </div>
+              </div>
+            )}
+            {/* Plenária: já registrou HOJE nesta sessão — bloqueia */}
+            {isPlenaria && ctx.plenaria_hoje && (
+              <div className="bg-red-50 border border-red-300 rounded-xl px-3 py-3 text-center">
+                <p className="text-red-800 text-xs font-black">🚫 Participante já registrado nesta plenária.</p>
+                {ctx.plenaria_hoje_at && (
+                  <p className="text-red-700 text-xs mt-1">
+                    Registrado em: {new Date(ctx.plenaria_hoje_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                    {ctx.plenaria_hoje_operador ? ` · por ${ctx.plenaria_hoje_operador}` : ''}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Plenária: registrou em dia ANTERIOR — apenas informativo, não bloqueia */}
+            {isPlenaria && !ctx.plenaria_hoje && ctx.plenaria_ultimo_at && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 text-blue-800 text-xs text-center">
+                ℹ️ Último registro: {new Date(ctx.plenaria_ultimo_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                {ctx.plenaria_ultimo_data ? ` (dia ${ctx.plenaria_ultimo_data})` : ''}
+              </div>
+            )}
+            {ins.checkin_realizado && modoCheckin === 'credenciamento' && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-amber-800 text-xs font-semibold text-center">
+                ⚠️ Check-in já realizado em {fmtDT(ins.checkin_at)}
+              </div>
+            )}
+            {ctx.pagamento_pendente && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-red-800 text-xs font-semibold text-center">
+                💳 Pagamento pendente — refeição bloqueada
+              </div>
+            )}
+            {ctx.sem_alimentacao && isRefeitorio && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-red-800 text-xs font-semibold text-center">
+                ⛔ Esta inscrição não inclui alimentação
+              </div>
+            )}
+          </div>
+
+          {/* Botões */}
+          <div className="px-5 pb-5 flex flex-col gap-3">
+            <button
+              onClick={() => void confirmarCheckin()}
+              disabled={confirmando || (isPlenaria && ctx.plenaria_hoje)}
+              className={`w-full active:scale-95 disabled:opacity-50 text-white font-black text-lg py-4 rounded-2xl shadow-lg transition ${
+                isPlenaria && ctx.plenaria_hoje
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-emerald-500 hover:bg-emerald-400'
+              }`}
+            >
+              {confirmando
+                ? '⏳ Registrando...'
+                : isPlenaria && ctx.plenaria_hoje
+                  ? '🚫 Já registrado nesta plenária'
+                  : isRefeitorio
+                    ? '✅ Confirmar Refeição'
+                    : isPlenaria && ctx.plenaria_ultimo_at
+                      ? '✅ Registrar nova presença (novo dia)'
+                      : '✅ Confirmar Check-in'}
+            </button>
+            <button
+              onClick={cancelarConfirmacao}
+              disabled={confirmando}
+              className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-3 rounded-2xl transition text-sm"
+            >
+              ✕ Cancelar / Ler outro QR
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ═══════════════════════════════════════════════════════════
+  // OVERLAY DE RESULTADO (Fase 2 → feedback após confirmação)
   // ═══════════════════════════════════════════════════════════
   const OverlayResultado = () => {
     if (!resultado) return null;
-    const { estado, inscricao, nomeSup: ns, nomeCampo: nc } = resultado;
+    const { estado, inscricao, nomeSup: ns, nomeCampo: nc, message } = resultado;
 
-    const configs = {
+    const configs: Record<EstadoScan, { bg: string; icon: string; titulo: string; tituloCls: string }> = {
       success: {
         bg: 'bg-emerald-600',
         icon: '✅',
-        titulo: 'CHECK-IN LIBERADO',
+        titulo: modoCheckin === 'refeitorio' ? 'REFEIÇÃO LIBERADA' : 'CHECK-IN CONFIRMADO',
         tituloCls: 'text-white text-3xl font-black tracking-wide',
       },
       already: {
@@ -783,8 +1025,8 @@ export default function CheckinMobilePage() {
       invalid: {
         bg: 'bg-red-800',
         icon: '❌',
-        titulo: 'QR CODE INVÁLIDO',
-        tituloCls: 'text-white text-2xl font-black tracking-wide',
+        titulo: message || 'QR Code não reconhecido.',
+        tituloCls: 'text-white text-xl font-black tracking-wide',
       },
       wrong_event: {
         bg: 'bg-orange-700',
@@ -813,7 +1055,7 @@ export default function CheckinMobilePage() {
       duplicate_rapida: {
         bg: 'bg-slate-800',
         icon: '⏱️',
-        titulo: 'LEITURA REPETIDA',
+        titulo: 'LEITURA REPETIDA — AGUARDE',
         tituloCls: 'text-white text-2xl font-black tracking-wide',
       },
       already_plenaria: {
@@ -832,54 +1074,27 @@ export default function CheckinMobilePage() {
       <div className={`fixed inset-0 z-50 flex flex-col items-center justify-center p-8 ${cfg.bg}`}
         onClick={voltarParaScan}>
         <span className="text-8xl mb-6 block animate-bounce">{cfg.icon}</span>
-        <p className={cfg.tituloCls + ' text-center mb-6'}>{cfg.titulo}</p>
+        <p className={cfg.tituloCls + ' text-center mb-4'}>{cfg.titulo}</p>
 
-        {(estado === 'invalid' || estado === 'wrong_event') && ultimoQr && (
-          <div className="text-white/80 text-xs text-center max-w-sm break-all">
-            <p>Texto lido: {ultimoQr.raw || '-'}</p>
-            <p>Token extraido: {ultimoQr.token || '-'}</p>
+        {estado === 'invalid' && ultimoQr && (
+          <div className="text-white/70 text-xs text-center max-w-sm break-all mt-2">
+            <p>Token lido: {ultimoQr.token || ultimoQr.raw || '-'}</p>
           </div>
         )}
 
-        {inscricao && (estado === 'success' || estado === 'already' || estado === 'wrong_event' || estado === 'sem_saldo' || estado === 'sem_alimentacao' || estado === 'pagamento_pendente' || estado === 'duplicate_rapida' || estado === 'already_plenaria') && (
-          <div className="bg-white/20 rounded-2xl p-6 text-white text-center max-w-sm w-full">
+        {inscricao && (['success','already','wrong_event','sem_saldo','sem_alimentacao','pagamento_pendente','duplicate_rapida','already_plenaria'] as EstadoScan[]).includes(estado) && (
+          <div className="bg-white/20 rounded-2xl p-5 text-white text-center max-w-sm w-full">
             <p className="text-2xl font-bold mb-1">{inscricao.nome_inscrito}</p>
             {ns && <p className="text-sm opacity-80">{ns}</p>}
             {nc && <p className="text-sm opacity-80">{nc}</p>}
             {estado === 'already' && inscricao.checkin_at && (
-              <p className="mt-3 text-sm bg-white/20 rounded-lg px-3 py-2">
-                Check-in em: {fmtDT(inscricao.checkin_at)}
-              </p>
+              <p className="mt-3 text-sm bg-white/20 rounded-lg px-3 py-2">Check-in em: {fmtDT(inscricao.checkin_at)}</p>
             )}
             {estado === 'success' && resultado?.saldoRestante != null && (
-              <p className="mt-3 text-sm bg-white/20 rounded-lg px-3 py-2">
-                🍽️ Refeições restantes: <strong>{resultado.saldoRestante}</strong>
-              </p>
-            )}
-            {estado === 'sem_saldo' && (
-              <p className="mt-3 text-sm bg-white/20 rounded-lg px-3 py-2">
-                Todas as refeições já foram utilizadas.
-              </p>
-            )}
-            {estado === 'sem_alimentacao' && (
-              <p className="mt-3 text-sm bg-white/20 rounded-lg px-3 py-2">
-                Esta inscrição não inclui alimentação.
-              </p>
-            )}
-            {estado === 'pagamento_pendente' && (
-              <p className="mt-3 text-sm bg-white/20 rounded-lg px-3 py-2">
-                Pagamento pendente para liberar refeição.
-              </p>
-            )}
-            {estado === 'duplicate_rapida' && (
-              <p className="mt-3 text-sm bg-white/20 rounded-lg px-3 py-2">
-                Leitura repetida em sequência. Aguarde alguns segundos.
-              </p>
+              <p className="mt-3 text-sm bg-white/20 rounded-lg px-3 py-2">🍽️ Refeições restantes: <strong>{resultado.saldoRestante}</strong></p>
             )}
             {estado === 'already_plenaria' && resultado?.dataPlenaria && (
-              <p className="mt-3 text-sm bg-white/20 rounded-lg px-3 py-2">
-                Presença já registrada em: {resultado.dataPlenaria}
-              </p>
+              <p className="mt-3 text-sm bg-white/20 rounded-lg px-3 py-2">Presença já registrada em: {resultado.dataPlenaria}</p>
             )}
           </div>
         )}
@@ -894,6 +1109,7 @@ export default function CheckinMobilePage() {
   // ═══════════════════════════════════════════════════════════
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col text-white">
+      <CardConfirmacao />
       <OverlayResultado />
 
       {/* ── HEADER ──────────────────────────────────────────── */}

@@ -116,6 +116,7 @@ export default function ConsagracaoPage() {
   const [processRegistro, setProcessRegistro] = useState<any | null>(null);
   const [consagracaoModuleReady, setConsagracaoModuleReady] = useState(true);
   const [candidatoDocumentos, setCandidatoDocumentos] = useState<any | null>(null);
+  const [ministerDocsToShow, setMinisterDocsToShow] = useState<any | null>(null);
   const [documentosStatus, setDocumentosStatus] = useState<Record<string, { total: number; tipos: string[] }>>({});
 
   const [memberQuery, setMemberQuery] = useState('');
@@ -1056,6 +1057,14 @@ export default function ConsagracaoPage() {
     }
 
     if (!processRegistro) return;
+
+    if (status === 'homologar') {
+      const confirmResult = window.confirm(
+        'Tem certeza que deseja homologar este processo? Após homologado, ele não poderá mais ser editado.'
+      );
+      if (!confirmResult) return;
+    }
+
     const res = await authenticatedFetch('/api/v1/secretaria/consagracao', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -2354,7 +2363,16 @@ export default function ConsagracaoPage() {
                     const endIndex = startIndex + itemsPerPage;
                     const registrosPaginados = registrosFiltrados.slice(startIndex, endIndex);
                     return registrosPaginados.map((reg) => (
-                      <tr key={reg.id} className="border-b border-gray-200 hover:bg-gray-50">
+                      <tr
+                        key={reg.id}
+                        className={`border-b border-gray-200 transition-colors ${
+                          reg.status_processo === 'indeferir'
+                            ? 'bg-red-50 hover:bg-red-100 text-red-900 border-red-200'
+                            : reg.status_processo === 'homologar'
+                            ? 'opacity-70 grayscale bg-gray-50 text-gray-500'
+                            : 'hover:bg-gray-50 text-gray-700'
+                        }`}
+                      >
                       <td className="px-3 py-2">
                         <div className="w-9 h-9 rounded-full overflow-hidden border border-gray-200 bg-gray-100 flex items-center justify-center">
                           {reg.foto_url ? (
@@ -2419,105 +2437,107 @@ export default function ConsagracaoPage() {
                               Imprimir Ficha
                             </span>
                           </div>
-                          <div className="relative group">
-                            <button
-                              className="px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition text-xs font-semibold"
-                              onClick={() => {
-                              setEditingRegistro(reg);
-                              setFormRegistro({
-                                tipo_registro: normalizeTipoRegistro(reg.tipo_registro || ''),
-                                categoria_registro: reg.categoria_registro || '',
-                                regiao: reg.regiao || '',
-                                member_id: reg.member_id || '',
-                                numero_processo: reg.numero_processo || '',
-                                data_processo: reg.data_processo || '',
-                                nome: reg.nome || '',
-                                data_nascimento: reg.data_nascimento || '',
-                                sexo: reg.sexo || 'MASCULINO',
-                                rg: reg.rg || '',
-                                orgao_emissor: reg.orgao_emissor || '',
-                                estado_civil: reg.estado_civil || '',
-                                nacionalidade: reg.nacionalidade || '',
-                                naturalidade: reg.naturalidade || '',
-                                uf: reg.uf || '',
-                                email: reg.email || '',
-                                cpf: reg.cpf ? formatCpf(reg.cpf) : '',
-                                telefone: reg.telefone ? formatPhone(reg.telefone) : '',
-                                nome_pai: reg.nome_pai || '',
-                                nome_mae: reg.nome_mae || '',
-                                nome_conjuge: reg.nome_conjuge || '',
-                                matricula: reg.matricula || '',
-                                supervisao_id: reg.supervisao_id || '',
-                                campo_id: reg.campo_id || '',
-                                congregacao_id: reg.congregacao_id || '',
-                                cargo_ocupa: reg.cargo_ocupa || '',
-                                cargo_pretendido: reg.cargo_pretendido || '',
-                                pastor_solicitante: reg.pastor_solicitante || '',
-                                origem_instituicao: reg.origem_instituicao || '',
-                                origem_cidade: reg.origem_cidade || '',
-                                origem_uf: reg.origem_uf || '',
-                                origem_data_consagracao: reg.origem_data_consagracao || '',
-                                data_autorizacao: reg.data_autorizacao || '',
-                                status_processo: reg.status_processo || 'em_processo',
-                                observacoes: reg.observacoes || '',
-                                foto_url: reg.foto_url || '',
-                                // Endereço
-                                endereco: reg.endereco || '',
-                                numero_endereco: reg.numero_endereco || '',
-                                bairro: reg.bairro || '',
-                                complemento: reg.complemento || '',
-                                cidade: reg.cidade || '',
-                                uf_endereco: reg.uf_endereco || '',
-                                cep: reg.cep || '',
-                                // Formação e dados extras
-                                escolaridade: reg.escolaridade || '',
-                                curso_teologico: reg.curso_teologico || '',
-                                cargo_anterior: reg.cargo_anterior || '',
-                                mat_pr_solicitante: reg.mat_pr_solicitante || '',
-                                doc_pendente: reg.doc_pendente ?? false,
-                                data_registro: reg.data_registro || ''
-                              });
-                              setShowForm(true);
-                              setActiveTab('cadastro');
-                            }}
-                              title="Editar"
-                              aria-label="Editar"
-                            >
-                              ✏️
-                            </button>
-                            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-[10px] font-medium text-white opacity-0 group-hover:opacity-100 transition">
-                              Editar
-                            </span>
-                          </div>
-                          <div className="relative group">
-                            <button
-                              className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded hover:bg-emerald-100 transition text-xs font-semibold"
-                              onClick={() => {
-                              setProcessRegistro(reg);
-                              setProcessModalOpen(true);
-                            }}
-                              title="Processar"
-                              aria-label="Processar"
-                            >
-                              ⚙️
-                            </button>
-                            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-[10px] font-medium text-white opacity-0 group-hover:opacity-100 transition">
-                              Processar
-                            </span>
-                          </div>
-                          <div className="relative group">
-                            <button
-                              className="px-2 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100 transition text-xs font-semibold"
-                              onClick={() => handleDeleteRegistro(reg.id)}
-                              title="Excluir"
-                              aria-label="Excluir"
-                            >
-                              🗑️
-                            </button>
-                            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-[10px] font-medium text-white opacity-0 group-hover:opacity-100 transition">
-                              Excluir
-                            </span>
-                          </div>
+                          {reg.status_processo !== 'homologar' && (
+                            <>
+                              <div className="relative group">
+                                <button
+                                  className="px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition text-xs font-semibold"
+                                  onClick={() => {
+                                    setEditingRegistro(reg);
+                                    setFormRegistro({
+                                      tipo_registro: normalizeTipoRegistro(reg.tipo_registro || ''),
+                                      categoria_registro: reg.categoria_registro || '',
+                                      regiao: reg.regiao || '',
+                                      member_id: reg.member_id || '',
+                                      numero_processo: reg.numero_processo || '',
+                                      data_processo: reg.data_processo || '',
+                                      nome: reg.nome || '',
+                                      data_nascimento: reg.data_nascimento || '',
+                                      sexo: reg.sexo || 'MASCULINO',
+                                      rg: reg.rg || '',
+                                      orgao_emissor: reg.orgao_emissor || '',
+                                      estado_civil: reg.estado_civil || '',
+                                      nacionalidade: reg.nacionalidade || '',
+                                      naturalidade: reg.naturalidade || '',
+                                      uf: reg.uf || '',
+                                      email: reg.email || '',
+                                      cpf: reg.cpf ? formatCpf(reg.cpf) : '',
+                                      telefone: reg.telefone ? formatPhone(reg.telefone) : '',
+                                      nome_pai: reg.nome_pai || '',
+                                      nome_mae: reg.nome_mae || '',
+                                      nome_conjuge: reg.nome_conjuge || '',
+                                      matricula: reg.matricula || '',
+                                      supervisao_id: reg.supervisao_id || '',
+                                      campo_id: reg.campo_id || '',
+                                      congregacao_id: reg.congregacao_id || '',
+                                      cargo_ocupa: reg.cargo_ocupa || '',
+                                      cargo_pretendido: reg.cargo_pretendido || '',
+                                      pastor_solicitante: reg.pastor_solicitante || '',
+                                      origem_instituicao: reg.origem_instituicao || '',
+                                      origem_cidade: reg.origem_cidade || '',
+                                      origem_uf: reg.origem_uf || '',
+                                      origem_data_consagracao: reg.origem_data_consagracao || '',
+                                      data_autorizacao: reg.data_autorizacao || '',
+                                      status_processo: reg.status_processo || 'em_processo',
+                                      observacoes: reg.observacoes || '',
+                                      foto_url: reg.foto_url || '',
+                                      endereco: reg.endereco || '',
+                                      numero_endereco: reg.numero_endereco || '',
+                                      bairro: reg.bairro || '',
+                                      complemento: reg.complemento || '',
+                                      cidade: reg.cidade || '',
+                                      uf_endereco: reg.uf_endereco || '',
+                                      cep: reg.cep || '',
+                                      escolaridade: reg.escolaridade || '',
+                                      curso_teologico: reg.curso_teologico || '',
+                                      cargo_anterior: reg.cargo_anterior || '',
+                                      mat_pr_solicitante: reg.mat_pr_solicitante || '',
+                                      doc_pendente: reg.doc_pendente ?? false,
+                                      data_registro: reg.data_registro || ''
+                                    });
+                                    setShowForm(true);
+                                    setActiveTab('cadastro');
+                                  }}
+                                  title="Editar"
+                                  aria-label="Editar"
+                                >
+                                  ✏️
+                                </button>
+                                <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-[10px] font-medium text-white opacity-0 group-hover:opacity-100 transition">
+                                  Editar
+                                </span>
+                              </div>
+                              <div className="relative group">
+                                <button
+                                  className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded hover:bg-emerald-100 transition text-xs font-semibold"
+                                  onClick={() => {
+                                    setProcessRegistro(reg);
+                                    setProcessModalOpen(true);
+                                  }}
+                                  title="Processar"
+                                  aria-label="Processar"
+                                >
+                                  ⚙️
+                                </button>
+                                <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-[10px] font-medium text-white opacity-0 group-hover:opacity-100 transition">
+                                  Processar
+                                </span>
+                              </div>
+                              <div className="relative group">
+                                <button
+                                  className="px-2 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100 transition text-xs font-semibold"
+                                  onClick={() => handleDeleteRegistro(reg.id)}
+                                  title="Excluir"
+                                  aria-label="Excluir"
+                                >
+                                  🗑️
+                                </button>
+                                <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-[10px] font-medium text-white opacity-0 group-hover:opacity-100 transition">
+                                  Excluir
+                                </span>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -2766,50 +2786,84 @@ export default function ConsagracaoPage() {
           anoReferencia={String(candidatoDocumentos.data_processo || '').slice(0, 4) || String(new Date().getFullYear())}
           onChanged={() => void loadDocumentosStatus(registros)}
           onClose={() => setCandidatoDocumentos(null)}
+          isHomologado={candidatoDocumentos.status_processo === 'homologar'}
+          onOpenMinisterDocuments={candidatoDocumentos.member_id ? () => {
+            setMinisterDocsToShow(candidatoDocumentos);
+            setCandidatoDocumentos(null);
+          } : undefined}
         />
       )}
 
-      {processModalOpen && processRegistro && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-800">Alterar Registro - Processos</h3>
-              <button
-                className="text-gray-500 hover:text-gray-800"
-                onClick={() => setProcessModalOpen(false)}
-              >
-                X
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                className="px-4 py-3 bg-green-100 text-green-700 rounded-lg font-semibold hover:bg-green-200"
-                onClick={() => handleUpdateStatus('deferir')}
-              >
-                Deferir
-              </button>
-              <button
-                className="px-4 py-3 bg-red-100 text-red-700 rounded-lg font-semibold hover:bg-red-200"
-                onClick={() => handleUpdateStatus('indeferir')}
-              >
-                Indeferir
-              </button>
-              <button
-                className="px-4 py-3 bg-blue-100 text-blue-700 rounded-lg font-semibold hover:bg-blue-200"
-                onClick={() => handleUpdateStatus('em_processo')}
-              >
-                Em Processo
-              </button>
-              <button
-                className="px-4 py-3 bg-emerald-100 text-emerald-700 rounded-lg font-semibold hover:bg-emerald-200"
-                onClick={() => handleUpdateStatus('homologar')}
-              >
-                Homologar
-              </button>
+      {ministerDocsToShow && (
+        <DocumentosMinistro
+          memberId={String(ministerDocsToShow.member_id)}
+          memberName={String(ministerDocsToShow.nome || 'Ministro')}
+          matricula={String(ministerDocsToShow.numero_processo || 'SEM-PROCESSO')}
+          entityType="ministro"
+          entityId={String(ministerDocsToShow.member_id)}
+          titulo="Documentos do Ministro"
+          subtitulo={`${String(ministerDocsToShow.nome || 'Ministro')} • ${String(ministerDocsToShow.cargo_pretendido || 'Cargo não informado')} • Cadastro Oficial`}
+          onClose={() => setMinisterDocsToShow(null)}
+        />
+      )}
+
+      {processModalOpen && processRegistro && (() => {
+        const currentStatus = processRegistro.status_processo || 'em_processo';
+        const showDeferir = currentStatus === 'em_processo';
+        const showIndeferir = currentStatus === 'em_processo' || currentStatus === 'deferir';
+        const showEmProcesso = currentStatus === 'deferir' || currentStatus === 'indeferir';
+        const showHomologar = currentStatus === 'em_processo' || currentStatus === 'deferir';
+
+        return (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-800">Alterar Registro - Processos</h3>
+                <button
+                  className="text-gray-500 hover:text-gray-800"
+                  onClick={() => setProcessModalOpen(false)}
+                >
+                  X
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {showDeferir && (
+                  <button
+                    className="px-4 py-3 bg-green-100 text-green-700 rounded-lg font-semibold hover:bg-green-200"
+                    onClick={() => handleUpdateStatus('deferir')}
+                  >
+                    Deferir
+                  </button>
+                )}
+                {showIndeferir && (
+                  <button
+                    className="px-4 py-3 bg-red-100 text-red-700 rounded-lg font-semibold hover:bg-red-200"
+                    onClick={() => handleUpdateStatus('indeferir')}
+                  >
+                    Indeferir
+                  </button>
+                )}
+                {showEmProcesso && (
+                  <button
+                    className="px-4 py-3 bg-blue-100 text-blue-700 rounded-lg font-semibold hover:bg-blue-200"
+                    onClick={() => handleUpdateStatus('em_processo')}
+                  >
+                    Em Processo
+                  </button>
+                )}
+                {showHomologar && (
+                  <button
+                    className="px-4 py-3 bg-emerald-100 text-emerald-700 rounded-lg font-semibold hover:bg-emerald-200"
+                    onClick={() => handleUpdateStatus('homologar')}
+                  >
+                    Homologar
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Modal de Impressão - Ficha do Ministro */}
       {membroImprimindo && (

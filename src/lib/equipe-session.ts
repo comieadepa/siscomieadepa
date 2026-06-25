@@ -3,6 +3,10 @@ export type EquipeSession = {
   equipeId: string;
   tipo: 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem';
   expiraEm: string;
+  /** E-mail do operador que autenticou (disponível quando login por e-mail) */
+  email?: string;
+  /** Nome do operador (se cadastrado na equipe) */
+  nome?: string;
 };
 
 const STORAGE_KEY = 'evento_equipe_session';
@@ -18,7 +22,14 @@ export function getEquipeSession(): EquipeSession | null {
   if (!raw) return null;
 
   try {
-    const parsed = JSON.parse(raw) as { eventoId?: string; equipeId?: string; tipo?: string; expiraEm?: string };
+    const parsed = JSON.parse(raw) as {
+      eventoId?: string;
+      equipeId?: string;
+      tipo?: string;
+      expiraEm?: string;
+      email?: string;
+      nome?: string;
+    };
     if (parsed.tipo === 'admin') parsed.tipo = 'operador';
     if (!parsed?.eventoId || !parsed?.equipeId || !parsed?.tipo || !parsed?.expiraEm) {
       window.localStorage.removeItem(STORAGE_KEY);

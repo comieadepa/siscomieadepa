@@ -26,6 +26,8 @@ interface DocumentosMinistroProps {
   anoReferencia?: string;
   tipoDocumentoOptions?: string[];
   onChanged?: () => void;
+  isHomologado?: boolean;
+  onOpenMinisterDocuments?: () => void;
 }
 
 const TIPOS_DOCUMENTO_MINISTRO = [
@@ -102,6 +104,8 @@ export default function DocumentosMinistro({
   anoReferencia,
   tipoDocumentoOptions,
   onChanged,
+  isHomologado,
+  onOpenMinisterDocuments,
 }: DocumentosMinistroProps) {
   const resolvedEntityId = entityId || memberId;
   const resolvedEntityName = memberName;
@@ -424,6 +428,28 @@ export default function DocumentosMinistro({
           </div>
           <button onClick={onClose} className="text-white hover:text-gray-300 text-2xl leading-none">✕</button>
         </div>
+
+        {isHomologado && (
+          <div className="bg-amber-50 border-b border-amber-200 px-6 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 flex-shrink-0">
+            <div className="flex items-start gap-2.5">
+              <span className="text-lg mt-0.5">⚠️</span>
+              <div>
+                <p className="text-xs font-semibold text-amber-800">Processo Homologado</p>
+                <p className="text-[11px] text-amber-700 mt-0.5">
+                  Os documentos deste processo foram incorporados ao cadastro oficial do ministro.
+                </p>
+              </div>
+            </div>
+            {onOpenMinisterDocuments && (
+              <button
+                onClick={onOpenMinisterDocuments}
+                className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded transition shadow-sm flex-shrink-0 self-start sm:self-auto"
+              >
+                Abrir documentos do ministro
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           {/* Upload area */}
