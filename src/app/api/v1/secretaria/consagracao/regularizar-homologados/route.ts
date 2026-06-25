@@ -288,7 +288,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 1. Atualizar o processo de consagração com os vínculos
-      await supabase
+      const { error: updateProcessError } = await supabase
         .from('consagracao_registros')
         .update({
           member_id: memberId,
@@ -298,6 +298,10 @@ export async function POST(request: NextRequest) {
           homologado_por: userId
         })
         .eq('id', id);
+
+      if (updateProcessError) {
+        throw new Error(`Erro ao vincular processo: ${updateProcessError.message}`);
+      }
 
       // Processa documentos
       try {
@@ -369,7 +373,7 @@ export async function POST(request: NextRequest) {
 
           // Atualiza dados na tabela candidato_documentos
           const nowIso = new Date().toISOString();
-          await supabase
+          const { error: updateDocError } = await supabase
             .from('candidato_documentos')
             .update({
               member_id: memberId,
@@ -378,6 +382,10 @@ export async function POST(request: NextRequest) {
               homologado_por: userId
             })
             .eq('drive_file_id', driveFileId);
+
+          if (updateDocError) {
+            console.error(`[regularizar_homologados] erro ao atualizar doc ${driveFileId}:`, updateDocError.message);
+          }
 
           const originalBytes = dbDoc.arquivo_original_bytes || parseInt(driveFile.size || '0') || 0;
           const optimizedBytes = dbDoc.arquivo_otimizado_bytes || originalBytes;
