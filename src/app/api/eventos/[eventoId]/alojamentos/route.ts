@@ -14,7 +14,7 @@ export async function GET(
   const supabase = guard.ctx.supabaseAdmin;
   const { data, error } = await supabase
     .from('evento_alojamentos')
-    .select('id,nome,publico,sexo,total_vagas,camas_inferiores,camas_superiores,ativo,created_at')
+    .select('id,nome,publico,sexo,total_vagas,camas_inferiores,camas_superiores,colchonetes,ativo,created_at')
     .eq('evento_id', eventoId)
     .order('nome');
 
@@ -81,7 +81,7 @@ export async function POST(
   const guard = await requireEventoPermission(request, eventoId, 'hospedagem');
   if (!guard.ok) return guard.response;
   const body = await request.json();
-  const { nome, publico, sexo, total_vagas, camas_inferiores, camas_superiores } = body;
+  const { nome, publico, sexo, total_vagas, camas_inferiores, camas_superiores, colchonetes } = body;
 
   if (!nome?.trim() || !publico?.trim() || total_vagas == null) {
     return NextResponse.json({ error: 'Campos obrigatórios: nome, publico, total_vagas' }, { status: 400 });
@@ -96,6 +96,7 @@ export async function POST(
     total_vagas:      Number(total_vagas),
     camas_inferiores: Number(camas_inferiores ?? 0),
     camas_superiores: Number(camas_superiores ?? 0),
+    colchonetes:      Number(colchonetes ?? 0),
   });
 
   const { data, error } = await supabase
@@ -125,7 +126,7 @@ export async function PATCH(
   // 1. Buscar alojamento atual
   const { data: currentAloj, error: errFetch } = await supabase
     .from('evento_alojamentos')
-    .select('nome, publico, total_vagas, camas_inferiores, camas_superiores, ativo')
+    .select('nome, publico, total_vagas, camas_inferiores, camas_superiores, colchonetes, ativo')
     .eq('id', id)
     .eq('evento_id', eventoId)
     .single();
@@ -160,17 +161,7 @@ export async function PATCH(
     );
   }
 
-  // 4. Validar inferiores + superiores = total
-  const newInferiores = updates.camas_inferiores !== undefined ? Number(updates.camas_inferiores) : currentAloj.camas_inferiores;
-  const newSuperiores = updates.camas_superiores !== undefined ? Number(updates.camas_superiores) : currentAloj.camas_superiores;
-  if (newInferiores + newSuperiores !== newTotal) {
-    return NextResponse.json(
-      { error: 'A soma das camas inferiores e superiores deve ser igual ao total de vagas.' },
-      { status: 400 }
-    );
-  }
-
-  // 5. Validar se tenta alterar grupo/público com hóspedes alocados
+  // 4. Validar se tenta alterar grupo/público com hóspedes alocados
   const newPublico = updates.publico !== undefined ? String(updates.publico) : currentAloj.publico;
   if (newPublico !== currentAloj.publico && totalOcupados > 0) {
     return NextResponse.json(
@@ -179,7 +170,7 @@ export async function PATCH(
     );
   }
 
-  // 6. Validar desativação de alojamento com hóspedes alocados
+  // 5. Validar desativação de alojamento com hóspedes alocados
   const newAtivo = updates.ativo !== undefined ? !!updates.ativo : currentAloj.ativo;
   if (!newAtivo && totalOcupados > 0) {
     return NextResponse.json(
@@ -188,7 +179,7 @@ export async function PATCH(
     );
   }
 
-  // 7. Atualizar registro
+  // 6. Atualizar registro
   const updatesNormalized = normalizePayloadUppercase(updates);
   const { error: errUpdate } = await supabase
     .from('evento_alojamentos')
@@ -198,7 +189,7 @@ export async function PATCH(
 
   if (errUpdate) return NextResponse.json({ error: errUpdate.message }, { status: 500 });
 
-  // 8. Registrar auditoria
+  // 7. Registrar auditoria
   await logDB({
     userId: guard.ctx.user?.id,
     userEmail: guard.ctx.user?.email ?? undefined,
@@ -212,9 +203,11 @@ export async function PATCH(
       capacidade_anterior: currentAloj.total_vagas,
       capacidade_nova: newTotal,
       leitos_inferiores_anterior: currentAloj.camas_inferiores,
-      leitos_inferiores_novo: newInferiores,
+      leitos_inferiores_novo: updates.camas_inferiores !== undefined ? Number(updates.camas_inferiores) : currentAloj.camas_inferiores,
       leitos_superiores_anterior: currentAloj.camas_superiores,
-      leitos_superiores_novo: newSuperiores,
+      leitos_superiores_novo: updates.camas_superiores !== undefined ? Number(updates.camas_superiores) : currentAloj.camas_superiores,
+      colchonetes_anterior: currentAloj.colchonetes || 0,
+      colchonetes_novo: updates.colchonetes !== undefined ? Number(updates.colchonetes) : (currentAloj.colchonetes || 0),
       operador: guard.ctx.user?.email ?? 'desconhecido'
     },
     request,

@@ -12,7 +12,7 @@ import CartaRecomendacao from '@/components/CartaRecomendacao';
 import DocumentosMinistro from '@/components/DocumentosMinistro';
 import HistoricoMinistro from '@/components/HistoricoMinistro';
 import MembrosOverview from '@/components/MembrosOverview';
-import { getCargosMinisteriais, type CargoMinisterial } from '@/lib/cargos-utils';
+import { getCargosMinisteriais } from '@/lib/cargos-utils';
 import { fetchConfiguracaoIgrejaFromSupabase } from '@/lib/igreja-config-utils';
 import { getMensagemSemTemplate } from '@/lib/cartoes-utils';
 import { createClient } from '@/lib/supabase-client';
@@ -631,18 +631,16 @@ export default function MembrosPage() {
   const [_isAdminMode, setIsAdminMode] = useState(false);
   const [isEditando, setIsEditando] = useState(false);
 
-  // Cargos ministeriais (sincronizados com configurações via localStorage)
-  const [cargosMinisteriais] = useState<CargoMinisterial[]>(() => getCargosMinisteriais());
+
 
   const resolveCargoValue = (rawValue?: string) => {
-    const value = String(rawValue || '').trim();
+    const value = String(rawValue || '').trim().toUpperCase();
     if (!value) return '';
-
-    const match = cargosMinisteriais.find(
-      (cargo) => String(cargo.nome || '').trim().toLocaleUpperCase('pt-BR') === value.toLocaleUpperCase('pt-BR')
-    );
-
-    return match?.nome || value;
+    if (value === 'PASTOR') return 'PASTOR';
+    if (value === 'EVANGELISTA') return 'EVANGELISTA CONSAGRADO';
+    if (value === 'EVANGELISTA CONSAGRADO') return 'EVANGELISTA CONSAGRADO';
+    if (value === 'EVANGELISTA AUTORIZADO') return 'EVANGELISTA AUTORIZADO';
+    return rawValue || value;
   };
 
   // Nomenclaturas dinâmicas para as divisões
@@ -4211,11 +4209,12 @@ useEffect(() => {
                             className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                           >
                             <option value="">- Selecionar -</option>
-                            {cargosMinisteriais.map((c) => (
-                              <option key={c.id || c.nome} value={c.nome}>
-                                {c.nome}
-                              </option>
-                            ))}
+                            <option value="EVANGELISTA AUTORIZADO">EVANGELISTA AUTORIZADO</option>
+                            <option value="EVANGELISTA CONSAGRADO">EVANGELISTA CONSAGRADO</option>
+                            <option value="PASTOR">PASTOR</option>
+                            {cargoSelecionado && !['EVANGELISTA AUTORIZADO', 'EVANGELISTA CONSAGRADO', 'PASTOR'].includes(cargoSelecionado) && (
+                              <option value={cargoSelecionado}>{cargoSelecionado}</option>
+                            )}
                           </select>
                         </div>
                         <div>

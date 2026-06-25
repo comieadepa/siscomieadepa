@@ -226,32 +226,7 @@ export default function ConsagracaoPage() {
     regiao: ''
   });
 
-  const getNextProcessNumber = async () => {
-    if (!ministryId || !consagracaoModuleReady) return '';
-    const year = new Date().getFullYear();
-    const res = await authenticatedFetch(`/api/v1/secretaria/consagracao?fields=numero_processo&year=${year}`);
-    if (!res.ok) {
-      const payload = await res.json().catch(() => null as any);
-      if (isConsagracaoTableMissing(payload?.error)) {
-        setConsagracaoModuleReady(false);
-        setStatusMensagem('Módulo Consagração indisponível: tabela public.consagracao_registros não encontrada. Aplique as migrations de Consagração no Supabase.');
-      }
-      return '';
-    }
 
-    const payload = await res.json().catch(() => null as any);
-    const numeros = (payload?.data || [])
-      .map((item: any) => {
-        const raw = String(item?.numero_processo || '');
-        const base = raw.split('/')[0];
-        const parsed = Number.parseInt(base, 10);
-        return Number.isFinite(parsed) ? parsed : 0;
-      })
-      .filter((value: number) => value > 0);
-
-    const next = (numeros.length ? Math.max(...numeros) : 0) + 1;
-    return `${next}/${year}`;
-  };
 
   const loadInitialData = async () => {
     setLoadingData(true);
@@ -735,12 +710,7 @@ export default function ConsagracaoPage() {
   };
   // ──────────────────────────────────────────────────────────────
 
-  const ensureNumeroProcesso = async () => {
-    if (editingRegistro) return;
-    const next = await getNextProcessNumber();
-    if (!next) return;
-    setFormRegistro((prev) => ({ ...prev, numero_processo: next }));
-  };
+
 
   const handleSelectMember = (member: Member) => {
     const cf = ((member as any).custom_fields || {}) as Record<string, any>;
@@ -1042,7 +1012,6 @@ export default function ConsagracaoPage() {
     resetForm();
     setShowForm(false);
     setActiveTab('registros');
-    await ensureNumeroProcesso();
     const registrosRes = await authenticatedFetch('/api/v1/secretaria/consagracao');
     if (registrosRes.ok) {
       const payload = await registrosRes.json().catch(() => null as any);
@@ -1429,7 +1398,7 @@ export default function ConsagracaoPage() {
                           <label className="block text-sm font-semibold text-gray-700 mb-1">Nº do Processo</label>
                           <input
                             className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg bg-gray-100 text-gray-600 font-bold focus:outline-none"
-                            value={formRegistro.numero_processo}
+                            value={formRegistro.numero_processo || 'GERADO AO SALVAR'}
                             readOnly
                           />
                         </div>
@@ -2340,13 +2309,9 @@ export default function ConsagracaoPage() {
 
               <button
                 className={`text-white px-4 py-1.5 rounded-lg transition font-semibold text-sm ${consagracaoModuleReady ? 'bg-teal-600 hover:bg-teal-700' : 'bg-gray-400 cursor-not-allowed'}`}
-                onClick={async () => {
+                onClick={() => {
                   setStatusMensagem('');
                   resetForm();
-                  const next = await getNextProcessNumber();
-                  if (next) {
-                    setFormRegistro((prev) => ({ ...prev, numero_processo: next }));
-                  }
                   setShowForm(true);
                   setActiveTab('cadastro');
                 }}

@@ -32,6 +32,7 @@ interface Alojamento {
   total_vagas: number;
   camas_inferiores: number;
   camas_superiores: number;
+  colchonetes?: number;
   ativo: boolean;
   vagas_livres?: number;
   inferiores_livres?: number;
@@ -1088,9 +1089,6 @@ export default function TabHospedagem({
                       <th className={thCls}>Grupo</th>
                       <th className={thCls}>Alojamento</th>
                       <th className={thCls}>Status</th>
-                      <th className={thCls + ' text-center'}>🦽</th>
-                      <th className={thCls + ' text-center'}>🩺</th>
-                      <th className={thCls + ' text-center'}>⬇</th>
                       <th className={thCls}>Ações</th>
                     </tr>
                   </thead>
@@ -1125,19 +1123,6 @@ export default function TabHospedagem({
                                 </p>
                               )}
                             </div>
-                          </td>
-                          <td className={tdCls + ' text-center'}>
-                            {h.necessidade_especial ? (
-                              <span title={h.descricao_necessidade ?? ''} className="cursor-help">🦽</span>
-                            ) : '—'}
-                          </td>
-                          <td className={tdCls + ' text-center'}>
-                            {h.possui_comorbidade ? (
-                              <span title={h.descricao_comorbidade ?? ''} className="cursor-help">🩺</span>
-                            ) : '—'}
-                          </td>
-                          <td className={tdCls + ' text-center'}>
-                            {h.cama_inferior ? '↓' : '—'}
                           </td>
                           <td className={tdCls}>
                             <div className="flex gap-1 items-center">
@@ -1928,7 +1913,7 @@ function SecaoAlojamentos({
 }) {
   const [form, setForm] = useState({
     nome: '', publico: 'masculino_geral' as string, total_vagas: '20',
-    camas_inferiores: '10', camas_superiores: '10',
+    camas_inferiores: '0', camas_superiores: '0', colchonetes: '0',
   });
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -1938,7 +1923,7 @@ function SecaoAlojamentos({
   const [modalEditar, setModalEditar] = useState<Alojamento | null>(null);
   const [editForm, setEditForm] = useState({
     nome: '', publico: 'masculino_geral' as string, total_vagas: 20,
-    camas_inferiores: 10, camas_superiores: 10, ativo: true,
+    camas_inferiores: 0, camas_superiores: 0, colchonetes: 0, ativo: true,
   });
   const [salvandoEdit, setSalvandoEdit] = useState(false);
   const [erroEdit, setErroEdit] = useState<string | null>(null);
@@ -1951,6 +1936,7 @@ function SecaoAlojamentos({
       total_vagas: aloj.total_vagas,
       camas_inferiores: aloj.camas_inferiores,
       camas_superiores: aloj.camas_superiores,
+      colchonetes: aloj.colchonetes || 0,
       ativo: aloj.ativo,
     });
     setErroEdit(null);
@@ -1964,11 +1950,6 @@ function SecaoAlojamentos({
     const ocupados = modalEditar.total_vagas - (modalEditar.vagas_livres ?? 0);
     if (editForm.total_vagas < ocupados) {
       setErroEdit(`Não é possível reduzir a capacidade abaixo da quantidade de leitos ocupados (${ocupados} ocupados).`);
-      return;
-    }
-
-    if (editForm.camas_inferiores + editForm.camas_superiores !== editForm.total_vagas) {
-      setErroEdit("A soma das camas inferiores e superiores deve ser igual ao total de vagas.");
       return;
     }
 
@@ -1995,6 +1976,7 @@ function SecaoAlojamentos({
           total_vagas: editForm.total_vagas,
           camas_inferiores: editForm.camas_inferiores,
           camas_superiores: editForm.camas_superiores,
+          colchonetes: editForm.colchonetes,
           ativo: editForm.ativo,
         }),
       });
@@ -2029,11 +2011,12 @@ function SecaoAlojamentos({
           total_vagas: parseInt(form.total_vagas) || 0,
           camas_inferiores: parseInt(form.camas_inferiores) || 0,
           camas_superiores: parseInt(form.camas_superiores) || 0,
+          colchonetes: parseInt(form.colchonetes) || 0,
         }),
       });
       if (!res.ok) { const j = await res.json(); throw new Error(j.error ?? 'Erro'); }
       setSucesso(`Alojamento "${form.nome}" criado com sucesso!`);
-      setForm({ nome: '', publico: 'masculino_geral', total_vagas: '20', camas_inferiores: '10', camas_superiores: '10' });
+      setForm({ nome: '', publico: 'masculino_geral', total_vagas: '20', camas_inferiores: '0', camas_superiores: '0', colchonetes: '0' });
       onRefresh();
     } catch (err) {
       setErro(err instanceof Error ? err.message : 'Erro ao criar');
@@ -2084,11 +2067,9 @@ function SecaoAlojamentos({
               <label className={labelCls}>Total de vagas</label>
               <input type="number" min="1" value={form.total_vagas}
                 onChange={e => {
-                  const val = parseInt(e.target.value) || 0;
                   setForm(f => ({
                     ...f,
                     total_vagas: e.target.value,
-                    camas_superiores: String(Math.max(0, val - (parseInt(f.camas_inferiores) || 0)))
                   }));
                 }} className={inputCls} />
             </div>
@@ -2096,11 +2077,9 @@ function SecaoAlojamentos({
               <label className={labelCls}>Camas inferiores</label>
               <input type="number" min="0" value={form.camas_inferiores}
                 onChange={e => {
-                  const val = parseInt(e.target.value) || 0;
                   setForm(f => ({
                     ...f,
                     camas_inferiores: e.target.value,
-                    camas_superiores: String(Math.max(0, (parseInt(f.total_vagas) || 0) - val))
                   }));
                 }} className={inputCls} />
             </div>
@@ -2108,11 +2087,19 @@ function SecaoAlojamentos({
               <label className={labelCls}>Camas superiores</label>
               <input type="number" min="0" value={form.camas_superiores}
                 onChange={e => {
-                  const val = parseInt(e.target.value) || 0;
                   setForm(f => ({
                     ...f,
                     camas_superiores: e.target.value,
-                    camas_inferiores: String(Math.max(0, (parseInt(f.total_vagas) || 0) - val))
+                  }));
+                }} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Colchonetes</label>
+              <input type="number" min="0" value={form.colchonetes}
+                onChange={e => {
+                  setForm(f => ({
+                    ...f,
+                    colchonetes: e.target.value,
                   }));
                 }} className={inputCls} />
             </div>
@@ -2169,9 +2156,12 @@ function SecaoAlojamentos({
                   </div>
                 </div>
 
-                <div className="flex gap-1.5 text-xs text-gray-500 mb-3">
-                  <span className="bg-sky-50 text-sky-700 px-2 py-0.5 rounded-full">⬇ {aloj.camas_inferiores} inf.</span>
-                  <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">⬆ {aloj.camas_superiores} sup.</span>
+                <div className="flex gap-1.5 text-xs text-gray-500 mb-3 flex-wrap">
+                  <span className="bg-sky-50 text-sky-700 px-2 py-0.5 rounded-full">⬇ {aloj.camas_inferiores || 0} inf.</span>
+                  <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">⬆ {aloj.camas_superiores || 0} sup.</span>
+                  {(aloj.colchonetes ?? 0) > 0 && (
+                    <span className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">🟨 {aloj.colchonetes} colch.</span>
+                  )}
                 </div>
 
                 <div className="flex gap-1.5 mt-2">
@@ -2233,7 +2223,7 @@ function SecaoAlojamentos({
                 </select>
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <div>
                   <label className={labelCls}>Total vagas</label>
                   <input
@@ -2245,7 +2235,6 @@ function SecaoAlojamentos({
                       setEditForm(f => ({
                         ...f,
                         total_vagas: val,
-                        camas_superiores: Math.max(0, val - f.camas_inferiores)
                       }));
                     }}
                     className={inputCls}
@@ -2263,11 +2252,9 @@ function SecaoAlojamentos({
                       setEditForm(f => ({
                         ...f,
                         camas_inferiores: val,
-                        camas_superiores: Math.max(0, f.total_vagas - val)
                       }));
                     }}
                     className={inputCls}
-                    required
                   />
                 </div>
                 <div>
@@ -2281,11 +2268,25 @@ function SecaoAlojamentos({
                       setEditForm(f => ({
                         ...f,
                         camas_superiores: val,
-                        camas_inferiores: Math.max(0, f.total_vagas - val)
                       }));
                     }}
                     className={inputCls}
-                    required
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Colchonetes</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={editForm.colchonetes}
+                    onChange={e => {
+                      const val = parseInt(e.target.value) || 0;
+                      setEditForm(f => ({
+                        ...f,
+                        colchonetes: val,
+                      }));
+                    }}
+                    className={inputCls}
                   />
                 </div>
               </div>

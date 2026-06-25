@@ -207,6 +207,7 @@ export async function POST(
       hospedagem,
       brinde,
       tipo_inscricao,
+      equipe_apoio,
       cupom_codigo,
       valor_original,
       desconto_valor,
@@ -329,10 +330,10 @@ export async function POST(
 
     // Determina forma e status de pagamento
     const formaStr = String(forma_pagamento ?? '');
-    let vFinal = typeof valor_final === 'number' ? valor_final : 0;
-    let vOriginal = typeof valor_original === 'number' ? valor_original : 0;
-    const vDesconto = typeof desconto_valor === 'number' ? desconto_valor : 0;
-    let isGratuito = vFinal <= 0 || formaStr === 'isento' || formaStr === 'equipe_apoio';
+    let vFinal = tipoNome === 'Equipe de Apoio' ? 0 : (typeof valor_final === 'number' ? valor_final : 0);
+    let vOriginal = tipoNome === 'Equipe de Apoio' ? 0 : (typeof valor_original === 'number' ? valor_original : 0);
+    const vDesconto = tipoNome === 'Equipe de Apoio' ? 0 : (typeof desconto_valor === 'number' ? desconto_valor : 0);
+    let isGratuito = tipoNome === 'Equipe de Apoio' || vFinal <= 0 || formaStr === 'isento' || formaStr === 'equipe_apoio';
     let isAsaas = formaStr === 'asaas' && !isGratuito;
     let isPresencial = !isAsaas && !isGratuito;
     let statusPag: 'isento' | 'pendente' | 'pago' = 'pendente';
@@ -341,7 +342,7 @@ export async function POST(
       statusPag = isGratuito ? 'isento'
         : isAsaas ? 'pendente'
         : 'pago';
-      formaPagSalva = isGratuito ? (formaStr === 'equipe_apoio' ? 'equipe_apoio' : null)
+      formaPagSalva = isGratuito ? (tipoNome === 'Equipe de Apoio' ? 'isento' : (formaStr === 'equipe_apoio' ? 'equipe_apoio' : null))
         : formaStr === 'pix_manual' ? 'pix'
         : formaStr === 'asaas' ? 'pix'
         : formaStr;
@@ -782,6 +783,7 @@ export async function POST(
       alimentacao:      incluiAlimentacao,
       brinde:           !!brinde,
       tipo_inscricao:   tipoNome,
+      equipe_apoio:     tipoNome === 'Equipe de Apoio' ? (equipe_apoio ? String(equipe_apoio).trim() : null) : null,
       valor_original:   vOriginal,
       cupom_codigo:     cupomCodigo,
       desconto_valor:   vDesconto,

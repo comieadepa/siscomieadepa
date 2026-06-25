@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useEventosPerfil } from '@/hooks/useEventosPerfil';
 import { createClient } from '@/lib/supabase-client';
-import { clearEquipeSession, getEquipeSession } from '@/lib/equipe-session';
+import { clearEquipeSession } from '@/lib/equipe-session';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { normalizePayloadUppercase } from '@/lib/text';
 import { EventBadge } from '@/components/EventBadge';
@@ -195,10 +195,6 @@ export default function BalcaoPage() {
     router.replace(`/eventos/${id}/operador`);
   }, [id, router, supabase]);
   const permissaoEvento = useMemo(() => (id ? perfil.permissaoParaEvento(id) : null), [id, perfil]);
-  const isOperadorEquipe = useMemo(() => {
-    const sess = getEquipeSession();
-    return !!(sess && sess.eventoId === id);
-  }, [id]);
   const podeCheckinManual = perfil.isGlobal || perfil.isDeptAdmin || permissaoEvento === 'admin_evento' || permissaoEvento === 'operador';
 
   // ── Estado geral ──────────────────────────────────────────
@@ -325,15 +321,23 @@ export default function BalcaoPage() {
       ['active', 'ativo'].includes((ministroInfo.status ?? '').toLowerCase());
     const inativo = cpfStatus === 'encontrado' && ministroInfo !== null && !ativo;
 
+    const virtualEquipeApoio: TipoInscricao = {
+      id: 'equipe_apoio',
+      nome: 'Equipe de Apoio',
+      valor: 0,
+      inclui_alimentacao: false,
+      inclui_hospedagem: false,
+    };
+
     if (!evento || evento.departamento !== 'AGO') {
-      return { ministroAtivo: ativo, ministroInativo: inativo, tiposParaExibir: tipos };
+      return { ministroAtivo: ativo, ministroInativo: inativo, tiposParaExibir: [...tipos, virtualEquipeApoio] };
     }
 
     if (esposaJubiladoAutomaticoAtivo && tipoEsposaJubiladoAutomatico) {
       return {
         ministroAtivo: false,
         ministroInativo: false,
-        tiposParaExibir: [tipoEsposaJubiladoAutomatico],
+        tiposParaExibir: [tipoEsposaJubiladoAutomatico, virtualEquipeApoio],
         ministroSemPerfil: false,
       };
     }
@@ -342,7 +346,7 @@ export default function BalcaoPage() {
       return {
         ministroAtivo: ativo,
         ministroInativo: inativo,
-        tiposParaExibir: [tipoJubiladoAutomatico],
+        tiposParaExibir: [tipoJubiladoAutomatico, virtualEquipeApoio],
         ministroSemPerfil: false,
       };
     }
@@ -361,11 +365,9 @@ export default function BalcaoPage() {
       isCampoMissionario: !!ministroInfo?.isCampoMissionario,
     });
 
-
-
     // Ministro ativo mas sem nenhum tipo ministerial compatível → perfil indefinido
     const semPerfil = ativo && filtered.length === 0;
-    return { ministroAtivo: ativo, ministroInativo: inativo, tiposParaExibir: filtered, ministroSemPerfil: semPerfil };
+    return { ministroAtivo: ativo, ministroInativo: inativo, tiposParaExibir: [...filtered, virtualEquipeApoio], ministroSemPerfil: semPerfil };
   }, [cpfStatus, ministroInfo, form.sexo, form.data_nascimento, tipos, evento, jubiladoAutomaticoAtivo, tipoJubiladoAutomatico, esposaJubiladoAutomaticoAtivo, tipoEsposaJubiladoAutomatico]);
 
   useEffect(() => {
@@ -397,12 +399,13 @@ export default function BalcaoPage() {
 
   const temTipos = (evento?.usar_tipos_inscricao ?? false) && tiposParaExibir.length > 0;
   const podeHospedagem = useMemo(() => {
+    if (form.tipo_id === 'equipe_apoio') return false;
     return !!evento?.permite_hospedagem && (
       evento.departamento === 'AGO'
         ? true
         : (tipoSel ? !!tipoSel.inclui_hospedagem : !temTipos)
     );
-  }, [evento, tipoSel, temTipos]);
+  }, [evento, tipoSel, temTipos, form.tipo_id]);
 
   // ── Estado pós-inscrição ──────────────────────────────────
   const [salvando,      setSalvando]      = useState(false);
@@ -1057,7 +1060,7 @@ export default function BalcaoPage() {
       setErroSave('Ministro localizado, mas o perfil ministerial não está definido para esta AGO. Verifique o cargo/cadastro do ministro e selecione uma categoria autorizada.');
       return;
     }
-    if (evento.usar_tipos_inscricao && !tipoSel) {
+    if (evento.usar_tipos_inscricao && !tipoSel && form.tipo_id !== 'equipe_apoio') {
       setErroSave('Selecione um tipo de inscrição.');
       return;
     }
@@ -1065,7 +1068,7 @@ export default function BalcaoPage() {
     setSalvando(true);
 
     try {
-      const isGratuito = valorFinal <= 0 || form.forma_pagamento === 'isento' || form.forma_pagamento === 'equipe_apoio';
+      const isGratuito = form.tipo_id === 'equipe_apoio' || valorFinal <= 0 || form.forma_pagamento === 'isento';
       // Regra 8: AGO — hospedagem é sempre opt-in (nunca automática pelo tipo)
       const hospedagem = evento.departamento === 'AGO' ? form.hospedagem : (tipoSel ? tipoSel.inclui_hospedagem : form.hospedagem);
       const alimentacao = !!tipoSel?.inclui_alimentacao;
@@ -1086,13 +1089,14 @@ export default function BalcaoPage() {
         hospedagem,
         alimentacao,
         brinde:           form.brinde,
-        tipo_inscricao:   tipoSel?.nome || undefined,
+        tipo_inscricao:   form.tipo_id === 'equipe_apoio' ? 'Equipe de Apoio' : (tipoSel?.nome || undefined),
+        equipe_apoio:     form.tipo_id === 'equipe_apoio' ? equipeApoioSelecionada : undefined,
         cupom_codigo:     cupomCodigo,
-        valor_original:   valorBase,
-        desconto_valor:   cupomDesconto,
-        valor_final:      valorFinal,
-        forma_pagamento:  form.forma_pagamento === 'equipe_apoio' ? 'equipe_apoio' : (isGratuito ? 'isento' : form.forma_pagamento),
-        observacoes:      form.forma_pagamento === 'equipe_apoio'
+        valor_original:   form.tipo_id === 'equipe_apoio' ? 0 : valorBase,
+        desconto_valor:   form.tipo_id === 'equipe_apoio' ? 0 : cupomDesconto,
+        valor_final:      form.tipo_id === 'equipe_apoio' ? 0 : valorFinal,
+        forma_pagamento:  form.tipo_id === 'equipe_apoio' ? 'isento' : (isGratuito ? 'isento' : form.forma_pagamento),
+        observacoes:      form.tipo_id === 'equipe_apoio'
           ? `[Equipe: ${equipeApoioSelecionada}] ${form.observacoes.trim()}`.trim()
           : (form.observacoes.trim() || undefined),
         qr_code:          qrToken,
@@ -2109,7 +2113,16 @@ export default function BalcaoPage() {
                     <button
                       key={t.id}
                       type="button"
-                      onClick={() => setField('tipo_id', form.tipo_id === t.id ? '' : t.id)}
+                      onClick={() => {
+                        const newTipoId = form.tipo_id === t.id ? '' : t.id;
+                        setField('tipo_id', newTipoId);
+                        if (newTipoId === 'equipe_apoio') {
+                          setField('forma_pagamento', 'isento');
+                          setField('hospedagem', false);
+                        } else if (form.forma_pagamento === 'isento' && form.tipo_id === 'equipe_apoio') {
+                          setField('forma_pagamento', 'dinheiro');
+                        }
+                      }}
                       className={`text-left rounded-xl border-2 px-4 py-3 transition ${
                         form.tipo_id === t.id
                           ? 'border-[#F39C12] bg-[#F39C12]/10 text-white'
@@ -2119,6 +2132,7 @@ export default function BalcaoPage() {
                       <p className="font-semibold text-sm">{t.nome}</p>
                       <p className="text-xs mt-0.5 opacity-70">
                         {(() => {
+                          if (t.id === 'equipe_apoio') return 'Gratuito • Sem hospedagem';
                           const isPPT = /pastor\s*presidente/i.test(t.nome) && !/esposa|viuva/i.test(t.nome);
                           let vExib = t.valor;
                           if (descontoCampoMissionario && isPPT && evento?.configuracoes_ago) {
@@ -2130,12 +2144,41 @@ export default function BalcaoPage() {
                           }
                           return vExib === 0 ? 'Gratuito' : fmtMoeda(vExib);
                         })()}
-                        {t.inclui_alimentacao && ' · Alim.'}
-                        {t.inclui_hospedagem  && ' · Hosp.'}
+                        {t.id !== 'equipe_apoio' && t.inclui_alimentacao && ' · Alim.'}
+                        {t.id !== 'equipe_apoio' && t.inclui_hospedagem  && ' · Hosp.'}
                       </p>
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {form.tipo_id === 'equipe_apoio' && (
+              <div className="mb-4 bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col sm:flex-row sm:items-end gap-3 transition animate-fade-in">
+                <div className="flex-1">
+                  <label className="block text-xs font-semibold text-white/75 mb-1.5 uppercase tracking-wide">
+                    Equipe de Trabalho * (Obrigatório)
+                  </label>
+                  <select
+                    value={equipeApoioSelecionada}
+                    onChange={(e) => setEquipeApoioSelecionada(e.target.value)}
+                    className="w-full border border-white/20 rounded-lg px-3 py-2.5 text-sm bg-[#0D2B4E] text-white focus:outline-none focus:ring-2 focus:ring-[#F39C12]"
+                    required
+                  >
+                    {equipesApoio.map((eq) => (
+                      <option key={eq} value={eq}>
+                        {eq}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAdicionarEquipe}
+                  className="bg-[#F39C12] hover:bg-[#D68910] text-[#0D2B4E] font-bold px-4 py-2.5 rounded-lg text-sm transition flex items-center justify-center gap-1 self-stretch sm:self-auto"
+                >
+                  <span className="text-lg font-black leading-none">+</span> Nova Equipe
+                </button>
               </div>
             )}
 
@@ -2426,70 +2469,41 @@ export default function BalcaoPage() {
           </section>
 
           {/* ── Bloco 5: Pagamento ── */}
-          <section className="bg-[#123b63] rounded-2xl p-5 mb-4 border border-white/10">
-            <h2 className="text-white font-bold text-sm mb-3 flex items-center gap-2">
-              <span className="w-6 h-6 bg-[#F39C12] text-[#0D2B4E] rounded-full flex items-center justify-center text-xs font-black">5</span>
-              Pagamento
-            </h2>
-            <div className={`grid grid-cols-1 sm:grid-cols-2 ${isOperadorEquipe ? 'lg:grid-cols-5' : 'lg:grid-cols-6'} gap-2 mb-4`}>
-              {[
-                { id: 'dinheiro',     label: '💵 Dinheiro'  },
-                { id: 'pix_manual',   label: '📱 PIX Manual' },
-                { id: 'cartao',       label: '💳 Cartão'    },
-                { id: 'isento',       label: '🎟️ Isento'    },
-                { id: 'equipe_apoio', label: '👥 Equipe Apoio' },
-                { id: 'asaas',        label: '🔗 ASAAS'     },
-              ].filter(op => {
-                if (op.id === 'equipe_apoio' && isOperadorEquipe) return false;
-                return true;
-              }).map(op => (
-                <button
-                  key={op.id}
-                  type="button"
-                  onClick={() => setField('forma_pagamento', op.id)}
-                  className={`rounded-xl border-2 px-3 py-3 text-sm font-semibold transition ${
-                    form.forma_pagamento === op.id
-                      ? 'border-[#F39C12] bg-[#F39C12]/10 text-white'
-                      : 'border-white/20 hover:border-white/40 text-white/60'
-                  }`}
-                >
-                  {op.label}
-                </button>
-              ))}
-            </div>
-            {form.forma_pagamento === 'asaas' && (
-              <p className="text-xs text-[#F39C12]/80 bg-[#F39C12]/10 rounded-lg px-3 py-2">
-                ⚡ Será gerada cobrança ASAAS. O link de pagamento aparecerá na confirmação.
-              </p>
-            )}
-            {form.forma_pagamento === 'equipe_apoio' && (
-              <div className="mt-4 bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col sm:flex-row sm:items-end gap-3">
-                <div className="flex-1">
-                  <label className="block text-xs font-semibold text-white/75 mb-1.5">
-                    Selecione a Equipe de Apoio
-                  </label>
-                  <select
-                    value={equipeApoioSelecionada}
-                    onChange={(e) => setEquipeApoioSelecionada(e.target.value)}
-                    className="w-full border border-white/20 rounded-lg px-3 py-2 text-sm bg-[#0D2B4E] text-white focus:outline-none focus:ring-2 focus:ring-[#F39C12]"
+          {form.tipo_id !== 'equipe_apoio' && (
+            <section className="bg-[#123b63] rounded-2xl p-5 mb-4 border border-white/10">
+              <h2 className="text-white font-bold text-sm mb-3 flex items-center gap-2">
+                <span className="w-6 h-6 bg-[#F39C12] text-[#0D2B4E] rounded-full flex items-center justify-center text-xs font-black">5</span>
+                Pagamento
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 mb-4">
+                {[
+                  { id: 'dinheiro',     label: '💵 Dinheiro'  },
+                  { id: 'pix_manual',   label: '📱 PIX Manual' },
+                  { id: 'cartao',       label: '💳 Cartão'    },
+                  { id: 'isento',       label: '🎟️ Isento'    },
+                  { id: 'asaas',        label: '🔗 ASAAS'     },
+                ].map(op => (
+                  <button
+                    key={op.id}
+                    type="button"
+                    onClick={() => setField('forma_pagamento', op.id)}
+                    className={`rounded-xl border-2 px-3 py-3 text-sm font-semibold transition ${
+                      form.forma_pagamento === op.id
+                        ? 'border-[#F39C12] bg-[#F39C12]/10 text-white'
+                        : 'border-white/20 hover:border-white/40 text-white/60'
+                    }`}
                   >
-                    {equipesApoio.map((eq) => (
-                      <option key={eq} value={eq}>
-                        {eq}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleAdicionarEquipe}
-                  className="bg-[#F39C12] hover:bg-[#D68910] text-[#0D2B4E] font-bold px-4 py-2.5 rounded-lg text-sm transition flex items-center justify-center gap-1 self-stretch sm:self-auto"
-                >
-                  <span className="text-lg font-black leading-none">+</span> Nova Equipe
-                </button>
+                    {op.label}
+                  </button>
+                ))}
               </div>
-            )}
-          </section>
+              {form.forma_pagamento === 'asaas' && (
+                <p className="text-xs text-[#F39C12]/80 bg-[#F39C12]/10 rounded-lg px-3 py-2">
+                  ⚡ Será gerada cobrança ASAAS. O link de pagamento aparecerá na confirmação.
+                </p>
+              )}
+            </section>
+          )}
 
           {/* ── Bloco 6: Observações ── */}
           <section className="bg-[#123b63] rounded-2xl p-4 mb-4 border border-white/10">

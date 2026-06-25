@@ -48,6 +48,29 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createServerClient();
+
+  if (!body.numero_processo) {
+    const year = new Date().getFullYear();
+    const { data: existing } = await supabase
+      .from('consagracao_registros')
+      .select('numero_processo')
+      .like('numero_processo', `%/${year}`);
+
+    let next = 1;
+    if (existing && existing.length > 0) {
+      const numeros = existing
+        .map((item: any) => {
+          const raw = String(item?.numero_processo || '');
+          const base = raw.split('/')[0];
+          const parsed = parseInt(base, 10);
+          return Number.isFinite(parsed) ? parsed : 0;
+        })
+        .filter((value: number) => value > 0);
+      next = (numeros.length ? Math.max(...numeros) : 0) + 1;
+    }
+    body.numero_processo = `${next}/${year}`;
+  }
+
   const { data, error } = await supabase
     .from('consagracao_registros')
     .insert([body])
