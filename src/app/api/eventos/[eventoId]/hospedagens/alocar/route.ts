@@ -339,7 +339,11 @@ export async function POST(
       motivo: string;
     }> = [];
 
-    for (const hosp of elegiveis) {
+    // Processar no máximo 50 candidatos por requisição para evitar timeout (504) na Vercel
+    const BATCH_LIMIT = 50;
+    const batchToProcess = elegiveis.slice(0, BATCH_LIMIT);
+
+    for (const hosp of batchToProcess) {
       const insc = hosp.evento_inscricoes as any;
       const nomeInscrito = insc?.nome_inscrito ?? 'Inscrito';
       
@@ -367,9 +371,10 @@ export async function POST(
       modulo: 'eventos',
       entidade: 'evento_hospedagens',
       entidadeId: eventoId,
-      descricao: `[Hospedagem] Autoalocacao em lote concluida no evento ${eventoId}`,
+      descricao: `[Hospedagem] Lote de autoalocacao concluido. Processados neste lote: ${batchToProcess.length}. Restantes: ${elegiveis.length - batchToProcess.length}`,
       detalhes: {
         elegiveis: elegiveis.length,
+        processados_lote: batchToProcess.length,
         alocadas: alocadas_count,
         lista_espera: lista_espera_count,
         leitos_atribuidos,
@@ -379,13 +384,14 @@ export async function POST(
 
     return NextResponse.json({
       ok: true,
-      processados:      elegiveis.length,
+      processados:      batchToProcess.length,
       confirmados:      alocadas_count,
       lista_espera:     lista_espera_count,
       leitos_atribuidos,
       aguardando_pagamento: pendentesPagamento.length,
       prioridade_sem_leito_inferior: 0,
       detalhes:         detalheResultados,
+      total_pendentes:  elegiveis.length - batchToProcess.length,
     });
   };
 

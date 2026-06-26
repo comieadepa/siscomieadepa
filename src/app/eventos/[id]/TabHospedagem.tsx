@@ -174,6 +174,7 @@ export default function TabHospedagem({
   const [loadingHosp,     setLoadingHosp]     = useState(true);
   const [autoalocando,    setAutoalocando]    = useState(false);
   const [autoalocResult,  setAutoalocResult]  = useState<{ alocadas: number; listaEspera: number; erros: number; leitos: number; detalhes?: any[] | null } | null>(null);
+  const [autoalocProgresso, setAutoalocProgresso] = useState<string | null>(null);
 
   // Filtros hospedagens
   const [filtroStatus,  setFiltroStatus]  = useState('');
@@ -316,24 +317,63 @@ export default function TabHospedagem({
     setAutoalocando(true);
     setAutoalocResult(null);
     setQuickErro(null);
+    setAutoalocProgresso('⏳ Inicializando...');
+
+    let totalConfirmados = 0;
+    let totalListaEspera = 0;
+    let totalLeitosAtribuidos = 0;
+    let acumuladoDetalhes: any[] = [];
+
     try {
-      const res = await fetch(`/api/eventos/${eventoId}/hospedagens/alocar`, { method: 'POST' });
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json.error ?? 'Erro inesperado na autoalocação');
+      let pending = true;
+      let loopCount = 0;
+
+      while (pending && loopCount < 40) { // Limite de segurança de 40 lotes (2000 participantes)
+        loopCount++;
+        setAutoalocProgresso(`⏳ Alocando (Lote ${loopCount})...`);
+
+        const res = await fetch(`/api/eventos/${eventoId}/hospedagens/alocar`, { method: 'POST' });
+        
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json.error ?? `Erro no lote ${loopCount} (HTTP ${res.status})`);
+        }
+        
+        const json = await res.json();
+        
+        totalConfirmados += json.confirmados ?? 0;
+        totalListaEspera += json.lista_espera ?? 0;
+        totalLeitosAtribuidos += json.leitos_atribuidos ?? 0;
+        if (json.detalhes) {
+          acumuladoDetalhes = [...acumuladoDetalhes, ...json.detalhes];
+        }
+
+        const restam = json.total_pendentes ?? 0;
+        if (restam > 0) {
+          setAutoalocProgresso(`⏳ Alocando (restam ${restam})...`);
+          pending = true;
+          // Pequena pausa entre lotes para não sobrecarregar
+          await new Promise(r => setTimeout(r, 400));
+        } else {
+          pending = false;
+        }
       }
+
       setAutoalocResult({
-        alocadas: json.confirmados ?? 0,
-        listaEspera: json.lista_espera ?? 0,
+        alocadas: totalConfirmados,
+        listaEspera: totalListaEspera,
         erros: 0,
-        leitos: json.leitos_atribuidos ?? 0,
-        detalhes: json.detalhes || null
+        leitos: totalLeitosAtribuidos,
+        detalhes: acumuladoDetalhes.length > 0 ? acumuladoDetalhes : null
       });
+      
       fetchHospedagens();
     } catch (err) {
+      console.error('[autoalocar] Erro crítico:', err);
       setQuickErro(err instanceof Error ? err.message : 'Erro ao executar autoalocação');
     } finally {
       setAutoalocando(false);
+      setAutoalocProgresso(null);
     }
   }
 
@@ -908,7 +948,7 @@ export default function TabHospedagem({
                   title="Processa TODAS as pendências do evento, ignorando filtros visuais."
                   className="w-full flex items-center justify-center gap-2 bg-[#0D2B4E] text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-[#0a1e38] transition disabled:opacity-50"
                 >
-                  {autoalocando ? '⏳ Alocando...' : '🤖 Processar pendências'}
+                  {autoalocando ? (autoalocProgresso || '⏳ Alocando...') : '🤖 Processar pendências'}
                 </button>
 
                 <a
