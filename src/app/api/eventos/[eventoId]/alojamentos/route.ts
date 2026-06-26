@@ -20,12 +20,13 @@ export async function GET(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Contagem de ocupados via hospedagem leitos (ocupado = true)
+  // Contagem de ocupados via hospedagem leitos (ocupado = true e inscricao_id is not null)
   const { data: leitosOcupados } = await supabase
     .from('evento_hospedagem_leitos')
     .select('alojamento_id, posicao')
     .eq('evento_id', eventoId)
-    .eq('ocupado', true);
+    .eq('ocupado', true)
+    .not('inscricao_id', 'is', null);
 
   const { data: hospOcupadas } = await supabase
     .from('evento_hospedagens')

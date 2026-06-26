@@ -77,7 +77,7 @@ export async function GET(
   while (leitosHasMore) {
     const { data: pageData, error: leitosErr } = await supabase
       .from('evento_hospedagem_leitos')
-      .select('inscricao_id')
+      .select('inscricao_id, alojamento_id, numero, posicao')
       .eq('evento_id', eventoId)
       .eq('ocupado', true)
       .range(leitosFrom, leitosFrom + limit - 1);
@@ -141,7 +141,18 @@ export async function GET(
   const hospedagens = (inscricoes ?? []).map(insc => {
     const ei = insc as unknown as InscRow;
     const aloc = alocMap.get(insc.id);
+    const leitoOcupado = (leitosOcupados ?? []).find(l => l.inscricao_id === insc.id);
+
+    // Resolve alocação a partir do leito ocupado se a tabela de hospedagem estiver dessincronizada (devido a CHECK constraint)
+    const resolvedAlojamentoId = (aloc?.alojamento_id as string | null) || (leitoOcupado?.alojamento_id as string | null) || null;
+    const resolvedNumeroCama = (aloc?.numero_cama as string | null) || (leitoOcupado?.numero as string | null) || null;
+    const resolvedTipoCama = (aloc?.tipo_cama as string | null) || (leitoOcupado?.posicao === 'unico' ? null : leitoOcupado?.posicao as string | null) || null;
+    const resolvedStatus = (aloc?.status as string | null) || (leitoOcupado ? 'confirmada' : 'solicitada');
+
     const aloj = aloc ? (aloc.evento_alojamentos as AlocRow | null) : null;
+    const alojInfo = resolvedAlojamentoId ? (todosAlojamentos ?? []).find((a: any) => a.id === resolvedAlojamentoId) : null;
+    const resolvedAlojamentoNome = aloj?.nome || (alojInfo ? (alojInfo as any).nome : null);
+
     const grupoFallback =
       (aloc?.grupo_hospedagem ?? ei.grupo_hospedagem) ||
       resolveGrupoHospedagemAGO({
@@ -153,41 +164,41 @@ export async function GET(
       });
 
     const statusOperacional = resolveStatusOperacionalHospedagem({
-      status: (aloc?.status ?? 'solicitada') as string,
+      status: resolvedStatus,
       status_pagamento: insc.status_pagamento ?? null,
-      alojamento_id: (aloc?.alojamento_id ?? null) as string | null,
-      tipo_cama: (aloc?.tipo_cama ?? null) as string | null,
-      numero_cama: (aloc?.numero_cama ?? null) as string | null,
+      alojamento_id: resolvedAlojamentoId,
+      tipo_cama: resolvedTipoCama,
+      numero_cama: resolvedNumeroCama,
       hospedagem: true,
     });
     const elegivelAutoalocacao = isElegivelAutoalocacao({
-      status: (aloc?.status ?? 'solicitada') as string,
+      status: resolvedStatus,
       status_pagamento: insc.status_pagamento ?? null,
-      alojamento_id: (aloc?.alojamento_id ?? null) as string | null,
-      tipo_cama: (aloc?.tipo_cama ?? null) as string | null,
-      numero_cama: (aloc?.numero_cama ?? null) as string | null,
+      alojamento_id: resolvedAlojamentoId,
+      tipo_cama: resolvedTipoCama,
+      numero_cama: resolvedNumeroCama,
       hospedagem: true,
     });
     const pendencias: string[] = [];
     const statusPagamento = String(insc.status_pagamento ?? '').toLowerCase();
-    const alocacaoIncompleta = !!(aloc?.alojamento_id) && (!aloc?.tipo_cama || !aloc?.numero_cama);
-    const grupoIncompativel = !!(aloj && grupoFallback && !grupoMatchesAlojamento(
+    const alocacaoIncompleta = !!(resolvedAlojamentoId) && (!resolvedTipoCama || !resolvedNumeroCama);
+    const grupoIncompativel = !!(alojInfo && grupoFallback && !grupoMatchesAlojamento(
       grupoFallback as string,
-      { publico: String((aloj as AlocRow).publico ?? ''), nome: String((aloj as AlocRow).nome ?? '') },
+      { publico: String((alojInfo as any).publico ?? ''), nome: String((alojInfo as any).nome ?? '') },
     ));
 
-    if (isPagamentoElegivel(statusPagamento) && !aloc?.alojamento_id && aloc?.status !== 'lista_espera') pendencias.push('pagou_mas_nao_alocado');
+    if (isPagamentoElegivel(statusPagamento) && !resolvedAlojamentoId && resolvedStatus !== 'lista_espera') pendencias.push('pagou_mas_nao_alocado');
     if (!isPagamentoElegivel(statusPagamento)) pendencias.push('solicitou_sem_pagamento');
-    if (!!(ei.hosp_cama_inferior) && aloc?.tipo_cama && aloc.tipo_cama !== 'inferior') pendencias.push('prioridade_sem_leito_inferior');
+    if (!!(ei.hosp_cama_inferior) && resolvedTipoCama && resolvedTipoCama !== 'inferior') pendencias.push('prioridade_sem_leito_inferior');
     if (!grupoFallback) pendencias.push('sem_grupo_calculado');
     if (grupoIncompativel) pendencias.push('grupo_incompativel_alojamento');
     if (alocacaoIncompleta) pendencias.push('sem_numero_leito');
 
     let motivoNaoAlocado = null;
     const isPagoOrIsento = ['pago', 'isento'].includes(statusPagamento);
-    const semAloc = !aloc?.alojamento_id;
+    const semAloc = !resolvedAlojamentoId;
 
-    if (isPagoOrIsento && semAloc && aloc?.status !== 'lista_espera') {
+    if (isPagoOrIsento && semAloc && resolvedStatus !== 'lista_espera') {
       const totalAloj = todosAlojamentos?.length ?? 0;
       if (totalAloj === 0) {
         motivoNaoAlocado = 'Evento sem alojamentos cadastrados';
@@ -229,8 +240,8 @@ export async function GET(
     return {
       id:                    aloc?.id              ?? null,
       inscricao_id:          insc.id,
-      alojamento_id:         aloc?.alojamento_id   ?? null,
-      status:                (aloc?.status         ?? 'solicitada') as string,
+      alojamento_id:         resolvedAlojamentoId,
+      status:                resolvedStatus,
       prioridade:            (aloc?.prioridade     ?? 0) as number,
       necessidade_especial:  !!(ei.hosp_necessidade_especial),
       descricao_necessidade: ei.hosp_descricao_necessidade ?? null,
@@ -238,8 +249,8 @@ export async function GET(
       possui_comorbidade:    !!(ei.hosp_possui_comorbidade),
       descricao_comorbidade: ei.hosp_descricao_comorbidade ?? null,
       grupo_hospedagem:      grupoFallback ?? null,
-      tipo_cama:             (aloc?.tipo_cama       ?? null) as string | null,
-      numero_cama:           (aloc?.numero_cama     ?? null) as string | null,
+      tipo_cama:             resolvedTipoCama,
+      numero_cama:           resolvedNumeroCama,
       observacoes:           (aloc?.observacoes     ?? ei.hosp_observacoes) ?? null,
       alocacao_automatica:   !!(aloc ? aloc.alocacao_automatica : true),
       checkin_at:            (aloc?.checkin_at         ?? null) as string | null,
@@ -260,7 +271,7 @@ export async function GET(
       tem_leito_ocupado: (leitosOcupados ?? []).some(l => l.inscricao_id === insc.id),
       pendencias,
       // Alojamento
-      alojamento_nome:   aloj?.nome             ?? null,
+      alojamento_nome:   resolvedAlojamentoNome,
       motivo_nao_alocado: motivoNaoAlocado,
     };
   });

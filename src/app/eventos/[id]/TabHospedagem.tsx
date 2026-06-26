@@ -432,7 +432,11 @@ export default function TabHospedagem({
     const aguardandoPagamento = hospedagens.filter(h => (h.status_operacional ?? h.status) === 'aguardando_pagamento').length;
     const elegiveis = hospedagens.filter(h => (h.status_operacional ?? h.status) === 'elegivel' || (h.status_operacional ?? h.status) === 'pago_sem_alocacao').length;
     const pagoSemAlocacao = hospedagens.filter(h => (h.status_operacional ?? h.status) === 'pago_sem_alocacao').length;
-    const alocadas = hospedagens.filter(h => ['alocada', 'confirmada', 'checkin_realizado'].includes(h.status_operacional ?? h.status)).length;
+    const alocadas = hospedagens.filter(h =>
+      ['alocada', 'confirmada', 'checkin_realizado'].includes(h.status_operacional ?? h.status) ||
+      h.alojamento_id !== null ||
+      h.tem_leito_ocupado
+    ).length;
     const listaEspera = hospedagens.filter(h => (h.status_operacional ?? h.status) === 'lista_espera').length;
     const vagasDisp = alojamentos.filter(a => a.ativo).reduce((sum, a) => sum + (a.vagas_livres ?? 0), 0);
     const prioridadeInferiorPendente = hospedagens.filter(h => (h.pendencias ?? []).includes('prioridade_sem_leito_inferior')).length;
