@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -79,6 +79,21 @@ export default function LoginPage() {
       });
 
       if (!authError && authData?.user) {
+        // Verificar se o usuário existe na tabela public.users (usuários oficiais do CRM)
+        const { data: dbUser, error: dbUserError } = await supabaseRef.current
+          .from('users')
+          .select('role, is_active')
+          .eq('id', authData.user.id)
+          .maybeSingle();
+
+        if (dbUserError || !dbUser || dbUser.is_active === false) {
+          // Se não estiver cadastrado no CRM ou estiver inativo, rejeita o login
+          await supabaseRef.current.auth.signOut();
+          setError('Acesso restrito. Este painel é exclusivo para administradores da Convenção. Operadores de eventos devem utilizar o link de acesso específico da sua equipe.');
+          setLoading(false);
+          return;
+        }
+
         // Registrar log de login
         try {
           await fetch('/api/v1/audit-logs', {
