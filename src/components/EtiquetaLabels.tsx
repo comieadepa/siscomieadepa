@@ -368,15 +368,12 @@ export function EtiquetaAGO({
           {/* Coluna informações */}
           <div style={{
             flex: 1, minWidth: 0,
-            padding: '0.9mm 1.4mm',
+            padding: '0.5mm 1.5mm',
             display: 'flex', flexDirection: 'column',
-            justifyContent: 'center', gap: '0.4mm',
+            justifyContent: 'center', gap: '0.8mm',
           }}>
             {/* Nome */}
-            <div>
-              <p style={{ fontSize: '3.6pt', color: '#9ca3af', margin: '0 0 0.2mm', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                NOME
-              </p>
+            <div style={{ marginBottom: '0.4mm' }}>
               <p style={{
                 fontSize: '11.6pt', fontWeight: 950, color: '#111827',
                 margin: 0, lineHeight: 1.05,
@@ -387,43 +384,21 @@ export function EtiquetaAGO({
               </p>
             </div>
 
-            {/* Matrícula */}
-            <div>
-              <p style={{ fontSize: '3.6pt', color: '#9ca3af', margin: '0 0 0.2mm', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                MATRÍCULA
-              </p>
-              <p style={{ fontSize: '6.6pt', fontWeight: 800, color: '#0D2B4E', margin: 0 }}>
-                {matricula}
-              </p>
-            </div>
+            {/* Matrícula, Supervisão e Campo em fonte maior e na mesma linha */}
+            <p style={{ fontSize: '7.5pt', color: '#111827', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.1 }}>
+              <span style={{ fontWeight: 800, color: '#6b7280' }}>MATRÍCULA:</span>{' '}
+              <strong style={{ fontWeight: 900, color: '#0D2B4E' }}>{matricula}</strong>
+            </p>
 
-            {/* Supervisão */}
-            <div>
-              <p style={{ fontSize: '3.6pt', color: '#9ca3af', margin: '0 0 0.2mm', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                SUPERVISÃO
-              </p>
-              <p style={{
-                fontSize: '6.1pt', fontWeight: 700, color: '#111827', margin: 0,
-                overflow: 'hidden', textOverflow: 'ellipsis',
-                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-              }}>
-                {nomeSup}
-              </p>
-            </div>
+            <p style={{ fontSize: '7.5pt', color: '#111827', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.1 }}>
+              <span style={{ fontWeight: 800, color: '#6b7280' }}>SUPERVISÃO:</span>{' '}
+              <strong style={{ fontWeight: 800 }}>{nomeSup}</strong>
+            </p>
 
-            {/* Campo */}
-            <div>
-              <p style={{ fontSize: '3.6pt', color: '#9ca3af', margin: '0 0 0.2mm', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                CAMPO
-              </p>
-              <p style={{
-                fontSize: '6.1pt', fontWeight: 700, color: '#111827', margin: 0,
-                overflow: 'hidden', textOverflow: 'ellipsis',
-                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-              }}>
-                {nomeCampo}
-              </p>
-            </div>
+            <p style={{ fontSize: '7.5pt', color: '#111827', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.1 }}>
+              <span style={{ fontWeight: 800, color: '#6b7280' }}>CAMPO:</span>{' '}
+              <strong style={{ fontWeight: 800 }}>{nomeCampo}</strong>
+            </p>
           </div>
         </div>
 
@@ -663,17 +638,19 @@ export function EtiquetaDepartamento({
           flex: 1, minWidth: 0,
           padding: PAD_BODY,
           display: 'flex', flexDirection: 'column',
-          justifyContent: 'center', gap: GAP,
+          justifyContent: 'center', gap: isThermal ? '0.8mm' : GAP,
         }}>
 
           {/* NOME */}
-          <div>
-            <p style={{
-              fontSize: LABEL_FS, color: '#9ca3af', margin: '0 0 0.4mm',
-              fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px',
-            }}>
-              NOME
-            </p>
+          <div style={{ marginBottom: isThermal ? '0.4mm' : 0 }}>
+            {!isThermal && (
+              <p style={{
+                fontSize: LABEL_FS, color: '#9ca3af', margin: '0 0 0.4mm',
+                fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px',
+              }}>
+                NOME
+              </p>
+            )}
             <p style={{
               fontSize: NOME_FS, fontWeight: 900, color: '#111827',
               margin: 0, lineHeight: 1.1,
@@ -686,39 +663,57 @@ export function EtiquetaDepartamento({
             </p>
           </div>
 
-          {/* SUPERVISÃO */}
-          <div>
-            <p style={{
-              fontSize: LABEL_FS, color: '#9ca3af', margin: '0 0 0.3mm',
-              fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px',
-            }}>
-              SUPERVISÃO
-            </p>
-            <p style={{
-              fontSize: FIELD_FS, fontWeight: 700, color: '#111827',
-              margin: 0, overflow: 'hidden', textOverflow: 'ellipsis',
-              display: '-webkit-box', WebkitLineClamp: FIELD_LINES, WebkitBoxOrient: 'vertical',
-            }}>
-              {nomeSup}
-            </p>
-          </div>
+          {isThermal ? (
+            <>
+              {/* SUPERVISÃO */}
+              <p style={{ fontSize: '7.5pt', color: '#111827', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.1 }}>
+                <span style={{ fontWeight: 800, color: '#6b7280' }}>SUPERVISÃO:</span>{' '}
+                <strong style={{ fontWeight: 800 }}>{nomeSup}</strong>
+              </p>
 
-          {/* CAMPO */}
-          <div>
-            <p style={{
-              fontSize: LABEL_FS, color: '#9ca3af', margin: '0 0 0.3mm',
-              fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px',
-            }}>
-              CAMPO
-            </p>
-            <p style={{
-              fontSize: FIELD_FS, fontWeight: 700, color: '#111827',
-              margin: 0, overflow: 'hidden', textOverflow: 'ellipsis',
-              display: '-webkit-box', WebkitLineClamp: FIELD_LINES, WebkitBoxOrient: 'vertical',
-            }}>
-              {nomeCampo}
-            </p>
-          </div>
+              {/* CAMPO */}
+              <p style={{ fontSize: '7.5pt', color: '#111827', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.1 }}>
+                <span style={{ fontWeight: 800, color: '#6b7280' }}>CAMPO:</span>{' '}
+                <strong style={{ fontWeight: 800 }}>{nomeCampo}</strong>
+              </p>
+            </>
+          ) : (
+            <>
+              {/* SUPERVISÃO */}
+              <div>
+                <p style={{
+                  fontSize: LABEL_FS, color: '#9ca3af', margin: '0 0 0.3mm',
+                  fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px',
+                }}>
+                  SUPERVISÃO
+                </p>
+                <p style={{
+                  fontSize: FIELD_FS, fontWeight: 700, color: '#111827',
+                  margin: 0, overflow: 'hidden', textOverflow: 'ellipsis',
+                  display: '-webkit-box', WebkitLineClamp: FIELD_LINES, WebkitBoxOrient: 'vertical',
+                }}>
+                  {nomeSup}
+                </p>
+              </div>
+
+              {/* CAMPO */}
+              <div>
+                <p style={{
+                  fontSize: LABEL_FS, color: '#9ca3af', margin: '0 0 0.3mm',
+                  fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px',
+                }}>
+                  CAMPO
+                </p>
+                <p style={{
+                  fontSize: FIELD_FS, fontWeight: 700, color: '#111827',
+                  margin: 0, overflow: 'hidden', textOverflow: 'ellipsis',
+                  display: '-webkit-box', WebkitLineClamp: FIELD_LINES, WebkitBoxOrient: 'vertical',
+                }}>
+                  {nomeCampo}
+                </p>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
