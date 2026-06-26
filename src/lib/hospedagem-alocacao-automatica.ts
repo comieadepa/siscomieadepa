@@ -361,7 +361,7 @@ export async function alocarLeitoParaInscricaoAGO(
           alojamento_id: alojId,
           tipo_cama: sugestao.tipo_cama,
           numero_cama: numeroCama,
-          status: 'alocada',
+          status: 'confirmada',
           prioridade,
           observacoes: observacaoNova,
           alocacao_automatica: true,
@@ -693,7 +693,7 @@ export async function alocarLeitoParaInscricaoEventoComum(
           alojamento_id: alojSelecionado.id,
           tipo_cama:     tipoCama,
           numero_cama:   numeroCama,
-          status:        'alocada',
+          status:        'confirmada',
           alocacao_automatica: true,
         })
         .eq('id', hospedagem.id);
