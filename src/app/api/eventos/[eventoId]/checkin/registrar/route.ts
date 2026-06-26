@@ -107,28 +107,41 @@ export async function POST(
       .eq('token', qrToken)
       .maybeSingle()) as any;
 
-    if (qrTokenRecord) {
-      // Busca o Ministro associado para obter o seu CPF
-      const { data: ministro } = (await supabase
-        .from('members')
-        .select('cpf')
-        .eq('id', qrTokenRecord.ministro_id)
-        .maybeSingle()) as any;
+    if (qrTokenRecord?.ministro_id) {
+      // 1. Tenta buscar direto por ministro_id na tabela evento_inscricoes
+      const { data: byMinistro } = await supabase
+        .from('evento_inscricoes')
+        .select(SELECT_INSC)
+        .eq('evento_id', eventoId)
+        .eq('ministro_id', qrTokenRecord.ministro_id)
+        .maybeSingle() as any;
 
-      if (ministro?.cpf) {
-        const cpfLimpo = String(ministro.cpf).replace(/\D/g, '');
-        if (cpfLimpo) {
-          // Busca a inscrição na AGO associada a este CPF
-          const { data: inscByCpf } = (await supabase
-            .from('evento_inscricoes')
-            .select(SELECT_INSC)
-            .eq('evento_id', eventoId)
-            .eq('cpf', cpfLimpo)
-            .maybeSingle()) as any;
+      if (byMinistro) {
+        inscricao = byMinistro;
+        targetQrToken = byMinistro.qr_code || targetQrToken;
+      } else {
+        // 2. Se não achar por ministro_id, tenta buscar por CPF obtido do members (tolerante a formato)
+        const { data: ministro } = (await supabase
+          .from('members')
+          .select('cpf')
+          .eq('id', qrTokenRecord.ministro_id)
+          .maybeSingle()) as any;
 
-          if (inscByCpf) {
-            inscricao = inscByCpf;
-            targetQrToken = inscByCpf.qr_code || targetQrToken;
+        if (ministro?.cpf) {
+          const cpfLimpo = String(ministro.cpf).replace(/\D/g, '');
+          if (cpfLimpo) {
+            const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+            const { data: byCpf } = await supabase
+              .from('evento_inscricoes')
+              .select(SELECT_INSC)
+              .eq('evento_id', eventoId)
+              .or(`cpf.eq.${cpfLimpo},cpf.eq.${cpfFormatado}`)
+              .maybeSingle() as any;
+
+            if (byCpf) {
+              inscricao = byCpf;
+              targetQrToken = byCpf.qr_code || targetQrToken;
+            }
           }
         }
       }
@@ -136,12 +149,55 @@ export async function POST(
   }
 
   if (!inscricao) {
+    // Verifica se o token pertence a uma inscrição de outro evento
     const { data: outra } = await supabase
       .from('evento_inscricoes')
-      .select(SELECT_INSC)
+      .select('id,nome_inscrito,evento_id,cpf,ministro_id')
       .or(`qr_code.eq.${qrToken},id.eq.${qrToken}`)
-      .maybeSingle();
-    if (outra) return NextResponse.json({ status: 'wrong_event', inscricao: outra }, { status: 200 });
+      .maybeSingle() as any;
+
+    if (outra) {
+      // O token pertence a outro evento. Vamos verificar se essa mesma pessoa tem inscrição no evento atual
+      let inscricaoCompativel: any = null;
+
+      if (outra.ministro_id) {
+        const { data: byMinistro } = await supabase
+          .from('evento_inscricoes')
+          .select(SELECT_INSC)
+          .eq('evento_id', eventoId)
+          .eq('ministro_id', outra.ministro_id)
+          .maybeSingle() as any;
+        if (byMinistro) {
+          inscricaoCompativel = byMinistro;
+        }
+      }
+
+      if (!inscricaoCompativel && outra.cpf) {
+        const cpfLimpo = String(outra.cpf).replace(/\D/g, '');
+        if (cpfLimpo) {
+          const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+          const { data: byCpf } = await supabase
+            .from('evento_inscricoes')
+            .select(SELECT_INSC)
+            .eq('evento_id', eventoId)
+            .or(`cpf.eq.${cpfLimpo},cpf.eq.${cpfFormatado}`)
+            .maybeSingle() as any;
+          if (byCpf) {
+            inscricaoCompativel = byCpf;
+          }
+        }
+      }
+
+      if (inscricaoCompativel) {
+        inscricao = inscricaoCompativel;
+        targetQrToken = inscricaoCompativel.qr_code || targetQrToken;
+      } else {
+        return NextResponse.json({ status: 'wrong_event', inscricao: outra }, { status: 200 });
+      }
+    }
+  }
+
+  if (!inscricao) {
     return NextResponse.json({ status: 'invalid' }, { status: 200 });
   }
 

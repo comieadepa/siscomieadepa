@@ -96,22 +96,36 @@ export async function GET(
       .maybeSingle() as any;
 
     if (qrRec?.ministro_id) {
-      const { data: ministro } = await supabase
-        .from('members')
-        .select('cpf')
-        .eq('id', qrRec.ministro_id)
-        .maybeSingle() as any;
+      // 1. Tenta buscar direto por ministro_id na tabela evento_inscricoes
+      const { data: byMinistro } = await supabase
+        .from('evento_inscricoes')
+        .select(SELECT_INSC)
+        .eq('evento_id', eventoId)
+        .eq('ministro_id', qrRec.ministro_id)
+        .maybeSingle() as { data: InscricaoRow | null };
+      
+      if (byMinistro) {
+        inscricao = byMinistro;
+      } else {
+        // 2. Se não achar por ministro_id, tenta buscar por CPF obtido do members (tolerante a formato)
+        const { data: ministro } = await supabase
+          .from('members')
+          .select('cpf')
+          .eq('id', qrRec.ministro_id)
+          .maybeSingle() as any;
 
-      if (ministro?.cpf) {
-        const cpfLimpo = String(ministro.cpf).replace(/\D/g, '');
-        if (cpfLimpo) {
-          const { data: byCpf } = await supabase
-            .from('evento_inscricoes')
-            .select(SELECT_INSC)
-            .eq('evento_id', eventoId)
-            .eq('cpf', cpfLimpo)
-            .maybeSingle() as { data: InscricaoRow | null };
-          inscricao = byCpf;
+        if (ministro?.cpf) {
+          const cpfLimpo = String(ministro.cpf).replace(/\D/g, '');
+          if (cpfLimpo) {
+            const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+            const { data: byCpf } = await supabase
+              .from('evento_inscricoes')
+              .select(SELECT_INSC)
+              .eq('evento_id', eventoId)
+              .or(`cpf.eq.${cpfLimpo},cpf.eq.${cpfFormatado}`)
+              .maybeSingle() as { data: InscricaoRow | null };
+            inscricao = byCpf;
+          }
         }
       }
     }
@@ -121,12 +135,51 @@ export async function GET(
     // Verifica se existe em outro evento
     const { data: outra } = await supabase
       .from('evento_inscricoes')
-      .select('id,nome_inscrito,evento_id')
+      .select('id,nome_inscrito,evento_id,cpf,ministro_id')
       .or(`qr_code.eq.${qrToken},id.eq.${qrToken}`)
-      .maybeSingle();
+      .maybeSingle() as any;
+
     if (outra) {
-      return NextResponse.json({ status: 'wrong_event', message: 'Inscrição não pertence a este evento.', inscricao: outra }, { status: 200 });
+      // O token pertence a outro evento. Vamos verificar se essa mesma pessoa tem inscrição no evento atual
+      let inscricaoCompativel: InscricaoRow | null = null;
+
+      if (outra.ministro_id) {
+        const { data: byMinistro } = await supabase
+          .from('evento_inscricoes')
+          .select(SELECT_INSC)
+          .eq('evento_id', eventoId)
+          .eq('ministro_id', outra.ministro_id)
+          .maybeSingle() as { data: InscricaoRow | null };
+        if (byMinistro) {
+          inscricaoCompativel = byMinistro;
+        }
+      }
+
+      if (!inscricaoCompativel && outra.cpf) {
+        const cpfLimpo = String(outra.cpf).replace(/\D/g, '');
+        if (cpfLimpo) {
+          const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+          const { data: byCpf } = await supabase
+            .from('evento_inscricoes')
+            .select(SELECT_INSC)
+            .eq('evento_id', eventoId)
+            .or(`cpf.eq.${cpfLimpo},cpf.eq.${cpfFormatado}`)
+            .maybeSingle() as { data: InscricaoRow | null };
+          if (byCpf) {
+            inscricaoCompativel = byCpf;
+          }
+        }
+      }
+
+      if (inscricaoCompativel) {
+        inscricao = inscricaoCompativel;
+      } else {
+        return NextResponse.json({ status: 'wrong_event', message: 'Inscrição não pertence a este evento.', inscricao: outra }, { status: 200 });
+      }
     }
+  }
+
+  if (!inscricao) {
     return NextResponse.json({ status: 'not_found', message: 'Inscrição não localizada para este QR Code.' }, { status: 200 });
   }
 
