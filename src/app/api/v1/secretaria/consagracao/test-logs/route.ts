@@ -1,14 +1,32 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const supabase = createServerClient();
+  const { searchParams } = new URL(request.url);
+  const clearLocks = searchParams.get('clearLocks') === 'true';
+
+  let locksCleared = false;
+  let clearError: string | null = null;
 
   try {
+    // Se solicitado, limpar travas de autoalocação ativas
+    if (clearLocks) {
+      const { error: errDel } = await supabase
+        .from('evento_autoalocacao_locks')
+        .delete()
+        .neq('evento_id', '00000000-0000-0000-0000-000000000000'); // Limpa tudo
+      
+      if (errDel) {
+        clearError = errDel.message;
+      } else {
+        locksCleared = true;
+      }
+    }
+
     // 1. Buscar os 2 membros recém-criados sem matrícula (ou com matrícula vazia/nula) que possuem processo_id nos custom_fields ou nome igual
-    // Vamos fazer um select amplo na tabela members para encontrar registros sem matrícula
     const { data: membersSemMatricula, error: membersError } = await supabase
       .from('members')
       .select('id, name, cpf, matricula, cargo_ministerial, supervisao_id, congregacao_id, custom_fields, created_at')
@@ -48,8 +66,16 @@ export async function GET() {
       .eq('status_processo', 'homologar')
       .is('member_id', null);
 
+    // Buscar se existem travas de autoalocação ativas atualmente
+    const { data: activeLocks } = await supabase
+      .from('evento_autoalocacao_locks')
+      .select('*');
+
     return NextResponse.json({
       ok: true,
+      locksCleared,
+      clearError,
+      activeLocks: activeLocks || [],
       maxMatricula,
       membersSemMatricula: membersSemMatricula || [],
       membersError: membersError ? membersError.message : null,
