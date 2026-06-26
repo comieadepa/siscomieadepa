@@ -5,7 +5,7 @@ const SELECT_INSC = [
   'id', 'evento_id', 'nome_inscrito', 'cpf',
   'supervisao_id', 'campo_id', 'status_pagamento',
   'checkin_realizado', 'checkin_at', 'qr_code',
-  'tipo_inscricao', 'alimentacao', 'foto_url', 'hospedagem',
+  'tipo_inscricao', 'alimentacao', 'hospedagem',
   'refeicoes_total', 'refeicoes_utilizadas',
   'quantidade_refeicoes_total', 'quantidade_refeicoes_usadas', 'quantidade_refeicoes_saldo',
 ].join(',');
