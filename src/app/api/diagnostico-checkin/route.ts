@@ -1,28 +1,29 @@
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 
+const SELECT_INSC = [
+  'id', 'evento_id', 'nome_inscrito', 'cpf',
+  'supervisao_id', 'campo_id', 'status_pagamento',
+  'checkin_realizado', 'checkin_at', 'qr_code',
+  'tipo_inscricao', 'alimentacao', 'foto_url', 'hospedagem',
+  'refeicoes_total', 'refeicoes_utilizadas',
+  'quantidade_refeicoes_total', 'quantidade_refeicoes_usadas', 'quantidade_refeicoes_saldo',
+].join(',');
+
 export async function GET() {
   try {
     const supabase = createServerClient();
 
-    // Busca as inscrições de Gezael com todas as colunas relevantes
-    const { data: inscricoes, error: errInsc } = await supabase
+    const { data, error } = await supabase
       .from('evento_inscricoes')
-      .select('id, nome_inscrito, evento_id, cpf, ministro_id, qr_code, status_pagamento')
-      .ilike('nome_inscrito', '%Gezael%');
-    if (errInsc) throw errInsc;
-
-    // Busca o membro Gezael na tabela members
-    const { data: members, error: errMem } = await supabase
-      .from('members')
-      .select('id, name, cpf, matricula')
-      .ilike('name', '%Gezael%');
-    if (errMem) throw errMem;
+      .select(SELECT_INSC)
+      .limit(1);
 
     return NextResponse.json({
       success: true,
-      inscricoes,
-      members
+      error_objeto: error,
+      mensagem_erro: error?.message || null,
+      data_sample: data
     });
 
   } catch (error: any) {
