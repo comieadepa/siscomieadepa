@@ -2039,7 +2039,16 @@ export default function BalcaoPage() {
                 <label className={labelCls}>E-mail</label>
                 <input name="email" type="email" value={form.email} onChange={handleText} className={inputCls} placeholder="email@exemplo.com" />
               </div>
-              {!(evento.departamento === 'AGO' && ministroInfo) && <div />}
+              <div>
+                <label className={labelCls}>Data de Nascimento</label>
+                <input
+                  type="date"
+                  name="data_nascimento"
+                  value={form.data_nascimento}
+                  onChange={handleText}
+                  className={inputCls}
+                />
+              </div>
               <div>
                 <label className={labelCls}>Supervisão *</label>
                 {evento.departamento === 'AGO' && ministroInfo ? (
