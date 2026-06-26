@@ -181,7 +181,7 @@ export function grupoMatchesAlojamento(
   if (p === 'presidentes' && (g.includes('presidente') || g.includes('jubilad'))) return true;
   if (p === 'jubilados'   && (g.includes('jubilad') || g.includes('presidente'))) return true;
   if (p === 'feminino'    && (g.includes('feminino') || g.includes('mulher') || g === 'f')) return true;
-  if (p === 'masculino_geral' && (
+  if ((p === 'masculino_geral' || p === 'masculino') && (
     g.includes('masculino') || g.includes('auxiliar') || g.includes('juventude') || g === 'm'
   )) return true;
 
@@ -200,13 +200,12 @@ export function sugerirAlojamento(
   const precisaCamaInferior = inscricao.hosp_cama_inferior || inscricao.hosp_necessidade_especial;
 
   // Filtra alojamentos ativos com vagas livres
-  // Filtra alojamentos ativos com vagas livres
   const candidatos = alojamentos
     .filter(a => a.ativo && (a.vagas_livres ?? 0) > 0)
     .filter(a => {
       // Compatibilidade de publico
       if (a.publico === 'misto') return true;
-      if (a.publico === perfil)  return true;
+      if (a.publico === perfil || (perfil === 'masculino_geral' && a.publico === 'masculino'))  return true;
 
       // AGO: Presidentes e Jubilados compartilham os mesmos alojamentos
       if (perfil === 'presidentes' && a.publico === 'jubilados') return true;
@@ -215,7 +214,7 @@ export function sugerirAlojamento(
       // Fallback: alojamentos por sexo
       const sexo = inscricao.sexo?.toUpperCase();
       if (a.publico === 'feminino' && sexo === 'F')          return true;
-      if (a.publico === 'masculino_geral' && sexo === 'M')   return true;
+      if ((a.publico === 'masculino_geral' || a.publico === 'masculino') && sexo === 'M')   return true;
 
       return false;
     });
