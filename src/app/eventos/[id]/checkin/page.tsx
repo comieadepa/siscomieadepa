@@ -48,7 +48,6 @@ interface ResultadoScan {
   saldoRestante?: number | null;
   dataPlenaria?: string;
   message?: string;
-  debug?: any;
 }
 
 interface PendingConfirm {
@@ -546,26 +545,17 @@ export default function CheckinMobilePage() {
       const status: string = json?.status ?? 'not_found';
 
       if (status === 'not_found') {
-        setResultado({
-          estado: 'invalid',
-          message: json?.message || 'Inscrição não localizada para este QR Code.',
-          debug: json?.debug
-        });
+        setResultado({ estado: 'invalid', message: json?.message || 'Inscrição não localizada para este QR Code.' });
         emitirSom('erro'); vibrar('erro');
-        setTimeout(() => voltarParaScan(), 15000);
+        setTimeout(() => voltarParaScan(), 3000);
         return;
       }
 
       if (status === 'wrong_event') {
         const ins = json?.inscricao as Inscricao;
-        setResultado({
-          estado: 'wrong_event',
-          inscricao: ins,
-          message: 'Inscrição não pertence a este evento.',
-          debug: json?.debug
-        });
+        setResultado({ estado: 'wrong_event', inscricao: ins, message: 'Inscrição não pertence a este evento.' });
         emitirSom('erro'); vibrar('erro');
-        setTimeout(() => voltarParaScan(), 15000);
+        setTimeout(() => voltarParaScan(), 3000);
         return;
       }
 
@@ -1096,13 +1086,6 @@ export default function CheckinMobilePage() {
             {estado === 'already_plenaria' && resultado?.dataPlenaria && (
               <p className="mt-3 text-sm bg-white/20 rounded-lg px-3 py-2">Presença já registrada em: {resultado.dataPlenaria}</p>
             )}
-          </div>
-        )}
-
-        {resultado?.debug && (
-          <div className="mt-4 bg-black/40 rounded-xl p-3 text-left max-w-md w-full font-mono text-[9px] text-white/80 border border-white/10 select-all">
-            <p className="font-bold border-b border-white/20 pb-1 mb-1 text-[10px] text-orange-400">DEBUG INFO:</p>
-            <pre className="whitespace-pre-wrap overflow-x-auto">{JSON.stringify(resultado.debug, null, 2)}</pre>
           </div>
         )}
 

@@ -15,7 +15,6 @@ type InscricaoRow = {
   qr_code: string | null;
   tipo_inscricao: string | null;
   alimentacao: boolean | null;
-  foto_url: string | null;
   hospedagem: boolean | null;
   refeicoes_total: number | null;
   refeicoes_utilizadas: number | null;
@@ -28,7 +27,7 @@ const SELECT_INSC = [
   'id', 'evento_id', 'nome_inscrito', 'cpf',
   'supervisao_id', 'campo_id', 'status_pagamento',
   'checkin_realizado', 'checkin_at', 'qr_code',
-  'tipo_inscricao', 'alimentacao', 'foto_url', 'hospedagem',
+  'tipo_inscricao', 'alimentacao', 'hospedagem',
   'refeicoes_total', 'refeicoes_utilizadas',
   'quantidade_refeicoes_total', 'quantidade_refeicoes_usadas', 'quantidade_refeicoes_saldo',
 ].join(',');
@@ -174,30 +173,13 @@ export async function GET(
       if (inscricaoCompativel) {
         inscricao = inscricaoCompativel;
       } else {
-        return NextResponse.json({
-          status: 'wrong_event',
-          message: 'Inscrição não pertence a este evento.',
-          inscricao: outra,
-          debug: {
-            requestedEventoId: eventoId,
-            outraEventoId: outra.evento_id,
-            qrToken: qrToken,
-            byTokenIsNull: true
-          }
-        }, { status: 200 });
+        return NextResponse.json({ status: 'wrong_event', message: 'Inscrição não pertence a este evento.', inscricao: outra }, { status: 200 });
       }
     }
   }
 
   if (!inscricao) {
-    return NextResponse.json({
-      status: 'not_found',
-      message: 'Inscrição não localizada para este QR Code.',
-      debug: {
-        requestedEventoId: eventoId,
-        qrToken: qrToken
-      }
-    }, { status: 200 });
+    return NextResponse.json({ status: 'not_found', message: 'Inscrição não localizada para este QR Code.' }, { status: 200 });
   }
 
   const ins = inscricao;
