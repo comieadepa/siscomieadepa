@@ -79,19 +79,26 @@ export default function LoginPage() {
       });
 
       if (!authError && authData?.user) {
-        // Verificar se o usuário existe na tabela public.users (usuários oficiais do CRM)
-        const { data: dbUser, error: dbUserError } = await supabaseRef.current
-          .from('users')
-          .select('role, is_active')
-          .eq('id', authData.user.id)
-          .maybeSingle();
+        const rawRole = authData.user.user_metadata?.nivel || authData.user.user_metadata?.role || authData.user.app_metadata?.role;
+        const normalizedRole = typeof rawRole === 'string' ? rawRole.toLowerCase().trim() : '';
+        const isOfficialUser = ['super', 'administrador', 'super_admin', 'superadmin', 'admin', 'administrator', 'cgadb', 'comissao', 'inscricao', 'financeiro'].includes(normalizedRole);
+        const nivel = (authData.user.user_metadata?.nivel || normalizedRole) as string | undefined;
 
-        if (dbUserError || !dbUser || dbUser.is_active === false) {
-          // Se não estiver cadastrado no CRM ou estiver inativo, rejeita o login
-          await supabaseRef.current.auth.signOut();
-          setError('Acesso restrito. Este painel é exclusivo para administradores da Convenção. Operadores de eventos devem utilizar o link de acesso específico da sua equipe.');
-          setLoading(false);
-          return;
+        // Permitir se for usuário oficial (inscricao, cgadb, financeiro, admin, super) OU se estiver cadastrado na tabela de usuários do CRM
+        if (!isOfficialUser) {
+          const { data: dbUser, error: dbUserError } = await supabaseRef.current
+            .from('users')
+            .select('role, is_active')
+            .eq('id', authData.user.id)
+            .maybeSingle();
+
+          if (dbUserError || !dbUser || dbUser.is_active === false) {
+            // Se não for do nível de inscrição oficial e não estiver no CRM, rejeita
+            await supabaseRef.current.auth.signOut();
+            setError('Acesso restrito. Este painel é exclusivo para administradores da Convenção. Operadores de eventos devem utilizar o link de acesso específico da sua equipe.');
+            setLoading(false);
+            return;
+          }
         }
 
         // Registrar log de login
@@ -114,7 +121,6 @@ export default function LoginPage() {
           // silencioso: não impede o login
         }
         // Redireciona conforme o nível do usuário
-        const nivel = authData.user.user_metadata?.nivel as string | undefined;
         const destino =
           nivel === 'inscricao' ? '/eventos' :
           nivel === 'cgadb'     ? '/secretaria/cgadb' :
