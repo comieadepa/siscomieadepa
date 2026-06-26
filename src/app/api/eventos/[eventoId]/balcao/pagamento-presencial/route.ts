@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
+import { requireEventoPermission } from '@/lib/evento-guard';
 import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
 
 export async function POST(
@@ -7,42 +7,17 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const supabase = createServerClient();
 
-  // 1. Identificar operador logado (sessão operacional/equipe atual)
-  let equipeId = request.headers.get('x-evento-equipe-id');
-  let equipeUser: any = null;
-
-  if (equipeId) {
-    const { data } = await supabase
-      .from('evento_equipe')
-      .select('id, nome, email, ativo')
-      .eq('id', equipeId)
-      .eq('evento_id', eventoId)
-      .eq('ativo', true)
-      .maybeSingle();
-    equipeUser = data;
+  // Utilizar o guard padrão do sistema para validar permissão
+  const guard = await requireEventoPermission(request, eventoId, 'inscricoes');
+  if (!guard.ok) {
+    return guard.response;
   }
 
-  if (!equipeUser) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user && user.email) {
-      const { data } = await supabase
-        .from('evento_equipe')
-        .select('id, nome, email, ativo')
-        .eq('evento_id', eventoId)
-        .eq('email', user.email)
-        .eq('ativo', true)
-        .maybeSingle();
-      equipeUser = data;
-    }
-  }
+  const supabase = guard.ctx.supabaseAdmin;
+  const { user, equipe } = guard.ctx;
 
-  if (!equipeUser) {
-    return NextResponse.json({ error: 'Operador não identificado ou inativo.' }, { status: 403 });
-  }
-
-  // 2. Ler payload
+  // Ler payload
   let body: any;
   try {
     body = await request.json();
@@ -56,7 +31,7 @@ export async function POST(
     return NextResponse.json({ error: 'ID da inscrição não informado.' }, { status: 400 });
   }
 
-  // 3. Validar se inscrição pertence ao evento
+  // Validar se inscrição pertence ao evento
   const { data: ins, error: insErr } = await supabase
     .from('evento_inscricoes')
     .select('*')
@@ -68,17 +43,17 @@ export async function POST(
     return NextResponse.json({ error: 'Inscrição não localizada para este evento.' }, { status: 404 });
   }
 
-  // 4. Validar status pendente
+  // Validar status pendente
   if (ins.status_pagamento === 'pago' || ins.status_pagamento === 'isento') {
     return NextResponse.json({ error: 'Esta inscrição já está paga ou isenta.' }, { status: 400 });
   }
 
-  // 5. Validar se inscrição pertence a um lote
+  // Validar se inscrição pertence a um lote
   if (ins.lote_id) {
     return NextResponse.json({ error: 'Pagamento presencial de lotes não é suportado nesta etapa. Marcar individualmente apenas inscrições sem lote.' }, { status: 400 });
   }
 
-  // 6. Validar formas de pagamento
+  // Validar formas de pagamento
   const formasValidas = ['dinheiro', 'pix', 'debito', 'credito', 'isento'];
   const formaNormalizada = String(forma_pagamento || '').toLowerCase().trim();
   if (!formasValidas.includes(formaNormalizada)) {
@@ -96,37 +71,67 @@ export async function POST(
     }
   }
 
-  // 7. Buscar ou autoabrir sessão de caixa
-  let { data: sessao } = await supabase
-    .from('evento_caixa_sessoes')
-    .select('*')
-    .eq('evento_id', eventoId)
-    .eq('operador_id', equipeUser.id)
-    .eq('status', 'aberto')
-    .maybeSingle();
+  // Definir informações do operador e sessão do caixa
+  let operadorId: string | null = null;
+  let operadorNome = 'Administrador';
+  let caixaSessaoId: string | null = null;
 
-  if (!sessao) {
-    const { data: novaSessao, error: insertError } = await supabase
+  if (equipe) {
+    // É um operador local da equipe do evento
+    operadorId = equipe.id;
+    
+    // Buscar o nome completo na tabela evento_equipe se necessário, ou usar o e-mail/nome do guard
+    const { data: eqData } = await supabase
+      .from('evento_equipe')
+      .select('nome, email')
+      .eq('id', equipe.id)
+      .maybeSingle();
+
+    operadorNome = eqData?.nome || eqData?.email || 'Operador';
+
+    // Buscar ou autoabrir sessão de caixa para operadores locais
+    let { data: sessao } = await supabase
       .from('evento_caixa_sessoes')
-      .insert({
-        evento_id: eventoId,
-        operador_id: equipeUser.id,
-        operador_nome: equipeUser.nome || equipeUser.email,
-        status: 'aberto',
-        data_abertura: new Date().toISOString()
-      })
       .select('*')
-      .single();
+      .eq('evento_id', eventoId)
+      .eq('operador_id', equipe.id)
+      .eq('status', 'aberto')
+      .maybeSingle();
 
-    if (insertError) {
-      return NextResponse.json({ error: 'Erro ao abrir sessão de caixa operacional automaticamente.' }, { status: 500 });
+    if (!sessao) {
+      const { data: novaSessao, error: insertError } = await supabase
+        .from('evento_caixa_sessoes')
+        .insert({
+          evento_id: eventoId,
+          operador_id: equipe.id,
+          operador_nome: operadorNome,
+          status: 'aberto',
+          data_abertura: new Date().toISOString()
+        })
+        .select('*')
+        .single();
+
+      if (insertError) {
+        return NextResponse.json({ error: 'Erro ao abrir sessão de caixa operacional automaticamente.' }, { status: 500 });
+      }
+      sessao = novaSessao;
     }
-    sessao = novaSessao;
+    caixaSessaoId = sessao.id;
+  } else if (user) {
+    // É um administrador global do CRM ou inscrição
+    const { data: crmUser } = await supabase
+      .from('users')
+      .select('nome')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    operadorNome = crmUser?.nome || user.user_metadata?.nome || user.email || 'Administrador';
+    // Admins globais não possuem sessão de caixa física vinculada a evento_equipe
   }
 
-  // 8. Atualizar inscrição
+  // Atualizar inscrição
   const statusDestino = formaNormalizada === 'isento' ? 'isento' : 'pago';
-  const obsAudit = `Pagamento presencial efetivado no balcão por ${equipeUser.nome || equipeUser.email} via ${formaNormalizada}. ${observacao || ''}`.trim();
+  const obsAudit = `Pagamento presencial efetivado no balcão por ${operadorNome} via ${formaNormalizada}. ${observacao || ''}`.trim();
 
   const { data: inscricaoAtualizada, error: updateError } = await supabase
     .from('evento_inscricoes')
@@ -134,9 +139,9 @@ export async function POST(
       status_pagamento: statusDestino,
       forma_pagamento: formaNormalizada,
       valor_pago: valorNum,
-      operador_id: equipeUser.id,
-      operador_nome: equipeUser.nome || equipeUser.email,
-      caixa_sessao_id: sessao.id,
+      operador_id: operadorId,
+      operador_nome: operadorNome,
+      caixa_sessao_id: caixaSessaoId,
       origem: 'balcao',
       observacoes: ins.observacoes ? `${ins.observacoes}\n${obsAudit}` : obsAudit
     })
@@ -148,7 +153,7 @@ export async function POST(
     return NextResponse.json({ error: 'Erro ao registrar pagamento: ' + updateError.message }, { status: 500 });
   }
 
-  // 9. Executar autoalocacao de hospedagem se habilitado
+  // Executar autoalocacao de hospedagem se habilitado
   try {
     await alocarLeitoParaInscricao(supabase, inscricao_id);
   } catch (alocError) {

@@ -455,11 +455,6 @@ export async function alocarLeitoParaInscricaoEventoComum(
         detalhes: { alojamento_id: hospedagem.alojamento_id, numero_cama: hospedagem.numero_cama }
       };
     }
-    if (hospedagem.status === 'lista_espera') {
-      const msg = `Idempotência: Hospedagem ${hospedagem.id} já está em lista de espera.`;
-      console.warn(`[Autoalocacao] [Comum] ${msg}`);
-      return { success: false, status: 'lista_espera', motivo: msg };
-    }
   }
 
   // Requisito 4: Se pago mas ainda sem registro de hospedagem, cria com status pago_sem_alocacao
