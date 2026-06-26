@@ -192,7 +192,16 @@ export async function POST(
         inscricao = inscricaoCompativel;
         targetQrToken = inscricaoCompativel.qr_code || targetQrToken;
       } else {
-        return NextResponse.json({ status: 'wrong_event', inscricao: outra }, { status: 200 });
+        return NextResponse.json({
+          status: 'wrong_event',
+          inscricao: outra,
+          debug: {
+            requestedEventoId: eventoId,
+            outraEventoId: outra.evento_id,
+            qrToken: qrToken,
+            byTokenIsNull: true
+          }
+        }, { status: 200 });
       }
     }
   }

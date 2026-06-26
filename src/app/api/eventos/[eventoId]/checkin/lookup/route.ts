@@ -174,13 +174,30 @@ export async function GET(
       if (inscricaoCompativel) {
         inscricao = inscricaoCompativel;
       } else {
-        return NextResponse.json({ status: 'wrong_event', message: 'Inscrição não pertence a este evento.', inscricao: outra }, { status: 200 });
+        return NextResponse.json({
+          status: 'wrong_event',
+          message: 'Inscrição não pertence a este evento.',
+          inscricao: outra,
+          debug: {
+            requestedEventoId: eventoId,
+            outraEventoId: outra.evento_id,
+            qrToken: qrToken,
+            byTokenIsNull: true
+          }
+        }, { status: 200 });
       }
     }
   }
 
   if (!inscricao) {
-    return NextResponse.json({ status: 'not_found', message: 'Inscrição não localizada para este QR Code.' }, { status: 200 });
+    return NextResponse.json({
+      status: 'not_found',
+      message: 'Inscrição não localizada para este QR Code.',
+      debug: {
+        requestedEventoId: eventoId,
+        qrToken: qrToken
+      }
+    }, { status: 200 });
   }
 
   const ins = inscricao;
