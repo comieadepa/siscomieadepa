@@ -15,8 +15,8 @@ export async function GET() {
     // 2. Busca todas as credenciais QR permanentes se existirem
     const { data: members, error: errMem } = await supabase
       .from('members')
-      .select('id, nome, cpf, matricula')
-      .ilike('nome', '%Gezael%');
+      .select('id, name, cpf, matricula')
+      .ilike('name', '%Gezael%');
     if (errMem) throw errMem;
 
     let qrTokens: any[] = [];
@@ -46,7 +46,7 @@ export async function GET() {
         const tokensDoMembro = qrTokens.filter(t => t.ministro_id === m.id);
         return {
           id: m.id,
-          nome: m.nome,
+          nome: m.name,
           cpf: m.cpf ? '***' + String(m.cpf).slice(-4) : null,
           matricula: m.matricula,
           tokens_permanentes: tokensDoMembro.map(t => t.token),
