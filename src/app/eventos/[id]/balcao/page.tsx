@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useEventosPerfil } from '@/hooks/useEventosPerfil';
 import { createClient } from '@/lib/supabase-client';
-import { clearEquipeSession } from '@/lib/equipe-session';
+import { clearEquipeSession, getEquipeSession } from '@/lib/equipe-session';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { normalizePayloadUppercase } from '@/lib/text';
 import { EventBadge } from '@/components/EventBadge';
@@ -518,7 +518,8 @@ export default function BalcaoPage() {
   const carregarCaixaDados = useCallback(async () => {
     if (!id) return;
     try {
-      const equipeId = localStorage.getItem(`evento_${id}_equipe_id`);
+      const session = getEquipeSession();
+      const equipeId = session?.eventoId === id ? session.equipeId : null;
       const headers: Record<string, string> = {};
       if (equipeId) {
         headers['x-evento-equipe-id'] = equipeId;
@@ -564,7 +565,8 @@ export default function BalcaoPage() {
     setSangriaSucesso(false);
 
     try {
-      const equipeId = localStorage.getItem(`evento_${id}_equipe_id`);
+      const session = getEquipeSession();
+      const equipeId = session?.eventoId === id ? session.equipeId : null;
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
@@ -635,7 +637,8 @@ export default function BalcaoPage() {
     setPagPresencialErro(null);
 
     try {
-      const equipeId = localStorage.getItem(`evento_${id}_equipe_id`);
+      const session = getEquipeSession();
+      const equipeId = session?.eventoId === id ? session.equipeId : null;
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
@@ -1134,7 +1137,8 @@ export default function BalcaoPage() {
         };
       }
 
-      const equipeId = localStorage.getItem(`evento_${id}_equipe_id`);
+      const session = getEquipeSession();
+      const equipeId = session?.eventoId === id ? session.equipeId : null;
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
@@ -1425,7 +1429,8 @@ export default function BalcaoPage() {
     }
     setEnviandoEmail(p => ({ ...p, [ins.id]: true }));
     try {
-      const equipeId = localStorage.getItem(`evento_${id}_equipe_id`);
+      const session = getEquipeSession();
+      const equipeId = session?.eventoId === id ? session.equipeId : null;
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
@@ -1465,7 +1470,8 @@ export default function BalcaoPage() {
     }
     setEnviandoCert(p => ({ ...p, [ins.id]: true }));
     try {
-      const equipeId = localStorage.getItem(`evento_${id}_equipe_id`);
+      const session = getEquipeSession();
+      const equipeId = session?.eventoId === id ? session.equipeId : null;
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
@@ -1534,7 +1540,8 @@ export default function BalcaoPage() {
     }
     setMarcandoEtiqueta(p => ({ ...p, [ins.id]: true }));
     try {
-      const equipeId = localStorage.getItem(`evento_${id}_equipe_id`);
+      const session = getEquipeSession();
+      const equipeId = session?.eventoId === id ? session.equipeId : null;
       const headers: Record<string, string> = {};
       if (equipeId) {
         headers['x-evento-equipe-id'] = equipeId;
