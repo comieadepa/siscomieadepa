@@ -301,7 +301,6 @@ export default function BalcaoPage() {
     return tipoSel?.valor ?? (evento?.valor_inscricao ?? 0);
   }, [tipoSel, evento]);
 
-  const valorFinal = Math.max(0, valorBase - cupomDesconto);
   // Valor da esposa (Campo Missionário)
   const valorEsposaBase = useMemo(() => {
     if (!evento?.configuracoes_ago) return 0;
@@ -309,6 +308,8 @@ export default function BalcaoPage() {
     if (!cmConfig) return 0;
     return typeof cmConfig.valor_esposa === 'number' ? cmConfig.valor_esposa : parseFloat(String(cmConfig.valor_esposa)) || 0;
   }, [evento]);
+
+  const valorFinal = Math.max(0, valorBase + (incluirEsposa ? (valorEsposaBase ?? 0) : 0) - cupomDesconto);
 
   // ── Perfil ministerial AGO + filtragem de categorias ─────
   const tipoJubiladoAutomatico = useMemo(() => findTipoPastorJubilado(tipos), [tipos]);

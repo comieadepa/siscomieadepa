@@ -425,19 +425,43 @@ export async function POST(
     if (cpfLimpo && (evento as any).departamento === 'AGO') {
       const { data: membro } = await supabase
         .from('members')
-        .select('id,name,cpf,matricula,data_nascimento,status,cargo_ministerial,pastor_presidente,pastor_auxiliar,jubilado,campo_id,supervisao_id')
+        .select('id,name,cpf,matricula,data_nascimento,status,cargo_ministerial,pastor_presidente,pastor_auxiliar,jubilado,campo_id,supervisao_id,congregacao_id,congregacoes!congregacao_id(campo_id,nome),custom_fields')
         .eq('cpf', cpfLimpo)
         .maybeSingle();
       if (membro) {
         let isCampoMissionario = false;
         let campoNome: string | null = null;
-        const campoIdSnapshot = String((membro as any).campo_id ?? campo_id ?? '').trim() || null;
+        // Resolve campo_id: direto no membro → via congregação → via custom_fields
+        const campoIdDireto = String((membro as any).campo_id ?? '').trim() || null;
+        const campoIdViaCong = (membro as any).congregacoes?.campo_id
+          ? String((membro as any).congregacoes.campo_id).trim() || null
+          : null;
+        const campoNomeViaCf = (() => {
+          try {
+            const cf = (membro as any).custom_fields;
+            if (!cf) return null;
+            const obj = typeof cf === 'string' ? JSON.parse(cf) : cf;
+            return obj?.campo ?? null;
+          } catch { return null; }
+        })();
+        const campoIdSnapshot = (campoIdDireto ?? campoIdViaCong ?? (campo_id ? String(campo_id).trim() : null)) || null;
         const supervisaoIdSnapshot = String((membro as any).supervisao_id ?? supervisao_id ?? '').trim() || null;
         if (campoIdSnapshot) {
           const { data: campoData } = await supabase
             .from('campos')
             .select('nome,is_campo_missionario')
             .eq('id', campoIdSnapshot)
+            .maybeSingle();
+          if (campoData) {
+            isCampoMissionario = !!(campoData as any).is_campo_missionario;
+            campoNome = (campoData as any).nome ?? null;
+          }
+        } else if (campoNomeViaCf) {
+          // Fallback: busca campo pelo nome nos custom_fields
+          const { data: campoData } = await supabase
+            .from('campos')
+            .select('nome,is_campo_missionario')
+            .ilike('nome', campoNomeViaCf.trim())
             .maybeSingle();
           if (campoData) {
             isCampoMissionario = !!(campoData as any).is_campo_missionario;
