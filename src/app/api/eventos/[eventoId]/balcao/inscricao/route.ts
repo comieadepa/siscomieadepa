@@ -421,61 +421,117 @@ export async function POST(
     }
 
     // Snapshot ministerial (AGO)
+    // Snapshot ministerial (AGO)
     let ministroSnapshot: Record<string, unknown> | null = null;
     if (cpfLimpo && (evento as any).departamento === 'AGO') {
-      // Formata o CPF para o padrão 000.000.000-00
       const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
       
+      // ETAPA A: Busca simples por CPF na tabela members sem joins
       const { data: membro, error: queryError } = await supabase
         .from('members')
-        .select('id,name,cpf,matricula,data_nascimento,status,cargo_ministerial,pastor_presidente,pastor_auxiliar,jubilado,campo_id,supervisao_id,congregacao_id,congregacoes!congregacao_id(campo_id,nome),custom_fields')
+        .select('id,name,cpf,matricula,data_nascimento,status,cargo_ministerial,pastor_presidente,pastor_auxiliar,jubilado,campo_id,supervisao_id,congregacao_id,custom_fields')
         .or(`cpf.eq.${cpfLimpo},cpf.eq.${cpfFormatado}`)
         .maybeSingle();
 
       if (queryError) {
-        console.error('[DEBUG BALCAO MEMBER QUERY ERROR]:', queryError);
+        console.error('[DEBUG BALCAO MEMBER QUERY ERROR]:', {
+          code: queryError.code,
+          message: queryError.message,
+          details: queryError.details,
+          hint: queryError.hint,
+        });
+        return NextResponse.json(
+          { error: `Erro ao buscar ministro no banco: ${queryError.message}` },
+          { status: 500 }
+        );
       }
 
       if (membro) {
         let isCampoMissionario = false;
         let campoNome: string | null = null;
-        // Resolve campo_id: direto no membro → via congregação → via custom_fields
-        const campoIdDireto = String((membro as any).campo_id ?? '').trim() || null;
-        const campoIdViaCong = (membro as any).congregacoes?.campo_id
-          ? String((membro as any).congregacoes.campo_id).trim() || null
-          : null;
-        const campoNomeViaCf = (() => {
-          try {
-            const cf = (membro as any).custom_fields;
-            if (!cf) return null;
-            const obj = typeof cf === 'string' ? JSON.parse(cf) : cf;
-            return obj?.campo ?? null;
-          } catch { return null; }
-        })();
-        const campoIdSnapshot = (campoIdDireto ?? campoIdViaCong ?? (campo_id ? String(campo_id).trim() : null)) || null;
-        const supervisaoIdSnapshot = String((membro as any).supervisao_id ?? supervisao_id ?? '').trim() || null;
-        if (campoIdSnapshot) {
-          const { data: campoData } = await supabase
-            .from('campos')
-            .select('nome,is_campo_missionario')
-            .eq('id', campoIdSnapshot)
+
+        // ETAPA B: Consultas separadas de dados correlacionados
+        let campoIdSnapshot = String((membro as any).campo_id ?? '').trim() || null;
+
+        // Se campo_id não está no membro, tenta resolver via congregação
+        if (!campoIdSnapshot && (membro as any).congregacao_id) {
+          const { data: congData } = await supabase
+            .from('congregacoes')
+            .select('campo_id')
+            .eq('id', (membro as any).congregacao_id)
             .maybeSingle();
-          if (campoData) {
-            isCampoMissionario = !!(campoData as any).is_campo_missionario;
-            campoNome = (campoData as any).nome ?? null;
-          }
-        } else if (campoNomeViaCf) {
-          // Fallback: busca campo pelo nome nos custom_fields
-          const { data: campoData } = await supabase
-            .from('campos')
-            .select('nome,is_campo_missionario')
-            .ilike('nome', campoNomeViaCf.trim())
-            .maybeSingle();
-          if (campoData) {
-            isCampoMissionario = !!(campoData as any).is_campo_missionario;
-            campoNome = (campoData as any).nome ?? null;
+          if (congData?.campo_id) {
+            campoIdSnapshot = String(congData.campo_id).trim() || null;
           }
         }
+
+        // Recupera campo dos custom_fields do membro
+        const customFieldsObj = (() => {
+          try {
+            const cf = (membro as any).custom_fields;
+            if (!cf) return {};
+            return typeof cf === 'string' ? JSON.parse(cf) : cf;
+          } catch { return {}; }
+        })();
+
+        const campoNomeViaCf = customFieldsObj?.campo || null;
+        if (!campoIdSnapshot && campo_id) {
+          campoIdSnapshot = String(campo_id).trim() || null;
+        }
+        
+        const supervisaoIdSnapshot = String((membro as any).supervisao_id ?? supervisao_id ?? '').trim() || null;
+
+        // Busca dados do campo associado
+        let campoData: any = null;
+        if (campoIdSnapshot) {
+          const { data } = await supabase
+            .from('campos')
+            .select('nome,is_campo_missionario,custom_fields')
+            .eq('id', campoIdSnapshot)
+            .maybeSingle();
+          campoData = data;
+        } else if (campoNomeViaCf) {
+          const { data } = await supabase
+            .from('campos')
+            .select('nome,is_campo_missionario,custom_fields')
+            .ilike('nome', campoNomeViaCf.trim())
+            .maybeSingle();
+          campoData = data;
+        }
+
+        if (campoData) {
+          campoNome = campoData.nome ?? null;
+          isCampoMissionario = !!campoData.is_campo_missionario;
+
+          // Se a flag não estiver marcada no campo, confere os custom_fields do campo
+          if (!isCampoMissionario && campoData.custom_fields) {
+            try {
+              const cCf = typeof campoData.custom_fields === 'string'
+                ? JSON.parse(campoData.custom_fields)
+                : campoData.custom_fields;
+              if (cCf?.is_campo_missionario || cCf?.campo_missionario || cCf?.missionario) {
+                isCampoMissionario = true;
+              }
+            } catch {}
+          }
+        }
+
+        // Validação adicional por custom_fields do membro
+        if (!isCampoMissionario) {
+          const cfKeys = Object.keys(customFieldsObj).map(k => k.toLowerCase());
+          const temChaveCm = cfKeys.some(k => k.includes('missionario') || k.includes('campo_missionario') || k.includes('campomissionario'));
+          const temValorCm = Object.entries(customFieldsObj).some(([k, v]) => {
+            const kl = k.toLowerCase();
+            if (kl.includes('campo') || kl.includes('categoria') || kl.includes('tipo')) {
+              return String(v).toLowerCase().includes('missionario');
+            }
+            return false;
+          });
+          if (temChaveCm || temValorCm) {
+            isCampoMissionario = true;
+          }
+        }
+
         ministroSnapshot = {
           ministro_id:        (membro as any).id,
           nome:               (membro as any).name,
@@ -491,6 +547,7 @@ export async function POST(
           is_pastor_jubilado:    !!((membro as any).jubilado),
           is_campo_missionario:  isCampoMissionario,
         };
+
         console.log('[DEBUG BALCAO MEMBER]:', {
           encontrado: true,
           cpfLimpo,
@@ -507,30 +564,33 @@ export async function POST(
 
     const confAgo = (evento as any).configuracoes_ago as Record<string, unknown> | null;
     const cmConfig = parseCampoMissionarioConfig(confAgo);
-    // Alinha com o frontend: aceita o flag booleano OU a nova estrutura campo_missionario.enabled,
-    // sem exigir que valor_pastor_presidente seja > 0 (preço pode vir do tipo em evento_tipos_inscricao)
     const campoMissionarioEnabled =
       !!cmConfig?.enabled
       || !!(confAgo as any)?.habilitar_desconto_campo_missionario
       || !!(confAgo as any)?.campo_missionario?.enabled;
     const statusMinistro = String(ministroSnapshot?.status_ministerial ?? '').toLowerCase();
     const ministroAtivo = statusMinistro === 'active' || statusMinistro === 'ativo';
+    
+    // Regra flexível de elegibilidade do Campo Missionário
+    const isPP = !!ministroSnapshot?.is_pastor_presidente;
+    const isCM = !!ministroSnapshot?.is_campo_missionario;
     const fluxoCampoMissionarioEspecial =
       (evento as any).departamento === 'AGO'
       && campoMissionarioEnabled
       && ministroAtivo
-      && !!ministroSnapshot?.is_pastor_presidente
-      && !!ministroSnapshot?.is_campo_missionario;
+      && isPP
+      && isCM;
 
-    console.log('[DEBUG BALCAO CM]:', {
-      departamento: (evento as any).departamento,
-      campoMissionarioEnabled,
-      statusMinistro,
-      ministroAtivo,
-      is_pastor_presidente: !!ministroSnapshot?.is_pastor_presidente,
-      is_campo_missionario: !!ministroSnapshot?.is_campo_missionario,
-      fluxoCampoMissionarioEspecial,
-      tipoNome
+    console.log('[CAMPO_MISSIONARIO_VALIDATION]:', {
+      cpf: cpfLimpo,
+      member_id: ministroSnapshot?.ministro_id ?? null,
+      pastor_presidente: isPP,
+      cargo_ministerial: ministroSnapshot?.cargo ?? null,
+      campo_id: ministroSnapshot?.campo_id ?? null,
+      campo_nome: ministroSnapshot?.campo ?? null,
+      campo_missionario: isCM,
+      custom_fields: ministroSnapshot ? '(snapshot data)' : null,
+      resultado: fluxoCampoMissionarioEspecial
     });
 
     if (tipoNome === 'CAMPO MISSIONÁRIO' && !fluxoCampoMissionarioEspecial) {
