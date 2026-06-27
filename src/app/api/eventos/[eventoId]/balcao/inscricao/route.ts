@@ -423,10 +423,13 @@ export async function POST(
     // Snapshot ministerial (AGO)
     let ministroSnapshot: Record<string, unknown> | null = null;
     if (cpfLimpo && (evento as any).departamento === 'AGO') {
+      // Formata o CPF para o padrão 000.000.000-00
+      const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+      
       const { data: membro } = await supabase
         .from('members')
         .select('id,name,cpf,matricula,data_nascimento,status,cargo_ministerial,pastor_presidente,pastor_auxiliar,jubilado,campo_id,supervisao_id,congregacao_id,congregacoes!congregacao_id(campo_id,nome),custom_fields')
-        .eq('cpf', cpfLimpo)
+        .or(`cpf.eq.${cpfLimpo},cpf.eq.${cpfFormatado}`)
         .maybeSingle();
       if (membro) {
         let isCampoMissionario = false;
