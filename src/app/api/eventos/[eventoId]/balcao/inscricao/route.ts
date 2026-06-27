@@ -574,66 +574,48 @@ export async function POST(
     // Regra flexível de elegibilidade do Campo Missionário
     const isPP = !!ministroSnapshot?.is_pastor_presidente;
     const isCM = !!ministroSnapshot?.is_campo_missionario;
-    
-    // Fallback com dados passados pelo frontend payload
-    const frontendFluxoCm = !!(body as any).fluxoCampoMissionarioEspecial;
-    const frontendIsCm = !!(body as any).campoMissionario;
-    const frontendIsPP = !!(body as any).pastorPresidente;
     const cargoEhPastor = String(ministroSnapshot?.cargo ?? '').toUpperCase().includes('PASTOR');
 
-    // Aprovado se a regra backend passar, OU se o frontend autenticou o ministro como Pastor + Campo Missionário
+    // Aprovado se a regra backend passar, OU se o ministro localizado é Pastor/Pastor Presidente
     let fluxoCampoMissionarioEspecial =
       (evento as any).departamento === 'AGO'
       && campoMissionarioEnabled
       && ministroAtivo
-      && isPP
-      && isCM;
-
-    // Condição de fallback seguro
-    const fallbackAprovado = 
-      (evento as any).departamento === 'AGO'
-      && campoMissionarioEnabled
-      && (isPP || cargoEhPastor)
-      && (isCM || frontendFluxoCm || frontendIsCm || (frontendIsPP && frontendIsCm));
-
-    if (fallbackAprovado && !fluxoCampoMissionarioEspecial) {
-      fluxoCampoMissionarioEspecial = true;
-    }
+      && (isPP || cargoEhPastor);
 
     const ehCategoriaCampoMissionario = String(tipoNome || '').toUpperCase().includes('CAMPO MISSIONÁRIO');
 
     if (ehCategoriaCampoMissionario) {
       if (fluxoCampoMissionarioEspecial) {
-        console.log('[CAMPO_MISSIONARIO_APPROVED]: Inscrição Campo Missionário aprovada.', {
+        console.log('[CAMPO_MISSIONARIO_APPROVED]: Inscrição Campo Missionário aprovada com sucesso.', {
           cpf: cpfLimpo,
           membroId: ministroSnapshot?.ministro_id ?? null,
           pastorPresidente: isPP,
           cargo: ministroSnapshot?.cargo ?? null,
           campoMissionarioDetectado: isCM,
-          fallbackAtivado: !isCM || (!isPP && cargoEhPastor)
+          ministroAtivo
         });
       } else {
         const motivo = !campoMissionarioEnabled 
           ? 'Desconto de Campo Missionário desabilitado no evento'
           : !ministroAtivo 
-            ? 'Ministro inativo ou sem cadastro'
-            : !isPP && !cargoEhPastor
-              ? 'Ministro não é Pastor Presidente'
-              : 'Campo de atuação não identificado como missionário no banco de dados';
+            ? 'Ministro inativo ou sem cadastro ativo'
+            : 'Ministro não possui cargo de Pastor ou Pastor Presidente';
 
-        console.error('[CAMPO_MISSIONARIO_BLOCKED]:', {
-          cpf: cpfLimpo,
-          tipo_inscricao_nome: tipoNome,
+        console.error('[CAMPO_MISSIONARIO_422_ORIGEM]', {
+          etapa: 'validacao_campo_missionario_AGO',
+          cpfLimpo,
+          tipoInscricaoNome: tipoNome,
+          tipoInscricaoId: tipo_inscricao ?? null,
+          membroId: ministroSnapshot?.ministro_id ?? null,
           pastor_presidente: isPP,
           cargo_ministerial: ministroSnapshot?.cargo ?? null,
+          status: ministroSnapshot?.status_ministerial ?? null,
           campoResolvido: ministroSnapshot?.campo ?? null,
           campoMissionarioDetectado: isCM,
-          flagsPayload: {
-            fluxoCampoMissionarioEspecial: frontendFluxoCm,
-            campoMissionario: frontendIsCm,
-            pastorPresidente: frontendIsPP
-          },
-          motivoBloqueio: motivo
+          fluxoCampoMissionarioEspecial,
+          payloadBody: body,
+          motivo
         });
 
         return NextResponse.json(
