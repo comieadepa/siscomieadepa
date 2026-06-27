@@ -62,12 +62,13 @@ async function extractEquipeIdFromRequest(request: NextRequest): Promise<string 
   }
 }
 
-function deniedResponse(area: EventoArea, role: EventoRole | null): NextResponse {
+function deniedResponse(area: EventoArea, role: EventoRole | null, debug?: any): NextResponse {
   return NextResponse.json(
     {
       error: 'Acesso não autorizado para esta área do evento.',
       area,
       role,
+      debug,
     },
     { status: 403 },
   );
@@ -279,7 +280,7 @@ export async function requireEventoPermission(
       equipeId,
       motivo: 'sem_vinculo_ou_sessao',
     });
-    return { ok: false, response: deniedResponse(area, null) };
+    return { ok: false, response: deniedResponse(area, null, { equipeId, userEmail: user?.email, url: request.url, method: request.method }) };
   }
 
   if (!canAccessEventoArea(resolved.role, area)) {
@@ -292,7 +293,7 @@ export async function requireEventoPermission(
       equipeId,
       motivo: 'area_nao_permitida',
     });
-    return { ok: false, response: deniedResponse(area, resolved.role) };
+    return { ok: false, response: deniedResponse(area, resolved.role, { equipeId, userEmail: user?.email, url: request.url, method: request.method, resolvedSource: resolved.source }) };
   }
 
   await logGrantedAccess({ request, eventoId, area, role: resolved.role, user, equipeId });

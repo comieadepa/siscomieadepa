@@ -745,7 +745,11 @@ export default function TabHospedagem({
     try {
       const res = await fetch(`/api/eventos/${eventoId}/hospedagens/buscar-inscricao?q=${encodeURIComponent(termoBuscaInscricao.trim())}`);
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Erro ao buscar inscrição');
+      if (!res.ok) {
+        const errMsg = json.error || 'Erro ao buscar inscrição';
+        const debugStr = json.debug ? ` [Debug: ${JSON.stringify(json.debug)}]` : '';
+        throw new Error(errMsg + debugStr);
+      }
       setResultadosBuscaInscricao(json.inscricoes ?? []);
     } catch (err: any) {
       setErroBuscaInscricao(err.message || 'Erro inesperado ao realizar busca.');
