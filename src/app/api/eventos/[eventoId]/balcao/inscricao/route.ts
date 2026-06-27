@@ -426,11 +426,16 @@ export async function POST(
       // Formata o CPF para o padrão 000.000.000-00
       const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
       
-      const { data: membro } = await supabase
+      const { data: membro, error: queryError } = await supabase
         .from('members')
         .select('id,name,cpf,matricula,data_nascimento,status,cargo_ministerial,pastor_presidente,pastor_auxiliar,jubilado,campo_id,supervisao_id,congregacao_id,congregacoes!congregacao_id(campo_id,nome),custom_fields')
         .or(`cpf.eq.${cpfLimpo},cpf.eq.${cpfFormatado}`)
         .maybeSingle();
+
+      if (queryError) {
+        console.error('[DEBUG BALCAO MEMBER QUERY ERROR]:', queryError);
+      }
+
       if (membro) {
         let isCampoMissionario = false;
         let campoNome: string | null = null;
