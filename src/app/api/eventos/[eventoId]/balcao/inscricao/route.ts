@@ -488,7 +488,12 @@ export async function POST(
 
     const confAgo = (evento as any).configuracoes_ago as Record<string, unknown> | null;
     const cmConfig = parseCampoMissionarioConfig(confAgo);
-    const campoMissionarioEnabled = !!cmConfig?.enabled;
+    // Alinha com o frontend: aceita o flag booleano OU a nova estrutura campo_missionario.enabled,
+    // sem exigir que valor_pastor_presidente seja > 0 (preço pode vir do tipo em evento_tipos_inscricao)
+    const campoMissionarioEnabled =
+      !!cmConfig?.enabled
+      || !!(confAgo as any)?.habilitar_desconto_campo_missionario
+      || !!(confAgo as any)?.campo_missionario?.enabled;
     const statusMinistro = String(ministroSnapshot?.status_ministerial ?? '').toLowerCase();
     const ministroAtivo = statusMinistro === 'active' || statusMinistro === 'ativo';
     const fluxoCampoMissionarioEspecial =
