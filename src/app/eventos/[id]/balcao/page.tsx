@@ -1230,14 +1230,25 @@ export default function BalcaoPage() {
     if (!options?.silent) setLoadingLista(true);
     setListaErro(null);
     try {
-      const { data, error } = await supabase
-        .from('evento_inscricoes')
-        .select('id,lote_id,nome_inscrito,cpf,whatsapp,email,supervisao_id,campo_id,tipo_inscricao,valor_final,valor_pago,status_pagamento,forma_pagamento,hospedagem,alimentacao,asaas_payment_id,invoice_url,checkin_realizado,checkin_at,etiqueta_impressa,certificado_enviado,created_at,valor_original')
-        .eq('evento_id', id)
-        .order('created_at', { ascending: false });
-      if (error) {
-        setListaErro('Erro ao carregar inscritos.');
-        return;
+      let allInscricoes: any[] = [];
+      let page = 0;
+      const limit = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from('evento_inscricoes')
+          .select('id,lote_id,nome_inscrito,cpf,whatsapp,email,supervisao_id,campo_id,tipo_inscricao,valor_final,valor_pago,status_pagamento,forma_pagamento,hospedagem,alimentacao,asaas_payment_id,invoice_url,checkin_realizado,checkin_at,etiqueta_impressa,certificado_enviado,created_at,valor_original')
+          .eq('evento_id', id)
+          .order('created_at', { ascending: false })
+          .range(page * limit, (page + 1) * limit - 1);
+
+        if (error) {
+          setListaErro('Erro ao carregar inscritos.');
+          return;
+        }
+        if (!data || data.length === 0) break;
+        allInscricoes = [...allInscricoes, ...data];
+        if (data.length < limit) break;
+        page++;
       }
       
       const { data: lotesData } = await supabase
@@ -1252,7 +1263,7 @@ export default function BalcaoPage() {
         });
       }
 
-      const enriched = ((data as any[]) || []).map(i => ({
+      const enriched = (allInscricoes || []).map(i => ({
         ...i,
         lote: i.lote_id ? (lotesMap[i.lote_id] || null) : null,
       }));
