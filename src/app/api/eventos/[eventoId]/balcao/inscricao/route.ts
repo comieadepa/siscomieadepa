@@ -483,6 +483,17 @@ export async function POST(
           is_pastor_jubilado:    !!((membro as any).jubilado),
           is_campo_missionario:  isCampoMissionario,
         };
+        console.log('[DEBUG BALCAO MEMBER]:', {
+          encontrado: true,
+          cpfLimpo,
+          nome: (membro as any).name,
+          campoIdSnapshot,
+          is_campo_missionario: isCampoMissionario,
+          is_pastor_presidente: !!((membro as any).pastor_presidente),
+          status: (membro as any).status
+        });
+      } else {
+        console.log('[DEBUG BALCAO MEMBER NOT FOUND]:', { cpfLimpo });
       }
     }
 
@@ -502,6 +513,17 @@ export async function POST(
       && ministroAtivo
       && !!ministroSnapshot?.is_pastor_presidente
       && !!ministroSnapshot?.is_campo_missionario;
+
+    console.log('[DEBUG BALCAO CM]:', {
+      departamento: (evento as any).departamento,
+      campoMissionarioEnabled,
+      statusMinistro,
+      ministroAtivo,
+      is_pastor_presidente: !!ministroSnapshot?.is_pastor_presidente,
+      is_campo_missionario: !!ministroSnapshot?.is_campo_missionario,
+      fluxoCampoMissionarioEspecial,
+      tipoNome
+    });
 
     if (tipoNome === 'CAMPO MISSIONÁRIO' && !fluxoCampoMissionarioEspecial) {
       return NextResponse.json(
