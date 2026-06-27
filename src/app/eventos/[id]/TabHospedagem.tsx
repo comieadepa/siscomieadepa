@@ -159,7 +159,7 @@ export default function TabHospedagem({
   // Local fetch wrapper to automatically inject equipeId for operator sessions
   const fetch = useCallback((input: RequestInfo | URL, init?: RequestInit) => {
     const equipeSessao = getEquipeSession();
-    if (equipeSessao && equipeSessao.eventoId === eventoId) {
+    if (equipeSessao && equipeSessao.eventoId.toLowerCase() === eventoId.toLowerCase()) {
       const urlStr = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : (input as Request).url);
       const u = new URL(urlStr, window.location.origin);
       u.searchParams.set('equipeId', equipeSessao.equipeId);
