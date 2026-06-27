@@ -33,9 +33,9 @@ export async function GET(
     .eq('evento_id', eventoId);
 
   if (cleanQ.length === 11) {
-    query = query.eq('cpf', cleanQ);
+    query = query.eq('cpf', cleanQ).eq('status_pagamento', 'pago');
   } else {
-    query = query.ilike('nome_inscrito', `%${q}%`);
+    query = query.ilike('nome_inscrito', `%${q}%`).eq('status_pagamento', 'pago');
   }
 
   const { data: inscricoes, error } = await query.limit(20);
