@@ -518,7 +518,12 @@ export default function BalcaoPage() {
   const carregarCaixaDados = useCallback(async () => {
     if (!id) return;
     try {
-      const res = await fetch(`/api/eventos/${id}/caixa/resumo`);
+      const equipeId = localStorage.getItem(`evento_${id}_equipe_id`);
+      const headers: Record<string, string> = {};
+      if (equipeId) {
+        headers['x-evento-equipe-id'] = equipeId;
+      }
+      const res = await fetch(`/api/eventos/${id}/caixa/resumo`, { headers });
       if (res.ok) {
         const json = await res.json();
         if (json.ok) {
@@ -1129,9 +1134,17 @@ export default function BalcaoPage() {
         };
       }
 
+      const equipeId = localStorage.getItem(`evento_${id}_equipe_id`);
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (equipeId) {
+        headers['x-evento-equipe-id'] = equipeId;
+      }
+
       const res = await authenticatedFetch(`/api/eventos/${id}/balcao/inscricao`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
       });
 
@@ -1401,9 +1414,16 @@ export default function BalcaoPage() {
     }
     setEnviandoEmail(p => ({ ...p, [ins.id]: true }));
     try {
+      const equipeId = localStorage.getItem(`evento_${id}_equipe_id`);
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (equipeId) {
+        headers['x-evento-equipe-id'] = equipeId;
+      }
       const res = await fetch(`/api/eventos/${id}/notificacoes/reenviar`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ inscricao_id: ins.id }),
       });
       const json = await res.json();
@@ -1434,9 +1454,16 @@ export default function BalcaoPage() {
     }
     setEnviandoCert(p => ({ ...p, [ins.id]: true }));
     try {
+      const equipeId = localStorage.getItem(`evento_${id}_equipe_id`);
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (equipeId) {
+        headers['x-evento-equipe-id'] = equipeId;
+      }
       const res = await fetch(`/api/eventos/${id}/certificados/enviar-link`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ inscricao_id: ins.id, reenviar: ins.certificado_enviado }),
       });
       const json = await res.json();
@@ -1496,8 +1523,14 @@ export default function BalcaoPage() {
     }
     setMarcandoEtiqueta(p => ({ ...p, [ins.id]: true }));
     try {
+      const equipeId = localStorage.getItem(`evento_${id}_equipe_id`);
+      const headers: Record<string, string> = {};
+      if (equipeId) {
+        headers['x-evento-equipe-id'] = equipeId;
+      }
       const res = await fetch(`/api/eventos/${id}/inscricoes/${ins.id}/etiqueta`, {
         method: 'PATCH',
+        headers,
       });
       const json = await res.json();
       if (!res.ok) {
