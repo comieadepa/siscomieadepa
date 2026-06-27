@@ -10,13 +10,15 @@ interface PageLayoutProps {
   description: string;
   children: ReactNode;
   activeMenu?: string;
+  hideSidebar?: boolean;
 }
 
 export default function PageLayout({
   title,
   description,
   children,
-  activeMenu = 'dashboard'
+  activeMenu = 'dashboard',
+  hideSidebar = false
 }: PageLayoutProps) {
   const [sidebarActive, setSidebarActive] = useState(activeMenu);
   const [usuarioEmail, setUsuarioEmail] = useState<string | null>(null);
@@ -48,7 +50,7 @@ export default function PageLayout({
   return (
     <div className="flex min-h-screen bg-gray-100 overflow-x-hidden">
       {/* SIDEBAR */}
-      {!isHospedagemEquipe && <Sidebar activeMenu={sidebarActive} setActiveMenu={setSidebarActive} />}
+      {!hideSidebar && !isHospedagemEquipe && <Sidebar activeMenu={sidebarActive} setActiveMenu={setSidebarActive} />}
 
       {/* MAIN CONTENT */}
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">

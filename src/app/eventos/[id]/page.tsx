@@ -629,11 +629,16 @@ export default function GerenciarEventoPage() {
 
   const evCfg = STATUS_EV_CFG[evento.status] ?? STATUS_EV_CFG.programado;
 
+  const isHospedagemOperador =
+    (equipeSessao && (equipeSessao.tipo === 'hospedagem' || equipeSessao.tipo === 'checkin_hospedagem')) ||
+    (!perfil.isGlobal && (permissaoNesseEvento === 'hospedagem' || permissaoNesseEvento === 'checkin_hospedagem'));
+
   return (
     <PageLayout
       title={evento.nome}
       description={`${evento.departamento} • ${fmtData(evento.data_inicio)} → ${fmtData(evento.data_fim)}`}
       activeMenu="eventos"
+      hideSidebar={isHospedagemOperador}
     >
 
       {/* ── HEADER DO EVENTO ─────────────────────────────────── */}
@@ -679,7 +684,7 @@ export default function GerenciarEventoPage() {
 
           {/* Botões de ação — agrupados à direita */}
           <div className="flex flex-wrap gap-2 px-5 pt-2 pb-5 md:px-6 md:pb-6 border-t border-gray-100 lg:border-t-0 lg:mt-0 lg:pt-6 lg:pb-0 lg:pr-6 lg:pl-0 lg:flex-col lg:flex-nowrap lg:items-end lg:self-start">
-            {!(equipeSessao && (equipeSessao.tipo === 'hospedagem' || equipeSessao.tipo === 'checkin_hospedagem')) && (
+            {!isHospedagemOperador && (
               <>
                 <button
                   onClick={() => router.push('/eventos')}

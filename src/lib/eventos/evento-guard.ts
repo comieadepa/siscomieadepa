@@ -257,16 +257,16 @@ export async function requireEventoPermission(
   if (!evento) {
     return { ok: false, response: NextResponse.json({ error: 'Evento não encontrado.' }, { status: 404 }) };
   }
-
   const user = await resolveAuthenticatedUser();
   const equipeId = await extractEquipeIdFromRequest(request);
 
   let resolved: { role: EventoRole; source: EventoGuardContext['source']; equipe?: EquipeRow } | null = null;
-  if (user) {
-    resolved = await resolveUserRole({ supabaseAdmin, user, evento: evento as EventoRow });
-  }
-  if (!resolved && equipeId) {
+
+  if (equipeId) {
     resolved = await resolveEquipeRole({ supabaseAdmin, eventoId, equipeId });
+  }
+  if (!resolved && user) {
+    resolved = await resolveUserRole({ supabaseAdmin, user, evento: evento as EventoRow });
   }
 
   if (!resolved) {
