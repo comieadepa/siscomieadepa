@@ -426,10 +426,10 @@ export async function POST(
     if (cpfLimpo && (evento as any).departamento === 'AGO') {
       const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
       
-      // ETAPA A: Busca simples por CPF na tabela members sem joins
+      // ETAPA A: Busca simples por CPF na tabela members sem joins e sem campo_id
       const { data: membro, error: queryError } = await supabase
         .from('members')
-        .select('id,name,cpf,matricula,data_nascimento,status,cargo_ministerial,pastor_presidente,pastor_auxiliar,jubilado,campo_id,supervisao_id,congregacao_id,custom_fields')
+        .select('id,name,cpf,matricula,data_nascimento,status,cargo_ministerial,pastor_presidente,pastor_auxiliar,jubilado,supervisao_id,congregacao_id,custom_fields')
         .or(`cpf.eq.${cpfLimpo},cpf.eq.${cpfFormatado}`)
         .maybeSingle();
 
@@ -451,9 +451,18 @@ export async function POST(
         let campoNome: string | null = null;
 
         // ETAPA B: Consultas separadas de dados correlacionados
-        let campoIdSnapshot = String((membro as any).campo_id ?? '').trim() || null;
+        const customFieldsObj = (() => {
+          try {
+            const cf = (membro as any).custom_fields;
+            if (!cf) return {};
+            return typeof cf === 'string' ? JSON.parse(cf) : cf;
+          } catch { return {}; }
+        })();
 
-        // Se campo_id não está no membro, tenta resolver via congregação
+        // Resolve campoIdSnapshot através de custom_fields ou tabela congregacoes
+        let campoIdSnapshot = String(customFieldsObj?.campo_id ?? customFieldsObj?.campoId ?? '').trim() || null;
+
+        // Se não achou nos custom_fields, tenta resolver via congregação
         if (!campoIdSnapshot && (membro as any).congregacao_id) {
           const { data: congData } = await supabase
             .from('congregacoes')
@@ -464,15 +473,6 @@ export async function POST(
             campoIdSnapshot = String(congData.campo_id).trim() || null;
           }
         }
-
-        // Recupera campo dos custom_fields do membro
-        const customFieldsObj = (() => {
-          try {
-            const cf = (membro as any).custom_fields;
-            if (!cf) return {};
-            return typeof cf === 'string' ? JSON.parse(cf) : cf;
-          } catch { return {}; }
-        })();
 
         const campoNomeViaCf = customFieldsObj?.campo || null;
         if (!campoIdSnapshot && campo_id) {
