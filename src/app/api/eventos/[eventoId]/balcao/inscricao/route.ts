@@ -426,8 +426,7 @@ export async function POST(
       // Formata o CPF para o padrão 000.000.000-00
       const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
       
-      const supabaseClient = require('@/lib/supabase-server').createServerClient();
-      const { data: membro } = await supabaseClient
+      const { data: membro } = await supabase
         .from('members')
         .select('id,name,cpf,matricula,data_nascimento,status,cargo_ministerial,pastor_presidente,pastor_auxiliar,jubilado,campo_id,supervisao_id,congregacao_id,congregacoes!congregacao_id(campo_id,nome),custom_fields')
         .or(`cpf.eq.${cpfLimpo},cpf.eq.${cpfFormatado}`)
@@ -451,7 +450,7 @@ export async function POST(
         const campoIdSnapshot = (campoIdDireto ?? campoIdViaCong ?? (campo_id ? String(campo_id).trim() : null)) || null;
         const supervisaoIdSnapshot = String((membro as any).supervisao_id ?? supervisao_id ?? '').trim() || null;
         if (campoIdSnapshot) {
-          const { data: campoData } = await supabaseClient
+          const { data: campoData } = await supabase
             .from('campos')
             .select('nome,is_campo_missionario')
             .eq('id', campoIdSnapshot)
@@ -462,7 +461,7 @@ export async function POST(
           }
         } else if (campoNomeViaCf) {
           // Fallback: busca campo pelo nome nos custom_fields
-          const { data: campoData } = await supabaseClient
+          const { data: campoData } = await supabase
             .from('campos')
             .select('nome,is_campo_missionario')
             .ilike('nome', campoNomeViaCf.trim())
