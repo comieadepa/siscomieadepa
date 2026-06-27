@@ -207,8 +207,6 @@ async function resolveUserRole(args: {
         return { role: 'admin_evento', source: 'departamento' };
       }
     }
-
-    return null;
   }
 
   const { data: vinculo } = await args.supabaseAdmin
