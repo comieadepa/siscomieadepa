@@ -159,13 +159,18 @@ export default function TabHospedagem({
   // Local fetch wrapper to automatically inject equipeId for operator sessions
   const fetch = useCallback((input: RequestInfo | URL, init?: RequestInit) => {
     const equipeSessao = getEquipeSession();
+    const rawSessao = typeof window !== 'undefined' ? window.localStorage.getItem('evento_equipe_session') : null;
+    
+    const urlStr = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : (input as Request).url);
+    const u = new URL(urlStr, window.location.origin);
+    
     if (equipeSessao && equipeSessao.eventoId.toLowerCase() === eventoId.toLowerCase()) {
-      const urlStr = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : (input as Request).url);
-      const u = new URL(urlStr, window.location.origin);
       u.searchParams.set('equipeId', equipeSessao.equipeId);
-      return window.fetch(u.pathname + u.search, init);
     }
-    return window.fetch(input, init);
+    if (rawSessao) {
+      u.searchParams.set('rawSessao', rawSessao);
+    }
+    return window.fetch(u.pathname + u.search, init);
   }, [eventoId]);
 
   const [alojamentos,     setAlojamentos]     = useState<Alojamento[]>([]);

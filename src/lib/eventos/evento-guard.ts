@@ -187,6 +187,10 @@ async function resolveUserRole(args: {
       return { role: 'admin_evento', source: 'usuario_evento' };
     }
 
+    if (departamento === 'TODOS') {
+      return { role: 'admin_evento', source: 'departamento' };
+    }
+
     // 2. Fallback temporário por subcategoria (somente se não houver registros na nova tabela para este usuário)
     const { count } = await args.supabaseAdmin
       .from('usuario_eventos_permitidos')
@@ -194,9 +198,6 @@ async function resolveUserRole(args: {
       .eq('usuario_id', args.user.id);
 
     if ((count ?? 0) === 0 && departamento) {
-      if (departamento === 'TODOS') {
-        return { role: 'admin_evento', source: 'departamento' };
-      }
       // Se subcategoria for exatamente o UUID do evento
       if (departamento === args.evento.id) {
         return { role: 'admin_evento', source: 'usuario_evento' };
@@ -280,10 +281,12 @@ export async function requireEventoPermission(
       equipeId,
       motivo: 'sem_vinculo_ou_sessao',
     });
-    return { ok: false, response: deniedResponse(area, null, { equipeId, userEmail: user?.email, url: request.url, method: request.method }) };
+    const rawSessao = request.nextUrl.searchParams.get('rawSessao') || undefined;
+    return { ok: false, response: deniedResponse(area, null, { equipeId, userEmail: user?.email, url: request.url, method: request.method, rawSessao }) };
   }
 
   if (!canAccessEventoArea(resolved.role, area)) {
+    const rawSessao = request.nextUrl.searchParams.get('rawSessao') || undefined;
     await logDeniedAccess({
       request,
       eventoId,
@@ -293,7 +296,7 @@ export async function requireEventoPermission(
       equipeId,
       motivo: 'area_nao_permitida',
     });
-    return { ok: false, response: deniedResponse(area, resolved.role, { equipeId, userEmail: user?.email, url: request.url, method: request.method, resolvedSource: resolved.source }) };
+    return { ok: false, response: deniedResponse(area, resolved.role, { equipeId, userEmail: user?.email, url: request.url, method: request.method, resolvedSource: resolved.source, rawSessao }) };
   }
 
   await logGrantedAccess({ request, eventoId, area, role: resolved.role, user, equipeId });
