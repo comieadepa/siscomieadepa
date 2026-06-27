@@ -224,6 +224,26 @@ export default function TabHospedagem({
   const [salvandoReal,    setSalvandoReal]    = useState(false);
   const [erroReal,        setErroReal]        = useState<string | null>(null);
 
+  // Busca e atribuição de hospedagem para inscrições sem hospedagem
+  const [modalBuscarInscricao, setModalBuscarInscricao] = useState(false);
+  const [termoBuscaInscricao, setTermoBuscaInscricao] = useState('');
+  const [resultadosBuscaInscricao, setResultadosBuscaInscricao] = useState<any[]>([]);
+  const [buscandoInscricao, setBuscandoInscricao] = useState(false);
+  const [erroBuscaInscricao, setErroBuscaInscricao] = useState<string | null>(null);
+
+  // Modal para atribuir hospedagem a inscrição localizada
+  const [inscricaoParaAtribuir, setInscricaoParaAtribuir] = useState<any | null>(null);
+  const [atribuirForm, setAtribuirForm] = useState({
+    cama_inferior: false,
+    necessidade_especial: false,
+    descricao_necessidade: '',
+    possui_comorbidade: false,
+    descricao_comorbidade: '',
+    observacoes: '',
+  });
+  const [salvandoAtribuir, setSalvandoAtribuir] = useState(false);
+  const [erroAtribuir, setErroAtribuir] = useState<string | null>(null);
+
   // Transferência Campo Missionário
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [loadingTransferPreview, setLoadingTransferPreview] = useState(false);
@@ -718,6 +738,56 @@ export default function TabHospedagem({
     }
   }
 
+  const executarBuscaInscricao = async () => {
+    if (!termoBuscaInscricao.trim()) return;
+    setBuscandoInscricao(true);
+    setErroBuscaInscricao(null);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/hospedagens/buscar-inscricao?q=${encodeURIComponent(termoBuscaInscricao.trim())}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Erro ao buscar inscrição');
+      setResultadosBuscaInscricao(json.inscricoes ?? []);
+    } catch (err: any) {
+      setErroBuscaInscricao(err.message || 'Erro inesperado ao realizar busca.');
+    } finally {
+      setBuscandoInscricao(false);
+    }
+  };
+
+  const executarAtribuirHospedagem = async () => {
+    if (!inscricaoParaAtribuir) return;
+    setSalvandoAtribuir(true);
+    setErroAtribuir(null);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/hospedagens`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          inscricao_id: inscricaoParaAtribuir.id,
+          status: 'solicitada',
+          cama_inferior: atribuirForm.cama_inferior,
+          necessidade_especial: atribuirForm.necessidade_especial,
+          descricao_necessidade: atribuirForm.descricao_necessidade || null,
+          possui_comorbidade: atribuirForm.possui_comorbidade,
+          descricao_comorbidade: atribuirForm.descricao_comorbidade || null,
+          observacoes: atribuirForm.observacoes || null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Erro ao atribuir hospedagem.');
+      
+      setInscricaoParaAtribuir(null);
+      setModalBuscarInscricao(false);
+      setTermoBuscaInscricao('');
+      setResultadosBuscaInscricao([]);
+      fetchHospedagens();
+    } catch (err: any) {
+      setErroAtribuir(err.message || 'Erro ao salvar atribuição de hospedagem.');
+    } finally {
+      setSalvandoAtribuir(false);
+    }
+  };
+
   // ── Transferência Campo Missionário ────────────────────────
   async function abrirTransferirCampoMissionario() {
     setShowTransferModal(true);
@@ -962,7 +1032,14 @@ export default function TabHospedagem({
                   className="w-full flex items-center justify-center gap-2 bg-teal-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-teal-700 transition"
                 >
                   📱 Tela Check-in
-                </a>
+                 </a>
+
+                <button
+                  onClick={() => setModalBuscarInscricao(true)}
+                  className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition"
+                >
+                  🔍 Buscar sem Hospedagem
+                </button>
 
                 {evento.departamento === 'AGO' && (
                   <button
@@ -1724,6 +1801,227 @@ export default function TabHospedagem({
                   )}
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal de Busca de Inscrições sem Hospedagem */}
+      {modalBuscarInscricao && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-black text-[#0D2B4E]">🔍 Localizar Inscrição sem Hospedagem</h2>
+              <button
+                onClick={() => {
+                  setModalBuscarInscricao(false);
+                  setTermoBuscaInscricao('');
+                  setResultadosBuscaInscricao([]);
+                  setErroBuscaInscricao(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 text-xl font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex gap-2 mb-4">
+              <input
+                type="text"
+                value={termoBuscaInscricao}
+                onChange={e => setTermoBuscaInscricao(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') executarBuscaInscricao();
+                }}
+                placeholder="Digite o nome ou CPF..."
+                className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+              />
+              <button
+                onClick={executarBuscaInscricao}
+                disabled={buscandoInscricao || !termoBuscaInscricao.trim()}
+                className="px-5 py-2.5 rounded-xl bg-[#0D2B4E] text-white text-sm font-bold hover:bg-[#0a1e38] transition disabled:opacity-50"
+              >
+                {buscandoInscricao ? 'Buscando...' : 'Buscar'}
+              </button>
+            </div>
+
+            {erroBuscaInscricao && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+                {erroBuscaInscricao}
+              </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto min-h-[250px] border border-gray-100 rounded-xl p-2 bg-gray-50">
+              {resultadosBuscaInscricao.length === 0 ? (
+                <div className="text-center text-sm text-gray-500 py-12">
+                  {buscandoInscricao ? 'Buscando participantes...' : 'Nenhum participante localizado.'}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {resultadosBuscaInscricao.map((ins: any) => {
+                    const statusPag = String(ins.status_pagamento || '').toLowerCase();
+                    const isPago = statusPag === 'pago' || statusPag === 'isento';
+                    return (
+                      <div key={ins.id} className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                        <div className="text-left">
+                          <p className="font-bold text-sm text-gray-800">{ins.nome_inscrito}</p>
+                          <div className="flex flex-wrap gap-2 mt-1">
+                            <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600">
+                              CPF: {ins.cpf ? ins.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.***.***-$4') : 'Não informado'}
+                            </span>
+                            <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600">
+                              {ins.tipo_inscricao || 'Inscrição comum'}
+                            </span>
+                            <span className={`text-xs px-2 py-0.5 rounded font-semibold ${isPago ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                              {ins.status_pagamento || 'Pendente'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div>
+                          {ins.hospedagem ? (
+                            <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 block text-center">
+                              ✓ Já tem Hospedagem
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setInscricaoParaAtribuir(ins);
+                                setAtribuirForm({
+                                  cama_inferior: !!ins.hosp_cama_inferior,
+                                  necessidade_especial: !!ins.hosp_necessidade_especial,
+                                  descricao_necessidade: ins.hosp_descricao_necessidade || '',
+                                  possui_comorbidade: !!ins.hosp_possui_comorbidade,
+                                  descricao_comorbidade: ins.hosp_descricao_comorbidade || '',
+                                  observacoes: ins.hosp_observacoes || '',
+                                });
+                                setErroAtribuir(null);
+                              }}
+                              className="w-full sm:w-auto px-4 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition"
+                            >
+                              ➕ Atribuir Hospedagem
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Form de Atribuir Hospedagem */}
+      {inscricaoParaAtribuir && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+            <h2 className="text-base font-black text-[#0D2B4E] mb-1">➕ Atribuir Hospedagem</h2>
+            <p className="text-xs text-gray-500 mb-4">{inscricaoParaAtribuir.nome_inscrito}</p>
+
+            {erroAtribuir && (
+              <div className="mb-3 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">
+                {erroAtribuir}
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <label className="flex items-center gap-2 cursor-pointer p-1">
+                <input
+                  type="checkbox"
+                  checked={atribuirForm.cama_inferior}
+                  onChange={e => setAtribuirForm(prev => ({ ...prev, cama_inferior: e.target.checked }))}
+                  className="rounded text-[#123b63] focus:ring-[#123b63] h-4 w-4"
+                />
+                <div className="text-left">
+                  <span className="text-sm font-semibold text-gray-700">Necessita cama inferior</span>
+                  <p className="text-xs text-gray-500">Ex: idosos, dificuldades motoras leves.</p>
+                </div>
+              </label>
+
+              <div className="border-t border-gray-100 pt-3">
+                <label className="flex items-center gap-2 cursor-pointer p-1">
+                  <input
+                    type="checkbox"
+                    checked={atribuirForm.necessidade_especial}
+                    onChange={e => setAtribuirForm(prev => ({ ...prev, necessidade_especial: e.target.checked }))}
+                    className="rounded text-[#123b63] focus:ring-[#123b63] h-4 w-4"
+                  />
+                  <div className="text-left">
+                    <span className="text-sm font-semibold text-gray-700">Possui necessidade especial</span>
+                    <p className="text-xs text-gray-500">Ex: cadeirantes, uso de aparelhos médicos.</p>
+                  </div>
+                </label>
+
+                {atribuirForm.necessidade_especial && (
+                  <div className="mt-2 text-left">
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Descreva a necessidade especial</label>
+                    <input
+                      type="text"
+                      value={atribuirForm.descricao_necessidade}
+                      onChange={e => setAtribuirForm(prev => ({ ...prev, descricao_necessidade: e.target.value }))}
+                      placeholder="Detalhes..."
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-gray-100 pt-3">
+                <label className="flex items-center gap-2 cursor-pointer p-1">
+                  <input
+                    type="checkbox"
+                    checked={atribuirForm.possui_comorbidade}
+                    onChange={e => setAtribuirForm(prev => ({ ...prev, possui_comorbidade: e.target.checked }))}
+                    className="rounded text-[#123b63] focus:ring-[#123b63] h-4 w-4"
+                  />
+                  <div className="text-left">
+                    <span className="text-sm font-semibold text-gray-700">Possui comorbidade crônica</span>
+                    <p className="text-xs text-gray-500">Ex: hipertensão severa, problemas cardíacos, etc.</p>
+                  </div>
+                </label>
+
+                {atribuirForm.possui_comorbidade && (
+                  <div className="mt-2 text-left">
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Descreva a comorbidade</label>
+                    <input
+                      type="text"
+                      value={atribuirForm.descricao_comorbidade}
+                      onChange={e => setAtribuirForm(prev => ({ ...prev, descricao_comorbidade: e.target.value }))}
+                      placeholder="Detalhes..."
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-gray-100 pt-3 text-left">
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Observações internas</label>
+                <textarea
+                  value={atribuirForm.observacoes}
+                  onChange={e => setAtribuirForm(prev => ({ ...prev, observacoes: e.target.value }))}
+                  placeholder="Instruções ou notas da hospedagem..."
+                  rows={2}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setInscricaoParaAtribuir(null)}
+                disabled={salvandoAtribuir}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition"
+              >
+                Voltar
+              </button>
+              <button
+                onClick={executarAtribuirHospedagem}
+                disabled={salvandoAtribuir}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 transition disabled:opacity-50"
+              >
+                {salvandoAtribuir ? 'Salvando...' : 'Confirmar Hospedagem'}
+              </button>
             </div>
           </div>
         </div>
