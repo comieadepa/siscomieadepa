@@ -136,11 +136,31 @@ export async function GET(request: NextRequest) {
         isCampoMissionarioConjuge = !!campoRow.is_campo_missionario;
       }
     } else if (campoNomeViaCfConjuge) {
-      const { data: campoRow } = await supabase
+      let campoQuery = supabase
         .from('campos')
         .select('id, nome, is_campo_missionario')
-        .ilike('nome', campoNomeViaCfConjuge.trim())
-        .maybeSingle();
+        .ilike('nome', campoNomeViaCfConjuge.trim());
+
+      if (conjugeRow.supervisao_id) {
+        campoQuery = campoQuery.eq('supervisao_id', conjugeRow.supervisao_id);
+      }
+
+      const { data: campoRows } = await campoQuery.limit(1);
+      
+      let campoRow = campoRows && campoRows.length > 0 ? campoRows[0] : null;
+
+      if (!campoRow && conjugeRow.supervisao_id) {
+        // Se não achar nada com a supervisão vinculada, tenta buscar geral só por nome
+        const { data: fallbackRows } = await supabase
+          .from('campos')
+          .select('id, nome, is_campo_missionario')
+          .ilike('nome', campoNomeViaCfConjuge.trim())
+          .limit(1);
+        if (fallbackRows && fallbackRows.length > 0) {
+          campoRow = fallbackRows[0];
+        }
+      }
+
       if (campoRow) {
         campoIdConjuge = campoRow.id;
         campoNomeConjuge = campoRow.nome?.trim() || campoNomeViaCfConjuge;
@@ -238,11 +258,31 @@ export async function GET(request: NextRequest) {
       isCampoMissionario = !!campoRow.is_campo_missionario;
     }
   } else if (campoNomeViaCf) {
-    const { data: campoRow } = await supabase
+    let campoQuery = supabase
       .from('campos')
       .select('id, nome, is_campo_missionario')
-      .ilike('nome', campoNomeViaCf.trim())
-      .maybeSingle();
+      .ilike('nome', campoNomeViaCf.trim());
+
+    if (row.supervisao_id) {
+      campoQuery = campoQuery.eq('supervisao_id', row.supervisao_id);
+    }
+
+    const { data: campoRows } = await campoQuery.limit(1);
+    
+    let campoRow = campoRows && campoRows.length > 0 ? campoRows[0] : null;
+
+    if (!campoRow && row.supervisao_id) {
+      // Se não achar nada com a supervisão vinculada, tenta buscar geral só por nome
+      const { data: fallbackRows } = await supabase
+        .from('campos')
+        .select('id, nome, is_campo_missionario')
+        .ilike('nome', campoNomeViaCf.trim())
+        .limit(1);
+      if (fallbackRows && fallbackRows.length > 0) {
+        campoRow = fallbackRows[0];
+      }
+    }
+
     if (campoRow) {
       campoId = campoRow.id;
       campoNome = campoRow.nome?.trim() || campoNomeViaCf;
