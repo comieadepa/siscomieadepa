@@ -564,17 +564,27 @@ export async function POST(
 
     const confAgo = (evento as any).configuracoes_ago as Record<string, unknown> | null;
     const cmConfig = parseCampoMissionarioConfig(confAgo);
-    const campoMissionarioEnabled =
-      !!cmConfig?.enabled
-      || !!(confAgo as any)?.habilitar_desconto_campo_missionario
-      || !!(confAgo as any)?.campo_missionario?.enabled;
     const statusMinistro = String(ministroSnapshot?.status_ministerial ?? '').toLowerCase();
     const ministroAtivo = statusMinistro === 'active' || statusMinistro === 'ativo';
-    
+
     // Regra flexível de elegibilidade do Campo Missionário
     const isPP = !!ministroSnapshot?.is_pastor_presidente;
     const isCM = !!ministroSnapshot?.is_campo_missionario;
     const cargoEhPastor = String(ministroSnapshot?.cargo ?? '').toUpperCase().includes('PASTOR');
+
+    // FIX: identificação restrita do tipo Campo Missionário.
+    // Evita falso positivo com "Pastor Presidente Campo Missionário" que continha "CAMPO MISSIONÁRIO" como substring.
+    const nTipoNorm = norm(tipoNome);
+    const ehCategoriaCampoMissionario =
+      nTipoNorm === 'campo missionario'
+      || (nTipoNorm.includes('campo mission') && !nTipoNorm.includes('pastor presidente'));
+
+    // FIX: fallback seguro — libera CM apenas quando o campo do ministro é realmente missionário.
+    const campoMissionarioEnabled =
+      !!cmConfig?.enabled
+      || !!(confAgo as any)?.habilitar_desconto_campo_missionario
+      || !!(confAgo as any)?.campo_missionario?.enabled
+      || (ehCategoriaCampoMissionario && ministroAtivo && (isPP || cargoEhPastor) && isCM);
 
     // Aprovado se a regra backend passar, OU se o ministro localizado é Pastor/Pastor Presidente
     let fluxoCampoMissionarioEspecial =
@@ -582,8 +592,6 @@ export async function POST(
       && campoMissionarioEnabled
       && ministroAtivo
       && (isPP || cargoEhPastor);
-
-    const ehCategoriaCampoMissionario = String(tipoNome || '').toUpperCase().includes('CAMPO MISSIONÁRIO');
 
     if (ehCategoriaCampoMissionario) {
       if (fluxoCampoMissionarioEspecial) {
