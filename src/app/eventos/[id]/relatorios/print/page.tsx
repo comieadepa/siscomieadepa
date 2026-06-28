@@ -22,9 +22,10 @@ interface Inscricao  {
   responsavel_pagamento?: boolean | null;
   valor_final: number | null;
   lote?: any;
+  tipo_inscricao: string | null;
 }
 
-type RelTipo = 'resumo' | 'supervisao' | 'campo' | 'hospedagem' | 'alimentacao' | 'presenca' | 'financeiro';
+type RelTipo = 'resumo' | 'supervisao' | 'campo' | 'tipo_inscricao' | 'hospedagem' | 'alimentacao' | 'presenca' | 'financeiro';
 
 // ─── Formatadores ─────────────────────────────────────────────
 const fmtData = (d: string | null) => {
@@ -79,7 +80,7 @@ export default function RelatoriosPrintPage() {
         supabase.from('eventos').select('id,nome,departamento,data_inicio,data_fim,cidade').eq('id', id).single(),
         authenticatedFetch('/api/v1/estrutura'),
         supabase.from('evento_inscricoes')
-          .select('id,nome_inscrito,cpf,whatsapp,supervisao_id,campo_id,status_pagamento,forma_pagamento,valor_pago,checkin_realizado,checkin_at,hospedagem,alimentacao,brinde,etiqueta_impressa,created_at,lote_id,responsavel_pagamento,valor_final')
+          .select('id,nome_inscrito,cpf,whatsapp,supervisao_id,campo_id,status_pagamento,forma_pagamento,valor_pago,checkin_realizado,checkin_at,hospedagem,alimentacao,brinde,etiqueta_impressa,created_at,lote_id,responsavel_pagamento,valor_final,tipo_inscricao')
           .eq('evento_id', id)
           .order('nome_inscrito'),
         supabase.from('evento_lotes_inscricao')
@@ -158,6 +159,22 @@ export default function RelatoriosPrintPage() {
     return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome));
   }, [filtradas, nomeSup, nomeCampo]);
 
+  // Agrupamento por tipo de inscrição
+  const porTipo = useMemo(() => {
+    const map = new Map<string, { nome: string; total: number; pagos: number; pendentes: number; isentos: number; checkins: number; valor: number }>();
+    filtradas.forEach(i => {
+      const k = i.tipo_inscricao || 'NÃO INFORMADO';
+      const cur = map.get(k) ?? { nome: k, total: 0, pagos: 0, pendentes: 0, isentos: 0, checkins: 0, valor: 0 };
+      cur.total++;
+      if (i.status_pagamento === 'pago')     { cur.pagos++;     cur.valor += calcularValorFinanceiroInscricao(i, i.lote || null, i.lote_id ? filtradas.filter(o => o.lote_id === i.lote_id) : []); }
+      if (i.status_pagamento === 'pendente')   cur.pendentes++;
+      if (i.status_pagamento === 'isento')     cur.isentos++;
+      if (i.checkin_realizado)                 cur.checkins++;
+      map.set(k, cur);
+    });
+    return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [filtradas]);
+
   // Resumo
   const resumo = useMemo(() => ({
     total:      filtradas.length,
@@ -177,13 +194,14 @@ export default function RelatoriosPrintPage() {
   }), [filtradas]);
 
   const TITULOS: Record<RelTipo, string> = {
-    resumo:      'Resumo Geral',
-    supervisao:  'Relatório por Supervisão',
-    campo:       'Relatório por Campo',
-    hospedagem:  'Lista de Hospedagem',
-    alimentacao: 'Lista de Alimentação',
-    presenca:    'Lista de Presença',
-    financeiro:  'Relatório Financeiro',
+    resumo:          'Resumo Geral',
+    supervisao:      'Relatório por Supervisão',
+    campo:           'Relatório por Campo',
+    tipo_inscricao:  'Relatório por Tipo de Inscrição',
+    hospedagem:      'Lista de Hospedagem',
+    alimentacao:     'Lista de Alimentação',
+    presenca:        'Lista de Presença',
+    financeiro:      'Relatório Financeiro',
   };
 
   const filtrosAplicados = [
@@ -289,6 +307,43 @@ export default function RelatoriosPrintPage() {
                 <td style={tdNumS}>{porSup.reduce((s, r) => s + r.isentos, 0)}</td>
                 <td style={tdNumS}>{porSup.reduce((s, r) => s + r.checkins, 0)}</td>
                 {podeFinanc && <td style={tdNumS}>{fmtMoeda(porSup.reduce((s, r) => s + r.valor, 0))}</td>}
+              </tr>
+            </tbody>
+          </table>
+        )}
+
+        {/* ── POR TIPO DE INSCRIÇÃO ────────────────────────────── */}
+        {tipo === 'tipo_inscricao' && (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>
+              <th style={thS}>Tipo de Inscrição</th>
+              <th style={{ ...thS, textAlign: 'right' }}>Total</th>
+              <th style={{ ...thS, textAlign: 'right' }}>Pagos</th>
+              <th style={{ ...thS, textAlign: 'right' }}>Pendentes</th>
+              <th style={{ ...thS, textAlign: 'right' }}>Isentos</th>
+              <th style={{ ...thS, textAlign: 'right' }}>Check-ins</th>
+              {podeFinanc && <th style={{ ...thS, textAlign: 'right' }}>Arrecadado</th>}
+            </tr></thead>
+            <tbody>
+              {porTipo.map(r => (
+                <tr key={r.nome}>
+                  <td style={{ ...tdS, fontWeight: 600 }}>{r.nome}</td>
+                  <td style={tdNumS}>{r.total}</td>
+                  <td style={tdNumS}>{r.pagos}</td>
+                  <td style={tdNumS}>{r.pendentes}</td>
+                  <td style={tdNumS}>{r.isentos}</td>
+                  <td style={tdNumS}>{r.checkins}</td>
+                  {podeFinanc && <td style={tdNumS}>{fmtMoeda(r.valor)}</td>}
+                </tr>
+              ))}
+              <tr style={{ backgroundColor: '#F3F4F6', fontWeight: 700, borderTop: '2px solid #D1D5DB' }}>
+                <td style={{ ...tdS, fontWeight: 800 }}>TOTAL</td>
+                <td style={tdNumS}>{porTipo.reduce((s, r) => s + r.total, 0)}</td>
+                <td style={tdNumS}>{porTipo.reduce((s, r) => s + r.pagos, 0)}</td>
+                <td style={tdNumS}>{porTipo.reduce((s, r) => s + r.pendentes, 0)}</td>
+                <td style={tdNumS}>{porTipo.reduce((s, r) => s + r.isentos, 0)}</td>
+                <td style={tdNumS}>{porTipo.reduce((s, r) => s + r.checkins, 0)}</td>
+                {podeFinanc && <td style={tdNumS}>{fmtMoeda(porTipo.reduce((s, r) => s + r.valor, 0))}</td>}
               </tr>
             </tbody>
           </table>

@@ -3487,16 +3487,17 @@ function TabEtiquetas({ inscricoes, loading, nomeSup, nomeCampo, supabase, onRef
 // ABA RELATÓRIOS
 // ═══════════════════════════════════════════════════════════════
 
-type RelTipo = 'resumo' | 'supervisao' | 'campo' | 'hospedagem' | 'alimentacao' | 'presenca' | 'financeiro';
+type RelTipo = 'resumo' | 'supervisao' | 'campo' | 'tipo_inscricao' | 'hospedagem' | 'alimentacao' | 'presenca' | 'financeiro';
 
 const REL_TABS: { id: RelTipo; label: string; icon: string; financeiro?: boolean }[] = [
-  { id: 'resumo',      label: 'Resumo Geral',     icon: '📊' },
-  { id: 'supervisao',  label: 'Por Supervisão',   icon: '🏛️' },
-  { id: 'campo',       label: 'Por Campo',         icon: '⛪' },
-  { id: 'hospedagem',  label: 'Hospedagem',        icon: '🛏️' },
-  { id: 'alimentacao', label: 'Alimentação',        icon: '🍽️' },
-  { id: 'presenca',    label: 'Presença',           icon: '📋' },
-  { id: 'financeiro',  label: 'Financeiro',         icon: '💳', financeiro: true },
+  { id: 'resumo',          label: 'Resumo Geral',       icon: '📊' },
+  { id: 'supervisao',      label: 'Por Supervisão',     icon: '🏛️' },
+  { id: 'campo',           label: 'Por Campo',          icon: '⛪' },
+  { id: 'tipo_inscricao',  label: 'Por Tipo Inscrição',  icon: '🏷️' },
+  { id: 'hospedagem',      label: 'Hospedagem',         icon: '🛏️' },
+  { id: 'alimentacao',     label: 'Alimentação',        icon: '🍽️' },
+  { id: 'presenca',        label: 'Presença',           icon: '📋' },
+  { id: 'financeiro',      label: 'Financeiro',         icon: '💳', financeiro: true },
 ];
 
 // CSV helper
@@ -3573,6 +3574,21 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
     return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome));
   }, [filtradas, nomeSup, nomeCampo]);
 
+  const porTipo = useMemo(() => {
+    const map = new Map<string, { nome: string; total: number; pagos: number; pendentes: number; isentos: number; checkins: number; valor: number }>();
+    filtradas.forEach(i => {
+      const k   = i.tipo_inscricao || 'NÃO INFORMADO';
+      const cur = map.get(k) ?? { nome: k, total: 0, pagos: 0, pendentes: 0, isentos: 0, checkins: 0, valor: 0 };
+      cur.total++;
+      if (i.status_pagamento === 'pago')     { cur.pagos++;     cur.valor += calcularValorFinanceiroInscricao(i, i.lote || null, i.lote_id ? filtradas.filter(o => o.lote_id === i.lote_id) : []); }
+      if (i.status_pagamento === 'pendente')   cur.pendentes++;
+      if (i.status_pagamento === 'isento')     cur.isentos++;
+      if (i.checkin_realizado)                 cur.checkins++;
+      map.set(k, cur);
+    });
+    return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [filtradas]);
+
   // Stats resumo (sobre filtradas)
   const resumo = useMemo(() => ({
     total:      filtradas.length,
@@ -3619,6 +3635,10 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
       baixarCSV(`relatorio_campo_${safe(ev)}.csv`,
         ['Campo', 'Supervisão', 'Total', 'Pagos', 'Pendentes', 'Check-ins', 'Hospedagem', 'Alimentação'],
         porCampo.map(r => [r.nome, r.sup, r.total, r.pagos, r.pendentes, r.checkins, r.hosp, r.alim]));
+    } else if (relTipo === 'tipo_inscricao') {
+      const cols = ['Tipo de Inscrição', 'Total', 'Pagos', 'Pendentes', 'Isentos', 'Check-ins', ...(podeVerFinanceiro ? ['Arrecadado'] : [])];
+      baixarCSV(`relatorio_tipo_inscricao_${safe(ev)}.csv`, cols,
+        porTipo.map(r => [r.nome, r.total, r.pagos, r.pendentes, r.isentos, r.checkins, ...(podeVerFinanceiro ? [fmtMoeda(r.valor)] : [])]));
     } else if (relTipo === 'hospedagem') {
       baixarCSV(`relatorio_hospedagem_${safe(ev)}.csv`,
         ['Nome', 'CPF', 'WhatsApp', 'Supervisão', 'Campo', 'Status Pagamento', 'Check-in'],
@@ -3841,6 +3861,48 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
                   <td className={`${tdNumCls} text-purple-700`}>{porCampo.reduce((s, r) => s + r.checkins, 0)}</td>
                   <td className={`${tdNumCls} text-sky-700`}>{porCampo.reduce((s, r) => s + r.hosp, 0)}</td>
                   <td className={`${tdNumCls} text-orange-700`}>{porCampo.reduce((s, r) => s + r.alim, 0)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )
+      )}
+
+      {/* POR TIPO DE INSCRIÇÃO */}
+      {relTipo === 'tipo_inscricao' && (
+        porTipo.length === 0 ? <EmptyState icon="🏷️" title="Sem dados" desc="Nenhum inscrito com os filtros aplicados." /> : (
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <table className="w-full">
+              <thead><tr>
+                <th className={thCls}>Tipo de Inscrição</th>
+                <th className={`${thCls} text-right`}>Total</th>
+                <th className={`${thCls} text-right`}>Pagos</th>
+                <th className={`${thCls} text-right`}>Pendentes</th>
+                <th className={`${thCls} text-right`}>Isentos</th>
+                <th className={`${thCls} text-right`}>Check-ins</th>
+                {podeVerFinanceiro && <th className={`${thCls} text-right`}>Arrecadado</th>}
+              </tr></thead>
+              <tbody>
+                {porTipo.map(r => (
+                  <tr key={r.nome} className="hover:bg-gray-50 transition">
+                    <td className={`${tdCls} font-medium`}>{r.nome}</td>
+                    <td className={tdNumCls}>{r.total}</td>
+                    <td className={`${tdNumCls} text-emerald-700`}>{r.pagos}</td>
+                    <td className={`${tdNumCls} text-amber-700`}>{r.pendentes}</td>
+                    <td className={`${tdNumCls} text-blue-700`}>{r.isentos}</td>
+                    <td className={`${tdNumCls} text-purple-700`}>{r.checkins}</td>
+                    {podeVerFinanceiro && <td className={`${tdNumCls} text-green-700`}>{fmtMoeda(r.valor)}</td>}
+                  </tr>
+                ))}
+                {/* Totais */}
+                <tr className="bg-gray-50 font-bold border-t-2 border-gray-200">
+                  <td className={`${tdCls} font-bold`}>TOTAL</td>
+                  <td className={tdNumCls}>{porTipo.reduce((s, r) => s + r.total, 0)}</td>
+                  <td className={`${tdNumCls} text-emerald-700`}>{porTipo.reduce((s, r) => s + r.pagos, 0)}</td>
+                  <td className={`${tdNumCls} text-amber-700`}>{porTipo.reduce((s, r) => s + r.pendentes, 0)}</td>
+                  <td className={`${tdNumCls} text-blue-700`}>{porTipo.reduce((s, r) => s + r.isentos, 0)}</td>
+                  <td className={`${tdNumCls} text-purple-700`}>{porTipo.reduce((s, r) => s + r.checkins, 0)}</td>
+                  {podeVerFinanceiro && <td className={`${tdNumCls} text-green-700`}>{fmtMoeda(porTipo.reduce((s, r) => s + r.valor, 0))}</td>}
                 </tr>
               </tbody>
             </table>
