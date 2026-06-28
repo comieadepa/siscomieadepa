@@ -656,22 +656,23 @@ export function EtiquetaDepartamento({
           display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center',
           padding: isThermal ? '1mm 2mm' : '1.5mm 2.5mm',
-          gap: isThermal ? '1mm' : '1.5mm',
+          gap: isThermal ? '1.5mm' : '2mm',
           textAlign: 'center',
         }}>
           {/* Badge da equipe */}
           <div style={{
             backgroundColor: '#7c3aed',
             borderRadius: isThermal ? '1mm' : '1.2mm',
-            padding: isThermal ? '0.5mm 2mm' : '0.6mm 2.5mm',
+            padding: isThermal ? '0.8mm 3mm' : '0.8mm 3mm',
             display: 'inline-block',
+            maxWidth: '100%',
           }}>
             <p style={{
-              fontSize: isThermal ? '8pt' : '6.5pt',
+              fontSize: isThermal ? '13pt' : '10pt',
               fontWeight: 900,
               color: '#ffffff',
               margin: 0,
-              letterSpacing: '0.5px',
+              letterSpacing: '0.8px',
               textTransform: 'uppercase',
               whiteSpace: 'nowrap',
               overflow: 'hidden',
@@ -682,7 +683,7 @@ export function EtiquetaDepartamento({
           </div>
           {/* Nome do colaborador */}
           <p style={{
-            fontSize: isThermal ? '10.5pt' : '8pt',
+            fontSize: isThermal ? '15pt' : '12pt',
             fontWeight: 900,
             color: '#111827',
             margin: 0,
