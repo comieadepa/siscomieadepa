@@ -223,6 +223,13 @@ export default function BalcaoPage() {
   const [sangriaErro, setSangriaErro] = useState<string | null>(null);
   const [sangriaSucesso, setSangriaSucesso] = useState(false);
 
+  // ── Estado do Fechamento de Caixa ─────────────────────────
+  const [modalFecharCaixaAberto, setModalFecharCaixaAberto] = useState(false);
+  const [saldoInformado, setSaldoInformado] = useState('');
+  const [obsFechamento, setObsFechamento] = useState('');
+  const [fechandoCaixaLoading, setFechandoCaixaLoading] = useState(false);
+  const [fechandoCaixaErro, setFechandoCaixaErro] = useState<string | null>(null);
+
   // ── Estado do Modal de Efetivar Pagamento Presencial ──
   const [modalPagarPresencialAberto, setModalPagarPresencialAberto] = useState(false);
   const [pagPresencialInscricao, setPagPresencialInscricao] = useState<InscricaoResumo | null>(null);
@@ -666,6 +673,64 @@ export default function BalcaoPage() {
       setSangriaErro(err.message || 'Erro inesperado ao registrar sangria.');
     } finally {
       setRegistrandoSangria(false);
+    }
+  };
+
+  const executarFecharCaixa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id || !caixaSessao) return;
+
+    const valorNum = parseFloat(saldoInformado);
+    if (isNaN(valorNum) || valorNum < 0) {
+      setFechandoCaixaErro('O saldo em dinheiro informado precisa ser zero ou maior.');
+      return;
+    }
+
+    setFechandoCaixaLoading(true);
+    setFechandoCaixaErro(null);
+
+    try {
+      const session = getEquipeSession();
+      const equipeId = session?.eventoId === id ? session.equipeId : null;
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (equipeId) {
+        headers['x-evento-equipe-id'] = equipeId;
+      }
+
+      const res = await fetch(`/api/eventos/${id}/caixa/fechar`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          saldo_dinheiro_informado: valorNum,
+          observacoes: obsFechamento,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Erro ao fechar caixa.');
+      }
+
+      // Abrir em nova aba para impressão
+      window.open(`/eventos/${id}/caixa/${caixaSessao.id}/print`, '_blank');
+
+      // Limpar estados locais
+      setCaixaSessao(null);
+      setCaixaResumo(null);
+      setCaixaTimeline([]);
+      setModalFecharCaixaAberto(false);
+      setSaldoInformado('');
+      setObsFechamento('');
+
+      // Recarregar para restabelecer fluxo inicial
+      carregarCaixaDados();
+
+    } catch (err: any) {
+      setFechandoCaixaErro(err.message || 'Erro ao fechar o caixa.');
+    } finally {
+      setFechandoCaixaLoading(false);
     }
   };
 
@@ -3459,6 +3524,19 @@ export default function BalcaoPage() {
 
                   <button
                     type="button"
+                    onClick={() => {
+                      setFechandoCaixaErro(null);
+                      setSaldoInformado('');
+                      setObsFechamento('');
+                      setModalFecharCaixaAberto(true);
+                    }}
+                    className="w-full bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-bold transition flex items-center justify-center gap-2 mb-2"
+                  >
+                    🔒 Fechar e Imprimir Caixa
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => window.print()}
                     className="w-full bg-white/10 hover:bg-white/20 border border-white/15 text-white py-3 rounded-xl font-bold transition flex items-center justify-center gap-2"
                   >
@@ -3606,6 +3684,99 @@ export default function BalcaoPage() {
                         </div>
                       </form>
                     )}
+                  </div>
+                </div>
+              )}
+              {/* Modal de Fechamento de Caixa */}
+              {modalFecharCaixaAberto && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                  <div className="bg-[#0D2B4E] border border-white/10 w-full max-w-md rounded-2xl shadow-2xl p-6 relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModalFecharCaixaAberto(false);
+                        setFechandoCaixaErro(null);
+                      }}
+                      className="absolute top-4 right-4 text-white/50 hover:text-white transition text-lg"
+                    >
+                      ✕
+                    </button>
+                    <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                      🔒 Fechar e Imprimir Caixa
+                    </h3>
+                    <p className="text-xs text-white/60 mb-4">
+                      Confirme os valores arrecadados nesta sessão operacional.
+                    </p>
+
+                    <form onSubmit={executarFecharCaixa} className="space-y-4">
+                      {fechandoCaixaErro && (
+                        <div className="bg-red-500/20 text-red-300 p-3 rounded-lg text-xs font-semibold">
+                          ⚠️ {fechandoCaixaErro}
+                        </div>
+                      )}
+
+                      <div className="bg-[#1a3050] border border-white/10 p-3 rounded-lg text-xs space-y-2 text-white/80">
+                        <div className="flex justify-between">
+                          <span>Total Geral Esperado:</span>
+                          <span className="font-bold text-white">{fmtMoeda(caixaResumo?.totalRecebido || 0)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Esperado em Dinheiro:</span>
+                          <span className="font-bold text-emerald-400">{fmtMoeda(caixaResumo?.saldoEsperadoDinheiro || 0)}</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-300 mb-1 uppercase tracking-wide">
+                          Saldo Contado em Dinheiro (R$) *
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.00"
+                          required
+                          value={saldoInformado}
+                          onChange={(e) => setSaldoInformado(e.target.value)}
+                          placeholder="Digite o valor contado em mãos"
+                          className="w-full border border-gray-600 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 bg-[#1a3050] text-white"
+                        />
+                        <p className="text-[10px] text-gray-400 mt-1">
+                          A divergência será calculada automaticamente comparando com o saldo esperado de {fmtMoeda(caixaResumo?.saldoEsperadoDinheiro || 0)}.
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-300 mb-1 uppercase tracking-wide">
+                          Observações de Fechamento
+                        </label>
+                        <textarea
+                          value={obsFechamento}
+                          onChange={(e) => setObsFechamento(e.target.value)}
+                          placeholder="Observações adicionais se houver diferença de caixa..."
+                          className="w-full border border-gray-600 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 bg-[#1a3050] text-white h-20 resize-none"
+                        />
+                      </div>
+
+                      <div className="flex gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setModalFecharCaixaAberto(false);
+                            setFechandoCaixaErro(null);
+                          }}
+                          className="flex-1 border border-white/20 text-white/70 hover:text-white hover:border-white/40 py-2.5 rounded-lg text-sm font-bold transition"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={fechandoCaixaLoading}
+                          className="flex-1 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-bold transition"
+                        >
+                          {fechandoCaixaLoading ? 'Fechando...' : 'Fechar e Imprimir'}
+                        </button>
+                      </div>
+                    </form>
                   </div>
                 </div>
               )}

@@ -4109,6 +4109,36 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
   const [ordensComplementares, setOrdensComplementares] = useState<any[]>([]);
   const [carregandoOrdens, setCarregandoOrdens] = useState(false);
 
+  // Estados da sub-aba de Fechamentos de Caixa
+  const [subTab, setSubTab] = useState<'transacoes' | 'fechamentos'>('transacoes');
+  const [sessoesCaixa, setSessoesCaixa] = useState<any[]>([]);
+  const [carregandoSessoes, setCarregandoSessoes] = useState(false);
+
+  async function carregarSessoesCaixa() {
+    setCarregandoSessoes(true);
+    try {
+      const { data, error } = await supabase
+        .from('evento_caixa_sessoes')
+        .select('*')
+        .eq('evento_id', eventoId)
+        .in('status', ['fechado', 'conferido'])
+        .order('data_fechamento', { ascending: false });
+
+      if (error) throw error;
+      setSessoesCaixa(data || []);
+    } catch (err) {
+      console.error('Erro ao carregar sessões de caixa:', err);
+    } finally {
+      setCarregandoSessoes(false);
+    }
+  }
+
+  useEffect(() => {
+    if (subTab === 'fechamentos' && supabase) {
+      carregarSessoesCaixa();
+    }
+  }, [subTab, eventoId]);
+
   // Estados do Modal "Enviar Cobrança"
   const [enviarCobIns, setEnviarCobIns] = useState<Inscricao | null>(null);
   const [enviarCobLoading, setEnviarCobLoading] = useState(false);
@@ -4244,10 +4274,32 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
         <p className="text-3xl font-bold text-[#F39C12]">{fmtMoeda(stats.arrecadado)}</p>
       </div>
 
-      {/* Tabela */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
-        <div className="p-4 border-b border-gray-100 flex flex-wrap items-center gap-2">
-          <input
+      {/* Seletor de Sub-abas */}
+      <div className="flex border-b border-gray-200 mb-6 gap-6">
+        <button
+          onClick={() => setSubTab('transacoes')}
+          className={`pb-3 text-sm font-semibold border-b-2 transition ${
+            subTab === 'transacoes' ? 'border-[#123b63] text-[#123b63]' : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          💳 Transações / Inscrições
+        </button>
+        <button
+          onClick={() => setSubTab('fechamentos')}
+          className={`pb-3 text-sm font-semibold border-b-2 transition ${
+            subTab === 'fechamentos' ? 'border-[#123b63] text-[#123b63]' : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          🔒 Fechamentos de Caixa (Operadores)
+        </button>
+      </div>
+
+      {subTab === 'transacoes' && (
+        <>
+          {/* Tabela */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
+            <div className="p-4 border-b border-gray-100 flex flex-wrap items-center gap-2">
+              <input
             type="text" value={busca} onChange={e => setBusca(e.target.value)}
             placeholder="Buscar nome, CPF, WhatsApp..."
             className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white min-w-[200px] flex-1"
@@ -4561,6 +4613,62 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
           )}
         </div>
       </div>
+      </>
+      )}
+
+      {/* SE FOR TAB FECHAMENTOS */}
+      {subTab === 'fechamentos' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
+          {carregandoSessoes ? (
+            <div className="p-8 text-center text-sm text-gray-500">
+              <span className="animate-spin inline-block mr-2">⏳</span> Carregando fechamentos de caixa...
+            </div>
+          ) : sessoesCaixa.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-8">Nenhum fechamento de caixa registrado.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  {['Operador', 'Abertura', 'Fechamento', 'Esperado', 'Informado', 'Divergência', 'Ações'].map(h => (
+                    <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-600 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sessoesCaixa.map((sessao) => {
+                  const dataAbertura = new Date(sessao.data_abertura).toLocaleString('pt-BR');
+                  const dataFechamento = sessao.data_fechamento ? new Date(sessao.data_fechamento).toLocaleString('pt-BR') : 'Aberto';
+                  const esperado = Number(sessao.saldo_dinheiro_esperado || 0);
+                  const informado = Number(sessao.saldo_dinheiro_informado || 0);
+                  const divergente = Number(sessao.divergencia_dinheiro || 0);
+
+                  return (
+                    <tr key={sessao.id} className="border-b border-gray-50 hover:bg-gray-50 transition text-xs">
+                      <td className="px-4 py-3 font-semibold text-gray-800 whitespace-nowrap">{sessao.operador_nome}</td>
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{dataAbertura}</td>
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{dataFechamento}</td>
+                      <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{fmtMoeda(esperado)}</td>
+                      <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{fmtMoeda(informado)}</td>
+                      <td className={`px-4 py-3 font-bold whitespace-nowrap ${divergente < 0 ? 'text-red-600' : divergente > 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
+                        {divergente > 0 ? '+' : ''}{fmtMoeda(divergente)}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <button
+                          onClick={() => window.open(`/eventos/${eventoId}/caixa/${sessao.id}/print`, '_blank')}
+                          title="Re-imprimir fechamento de caixa"
+                          className="px-3 py-1 bg-blue-100 text-blue-700 hover:bg-blue-200 font-semibold rounded text-xs transition inline-flex items-center gap-1"
+                        >
+                          🖨️ Re-imprimir
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </div>
   );
 }
