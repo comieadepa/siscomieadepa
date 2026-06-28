@@ -298,7 +298,7 @@ export function useEventosPerfil(): EventosPerfil {
     podeHospedagem: perms.podeHospedagem,
     podeProgramacao: perms.podeProgramacao,
     podeEditarInscricoes: perms.podeEditarInscricoes,
-    podeRemoverInscricao: perms.podeRemoverInscricao,
+    podeRemoverInscricao: nivelSistema === 'super',
     podeMoverInscricao: perms.podeMoverInscricao,
     somenteCheckin: perms.somenteCheckin,
     somenteRefeitorio: perms.somenteRefeitorio,

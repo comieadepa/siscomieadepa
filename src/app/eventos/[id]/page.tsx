@@ -1067,6 +1067,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   const [filtroHosp,  setFiltroHosp]  = useState('');
   const [filtroAlim,  setFiltroAlim]  = useState('');
   const [filtroSexo,  setFiltroSexo]  = useState('');
+  const [filtroTipo,  setFiltroTipo]  = useState('');
   const [pagina,      setPagina]      = useState(1);
   const [salvando,    setSalvando]    = useState<string | null>(null);
   const [enviandoCert, setEnviandoCert] = useState<Record<string, boolean>>({});
@@ -1105,14 +1106,15 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
       if (filtroHosp  && String(i.hospedagem) !== filtroHosp)     return false;
       if (filtroAlim  && String(i.alimentacao) !== filtroAlim)    return false;
       if (filtroSexo  && i.sexo !== filtroSexo)           return false;
+      if (filtroTipo  && (i.tipo_inscricao ?? '') !== filtroTipo)  return false;
       return true;
     });
-  }, [inscricoes, busca, filtroSup, filtroCampo, filtroPag, filtroCI, filtroHosp, filtroAlim, filtroSexo]);
+  }, [inscricoes, busca, filtroSup, filtroCampo, filtroPag, filtroCI, filtroHosp, filtroAlim, filtroSexo, filtroTipo]);
 
   const totalPags = Math.max(1, Math.ceil(filtrados.length / POR_PAG));
   const paginados = filtrados.slice((pagina - 1) * POR_PAG, pagina * POR_PAG);
 
-  useEffect(() => { setPagina(1); }, [busca, filtroSup, filtroCampo, filtroPag, filtroCI, filtroHosp, filtroAlim, filtroSexo]);
+  useEffect(() => { setPagina(1); }, [busca, filtroSup, filtroCampo, filtroPag, filtroCI, filtroHosp, filtroAlim, filtroSexo, filtroTipo]);
 
   useEffect(() => () => {
     timeoutsRef.current.forEach(t => clearTimeout(t));
@@ -1665,10 +1667,12 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
     setFiltroHosp('');
     setFiltroAlim('');
     setFiltroSexo('');
+    setFiltroTipo('');
   }
 
   function imprimirLista() {
-    const titulo = `${evento.nome} — Listagem de Inscritos`;
+    const tipoFiltroLabel = filtroTipo ? ` — Tipo: ${filtroTipo}` : '';
+    const titulo = `${evento.nome} — Listagem de Inscritos${tipoFiltroLabel}`;
     const logoDir = getDeptLogo(evento.departamento);
     const dataHoje = new Date().toLocaleDateString('pt-BR');
     const linhas = filtrados.map(i => {
@@ -1676,6 +1680,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
       return `
         <tr>
           <td>${escHtml(i.nome_inscrito)}</td>
+          <td>${escHtml(i.tipo_inscricao ?? '—')}</td>
           <td>${escHtml(i.whatsapp ?? '-')}</td>
           <td>${escHtml(nomeSup(i.supervisao_id))}</td>
           <td>${escHtml(nomeCampo(i.campo_id))}</td>
@@ -1703,10 +1708,12 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
     .divider { border-bottom: 2px solid #14b8a6; margin: 8px 0 10px; }
     .report-title { text-align: center; font-size: 13px; font-weight: bold; margin: 8px 0 6px; }
     .report-meta { display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 8px; }
+    .filter-badge { display: inline-block; background: #e0f2f1; color: #00796b; border: 1px solid #b2dfdb; border-radius: 4px; padding: 1px 6px; font-size: 8px; font-weight: bold; margin-left: 6px; }
     table { width: 100%; border-collapse: collapse; margin-top: 6px; }
     thead tr { background: #14b8a6; color: #fff; }
     th { padding: 5px 6px; text-align: left; font-size: 9px; font-weight: bold; }
     td { padding: 4px 6px; font-size: 9px; border-bottom: 1px solid #ddd; vertical-align: top; }
+    td.tipo { font-weight: bold; color: #00695c; }
     tr:nth-child(even) td { background: #f5f5f5; }
     @media print { body { padding: 8px; } @page { margin: 10mm; size: A4 landscape; } }
   </style>
@@ -1724,20 +1731,21 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   <div class="divider"></div>
   <div class="report-title">${escHtml(titulo)}</div>
   <div class="report-meta">
-    <div>Total de registros: ${filtrados.length}</div>
+    <div>Total de registros: ${filtrados.length}${filtroTipo ? ` <span class="filter-badge">${escHtml(filtroTipo)}</span>` : ''}</div>
     <div>Data: ${dataHoje}</div>
   </div>
   <table>
     <thead>
       <tr>
         <th>Nome</th>
+        <th>Tipo de Inscrição</th>
         <th>WhatsApp</th>
-        <th>Supervisao</th>
+        <th>Supervisão</th>
         <th>Campo</th>
         <th>Valor</th>
         <th>Pagamento</th>
         <th>Check-in</th>
-        <th>Inscricao</th>
+        <th>Inscrição</th>
       </tr>
     </thead>
     <tbody>${linhas}</tbody>
@@ -1745,7 +1753,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
 </body>
 </html>`;
 
-    const win = window.open('', '_blank', 'width=1100,height=750');
+    const win = window.open('', '_blank', 'width=1200,height=750');
     if (!win) return;
     win.document.write(html);
     win.document.close();
@@ -1793,6 +1801,12 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
     () => (filtroSup ? camposDisponiveis.filter(c => c.supervisao_id === filtroSup) : camposDisponiveis),
     [camposDisponiveis, filtroSup]
   );
+
+  const tiposDisponiveis = useMemo(() => {
+    const set = new Set<string>();
+    inscricoes.forEach(i => { if (i.tipo_inscricao) set.add(i.tipo_inscricao); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [inscricoes]);
 
   useEffect(() => {
     if (editando && eventosDept.length === 0 && podeMover) {
@@ -1944,6 +1958,13 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
               <option value="M">Masculino</option>
               <option value="F">Feminino</option>
             </select>
+            {tiposDisponiveis.length > 0 && (
+              <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)}
+                className="flex-1 sm:flex-initial border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+                <option value="">Tipo de Inscrição</option>
+                {tiposDisponiveis.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            )}
             
             <div className="flex gap-3 ml-auto w-full sm:w-auto">
               <button type="button" onClick={limparFiltros}
