@@ -594,6 +594,10 @@ export default function BalcaoPage() {
           setCaixaSessao(json.sessao);
           setCaixaResumo(json.resumo);
           setCaixaTimeline(json.timeline || []);
+        } else {
+          setCaixaSessao(null);
+          setCaixaResumo(null);
+          setCaixaTimeline([]);
         }
       }
     } catch (err) {

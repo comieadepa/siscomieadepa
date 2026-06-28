@@ -33,7 +33,7 @@ export async function GET(
   }
 
   // 2. Obter a sessão de caixa ativa
-  const { data: sessao, error: sessaoErr } = await supabase
+  let { data: sessao, error: sessaoErr } = await supabase
     .from('evento_caixa_sessoes')
     .select('*')
     .eq('evento_id', eventoId)
@@ -41,7 +41,109 @@ export async function GET(
     .eq('status', 'aberto')
     .maybeSingle();
 
-  if (sessaoErr || !sessao) {
+  if (sessaoErr) {
+    return NextResponse.json({ error: 'Erro ao buscar sessão de caixa.' }, { status: 500 });
+  }
+
+  // Se houver uma sessão aberta, validar se é de hoje para evitar acúmulos de dias anteriores
+  if (sessao) {
+    const dataAbertura = new Date(sessao.data_abertura);
+    const hoje = new Date();
+    const mesmoDia = 
+      dataAbertura.getDate() === hoje.getDate() &&
+      dataAbertura.getMonth() === hoje.getMonth() &&
+      dataAbertura.getFullYear() === hoje.getFullYear();
+
+    if (!mesmoDia) {
+      console.log(`[CAIXA_RESUMO] Fechando sessão antiga de ${sessao.operador_nome} (aberta em ${sessao.data_abertura})`);
+      
+      const hojeInicio = new Date();
+      hojeInicio.setHours(0, 0, 0, 0);
+      const hojeInicioISO = hojeInicio.toISOString();
+
+      // 1. Calcular o saldo esperado de ontem (inscrições rápidas/balcão antes de hoje)
+      const { data: inscsOntem } = await supabase
+        .from('evento_inscricoes')
+        .select('valor_pago, status_pagamento, forma_pagamento')
+        .eq('caixa_sessao_id', sessao.id)
+        .eq('evento_id', eventoId)
+        .lt('created_at', hojeInicioISO);
+
+      let dinheiroOntem = 0;
+      (inscsOntem || []).forEach((ins: any) => {
+        if (ins.status_pagamento === 'pago' && ins.forma_pagamento === 'dinheiro') {
+          dinheiroOntem += Number(ins.valor_pago || 0);
+        }
+      });
+
+      // 2. Sangrias de ontem
+      const { data: sangsOntem } = await supabase
+        .from('evento_caixa_sangrias')
+        .select('valor')
+        .eq('caixa_sessao_id', sessao.id)
+        .eq('status', 'registrada');
+
+      let totalSangsOntem = 0;
+      (sangsOntem || []).forEach((sang: any) => {
+        totalSangsOntem += Number(sang.valor || 0);
+      });
+
+      const saldoEsperadoOntem = Math.max(0, dinheiroOntem - totalSangsOntem);
+
+      // 3. Fechar caixa de ontem
+      await supabase
+        .from('evento_caixa_sessoes')
+        .update({
+          status: 'fechado',
+          data_fechamento: sessao.data_abertura,
+          saldo_dinheiro_esperado: saldoEsperadoOntem,
+          saldo_dinheiro_informado: saldoEsperadoOntem,
+          divergencia_dinheiro: 0,
+          observacoes: 'Fechado automaticamente pelo sistema de renovação diária de caixas.'
+        })
+        .eq('id', sessao.id);
+
+      // 4. Verificar se existem inscrições de hoje já gravadas com a sessão de ontem
+      const { data: inscsHoje } = await supabase
+        .from('evento_inscricoes')
+        .select('id')
+        .eq('caixa_sessao_id', sessao.id)
+        .eq('evento_id', eventoId)
+        .gte('created_at', hojeInicioISO);
+
+      if (inscsHoje && inscsHoje.length > 0) {
+        // Criar uma nova sessão de caixa limpa para hoje
+        const { data: novaSessao } = await supabase
+          .from('evento_caixa_sessoes')
+          .insert({
+            evento_id: eventoId,
+            operador_id: equipeId,
+            operador_nome: sessao.operador_nome,
+            status: 'aberto',
+            data_abertura: new Date().toISOString()
+          })
+          .select('*')
+          .single();
+
+        if (novaSessao) {
+          // Migrar inscrições de hoje para a nova sessão
+          const inscIds = inscsHoje.map((i: any) => i.id);
+          await supabase
+            .from('evento_inscricoes')
+            .update({ caixa_sessao_id: novaSessao.id })
+            .in('id', inscIds);
+
+          sessao = novaSessao;
+        } else {
+          sessao = null;
+        }
+      } else {
+        sessao = null;
+      }
+    }
+  }
+
+  if (!sessao) {
     return NextResponse.json({ ok: false, sessao: null, error: 'Nenhuma sessão de caixa aberta encontrada.' });
   }
 

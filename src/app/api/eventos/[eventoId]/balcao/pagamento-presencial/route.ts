@@ -98,6 +98,29 @@ export async function POST(
       .eq('status', 'aberto')
       .maybeSingle();
 
+    if (sessao) {
+      const dataAbertura = new Date(sessao.data_abertura);
+      const hoje = new Date();
+      const mesmoDia = 
+        dataAbertura.getDate() === hoje.getDate() &&
+        dataAbertura.getMonth() === hoje.getMonth() &&
+        dataAbertura.getFullYear() === hoje.getFullYear();
+
+      if (!mesmoDia) {
+        // Fechar caixa anterior
+        await supabase
+          .from('evento_caixa_sessoes')
+          .update({
+            status: 'fechado',
+            data_fechamento: sessao.data_abertura,
+            observacoes: 'Fechado automaticamente pelo sistema de renovação diária no pagamento presencial.'
+          })
+          .eq('id', sessao.id);
+        
+        sessao = null;
+      }
+    }
+
     if (!sessao) {
       const { data: novaSessao, error: insertError } = await supabase
         .from('evento_caixa_sessoes')

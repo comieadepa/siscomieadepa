@@ -152,13 +152,36 @@ export async function POST(
 
   let caixaSessaoId: string | null = null;
   if (equipeId) {
-    const { data: sessao } = await supabase
+    let { data: sessao } = await supabase
       .from('evento_caixa_sessoes')
-      .select('id, operador_nome')
+      .select('id, operador_nome, data_abertura')
       .eq('evento_id', eventoId)
       .eq('operador_id', equipeId)
       .eq('status', 'aberto')
       .maybeSingle();
+
+    if (sessao) {
+      const dataAbertura = new Date(sessao.data_abertura);
+      const hoje = new Date();
+      const mesmoDia = 
+        dataAbertura.getDate() === hoje.getDate() &&
+        dataAbertura.getMonth() === hoje.getMonth() &&
+        dataAbertura.getFullYear() === hoje.getFullYear();
+
+      if (!mesmoDia) {
+        // Fechar caixa anterior
+        await supabase
+          .from('evento_caixa_sessoes')
+          .update({
+            status: 'fechado',
+            data_fechamento: sessao.data_abertura,
+            observacoes: 'Fechado automaticamente pelo sistema de renovação diária na venda.'
+          })
+          .eq('id', sessao.id);
+        
+        sessao = null;
+      }
+    }
 
     if (sessao) {
       caixaSessaoId = sessao.id;
