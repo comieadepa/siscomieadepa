@@ -285,6 +285,61 @@ export default function BalcaoPage() {
     'Cozinha', 'Hospedagem', 'Recepcionista', 'Secretaria', 'Som e Imagem', 'Segurança', 'Mídia'
   ]);
 
+  // ── Estado Equipe Rápida ─────────────────────────────────
+  const [erModalAberto,   setErModalAberto]   = useState(false);
+  const [erNome,          setErNome]          = useState('');
+  const [erEquipe,        setErEquipe]        = useState('Secretaria');
+  const [erEquipeCustom,  setErEquipeCustom]  = useState('');
+  const [erUseCustom,     setErUseCustom]     = useState(false);
+  const [erSalvando,      setErSalvando]      = useState(false);
+  const [erErro,          setErErro]          = useState<string | null>(null);
+  const [erSucesso,       setErSucesso]       = useState<{ nome: string; equipe: string; qr_code: string | null; id: string } | null>(null);
+
+  const EQUIPES_RAPIDAS = ['Secretaria', 'Recepção', 'Cozinha', 'Hospedagem', 'Som e Imagem', 'Segurança', 'Mídia', 'Logística', 'Outro'];
+
+  const salvarEquipeRapida = useCallback(async () => {
+    const nomeVal  = erNome.trim();
+    const equipeVal = erUseCustom ? erEquipeCustom.trim() : erEquipe;
+    if (!nomeVal)    { setErErro('Nome é obrigatório.'); return; }
+    if (!equipeVal)  { setErErro('Equipe é obrigatória.'); return; }
+    setErErro(null);
+    setErSalvando(true);
+    try {
+      const session = getEquipeSession();
+      const equipeId = session?.eventoId === id ? session.equipeId : null;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (equipeId) headers['x-evento-equipe-id'] = equipeId;
+
+      const res = await authenticatedFetch(`/api/eventos/${id}/balcao/equipe-rapida`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ nome: nomeVal, equipe: equipeVal, qtd_refeicoes: 12 }),
+      });
+      const json = await res.json() as { ok?: boolean; inscricao?: { id: string; qr_code: string | null }; error?: string };
+      if (!res.ok || json.error) {
+        setErErro(json.error || 'Erro ao salvar.');
+        return;
+      }
+      setErSucesso({ nome: nomeVal, equipe: equipeVal, qr_code: json.inscricao?.qr_code ?? null, id: json.inscricao?.id ?? '' });
+      setContadorTotal(prev => prev + 1);
+      setPrecisaAtualizar(true);
+    } catch (e: any) {
+      setErErro(e?.message ?? 'Erro inesperado.');
+    } finally {
+      setErSalvando(false);
+    }
+  }, [erNome, erEquipe, erEquipeCustom, erUseCustom, id]);
+
+  function fecharErModal() {
+    setErModalAberto(false);
+    setErNome('');
+    setErEquipe('Secretaria');
+    setErEquipeCustom('');
+    setErUseCustom(false);
+    setErErro(null);
+    setErSucesso(null);
+  }
+
   // ── Estado do cupom ───────────────────────────────────────
   const [cupomStatus,   setCupomStatus]   = useState<'idle' | 'validando' | 'ok' | 'erro'>('idle');
   const [cupomDesconto, setCupomDesconto] = useState(0);
@@ -1915,9 +1970,161 @@ export default function BalcaoPage() {
             >
               💵 Meu Caixa
             </button>
+            {/* ── Equipe Rápida ── */}
+            <button
+              type="button"
+              onClick={() => { setErModalAberto(true); setErSucesso(null); setErErro(null); }}
+              className="ml-auto px-4 py-2 rounded-xl text-sm font-bold transition whitespace-nowrap flex-shrink-0 bg-purple-600/80 text-white hover:bg-purple-500 flex items-center gap-1.5"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a4 4 0 00-5-3.87M9 20H4v-2a4 4 0 015-3.87M16 7a4 4 0 11-8 0 4 4 0 018 0zm6 13v-2a4 4 0 00-3-3.87" />
+              </svg>
+              Equipe Rápida
+            </button>
           </div>
         </div>
       </div>
+
+      {/* ── Modal Equipe Rápida ────────────────────────────────── */}
+      {erModalAberto && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.75)' }}
+          onClick={e => { if (e.target === e.currentTarget) fecharErModal(); }}
+        >
+          <div className="bg-[#0D2B4E] border border-purple-500/30 rounded-2xl shadow-2xl w-full max-w-md p-6">
+            {erSucesso ? (
+              /* ── Tela de sucesso ── */
+              <div className="flex flex-col items-center gap-4 text-center">
+                <div className="w-14 h-14 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-emerald-400 font-black text-lg">Equipe registrada!</p>
+                  <p className="text-white font-bold mt-1">{erSucesso.nome}</p>
+                  <p className="text-purple-300 text-sm">{erSucesso.equipe}</p>
+                </div>
+                {erSucesso.qr_code && (
+                  <div className="bg-white rounded-xl p-3">
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(erSucesso.qr_code)}`}
+                      alt="QR Code"
+                      className="w-36 h-36"
+                    />
+                  </div>
+                )}
+                <p className="text-white/40 text-xs">12 refeições • Isento • Sem hospedagem</p>
+                <div className="flex gap-3 w-full mt-2">
+                  <button
+                    type="button"
+                    onClick={() => { setErSucesso(null); setErNome(''); setErEquipe('Secretaria'); setErEquipeCustom(''); setErUseCustom(false); setErErro(null); }}
+                    className="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold py-2.5 rounded-xl text-sm transition"
+                  >
+                    + Outro
+                  </button>
+                  <button
+                    type="button"
+                    onClick={fecharErModal}
+                    className="flex-1 border border-white/20 text-white/70 hover:text-white py-2.5 rounded-xl text-sm font-bold transition"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* ── Formulário ── */
+              <>
+                <div className="flex items-center justify-between mb-5">
+                  <h2 className="text-white font-black text-lg flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a4 4 0 00-5-3.87M9 20H4v-2a4 4 0 015-3.87M16 7a4 4 0 11-8 0 4 4 0 018 0zm6 13v-2a4 4 0 00-3-3.87" />
+                    </svg>
+                    Equipe Rápida
+                  </h2>
+                  <button type="button" onClick={fecharErModal} className="text-white/40 hover:text-white text-xl leading-none">✕</button>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Nome */}
+                  <div>
+                    <label className={labelCls}>Nome completo *</label>
+                    <input
+                      type="text"
+                      className={inputCls}
+                      placeholder="Nome da pessoa"
+                      value={erNome}
+                      onChange={e => setErNome(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') salvarEquipeRapida(); }}
+                      autoFocus
+                    />
+                  </div>
+
+                  {/* Equipe */}
+                  <div>
+                    <label className={labelCls}>Equipe *</label>
+                    {!erUseCustom ? (
+                      <select
+                        className={inputCls}
+                        value={erEquipe}
+                        onChange={e => {
+                          if (e.target.value === '__custom__') { setErUseCustom(true); setErEquipe(''); }
+                          else setErEquipe(e.target.value);
+                        }}
+                      >
+                        {EQUIPES_RAPIDAS.filter(eq => eq !== 'Outro').map(eq => (
+                          <option key={eq} value={eq}>{eq}</option>
+                        ))}
+                        <option value="__custom__">Outra (digitar)…</option>
+                      </select>
+                    ) : (
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          className={inputCls}
+                          placeholder="Nome da equipe"
+                          value={erEquipeCustom}
+                          onChange={e => setErEquipeCustom(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') salvarEquipeRapida(); }}
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          onClick={() => { setErUseCustom(false); setErEquipeCustom(''); setErEquipe('Secretaria'); }}
+                          className="text-white/40 hover:text-white text-xs px-2 flex-shrink-0"
+                          title="Voltar ao select"
+                        >↩</button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Info */}
+                  <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl px-4 py-3 text-xs text-purple-300 space-y-0.5">
+                    <p>✓ Isento — sem pagamento</p>
+                    <p>✓ 12 refeições geradas automaticamente</p>
+                    <p>✓ QR Code para check-in</p>
+                    <p>✓ Sem hospedagem</p>
+                  </div>
+
+                  {erErro && (
+                    <p className="text-red-400 text-sm font-semibold">{erErro}</p>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={salvarEquipeRapida}
+                    disabled={erSalvando}
+                    className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-black py-3 rounded-xl text-sm transition shadow-lg shadow-purple-500/20"
+                  >
+                    {erSalvando ? 'Salvando…' : '✓ Registrar na Equipe'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Corpo principal ── */}
       <div className="flex-1 overflow-y-auto">
