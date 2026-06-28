@@ -30,6 +30,10 @@ export interface EtiquetaInscricao {
   tipo_cama?: string | null;
   hosp_status?: string | null;
   nome_alojamento?: string | null;
+  /** Identifica fluxos especiais, ex: 'equipe_rapida' */
+  origem?: string | null;
+  /** Nome da equipe extraído de observacoes quando origem='equipe_rapida' */
+  equipe_label?: string | null;
 }
 
 export interface EtiquetaEvento {
@@ -341,6 +345,18 @@ export function EtiquetaAGO({
   const QR_W     = isThermal ? '26mm'   : '20mm';
   const FOOTER_H = '5mm';
 
+  // ── Equipe Rápida: delega para o layout dedicado ─────────────
+  if (inscricao.origem === 'equipe_rapida') {
+    return (
+      <EtiquetaDepartamento
+        inscricao={inscricao}
+        nomeSup=""
+        nomeCampo=""
+        variant={variant}
+      />
+    );
+  }
+
   if (isThermal) {
     return (
       <div style={{
@@ -604,6 +620,85 @@ export function EtiquetaDepartamento({
   const FIELD_LINES = isThermal ? 2 : 1;
 
   const temHosp = !!(inscricao.numero_cama && (inscricao.hosp_status === 'confirmada' || inscricao.hosp_status === 'alocada' || inscricao.hosp_status === 'checkin_realizado'));
+  const isEquipeRapida = inscricao.origem === 'equipe_rapida';
+
+  // ── Layout alternativo: Equipe Rápida ──────────────────────────
+  if (isEquipeRapida) {
+    const equipeNome = inscricao.equipe_label ?? inscricao.tipo_inscricao ?? 'EQUIPE';
+    return (
+      <div style={{
+        width: W, height: H,
+        border: isThermal ? 'none' : '0.35mm solid #d1d5db',
+        overflow: 'hidden', fontFamily: 'Arial, Helvetica, sans-serif',
+        backgroundColor: '#ffffff', display: 'flex', flexDirection: 'row',
+        boxSizing: 'border-box', breakInside: 'avoid', pageBreakInside: 'avoid',
+      }}>
+        {/* QR Code */}
+        <div style={{
+          width: QR_W, flexShrink: 0,
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          borderRight: isThermal ? 'none' : '0.3mm solid #e5e7eb',
+          padding: isThermal ? '0.5mm 0.4mm' : '2mm',
+          gap: '0.4mm',
+        }}>
+          <QRCodeCanvas value={qr} sizePx={QR_PX} />
+          <p style={{
+            fontSize: '3.2pt', color: '#adb5bd', margin: 0,
+            letterSpacing: '0.5px', textAlign: 'center', lineHeight: 1,
+          }}>
+            {qr.slice(-6).toUpperCase()}
+          </p>
+        </div>
+        {/* Texto centralizado */}
+        <div style={{
+          flex: 1, minWidth: 0,
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          padding: isThermal ? '1mm 2mm' : '1.5mm 2.5mm',
+          gap: isThermal ? '1mm' : '1.5mm',
+          textAlign: 'center',
+        }}>
+          {/* Badge da equipe */}
+          <div style={{
+            backgroundColor: '#7c3aed',
+            borderRadius: isThermal ? '1mm' : '1.2mm',
+            padding: isThermal ? '0.5mm 2mm' : '0.6mm 2.5mm',
+            display: 'inline-block',
+          }}>
+            <p style={{
+              fontSize: isThermal ? '8pt' : '6.5pt',
+              fontWeight: 900,
+              color: '#ffffff',
+              margin: 0,
+              letterSpacing: '0.5px',
+              textTransform: 'uppercase',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}>
+              {equipeNome}
+            </p>
+          </div>
+          {/* Nome do colaborador */}
+          <p style={{
+            fontSize: isThermal ? '10.5pt' : '8pt',
+            fontWeight: 900,
+            color: '#111827',
+            margin: 0,
+            lineHeight: 1.1,
+            overflow: 'hidden',
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            textAlign: 'center',
+          }}>
+            {inscricao.nome_inscrito}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{
