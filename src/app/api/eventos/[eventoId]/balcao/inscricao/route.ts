@@ -731,14 +731,31 @@ export async function POST(
       && ehTipoEsposaJubilado(tipoNome)
       && !vinculoEsposaJubiladoTitular;
 
-    if (fluxoCampoMissionarioEspecial) {
+    const tipoNorm = norm(tipoNome);
+    const tipoEhCampoMissionarioExclusivo =
+      tipoNorm === 'campo missionario'
+      || tipoNorm === 'pastor presidente campo missionario';
+
+    if (tipoEhCampoMissionarioExclusivo && fluxoCampoMissionarioEspecial) {
+      console.log("DEBUG BLOQUEIO CM", {
+        tipoNome,
+        tipoNorm,
+        tipoEhCampoMissionarioExclusivo,
+        isPP,
+        cargoEhPastor,
+        isCM,
+        ministroAtivo
+      });
+
       if (!(tipoNome && (ehTipoPastorPresidente(tipoNome) || tipoNome === 'CAMPO MISSIONÁRIO'))) {
         return NextResponse.json(
           { error: 'Campo Missionário exige categoria Pastor Presidente ou Campo Missionário para o titular.' },
           { status: 400 },
         );
       }
+    }
 
+    if (fluxoCampoMissionarioEspecial) {
       const valorCmPastor = cmConfig
         ? (typeof cmConfig.valor_pastor_presidente === 'number' ? cmConfig.valor_pastor_presidente : parseFloat(String(cmConfig.valor_pastor_presidente)) || 0)
         : 0;
