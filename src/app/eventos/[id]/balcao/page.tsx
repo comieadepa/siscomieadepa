@@ -1150,6 +1150,15 @@ export default function BalcaoPage() {
           tipo_inscricao: tipoSel?.nome || ''
         }),
       });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        setCupomStatus('erro');
+        setCupomDesconto(0);
+        setCupomMsg(errJson.erro || errJson.error || errJson.message || 'Erro ao validar cupom.');
+        return;
+      }
+
       const json = await res.json() as { ok: boolean; desconto?: number; erro?: string };
       if (json.ok && json.desconto !== undefined) {
         setCupomStatus('ok');
@@ -1160,9 +1169,10 @@ export default function BalcaoPage() {
         setCupomDesconto(0);
         setCupomMsg(json.erro || 'Cupom inválido.');
       }
-    } catch {
+    } catch (err: any) {
+      console.error('Erro ao validar cupom:', err);
       setCupomStatus('erro');
-      setCupomMsg('Erro ao validar cupom.');
+      setCupomMsg(err?.message || 'Erro ao validar cupom.');
     }
   }
 
