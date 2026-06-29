@@ -4121,8 +4121,8 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
         .from('evento_caixa_sessoes')
         .select('*')
         .eq('evento_id', eventoId)
-        .in('status', ['fechado', 'conferido'])
-        .order('data_fechamento', { ascending: false });
+        .in('status', ['aberto', 'fechado', 'conferido'])
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
       setSessoesCaixa(data || []);
@@ -4629,7 +4629,7 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Operador', 'Abertura', 'Fechamento', 'Esperado', 'Informado', 'Divergência', 'Ações'].map(h => (
+                  {['Operador', 'Status', 'Abertura', 'Fechamento', 'Esperado', 'Informado', 'Divergência', 'Ações'].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-600 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -4638,27 +4638,50 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
                 {sessoesCaixa.map((sessao) => {
                   const dataAbertura = new Date(sessao.data_abertura).toLocaleString('pt-BR');
                   const dataFechamento = sessao.data_fechamento ? new Date(sessao.data_fechamento).toLocaleString('pt-BR') : 'Aberto';
+                  
+                  const isAberto = sessao.status === 'aberto';
                   const esperado = Number(sessao.saldo_dinheiro_esperado || 0);
-                  const informado = Number(sessao.saldo_dinheiro_informado || 0);
-                  const divergente = Number(sessao.divergencia_dinheiro || 0);
+                  const informado = sessao.saldo_dinheiro_informado !== null ? Number(sessao.saldo_dinheiro_informado) : null;
+                  const divergente = sessao.divergencia_dinheiro !== null ? Number(sessao.divergencia_dinheiro) : null;
 
                   return (
                     <tr key={sessao.id} className="border-b border-gray-50 hover:bg-gray-50 transition text-xs">
                       <td className="px-4 py-3 font-semibold text-gray-800 whitespace-nowrap">{sessao.operador_nome}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {isAberto ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">
+                            🟢 Em Operação
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-800">
+                            🔒 Fechado
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{dataAbertura}</td>
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{dataFechamento}</td>
                       <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{fmtMoeda(esperado)}</td>
-                      <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{fmtMoeda(informado)}</td>
-                      <td className={`px-4 py-3 font-bold whitespace-nowrap ${divergente < 0 ? 'text-red-600' : divergente > 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
-                        {divergente > 0 ? '+' : ''}{fmtMoeda(divergente)}
+                      <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
+                        {informado !== null ? fmtMoeda(informado) : <span className="text-gray-400 font-normal italic">Não fechado</span>}
+                      </td>
+                      <td className="px-4 py-3 font-bold whitespace-nowrap">
+                        {divergente !== null ? (
+                          <span className={divergente < 0 ? 'text-red-600' : divergente > 0 ? 'text-emerald-600' : 'text-gray-500'}>
+                            {divergente > 0 ? '+' : ''}{fmtMoeda(divergente)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 font-normal">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <button
                           onClick={() => window.open(`/eventos/${eventoId}/caixa/${sessao.id}/print`, '_blank')}
-                          title="Re-imprimir fechamento de caixa"
-                          className="px-3 py-1 bg-blue-100 text-blue-700 hover:bg-blue-200 font-semibold rounded text-xs transition inline-flex items-center gap-1"
+                          title={isAberto ? "Imprimir parcial do caixa" : "Re-imprimir fechamento de caixa"}
+                          className={`px-3 py-1 font-semibold rounded text-xs transition inline-flex items-center gap-1 ${
+                            isAberto ? 'bg-amber-100 text-amber-800 hover:bg-amber-200' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                          }`}
                         >
-                          🖨️ Re-imprimir
+                          🖨️ {isAberto ? 'Parcial' : 'Re-imprimir'}
                         </button>
                       </td>
                     </tr>
@@ -5759,10 +5782,20 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
   const [salvandoCup,   setSalvandoCup]   = useState(false);
   const [modoEdicaoCup, setModoEdicaoCup] = useState(false);
 
-  // ── Tipos de inscrição ────────────────────────────────────
-  const [usarTipos,     setUsarTipos]     = useState(evento.usar_tipos_inscricao);
+  const [usarTipos,     setUsarTipos]     = useState(evento?.usar_tipos_inscricao ?? false);
   const [salvandoFlag,  setSalvandoFlag]  = useState(false);
-  const [tipos,         setTipos]         = useState<Array<{id?:string;nome:string;valor:string;inclui_alimentacao:boolean;inclui_hospedagem:boolean;ativo:boolean;ordem:number}>>([]);
+  const [tipos,         setTipos]         = useState<Array<{
+    id?: string;
+    nome: string;
+    valor: string;
+    inclui_alimentacao: boolean;
+    inclui_hospedagem: boolean;
+    ativo: boolean;
+    ordem: number;
+    desconto_codigo?: string;
+    desconto_valor?: string;
+    desconto_ativo?: boolean;
+  }>>([]);
   const [salvandoTipos, setSalvandoTipos] = useState(false);
   const [tiposMsg,      setTiposMsg]      = useState('');
 
@@ -5787,20 +5820,29 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
       .then(r => r.json())
       .then(j => {
         const t = (j.tipos ?? []) as Array<{id?:string;nome:string;valor:number;inclui_alimentacao:boolean;inclui_hospedagem:boolean;ativo:boolean;ordem:number}>;
+        const confAgo = (evento as any)?.configuracoes_ago as Record<string, any> | null;
+        const descontosTipos = confAgo?.descontos_tipos || {};
+
         if (t.length > 0) {
-          setTipos(t.map((x, i) => ({
-            ...x,
-            valor: String(x.valor ?? ''),
-            ativo: x.ativo ?? true,
-            inclui_alimentacao: !!x.inclui_alimentacao,
-            inclui_hospedagem: !!x.inclui_hospedagem,
-            ordem: x.ordem ?? (i + 1),
-          })));
+          setTipos(t.map((x, i) => {
+            const descInfo = descontosTipos[x.nome] || {};
+            return {
+              ...x,
+              valor: String(x.valor ?? ''),
+              ativo: x.ativo ?? true,
+              inclui_alimentacao: !!x.inclui_alimentacao,
+              inclui_hospedagem: !!x.inclui_hospedagem,
+              ordem: x.ordem ?? (i + 1),
+              desconto_codigo: descInfo.desconto_codigo || '',
+              desconto_valor: descInfo.desconto_valor !== undefined ? String(descInfo.desconto_valor) : '',
+              desconto_ativo: descInfo.desconto_ativo !== false,
+            };
+          }));
         } else {
           setTipos([
-            { nome: 'Plenárias',                              valor: '', inclui_alimentacao: false, inclui_hospedagem: false, ativo: true, ordem: 1 },
-            { nome: 'Plenárias + Alimentação',                valor: '', inclui_alimentacao: true,  inclui_hospedagem: false, ativo: true, ordem: 2 },
-            { nome: 'Plenárias + Alimentação + Hospedagem',   valor: '', inclui_alimentacao: true,  inclui_hospedagem: true,  ativo: true, ordem: 3 },
+            { nome: 'Plenárias',                              valor: '', inclui_alimentacao: false, inclui_hospedagem: false, ativo: true, ordem: 1, desconto_codigo: '', desconto_valor: '', desconto_ativo: true },
+            { nome: 'Plenárias + Alimentação',                valor: '', inclui_alimentacao: true,  inclui_hospedagem: false, ativo: true, ordem: 2, desconto_codigo: '', desconto_valor: '', desconto_ativo: true },
+            { nome: 'Plenárias + Alimentação + Hospedagem',   valor: '', inclui_alimentacao: true,  inclui_hospedagem: true,  ativo: true, ordem: 3, desconto_codigo: '', desconto_valor: '', desconto_ativo: true },
           ]);
         }
       }).catch(() => {});
@@ -5820,6 +5862,36 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tipos: payload }),
     });
+
+    if (res.ok) {
+      // Salvar configurações de desconto por tipo no JSON configuracoes_ago do evento
+      const descontosTiposNovos: Record<string, any> = {};
+      tipos.forEach(t => {
+        if (t.desconto_codigo && t.desconto_codigo.trim()) {
+          descontosTiposNovos[t.nome] = {
+            desconto_codigo: t.desconto_codigo.trim().toUpperCase(),
+            desconto_valor: parseFloat(t.desconto_valor || '0') || 0,
+            desconto_ativo: t.desconto_ativo !== false
+          };
+        }
+      });
+
+      const configOriginal = (evento as any)?.configuracoes_ago || {};
+      const novoConfig = {
+        ...configOriginal,
+        descontos_tipos: descontosTiposNovos
+      };
+
+      const { error: updErr } = await supabase
+        .from('eventos')
+        .update({ configuracoes_ago: novoConfig })
+        .eq('id', evento.id);
+
+      if (!updErr) {
+        (evento as any).configuracoes_ago = novoConfig;
+      }
+    }
+
     setSalvandoTipos(false);
     setTiposMsg(res.ok ? '✅ Tipos de inscrição salvos!' : '❌ Erro ao salvar.');
     setTimeout(() => setTiposMsg(''), 3000);
@@ -6125,6 +6197,30 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
                           className="accent-[#123b63]" disabled={!podeEditar || !t.ativo} />
                         <span className="text-xs text-gray-600">🏨 Hosp.</span>
                       </label>
+                      
+                      {/* Desconto do Tipo de Inscrição */}
+                      <div className="flex flex-wrap items-center gap-2 border-t sm:border-t-0 sm:border-l pt-2 sm:pt-0 sm:pl-3 border-gray-200 w-full sm:w-auto">
+                        <div className="flex items-center gap-1 w-28">
+                          <span className="text-[10px] font-bold text-gray-400 shrink-0">CUPOM</span>
+                          <input type="text" value={t.desconto_codigo || ''}
+                            onChange={e => setTipos(prev => prev.map((x, j) => j===i ? {...x, desconto_codigo: e.target.value.toUpperCase()} : x))}
+                            className="w-full border border-gray-300 rounded-lg px-2 py-1 text-xs font-mono uppercase"
+                            placeholder="PP50" disabled={!podeEditar || !t.ativo} />
+                        </div>
+                        <div className="flex items-center gap-1 w-24">
+                          <span className="text-[10px] font-bold text-gray-400 shrink-0">R$ Desc</span>
+                          <input type="number" min="0" step="0.01" value={t.desconto_valor || ''}
+                            onChange={e => setTipos(prev => prev.map((x, j) => j===i ? {...x, desconto_valor: e.target.value} : x))}
+                            className="w-full border border-gray-300 rounded-lg px-2 py-1 text-xs"
+                            placeholder="0.00" disabled={!podeEditar || !t.ativo} />
+                        </div>
+                        <label className="flex items-center gap-1 cursor-pointer shrink-0">
+                          <input type="checkbox" checked={t.desconto_ativo !== false}
+                            onChange={e => setTipos(prev => prev.map((x, j) => j===i ? {...x, desconto_ativo: e.target.checked} : x))}
+                            className="accent-[#123b63]" disabled={!podeEditar || !t.ativo} />
+                          <span className="text-[10px] font-semibold text-gray-500">Ativo</span>
+                        </label>
+                      </div>
                     </div>
                   </div>
                 ))}

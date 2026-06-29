@@ -28,16 +28,19 @@ async function incrementarCupom(
 ) {
   const { data: cup } = await supabase
     .from('evento_cupons')
-    .select('usados')
+    .select('id, usados, usos_atuais')
     .eq('evento_id', eventoId)
-    .eq('codigo', codigo)
-    .single();
+    .ilike('codigo', codigo.trim())
+    .maybeSingle();
   if (cup) {
     await supabase
       .from('evento_cupons')
-      .update({ usados: cup.usados + 1 })
-      .eq('evento_id', eventoId)
-      .eq('codigo', codigo);
+      .update({ 
+        usados: (cup.usados || 0) + 1,
+        usos_atuais: (cup.usos_atuais || 0) + 1,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', cup.id);
   }
 }
 
@@ -355,7 +358,7 @@ export async function POST(
     const formaStr = String(forma_pagamento ?? '');
     let vFinal = tipoNome === 'Equipe de Apoio' ? 0 : (typeof valor_final === 'number' ? valor_final : 0);
     let vOriginal = tipoNome === 'Equipe de Apoio' ? 0 : (typeof valor_original === 'number' ? valor_original : 0);
-    const vDesconto = tipoNome === 'Equipe de Apoio' ? 0 : (typeof desconto_valor === 'number' ? desconto_valor : 0);
+    let vDesconto = tipoNome === 'Equipe de Apoio' ? 0 : (typeof desconto_valor === 'number' ? desconto_valor : 0);
     let isGratuito = tipoNome === 'Equipe de Apoio' || vFinal <= 0 || formaStr === 'isento' || formaStr === 'equipe_apoio';
     let isAsaas = formaStr === 'asaas' && !isGratuito;
     let isPresencial = !isAsaas && !isGratuito;
@@ -755,6 +758,120 @@ export async function POST(
     const cupomCodigo = cupom_codigo
       ? String(cupom_codigo).trim().toUpperCase()
       : null;
+    let cupomId: string | null = null;
+
+    // RECALCULO E VALIDAÇÃO DE CUPOM DE DESCONTO (Segurança do Backend)
+    if (cupomCodigo) {
+      // 1. Buscar primeiro na tabela de cupons globais
+      const { data: cupomGlobal, error: errGlobal } = await supabase
+        .from('evento_cupons')
+        .select('id, codigo, tipo_desconto, valor, limite_usos, usos_atuais, ativo, validade_inicio, validade_fim')
+        .eq('evento_id', eventoId)
+        .ilike('codigo', cupomCodigo)
+        .maybeSingle();
+
+      if (!errGlobal && cupomGlobal) {
+        cupomId = cupomGlobal.id;
+
+        // Validar ativo
+        if (!cupomGlobal.ativo) {
+          return NextResponse.json({ error: 'O cupom informado está inativo.' }, { status: 400 });
+        }
+
+        // Validar vigência
+        const agora = new Date();
+        if (cupomGlobal.validade_inicio && new Date(cupomGlobal.validade_inicio) > agora) {
+          return NextResponse.json({ error: 'O cupom informado ainda não está em vigência.' }, { status: 400 });
+        }
+        if (cupomGlobal.validade_fim && new Date(cupomGlobal.validade_fim) < agora) {
+          return NextResponse.json({ error: 'O cupom informado está expirado.' }, { status: 400 });
+        }
+
+        // Validar limite de usos
+        if (cupomGlobal.limite_usos !== null && cupomGlobal.limite_usos !== undefined && cupomGlobal.usos_atuais >= cupomGlobal.limite_usos) {
+          return NextResponse.json({ error: 'O limite de uso deste cupom já foi atingido.' }, { status: 400 });
+        }
+
+        // Calcular o desconto real
+        let calculoDesconto = 0;
+        if (cupomGlobal.tipo_desconto === 'percentual') {
+          calculoDesconto = Math.round((vOriginal * cupomGlobal.valor / 100) * 100) / 100;
+        } else {
+          calculoDesconto = Number(cupomGlobal.valor || 0);
+        }
+
+        vDesconto = Math.min(calculoDesconto, vOriginal);
+      } else {
+        // 2. Se não encontrou global, buscar desconto específico de tipo de inscrição nas configuracoes_ago do evento
+        const { data: ev } = await supabase
+          .from('eventos')
+          .select('configuracoes_ago')
+          .eq('id', eventoId)
+          .maybeSingle();
+
+        const confAgo = ev?.configuracoes_ago as Record<string, any> | null;
+        const descontosTipos = confAgo?.descontos_tipos || {};
+
+        let tipoComDescontoMatch = null;
+        let nomeTipoMatch = '';
+
+        for (const [tipoNome, info] of Object.entries(descontosTipos)) {
+          const item = info as any;
+          if (item.desconto_codigo && item.desconto_codigo.trim().toUpperCase() === cupomCodigo) {
+            tipoComDescontoMatch = item;
+            nomeTipoMatch = tipoNome;
+            break;
+          }
+        }
+
+        if (!tipoComDescontoMatch) {
+          return NextResponse.json({ error: 'Cupom de desconto inválido ou não encontrado.' }, { status: 400 });
+        }
+
+        // Validar se está ativo
+        if (tipoComDescontoMatch.desconto_ativo === false) {
+          return NextResponse.json({ error: 'O cupom informado está inativo.' }, { status: 400 });
+        }
+
+        // Validar se pertence ao tipo de inscrição correspondente
+        const tipoNomeStr = tipoNome || '';
+        if (nomeTipoMatch.toUpperCase() !== tipoNomeStr.toUpperCase()) {
+          return NextResponse.json({
+            error: `Este código de desconto é específico para a categoria: ${nomeTipoMatch}.`
+          }, { status: 400 });
+        }
+
+        // Calcular o desconto (valor fixo em R$)
+        const valor_desconto = Number(tipoComDescontoMatch.desconto_valor || 0);
+        if (valor_desconto <= 0) {
+          return NextResponse.json({ error: 'Valor de desconto do tipo de inscrição inválido.' }, { status: 400 });
+        }
+
+        vDesconto = Math.min(valor_desconto, vOriginal);
+        cupomId = null; // Cupons vinculados a tipo de inscrição não existem na tabela de cupons globais
+
+        // Salvar metadados do desconto no snapshot do inscrito
+        if (!ministroSnapshot) {
+          ministroSnapshot = {};
+        }
+        (ministroSnapshot as any).desconto_tipo_inscricao = {
+          codigo: cupomCodigo,
+          valor: vDesconto,
+          tipo_inscricao: tipoNomeStr,
+        };
+      }
+    } else {
+      vDesconto = 0;
+    }
+
+    // Calcular o valor final com o desconto do cupom recalculado
+    vFinal = Math.max(0, vOriginal - vDesconto);
+
+    // Ajustar o estado de gratuidade e pagamentos com base no vFinal recalculado
+    isGratuito = tipoNome === 'Equipe de Apoio' || vFinal <= 0 || formaStr === 'isento' || formaStr === 'equipe_apoio';
+    isAsaas = formaStr === 'asaas' && !isGratuito;
+    isPresencial = !isAsaas && !isGratuito;
+    recalcularPagamento();
 
     // ── Fluxo esposa (AGO Campo Missionário) ─────────────────
     const ehEsposaFlow = !!(incluir_esposa) && !!(esposa) && (evento as any).departamento === 'AGO' && fluxoCampoMissionarioEspecial;
@@ -826,6 +943,7 @@ export async function POST(
         hospedagem: !!hospedagem, alimentacao: incluiAlimentacao, brinde: !!brinde,
         tipo_inscricao: tipoNome,
         valor_original: vOriginal, cupom_codigo: cupomCodigo, desconto_valor: vDesconto,
+        cupom_id: cupomId,
         valor_final: vFinal, valor_pago: isGratuito2 ? 0 : isPresencial ? vFinal : 0,
         status_pagamento: statusPag, forma_pagamento: formaPagSalva,
         refeicoes_total: quantidadeRefeicoes,
@@ -962,6 +1080,7 @@ export async function POST(
       valor_original:   vOriginal,
       cupom_codigo:     cupomCodigo,
       desconto_valor:   vDesconto,
+      cupom_id:         cupomId,
       valor_final:      vFinal,
       valor_pago:       isGratuito ? 0 : isPresencial ? vFinal : 0,
       status_pagamento: statusPag,

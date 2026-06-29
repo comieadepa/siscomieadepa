@@ -1141,13 +1141,17 @@ export default function BalcaoPage() {
     if (!form.cupom.trim() || !evento) return;
     setCupomStatus('validando');
     try {
-      const res = await fetch(`/api/eventos/${evento.id}/cupons/validar`, {
+      const res = await fetch(`/api/eventos/${evento.id}/balcao/cupom`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codigo: form.cupom.trim().toUpperCase(), valor_base: valorBase }),
+        body: JSON.stringify({
+          codigo: form.cupom.trim().toUpperCase(),
+          subtotal: valorBase,
+          tipo_inscricao: tipoSel?.nome || ''
+        }),
       });
-      const json = await res.json() as { valido: boolean; desconto?: number; valorFinal?: number; erro?: string };
-      if (json.valido && json.desconto !== undefined) {
+      const json = await res.json() as { ok: boolean; desconto?: number; erro?: string };
+      if (json.ok && json.desconto !== undefined) {
         setCupomStatus('ok');
         setCupomDesconto(json.desconto);
         setCupomMsg(`Desconto de ${fmtMoeda(json.desconto)} aplicado!`);
@@ -2795,6 +2799,22 @@ export default function BalcaoPage() {
               <p className={`mt-2 text-xs font-semibold ${cupomStatus === 'ok' ? 'text-emerald-400' : 'text-red-400'}`}>
                 {cupomMsg}
               </p>
+            )}
+            {cupomStatus === 'ok' && cupomDesconto > 0 && (
+              <div className="mt-4 p-3 bg-white/5 rounded-xl border border-white/10 text-xs space-y-1.5 text-white/80">
+                <div className="flex justify-between">
+                  <span>Subtotal original:</span>
+                  <span className="font-semibold">{fmtMoeda(valorBase)}</span>
+                </div>
+                <div className="flex justify-between text-emerald-400">
+                  <span>Cupom aplicado ({form.cupom.trim().toUpperCase()}):</span>
+                  <span className="font-bold">−{fmtMoeda(cupomDesconto)}</span>
+                </div>
+                <div className="flex justify-between border-t border-white/10 pt-1.5 text-sm font-bold text-[#F39C12]">
+                  <span>Total final:</span>
+                  <span>{fmtMoeda(valorFinal)}</span>
+                </div>
+              </div>
             )}
           </section>
 
