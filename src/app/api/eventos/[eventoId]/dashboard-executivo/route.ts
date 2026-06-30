@@ -145,8 +145,19 @@ export async function GET(
 
   // ── Config do evento ──────────────────────────────────────────────────
   const cfg = (evento.configuracoes_ago ?? {}) as Record<string, unknown>;
-  const plenariasDatas: string[] = Array.isArray(cfg.plenarias_datas)
+  const configPlenarias = Array.isArray(cfg.plenarias_datas)
     ? (cfg.plenarias_datas as string[]) : [];
+
+  let plenariasDatas = configPlenarias;
+  if (plenariasDatas.length === 0) {
+    const datasUnicas = new Set<string>();
+    for (const c of checkins) {
+      if (c.tipo_checkin === 'plenaria' && c.data_plenaria) {
+        datasUnicas.add(c.data_plenaria);
+      }
+    }
+    plenariasDatas = Array.from(datasUnicas).sort();
+  }
   const totalPlenarias = plenariasDatas.length;
 
   // ── Mapas de lookup ───────────────────────────────────────────────────

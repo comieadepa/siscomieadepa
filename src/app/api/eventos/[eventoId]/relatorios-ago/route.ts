@@ -89,17 +89,28 @@ export async function GET(
     totalAusentesConsolidado = ausentes ?? 0;
   } else {
     // Calcula frequência em tempo real com base nos check-ins
+    const { data: allCheckins } = await supabase
+      .from('evento_checkins')
+      .select('inscricao_id, data_plenaria, tipo_checkin')
+      .eq('tipo_checkin', 'plenaria')
+      .eq('evento_id', eventoId);
+
     const cfg = (evento.configuracoes_ago ?? {}) as Record<string, unknown>;
-    const plenariasDatas: string[] = Array.isArray(cfg.plenarias_datas) ? (cfg.plenarias_datas as string[]) : [];
+    const configPlenarias = Array.isArray(cfg.plenarias_datas) ? (cfg.plenarias_datas as string[]) : [];
+
+    let plenariasDatas = configPlenarias;
+    if (plenariasDatas.length === 0) {
+      const datasUnicas = new Set<string>();
+      for (const ck of allCheckins ?? []) {
+        if (ck.tipo_checkin === 'plenaria' && ck.data_plenaria) {
+          datasUnicas.add(ck.data_plenaria);
+        }
+      }
+      plenariasDatas = Array.from(datasUnicas).sort();
+    }
     const totalPlenarias = plenariasDatas.length;
 
     if (totalPlenarias > 0 && (totalInscritos ?? 0) > 0) {
-      const { data: allCheckins } = await supabase
-        .from('evento_checkins')
-        .select('inscricao_id, data_plenaria')
-        .eq('tipo_checkin', 'plenaria')
-        .eq('evento_id', eventoId);
-
       const presencasPorInscricao = new Map<string, Set<string>>();
       for (const ck of allCheckins ?? []) {
         if (!ck.inscricao_id || !ck.data_plenaria) continue;

@@ -23,7 +23,8 @@ export async function GET(
   if (!evento) return NextResponse.json({ error: 'Evento nao encontrado.' }, { status: 404 });
 
   const cfg = (evento.configuracoes_ago as Record<string, unknown> | null) ?? {};
-  const plenarias_datas: string[] = Array.isArray(cfg.plenarias_datas) ? (cfg.plenarias_datas as string[]) : [];
+  const configPlenarias = Array.isArray(cfg.plenarias_datas) ? (cfg.plenarias_datas as string[]) : [];
+  let plenarias_datas = configPlenarias;
 
   // Busca todas as inscricoes confirmadas
   const { data: inscricoes } = await supabase
@@ -48,6 +49,14 @@ export async function GET(
       .in('inscricao_id', inscricaoIds)
       .not('data_plenaria', 'is', null);
     presencas = (data ?? []) as Array<{ inscricao_id: string; data_plenaria: string }>;
+  }
+
+  if (plenarias_datas.length === 0) {
+    const datasUnicas = new Set<string>();
+    for (const p of presencas) {
+      if (p.data_plenaria) datasUnicas.add(p.data_plenaria);
+    }
+    plenarias_datas = Array.from(datasUnicas).sort();
   }
 
   // Agrupa presencas por inscricao
