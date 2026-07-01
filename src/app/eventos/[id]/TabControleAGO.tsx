@@ -156,6 +156,7 @@ export default function TabControleAGO({
   const [loading,    setLoading]    = useState(true);
   const [erro,       setErro]       = useState<string | null>(null);
   const [atualizadoEm, setAtualizadoEm] = useState<string | null>(null);
+  const [activeTab,  setActiveTab]  = useState<string>('supervisao');
 
   // Frequência Oficial Ministerial States
   const [oficialData,    setOficialData]    = useState<OficialPreviewResponse | null>(null);
@@ -521,7 +522,38 @@ V. Sa. dispõe de um prazo regulamentar para protocolar a justificativa de suas 
         </div>
       </div>
 
-      {/* ── 5. POR SUPERVISÃO ────────────────────────────────────────────── */}
+      {/* ── NAVEGAÇÃO DE ABAS ──────────────────────────────────────────────── */}
+      {(() => {
+        const TABS = [
+          { id: 'supervisao', label: 'Por Supervisão',    icon: '🏛️' },
+          { id: 'campo',      label: 'Por Campo',         icon: '⛪' },
+          { id: 'hospedagem', label: 'Hospedagem',        icon: '🏨' },
+          { id: 'missionario',label: 'Campo + Freq.',     icon: '🌍' },
+          { id: 'advertencias',label: 'Advertências',     icon: '⚠️' },
+          { id: 'matriz',     label: 'Matriz',            icon: '📋' },
+        ];
+        return (
+          <div className="flex gap-1 flex-wrap border-b border-gray-200 pb-0 -mb-px">
+            {TABS.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-t-lg border border-b-0 transition whitespace-nowrap ${
+                  activeTab === t.id
+                    ? 'bg-white border-gray-200 text-[#0D2B4E] shadow-sm -mb-px'
+                    : 'bg-gray-50 border-transparent text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                <span>{t.icon}</span>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        );
+      })()}
+
+      {/* ── ABA: POR SUPERVISÃO ───────────────────────────────────────────── */}
+      {activeTab === 'supervisao' && (
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <SecaoTitle icon="🏛️" title="Por Supervisão" count={por_supervisao.length} />
         <div className="overflow-x-auto">
@@ -547,8 +579,10 @@ V. Sa. dispõe de um prazo regulamentar para protocolar a justificativa de suas 
           </table>
         </div>
       </div>
+      )}
 
-      {/* ── 6. POR CAMPO ─────────────────────────────────────────────────── */}
+      {/* ── ABA: POR CAMPO ────────────────────────────────────────────────── */}
+      {activeTab === 'campo' && (
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -590,8 +624,11 @@ V. Sa. dispõe de um prazo regulamentar para protocolar a justificativa de suas 
           </table>
         </div>
       </div>
+      )}
 
-      {/* ── 7 + 8. HOSPEDAGEM & REFEITÓRIO ──────────────────────────────── */}
+      {/* ── ABA: HOSPEDAGEM + RELATÓRIO DE ALIMENTAÇÃO ───────────────────── */}
+      {activeTab === 'hospedagem' && (
+        <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
         {/* Hospedagem */}
@@ -753,8 +790,12 @@ V. Sa. dispõe de um prazo regulamentar para protocolar a justificativa de suas 
           )}
         </div>
       </div>
+        </div>
+      )}
 
-      {/* ── 9. CAMPO MISSIONÁRIO ────────────────────────────────────────── */}
+      {/* ── ABA: CAMPO MISSIONÁRIO + FREQUÊNCIA OFICIAL ───────────────────── */}
+      {activeTab === 'missionario' && (
+        <div className="space-y-4">
       {campo_missionario.total > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
           <SecaoTitle icon="🌍" title="Campo Missionário" count={campo_missionario.total} />
@@ -965,8 +1006,11 @@ V. Sa. dispõe de um prazo regulamentar para protocolar a justificativa de suas 
           </>
         )}
       </div>
+        </div>
+      )}
 
-      {/* ── 10. ADVERTÊNCIAS ELEGÍVEIS ──────────────────────────────────── */}
+      {/* ── ABA: ADVERTÊNCIAS ────────────────────────────────────────────── */}
+      {activeTab === 'advertencias' && (
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <div className="flex items-center gap-2 mb-3">
           <span className="text-lg">⚠️</span>
@@ -1017,8 +1061,10 @@ V. Sa. dispõe de um prazo regulamentar para protocolar a justificativa de suas 
           </div>
         )}
       </div>
+      )}
 
-      {/* ── 11. MATRIZ OPERACIONAL ──────────────────────────────────────── */}
+      {/* ── ABA: MATRIZ OPERACIONAL ───────────────────────────────────────── */}
+      {activeTab === 'matriz' && (
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <div className="flex items-center gap-2">
@@ -1099,6 +1145,7 @@ V. Sa. dispõe de um prazo regulamentar para protocolar a justificativa de suas 
           </div>
         )}
       </div>
+      )}
 
       {/* ── Rodapé ──────────────────────────────────────────────────────── */}
       <p className="text-center text-[10px] text-gray-300 pb-2">
