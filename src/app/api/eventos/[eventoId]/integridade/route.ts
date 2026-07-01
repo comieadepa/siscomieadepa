@@ -3,6 +3,53 @@ import { requireEventoPermission } from '@/lib/evento-guard';
 
 export const dynamic = 'force-dynamic';
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Busca TODOS os inscricao_id de uma tabela para um evento, paginando de 1000 em 1000. */
+async function fetchAllInscricaoIds(
+  builder: (from: number, to: number) => PromiseLike<{ data: { inscricao_id: string | null }[] | null; error: unknown }>,
+): Promise<string[]> {
+  const PAGE = 1000;
+  const result: string[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await builder(from, from + PAGE - 1);
+    if (error) break;
+    const rows = data ?? [];
+    for (const r of rows) {
+      if (r.inscricao_id) result.push(r.inscricao_id);
+    }
+    if (rows.length < PAGE) break;
+    from += PAGE;
+  }
+  return result;
+}
+
+/**
+ * Conta quantos IDs de uma lista existem em evento_inscricoes do evento.
+ * Processa em lotes de 200 para não estourar o limite de URL do PostgREST.
+ */
+async function countValidInscricaoIds(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  eventoId: string,
+  ids: string[],
+  BATCH = 200,
+): Promise<number> {
+  if (ids.length === 0) return 0;
+  let total = 0;
+  for (let i = 0; i < ids.length; i += BATCH) {
+    const chunk = ids.slice(i, i + BATCH);
+    const { count } = await supabase
+      .from('evento_inscricoes')
+      .select('id', { count: 'exact', head: true })
+      .eq('evento_id', eventoId)
+      .in('id', chunk);
+    total += count ?? 0;
+  }
+  return total;
+}
+
 /**
  * GET /api/eventos/[eventoId]/integridade
  *
@@ -92,71 +139,48 @@ export async function GET(
     .select('id', { count: 'exact', head: true })
     .eq('evento_id', eventoId);
 
-  // Hospedagens cujo inscricao_id NÃO pertence a este evento (contaminação cruzada)
-  const { data: hospOrfasRows } = await supabase
-    .from('evento_hospedagens')
-    .select('id, inscricao_id')
-    .eq('evento_id', eventoId);
-
-  const hospInscIds = (hospOrfasRows ?? []).map(r => r.inscricao_id as string);
-  let hospOrfas = 0;
-  if (hospInscIds.length > 0) {
-    const { count: hospValidas } = await supabase
-      .from('evento_inscricoes')
-      .select('id', { count: 'exact', head: true })
+  // Busca TODOS os inscricao_id de hospedagens (paginado)
+  const hospInscIds = await fetchAllInscricaoIds((f, t) =>
+    supabase
+      .from('evento_hospedagens')
+      .select('inscricao_id')
       .eq('evento_id', eventoId)
-      .in('id', hospInscIds);
-    hospOrfas = hospInscIds.length - (hospValidas ?? 0);
-  }
+      .range(f, t) as PromiseLike<{ data: { inscricao_id: string | null }[] | null; error: unknown }>
+  );
+  const uniqueHospIds = [...new Set(hospInscIds)];
+  const hospValidas = await countValidInscricaoIds(supabase, eventoId, uniqueHospIds);
+  // Orfas = hospedagens cujo inscricao_id não pertence a este evento
+  const hospOrfas = hospInscIds.length - hospValidas;
 
   // ── 3. CHECK-INS ──────────────────────────────────────────────────────────
-  const { count: totalCheckins } = await supabase
-    .from('evento_checkins')
-    .select('id', { count: 'exact', head: true })
-    .eq('evento_id', eventoId);
+  const [
+    { count: totalCheckins },
+    { count: totalCredenciamentos },
+    { count: totalRefeitorio },
+    { count: totalPlenaria },
+  ] = await Promise.all([
+    supabase.from('evento_checkins').select('id', { count: 'exact', head: true }).eq('evento_id', eventoId),
+    supabase.from('evento_checkins').select('id', { count: 'exact', head: true }).eq('evento_id', eventoId).eq('tipo_checkin', 'credenciamento'),
+    supabase.from('evento_checkins').select('id', { count: 'exact', head: true }).eq('evento_id', eventoId).eq('tipo_checkin', 'refeitorio'),
+    supabase.from('evento_checkins').select('id', { count: 'exact', head: true }).eq('evento_id', eventoId).eq('tipo_checkin', 'plenaria'),
+  ]);
 
-  const { count: totalCredenciamentos } = await supabase
-    .from('evento_checkins')
-    .select('id', { count: 'exact', head: true })
-    .eq('evento_id', eventoId)
-    .eq('tipo_checkin', 'credenciamento');
-
-  const { count: totalRefeitorio } = await supabase
-    .from('evento_checkins')
-    .select('id', { count: 'exact', head: true })
-    .eq('evento_id', eventoId)
-    .eq('tipo_checkin', 'refeitorio');
-
-  const { count: totalPlenaria } = await supabase
-    .from('evento_checkins')
-    .select('id', { count: 'exact', head: true })
-    .eq('evento_id', eventoId)
-    .eq('tipo_checkin', 'plenaria');
-
-  // Check-ins órfãos (inscricao_id de outro evento)
-  const { data: checkinRows } = await supabase
-    .from('evento_checkins')
-    .select('inscricao_id')
-    .eq('evento_id', eventoId);
-
-  const checkinIds = [...new Set((checkinRows ?? []).map(r => r.inscricao_id as string))];
-  let checkinsOrfaos = 0;
-  if (checkinIds.length > 0) {
-    const { count: cValid } = await supabase
-      .from('evento_inscricoes')
-      .select('id', { count: 'exact', head: true })
+  // Check-ins órfãos — busca paginada + chunk no .in()
+  const checkinInscIds = await fetchAllInscricaoIds((f, t) =>
+    supabase
+      .from('evento_checkins')
+      .select('inscricao_id')
       .eq('evento_id', eventoId)
-      .in('id', checkinIds);
-    // Checkins únicos por inscricao — todos os checkins cujo inscricao_id não é válido
-    const validSet = cValid ?? 0;
-    if (validSet < checkinIds.length) {
-      const { count: invalid } = await supabase
-        .from('evento_checkins')
-        .select('id', { count: 'exact', head: true })
-        .eq('evento_id', eventoId)
-        .not('inscricao_id', 'in', `(${checkinIds.join(',')})`);
-      checkinsOrfaos = invalid ?? 0;
-    }
+      .range(f, t) as PromiseLike<{ data: { inscricao_id: string | null }[] | null; error: unknown }>
+  );
+  const uniqueCheckinIds = [...new Set(checkinInscIds)];
+  const checkinValidos = await countValidInscricaoIds(supabase, eventoId, uniqueCheckinIds);
+  // Estima orfãos proporcional à diferença de IDs únicos inválidos
+  const idsInvalidosCheckin = uniqueCheckinIds.length - checkinValidos;
+  let checkinsOrfaos = 0;
+  if (idsInvalidosCheckin > 0) {
+    // Conta todos os check-ins cujos inscricao_ids não são válidos (aproximação segura)
+    checkinsOrfaos = idsInvalidosCheckin;
   }
 
   // ── 4. FREQUÊNCIA FINAL ───────────────────────────────────────────────────
@@ -165,21 +189,16 @@ export async function GET(
     .select('id', { count: 'exact', head: true })
     .eq('evento_id', eventoId);
 
-  const { data: freqRows } = await supabase
-    .from('evento_ago_frequencia_final')
-    .select('inscricao_id')
-    .eq('evento_id', eventoId);
-
-  const freqIds = (freqRows ?? []).map(r => r.inscricao_id as string);
-  let freqOrfas = 0;
-  if (freqIds.length > 0) {
-    const { count: fValid } = await supabase
-      .from('evento_inscricoes')
-      .select('id', { count: 'exact', head: true })
+  const freqInscIds = await fetchAllInscricaoIds((f, t) =>
+    supabase
+      .from('evento_ago_frequencia_final')
+      .select('inscricao_id')
       .eq('evento_id', eventoId)
-      .in('id', freqIds);
-    freqOrfas = freqIds.length - (fValid ?? 0);
-  }
+      .range(f, t) as PromiseLike<{ data: { inscricao_id: string | null }[] | null; error: unknown }>
+  );
+  const uniqueFreqIds = [...new Set(freqInscIds)];
+  const freqValidas = await countValidInscricaoIds(supabase, eventoId, uniqueFreqIds);
+  const freqOrfas = freqInscIds.length - freqValidas;
 
   // ── 5. HOMOLOGAÇÃO ────────────────────────────────────────────────────────
   const { count: totalHomolog } = await supabase
@@ -187,21 +206,16 @@ export async function GET(
     .select('id', { count: 'exact', head: true })
     .eq('evento_id', eventoId);
 
-  const { data: homRows } = await supabase
-    .from('evento_ago_homologacao')
-    .select('inscricao_id')
-    .eq('evento_id', eventoId);
-
-  const homIds = (homRows ?? []).map(r => r.inscricao_id as string);
-  let homOrfas = 0;
-  if (homIds.length > 0) {
-    const { count: hValid } = await supabase
-      .from('evento_inscricoes')
-      .select('id', { count: 'exact', head: true })
+  const homInscIds = await fetchAllInscricaoIds((f, t) =>
+    supabase
+      .from('evento_ago_homologacao')
+      .select('inscricao_id')
       .eq('evento_id', eventoId)
-      .in('id', homIds);
-    homOrfas = homIds.length - (hValid ?? 0);
-  }
+      .range(f, t) as PromiseLike<{ data: { inscricao_id: string | null }[] | null; error: unknown }>
+  );
+  const uniqueHomIds = [...new Set(homInscIds)];
+  const homValidas = await countValidInscricaoIds(supabase, eventoId, uniqueHomIds);
+  const homOrfas = homInscIds.length - homValidas;
 
   // ── 6. ADVERTÊNCIAS ───────────────────────────────────────────────────────
   const { count: totalAdvert } = await supabase
@@ -209,21 +223,16 @@ export async function GET(
     .select('id', { count: 'exact', head: true })
     .eq('evento_id', eventoId);
 
-  const { data: advRows } = await supabase
-    .from('ago_cartas_advertencia')
-    .select('inscricao_id')
-    .eq('evento_id', eventoId);
-
-  const advIds = (advRows ?? []).map(r => r.inscricao_id as string);
-  let advOrfas = 0;
-  if (advIds.length > 0) {
-    const { count: aValid } = await supabase
-      .from('evento_inscricoes')
-      .select('id', { count: 'exact', head: true })
+  const advInscIds = await fetchAllInscricaoIds((f, t) =>
+    supabase
+      .from('ago_cartas_advertencia')
+      .select('inscricao_id')
       .eq('evento_id', eventoId)
-      .in('id', advIds);
-    advOrfas = advIds.length - (aValid ?? 0);
-  }
+      .range(f, t) as PromiseLike<{ data: { inscricao_id: string | null }[] | null; error: unknown }>
+  );
+  const uniqueAdvIds = [...new Set(advInscIds)];
+  const advValidas = await countValidInscricaoIds(supabase, eventoId, uniqueAdvIds);
+  const advOrfas = advInscIds.length - advValidas;
 
   // ── 7. CÁLCULO DO PERCENTUAL DE INTEGRIDADE ───────────────────────────────
   //
@@ -264,24 +273,24 @@ export async function GET(
     gerado_em:    new Date().toISOString(),
 
     resumo: {
-      integridade_percentual: integridade,
-      status:                 statusGeral,
+      integridade_percentual:   integridade,
+      status:                   statusGeral,
       total_problemas_criticos: problemasCriticos,
-      meta_percentual:        99,
-      atingiu_meta:           integridade >= 99,
+      meta_percentual:          99,
+      atingiu_meta:             integridade >= 99,
     },
 
     inscricoes: {
       total:           totalInscricoes ?? 0,
       sem_cpf:         semCpf         ?? 0,
       sem_categoria:   semCategoria   ?? 0,
-      sem_member_id:   semMemberId    ?? 0,   // ministro_id — atenção, não crítico
+      sem_member_id:   semMemberId    ?? 0,   // ministro_id — informativo, não crítico
       canceladas:      canceladas     ?? 0,
     },
 
     credenciamento: {
-      total_checkins:       totalCredenciamentos ?? 0,
-      orfaos:               0,   // calculado em bloco com checkins gerais abaixo
+      total_checkins: totalCredenciamentos ?? 0,
+      orfaos:         0,
     },
 
     refeitorio: {
@@ -290,32 +299,32 @@ export async function GET(
     },
 
     frequencia: {
-      total_checkins_plenaria: totalPlenaria   ?? 0,
-      total_registros_finais:  totalFreqFinal  ?? 0,
+      total_checkins_plenaria: totalPlenaria  ?? 0,
+      total_registros_finais:  totalFreqFinal ?? 0,
       orfaos:                  freqOrfas,
     },
 
     hospedagem: {
       total:  totalHosp ?? 0,
-      orfas:  hospOrfas,
+      orfas:  Math.max(0, hospOrfas),
     },
 
     homologacao: {
       total:  totalHomolog ?? 0,
-      orfas:  homOrfas,
+      orfas:  Math.max(0, homOrfas),
     },
 
     advertencias: {
       total:  totalAdvert ?? 0,
-      orfas:  advOrfas,
+      orfas:  Math.max(0, advOrfas),
     },
 
     checkins: {
-      total:              totalCheckins          ?? 0,
-      credenciamentos:    totalCredenciamentos   ?? 0,
-      refeitorios:        totalRefeitorio        ?? 0,
-      plenarias:          totalPlenaria          ?? 0,
-      orfaos:             checkinsOrfaos,
+      total:           totalCheckins        ?? 0,
+      credenciamentos: totalCredenciamentos ?? 0,
+      refeitorios:     totalRefeitorio      ?? 0,
+      plenarias:       totalPlenaria        ?? 0,
+      orfaos:          checkinsOrfaos,
     },
 
     detalhes: {
