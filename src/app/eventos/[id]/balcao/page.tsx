@@ -230,6 +230,13 @@ export default function BalcaoPage() {
   const [fechandoCaixaLoading, setFechandoCaixaLoading] = useState(false);
   const [fechandoCaixaErro, setFechandoCaixaErro] = useState<string | null>(null);
 
+  // ── Estado do Cancelamento de Movimentação ─────────────────────────
+  const [modalCancelMovAberto, setModalCancelMovAberto] = useState(false);
+  const [cancelMovItem, setCancelMovItem] = useState<any | null>(null);
+  const [cancelMovMotivo, setCancelMovMotivo] = useState('');
+  const [cancelMovLoading, setCancelMovLoading] = useState(false);
+  const [cancelMovErro, setCancelMovErro] = useState<string | null>(null);
+
   // ── Estado do Modal de Efetivar Pagamento Presencial ──
   const [modalPagarPresencialAberto, setModalPagarPresencialAberto] = useState(false);
   const [pagPresencialInscricao, setPagPresencialInscricao] = useState<InscricaoResumo | null>(null);
@@ -606,6 +613,50 @@ export default function BalcaoPage() {
       setCarregandoCaixa(false);
     }
   }, [id]);
+
+  // ── Cancelar movimentação do caixa ─────────────────────────────────
+  const executarCancelamentoMovimentacao = async () => {
+    if (!cancelMovItem || !id) return;
+    setCancelMovLoading(true);
+    setCancelMovErro(null);
+
+    const tipoApi = cancelMovItem.tipo === 'Inserão' || cancelMovItem.tipo === 'Inscrição'
+      ? 'inscricao'
+      : cancelMovItem.tipo === 'Complemento'
+      ? 'complemento'
+      : null;
+
+    if (!tipoApi) {
+      setCancelMovErro('Tipo de movimentação não suporta cancelamento.');
+      setCancelMovLoading(false);
+      return;
+    }
+
+    try {
+      const session = getEquipeSession();
+      const equipeId = session?.eventoId === id ? session.equipeId : null;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (equipeId) headers['x-evento-equipe-id'] = equipeId;
+
+      const res = await fetch(
+        `/api/eventos/${id}/caixa/movimentacoes/${cancelMovItem.id}`,
+        { method: 'PATCH', headers, body: JSON.stringify({ tipo: tipoApi, motivo: cancelMovMotivo }) },
+      );
+      const json = await res.json();
+      if (!res.ok) {
+        setCancelMovErro(json.error || 'Erro ao cancelar movimentação.');
+      } else {
+        setModalCancelMovAberto(false);
+        setCancelMovItem(null);
+        setCancelMovMotivo('');
+        await carregarCaixaDados(); // Recarrega timeline
+      }
+    } catch (err) {
+      setCancelMovErro('Falha na comunicação com o servidor.');
+    } finally {
+      setCancelMovLoading(false);
+    }
+  };
 
   const executarSangria = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -3585,29 +3636,124 @@ export default function BalcaoPage() {
                     {caixaTimeline.length === 0 ? (
                       <p className="text-white/40 text-sm py-4 text-center">Nenhuma movimentação realizada nesta sessão.</p>
                     ) : (
-                      caixaTimeline.map((item: any, idx: number) => (
-                        <div key={idx} className="py-3 flex justify-between items-center text-sm">
-                          <div>
-                            <span className="text-xs text-white/40 block">
-                              {new Date(item.data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                            <span className="font-semibold block">{item.tipo}</span>
-                            <span className="text-white/60 block">{item.nome}</span>
+                      caixaTimeline.map((item: any, idx: number) => {
+                        const podeRemover = item.tipo === 'Inscrição' || item.tipo === 'Complemento';
+                        return (
+                          <div key={idx} className="py-3 flex justify-between items-center text-sm gap-3">
+                            <div className="flex-1 min-w-0">
+                              <span className="text-xs text-white/40 block">
+                                {new Date(item.data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              <span className="font-semibold block">{item.tipo}</span>
+                              <span className="text-white/60 block truncate max-w-[180px]">{item.nome}</span>
+                            </div>
+                            <div className="text-right flex items-center gap-3">
+                              <div>
+                                <span className="text-xs bg-white/5 border border-white/10 px-2 py-0.5 rounded text-white/60 uppercase">
+                                  {item.forma}
+                                </span>
+                                <span className={`block font-bold mt-1 ${item.valor < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                                  {item.valor < 0 ? '' : '+'}{fmtMoeda(item.valor)}
+                                </span>
+                              </div>
+                              {podeRemover && (
+                                <button
+                                  type="button"
+                                  title="Remover duplicidade"
+                                  onClick={() => {
+                                    setCancelMovItem(item);
+                                    setCancelMovMotivo('');
+                                    setCancelMovErro(null);
+                                    setModalCancelMovAberto(true);
+                                  }}
+                                  className="shrink-0 text-red-400/70 hover:text-red-300 hover:bg-red-500/10 p-1.5 rounded-lg transition"
+                                >
+                                  🗑
+                                </button>
+                              )}
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <span className="text-xs bg-white/5 border border-white/10 px-2 py-0.5 rounded text-white/60 uppercase">
-                              {item.forma}
-                            </span>
-                            <span className={`block font-bold mt-1 ${item.valor < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
-                              {item.valor < 0 ? '' : '+'}{fmtMoeda(item.valor)}
-                            </span>
-                          </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </div>
               </div>
+
+              {/* Modal de Cancelamento de Movimentação */}
+              {modalCancelMovAberto && cancelMovItem && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+                  <div className="bg-[#0D2B4E] border border-white/10 w-full max-w-md rounded-2xl shadow-2xl p-6 relative">
+                    <button
+                      type="button"
+                      onClick={() => setModalCancelMovAberto(false)}
+                      className="absolute top-4 right-4 text-white/50 hover:text-white transition text-lg"
+                    >
+                      ✕
+                    </button>
+                    <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+                      🗑 Remover Movimentação
+                    </h3>
+                    <p className="text-white/50 text-xs mb-4">Esta ação é um soft-cancel. Não apaga dados — apenas reverte o status financeiro.</p>
+
+                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-4 space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-white/50">Tipo</span>
+                        <span className="font-semibold text-white">{cancelMovItem.tipo}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-white/50">Participante</span>
+                        <span className="font-semibold text-white truncate max-w-[200px]">{cancelMovItem.nome}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-white/50">Forma</span>
+                        <span className="font-semibold text-white uppercase">{cancelMovItem.forma}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-white/50">Valor</span>
+                        <span className="font-bold text-emerald-400">{fmtMoeda(cancelMovItem.valor)}</span>
+                      </div>
+                    </div>
+
+                    <div className="mb-4">
+                      <label className="block text-xs font-semibold text-gray-300 mb-1 uppercase tracking-wide">
+                        Motivo (opcional)
+                      </label>
+                      <input
+                        type="text"
+                        value={cancelMovMotivo}
+                        onChange={e => setCancelMovMotivo(e.target.value)}
+                        placeholder="Ex: duplicidade de pagamento..."
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-400/40"
+                      />
+                    </div>
+
+                    {cancelMovErro && (
+                      <div className="bg-red-500/20 text-red-300 p-3 rounded-lg text-xs font-semibold mb-3">
+                        ⚠️ {cancelMovErro}
+                      </div>
+                    )}
+
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setModalCancelMovAberto(false)}
+                        className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white py-2.5 rounded-xl font-semibold text-sm transition"
+                      >
+                        Voltar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={executarCancelamentoMovimentacao}
+                        disabled={cancelMovLoading}
+                        className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white py-2.5 rounded-xl font-bold text-sm transition"
+                      >
+                        {cancelMovLoading ? 'Removendo...' : 'Confirmar Remoção'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Modal de Sangria */}
               {modalSangriaAberto && (
