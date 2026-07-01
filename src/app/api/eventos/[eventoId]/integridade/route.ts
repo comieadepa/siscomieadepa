@@ -90,10 +90,12 @@ export async function GET(
       .select('id', { count: 'exact', head: true })
       .eq('evento_id', eventoId),
 
+    // Exclui EQUIPE DE APOIO — isentos sem CPF é comportamento esperado
     supabase
       .from('evento_inscricoes')
       .select('id', { count: 'exact', head: true })
       .eq('evento_id', eventoId)
+      .neq('tipo_inscricao', 'EQUIPE DE APOIO')
       .or('cpf.is.null,cpf.eq.'),
 
     supabase
@@ -114,11 +116,12 @@ export async function GET(
       .eq('evento_id', eventoId)
       .eq('status_pagamento', 'cancelado'),
 
-    // Detalhes — primeiros 50 sem CPF
+    // Detalhes — primeiros 50 sem CPF (exclui EQUIPE DE APOIO isenta)
     supabase
       .from('evento_inscricoes')
       .select('id, nome_inscrito, cpf, tipo_inscricao, supervisao_id')
       .eq('evento_id', eventoId)
+      .neq('tipo_inscricao', 'EQUIPE DE APOIO')
       .or('cpf.is.null,cpf.eq.')
       .order('nome_inscrito')
       .limit(50),
@@ -281,10 +284,11 @@ export async function GET(
     },
 
     inscricoes: {
-      total:           totalInscricoes ?? 0,
-      sem_cpf:         semCpf         ?? 0,
-      sem_categoria:   semCategoria   ?? 0,
-      sem_member_id:   semMemberId    ?? 0,   // ministro_id — informativo, não crítico
+      total:                        totalInscricoes ?? 0,
+      sem_cpf:                      semCpf         ?? 0,   // exclui EQUIPE DE APOIO
+      sem_cpf_equipe_apoio_isento:  'informativo — não contabilizado como problema',
+      sem_categoria:                semCategoria   ?? 0,
+      sem_member_id:                semMemberId    ?? 0,   // ministro_id — informativo, não crítico
       canceladas:      canceladas     ?? 0,
     },
 
