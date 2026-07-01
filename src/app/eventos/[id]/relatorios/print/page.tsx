@@ -76,6 +76,43 @@ export default function RelatoriosPrintPage() {
 
   useEffect(() => {
     async function load() {
+      const equipeSessaoAtual = typeof window !== 'undefined' ? (() => {
+        try {
+          const s = localStorage.getItem('evento_equipe_session');
+          return s ? JSON.parse(s) : null;
+        } catch { return null; }
+      })() : null;
+
+      const isEquipe = equipeSessaoAtual && equipeSessaoAtual.eventoId === id;
+
+      if (isEquipe) {
+        try {
+          const [evRes, estruturaRes, insRes] = await Promise.all([
+            fetch(`/api/eventos/${id}/equipe-dados?equipeId=${equipeSessaoAtual.equipeId}&tipo=evento`),
+            authenticatedFetch('/api/v1/estrutura'),
+            fetch(`/api/eventos/${id}/equipe-dados?equipeId=${equipeSessaoAtual.equipeId}&tipo=inscricoes`),
+          ]);
+
+          if (evRes.ok) {
+            const evJson = await evRes.json();
+            if (evJson.evento) setEvento(evJson.evento as Evento);
+          }
+          if (estruturaRes.ok) {
+            const estrutura = await estruturaRes.json().catch(() => null as any);
+            setSupervisoes((estrutura?.supervisoes as Supervisao[]) || []);
+            setCampos((estrutura?.campos as Campo[]) || []);
+          }
+          if (insRes.ok) {
+            const insJson = await insRes.json();
+            setInscricoes((insJson.inscricoes as Inscricao[]) || []);
+          }
+          setLoading(false);
+          return;
+        } catch (err) {
+          console.error('Erro ao buscar dados de equipe para o relatório:', err);
+        }
+      }
+
       const [evRes, estruturaRes, insRes, lotesRes] = await Promise.all([
         supabase.from('eventos').select('id,nome,departamento,data_inicio,data_fim,cidade').eq('id', id).single(),
         authenticatedFetch('/api/v1/estrutura'),
