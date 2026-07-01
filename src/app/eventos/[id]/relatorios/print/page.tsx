@@ -76,13 +76,9 @@ export default function RelatoriosPrintPage() {
 
   useEffect(() => {
     async function load() {
-      const equipeSessaoAtual = typeof window !== 'undefined' ? (() => {
-        try {
-          const s = localStorage.getItem('evento_equipe_session');
-          return s ? JSON.parse(s) : null;
-        } catch { return null; }
-      })() : null;
-
+      // Importado dinamicamente para não quebrar builds que usam SSR
+      const { getEquipeSession } = await import('@/lib/equipe-session');
+      const equipeSessaoAtual = getEquipeSession();
       const isEquipe = equipeSessaoAtual && equipeSessaoAtual.eventoId === id;
 
       if (isEquipe) {
