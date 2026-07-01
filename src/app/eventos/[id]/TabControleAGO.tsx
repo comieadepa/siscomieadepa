@@ -68,6 +68,29 @@ interface DashData {
   relatorio_alimentacao: RelatorioAlimentacao;
 }
 
+export interface OficialMinistro {
+  ministro_id: string;
+  nome: string;
+  cpf: string | null;
+  matricula: string | null;
+  cargo_ministerial: string | null;
+  esta_inscrito: boolean;
+  inscricao_id: string | null;
+  possui_checkin_plenaria: boolean;
+  dias_presentes: number;
+  dias_ausentes: number;
+  percentual_presenca: number | null;
+  status_frequencia: 'REGULAR' | 'CINQUENTA_POR_CENTO' | 'FALTOSO' | 'INSCRITO_SEM_CHECKIN' | 'NAO_INSCRITO';
+  dias_detalhes: Array<{ dia: number; data: string; presente: boolean }>;
+}
+
+export interface OficialPreviewResponse {
+  evento_id: string;
+  total_ministros: number;
+  plenarias_datas: string[];
+  ministros: OficialMinistro[];
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const fmtPct  = (v: number | null) => v === null ? '—' : `${v.toFixed(1)}%`;
 const fmtNum  = (v: number) => v.toLocaleString('pt-BR');
@@ -134,6 +157,16 @@ export default function TabControleAGO({
   const [erro,       setErro]       = useState<string | null>(null);
   const [atualizadoEm, setAtualizadoEm] = useState<string | null>(null);
 
+  // Frequência Oficial Ministerial States
+  const [oficialData,    setOficialData]    = useState<OficialPreviewResponse | null>(null);
+  const [loadingOficial, setLoadingOficial] = useState(false);
+  const [erroOficial,    setErroOficial]    = useState<string | null>(null);
+  const [oficialBusca,   setOficialBusca]   = useState('');
+  const [oficialStatus,  setOficialStatus]  = useState('');
+  const [oficialPagina,  setOficialPagina]  = useState(0);
+  const [cartaRascunho,  setCartaRascunho]  = useState<OficialMinistro | null>(null);
+  const [salvandoCarta,  setSalvandoCarta]  = useState(false);
+
   // Filtros da matriz
   const [mBusca,    setMBusca]    = useState('');
   const [mCategoria,setMCategoria]= useState('');
@@ -145,14 +178,32 @@ export default function TabControleAGO({
   // Expansão de seções
   const [showIntegProbs, setShowIntegProbs] = useState(false);
 
+  const carregarOficial = useCallback(async () => {
+    setLoadingOficial(true);
+    setErroOficial(null);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/frequencia-ago/oficial-preview`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Erro ao carregar prévia oficial.');
+      setOficialData(json as OficialPreviewResponse);
+    } catch (e) {
+      setErroOficial(e instanceof Error ? e.message : 'Erro.');
+    } finally {
+      setLoadingOficial(false);
+    }
+  }, [eventoId]);
+
   const carregar = useCallback(async () => {
     setLoading(true);
     setErro(null);
     try {
-      const res  = await fetch(`/api/eventos/${eventoId}/dashboard-executivo`);
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? 'Erro ao carregar dados.');
-      setData(json as DashData);
+      const pExecutivo = fetch(`/api/eventos/${eventoId}/dashboard-executivo`).then(async res => {
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? 'Erro ao carregar dados.');
+        setData(json as DashData);
+      });
+      const pOficial = carregarOficial();
+      await Promise.all([pExecutivo, pOficial]);
       setAtualizadoEm(new Date().toLocaleTimeString('pt-BR'));
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro.');
@@ -161,7 +212,117 @@ export default function TabControleAGO({
     }
   }, [eventoId]);
 
+  async function handleSalvarRascunho() {
+    if (!cartaRascunho) return;
+    setSalvandoCarta(true);
+    try {
+      const textoFinal = `Prezado(a) ${cartaRascunho.cargo_ministerial || 'Ministro'} ${cartaRascunho.nome},
+
+Constatamos em nossos registros de controle de acesso via leitor de QR Code que V. Sa. obteve o seguinte índice de comparecimento durante as plenárias da ${data?.evento?.nome ?? 'AGO'}:
+
+Matrícula Ministerial: ${cartaRascunho.matricula || '—'}
+CPF: ${cartaRascunho.cpf || '—'}
+Inscrito no Evento: ${cartaRascunho.esta_inscrito ? 'Sim' : 'Não'}
+Plenárias Comparecidas: ${cartaRascunho.dias_presentes}
+Plenárias Ausentes: ${cartaRascunho.dias_ausentes}
+Frequência Consolidada: ${cartaRascunho.percentual_presenca !== null ? `${cartaRascunho.percentual_presenca}%` : '0%'}
+
+De acordo com os estatutos e regimentos internos que regem as plenárias e sessões deliberativas desta Convenção, a assiduidade mínima de 75% é obrigatória para a manutenção da regularidade das plenárias da AGO. A ausência sem justificativa nas sessões de plenárias implica na emissão da presente advertência.
+
+⚠️ ORIENTAÇÕES PARA REGULARIZAÇÃO E JUSTIFICATIVA:
+V. Sa. dispõe de um prazo regulamentar para protocolar a justificativa de suas ausências. O protocolo deve detalhar os motivos de força maior ou justificativas eclesiásticas para análise da Mesa Diretora.`;
+
+      const res = await fetch(`/api/eventos/${eventoId}/ago-cartas-advertencia`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          inscricao_id: cartaRascunho.inscricao_id,
+          ministro_id: cartaRascunho.ministro_id,
+          nome_ministro: cartaRascunho.nome,
+          matricula: cartaRascunho.matricula,
+          cpf: cartaRascunho.cpf,
+          status_frequencia: cartaRascunho.status_frequencia,
+          percentual_presenca: cartaRascunho.percentual_presenca,
+          dias_presentes: cartaRascunho.dias_presentes,
+          dias_ausentes: cartaRascunho.dias_ausentes,
+          motivo: 'Frequência abaixo de 75% nas plenárias da AGO',
+          texto_final: textoFinal,
+          dias_detalhes: cartaRascunho.dias_detalhes,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Erro ao salvar rascunho.');
+
+      alert(json.message ?? 'Rascunho de carta salvo com sucesso!');
+      setCartaRascunho(null);
+      carregar(); // Recarrega os dados do dashboard para atualizar o contador de advertências
+    } catch (e: any) {
+      alert(`Erro: ${e.message}`);
+    } finally {
+      setSalvandoCarta(false);
+    }
+  }
+
   useEffect(() => { carregar(); }, [carregar]);
+
+  // Filtros derivados para a lista oficial
+  const oficialFiltrada = useMemo(() => {
+    if (!oficialData) return [];
+    return oficialData.ministros.filter(m => {
+      if (oficialBusca) {
+        const busca = oficialBusca.toLowerCase();
+        const nomeMatch = String(m.nome ?? '').toLowerCase().includes(busca);
+        const cpfMatch = String(m.cpf ?? '').includes(busca);
+        const matMatch = String(m.matricula ?? '').includes(busca);
+        if (!nomeMatch && !cpfMatch && !matMatch) return false;
+      }
+      if (oficialStatus && m.status_frequencia !== oficialStatus) return false;
+      return true;
+    });
+  }, [oficialData, oficialBusca, oficialStatus]);
+
+  const oficialPag = useMemo(() => {
+    return oficialFiltrada.slice(oficialPagina * LINHAS_PAG, (oficialPagina + 1) * LINHAS_PAG);
+  }, [oficialFiltrada, oficialPagina]);
+
+  const totalPaginasOficial = Math.ceil(oficialFiltrada.length / LINHAS_PAG);
+
+  const oficialStats = useMemo(() => {
+    if (!oficialData) return { total: 0, inscritos: 0, naoInscritos: 0, comCheckin: 0, regular: 0, cinquenta: 0, faltoso: 0, semCheckin: 0 };
+    let total = oficialData.total_ministros;
+    let inscritos = 0;
+    let comCheckin = 0;
+    let regular = 0;
+    let cinquenta = 0;
+    let faltoso = 0;
+    let semCheckin = 0;
+
+    for (const m of oficialData.ministros) {
+      if (m.esta_inscrito) {
+        inscritos++;
+        if (m.possui_checkin_plenaria) {
+          comCheckin++;
+          if (m.status_frequencia === 'REGULAR') regular++;
+          else if (m.status_frequencia === 'CINQUENTA_POR_CENTO') cinquenta++;
+          else if (m.status_frequencia === 'FALTOSO') faltoso++;
+        } else {
+          semCheckin++;
+        }
+      }
+    }
+
+    return {
+      total,
+      inscritos,
+      naoInscritos: total - inscritos,
+      comCheckin,
+      regular,
+      cinquenta,
+      faltoso,
+      semCheckin
+    };
+  }, [oficialData]);
 
   // Filtros derivados para a matriz
   const matrizFiltrada = useMemo(() => {
@@ -612,6 +773,199 @@ export default function TabControleAGO({
         </div>
       )}
 
+
+      {/* ── 9.5. FREQUÊNCIA OFICIAL MINISTERIAL ────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-4">
+        <div className="flex items-center justify-between pb-2 border-b border-gray-100 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">📊</span>
+            <h3 className="font-black text-[#0D2B4E] text-sm">Frequência Oficial Ministerial</h3>
+            {loadingOficial && (
+              <div className="w-4 h-4 border-2 border-[#123b63] border-t-transparent rounded-full animate-spin ml-2" />
+            )}
+          </div>
+          {oficialData && (
+            <button
+              onClick={() => {
+                const datas = oficialData.plenarias_datas;
+                const cabecalho = [
+                  'Nome', 'Matrícula', 'CPF', 'Cargo', 'Inscrito',
+                  'Dias Presentes', 'Dias Ausentes', 'Percentual', 'Status',
+                  ...datas.map((d, idx) => `Dia ${idx + 1} (${fmtDate(d)})`)
+                ];
+
+                const linhas = oficialFiltrada.map(m => {
+                  const labelStatus = 
+                    m.status_frequencia === 'REGULAR' ? 'REGULAR (>= 75%)' :
+                    m.status_frequencia === 'CINQUENTA_POR_CENTO' ? 'PARCIAL (>= 50%)' :
+                    m.status_frequencia === 'FALTOSO' ? 'FALTOSO (< 50%)' :
+                    m.status_frequencia === 'INSCRITO_SEM_CHECKIN' ? 'INSCRITO SEM CHECK-IN' :
+                    'NÃO INSCRITO';
+
+                  return [
+                    m.nome,
+                    m.matricula ?? '',
+                    m.cpf ?? '',
+                    m.cargo_ministerial ?? '',
+                    m.esta_inscrito ? 'Sim' : 'Não',
+                    String(m.dias_presentes),
+                    String(m.dias_ausentes),
+                    m.percentual_presenca !== null ? `${m.percentual_presenca}%` : '—',
+                    labelStatus,
+                    ...m.dias_detalhes.map(d => d.presente ? 'Presente' : 'Ausente')
+                  ];
+                });
+
+                exportCSV([cabecalho, ...linhas], `frequencia-oficial-${eventoId.slice(0, 8)}`);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition"
+            >
+              ⬇ Exportar CSV
+            </button>
+          )}
+        </div>
+
+        {erroOficial ? (
+          <div className="text-xs text-red-600 bg-red-50 p-3 rounded-lg">⚠️ {erroOficial}</div>
+        ) : !oficialData ? (
+          <p className="text-xs text-gray-400 text-center py-2">Nenhum dado de frequência oficial carregado.</p>
+        ) : (
+          <>
+            {/* Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+              {[
+                { label: 'Min. Ativos', value: oficialStats.total, cor: 'text-gray-800' },
+                { label: 'Inscritos', value: oficialStats.inscritos, cor: 'text-[#0D2B4E]' },
+                { label: 'Não Inscritos', value: oficialStats.naoInscritos, cor: 'text-gray-400' },
+                { label: 'Com Check-in', value: oficialStats.comCheckin, cor: 'text-teal-700' },
+                { label: 'Regulares', value: oficialStats.regular, cor: 'text-green-700' },
+                { label: '50% Presença', value: oficialStats.cinquenta, cor: 'text-amber-700' },
+                { label: 'Sem Check-in', value: oficialStats.semCheckin, cor: 'text-red-700' },
+              ].map(c => (
+                <div key={c.label} className="bg-gray-50 rounded-xl p-2.5 text-center">
+                  <p className="text-xs text-gray-400 font-medium truncate">{c.label}</p>
+                  <p className={`text-base font-black mt-0.5 ${c.cor}`}>{fmtNum(c.value)}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Filtros e Busca */}
+            <div className="flex flex-wrap gap-2 pt-2">
+              <input
+                value={oficialBusca}
+                onChange={e => { setOficialBusca(e.target.value); setOficialPagina(0); }}
+                placeholder="Buscar ministro por nome, CPF ou matrícula…"
+                className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs flex-1 min-w-40 focus:outline-none focus:ring-1 focus:ring-[#123b63]"
+              />
+              <select
+                value={oficialStatus}
+                onChange={e => { setOficialStatus(e.target.value); setOficialPagina(0); }}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#123b63]"
+              >
+                <option value="">Todos os status</option>
+                <option value="REGULAR">Regular (≥ 75%)</option>
+                <option value="CINQUENTA_POR_CENTO">Parcial (≥ 50% e &lt; 75%)</option>
+                <option value="FALTOSO">Faltoso (&lt; 50%)</option>
+                <option value="INSCRITO_SEM_CHECKIN">Inscrito sem check-in</option>
+                <option value="NAO_INSCRITO">Não Inscrito</option>
+              </select>
+            </div>
+
+            {/* Tabela */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    {['Nome / Matrícula', 'CPF', 'Cargo', 'Inscrito', 'Presenças', 'Freq. %', 'Status', 'Ações'].map(h => (
+                      <th key={h} className="px-2 py-2 text-left text-[10px] font-bold text-gray-500 uppercase whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {oficialPag.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center text-gray-400">Nenhum ministro localizado com os filtros selecionados.</td>
+                    </tr>
+                  ) : (
+                    oficialPag.map(m => {
+                      const badgeStatus = 
+                        m.status_frequencia === 'REGULAR' ? 'bg-green-50 text-green-700 border-green-200' :
+                        m.status_frequencia === 'CINQUENTA_POR_CENTO' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                        m.status_frequencia === 'FALTOSO' ? 'bg-red-50 text-red-700 border-red-200' :
+                        m.status_frequencia === 'INSCRITO_SEM_CHECKIN' ? 'bg-gray-100 text-gray-700 border-gray-200' :
+                        'bg-slate-50 text-slate-400 border-slate-200';
+
+                      const labelStatus = 
+                        m.status_frequencia === 'REGULAR' ? 'REGULAR (≥ 75%)' :
+                        m.status_frequencia === 'CINQUENTA_POR_CENTO' ? 'PARCIAL (≥ 50%)' :
+                        m.status_frequencia === 'FALTOSO' ? 'FALTOSO (< 50%)' :
+                        m.status_frequencia === 'INSCRITO_SEM_CHECKIN' ? 'INSCRITO SEM CHECK-IN' :
+                        'NÃO INSCRITO';
+
+                      return (
+                        <tr key={m.ministro_id} className="border-t border-gray-50 hover:bg-gray-50/50">
+                          <td className="px-2 py-1.5">
+                            <p className="font-semibold text-gray-800 truncate max-w-[200px]" title={m.nome}>{m.nome}</p>
+                            <p className="text-[10px] text-gray-400 mt-0.5">Matrícula: {m.matricula || '—'}</p>
+                          </td>
+                          <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap">{m.cpf || '—'}</td>
+                          <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap">{m.cargo_ministerial || '—'}</td>
+                          <td className="px-2 py-1.5">
+                            {m.esta_inscrito ? (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">Sim</span>
+                            ) : (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400">Não</span>
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5 text-gray-700 whitespace-nowrap">
+                            {m.esta_inscrito ? `${m.dias_presentes} presenças` : '—'}
+                          </td>
+                          <td className="px-2 py-1.5">
+                            {m.esta_inscrito && m.percentual_presenca !== null ? (
+                              <FreqBar pct={m.percentual_presenca} />
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded border whitespace-nowrap ${badgeStatus}`}>
+                              {labelStatus}
+                            </span>
+                          </td>
+                          <td className="px-2 py-1.5">
+                            {['CINQUENTA_POR_CENTO', 'INSCRITO_SEM_CHECKIN', 'NAO_INSCRITO', 'FALTOSO'].includes(m.status_frequencia) && (
+                              <button
+                                onClick={() => setCartaRascunho(m)}
+                                className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-bold transition whitespace-nowrap"
+                              >
+                                📄 Gerar Carta
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Paginação */}
+            {totalPaginasOficial > 1 && (
+              <div className="flex items-center justify-between pt-3 text-xs text-gray-500 border-t border-gray-100">
+                <span>Pág. {oficialPagina + 1} de {totalPaginasOficial} ({fmtNum(oficialFiltrada.length)} registros)</span>
+                <div className="flex gap-2">
+                  <button onClick={() => setOficialPagina(p => Math.max(0, p - 1))} disabled={oficialPagina === 0}
+                    className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50">← Anterior</button>
+                  <button onClick={() => setOficialPagina(p => Math.min(totalPaginasOficial - 1, p + 1))} disabled={oficialPagina >= totalPaginasOficial - 1}
+                    className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50">Próxima →</button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
       {/* ── 10. ADVERTÊNCIAS ELEGÍVEIS ──────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <div className="flex items-center gap-2 mb-3">
@@ -750,6 +1104,130 @@ export default function TabControleAGO({
       <p className="text-center text-[10px] text-gray-300 pb-2">
         Gerado em {fmtDT(data.gerado_em)} · endpoint /api/eventos/{eventoId}/dashboard-executivo
       </p>
+
+      {/* ── Modal de Rascunho da Carta de Advertência ────────────────────────── */}
+      {cartaRascunho && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-gray-100 flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-slate-50 rounded-t-2xl">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">📄</span>
+                <div>
+                  <h4 className="font-black text-slate-800 text-sm">Visualização de Advertência</h4>
+                  <p className="text-[10px] text-gray-400">Rascunho de Documento Oficial Ministerial</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setCartaRascunho(null)}
+                className="text-xs px-2.5 py-1 rounded bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold transition"
+              >
+                Fechar
+              </button>
+            </div>
+
+            {/* Corpo da Carta (Papel Timbrado) */}
+            <div className="p-8 flex-1 overflow-y-auto space-y-6 text-sm text-slate-700 leading-relaxed font-serif bg-slate-50/50">
+              <div className="bg-white p-8 border border-gray-200 shadow-sm rounded-xl space-y-6 max-w-xl mx-auto relative overflow-hidden">
+                {/* Linha decorativa topo */}
+                <div className="absolute top-0 inset-x-0 h-1.5 bg-[#0D2B4E]" />
+
+                {/* Cabeçalho Oficial */}
+                <div className="text-center space-y-1">
+                  <h3 className="font-extrabold text-[#0D2B4E] text-base font-sans tracking-wide">COMIEADEPA</h3>
+                  <p className="text-[9px] uppercase tracking-widest font-sans font-bold text-gray-400">Convenção de Ministros e Igrejas Assembleias de Deus no Estado do Pará</p>
+                  <p className="text-[10px] font-sans font-medium text-gray-500">Centro Administrativo · Departamento de Frequência Ministerial</p>
+                </div>
+
+                <div className="h-px bg-gray-100" />
+
+                {/* Conteúdo */}
+                <div className="space-y-4 font-sans text-xs">
+                  <p className="text-right text-gray-400 font-sans text-[10px]">
+                    Belém-PA, {new Date().toLocaleDateString('pt-BR')}
+                  </p>
+
+                  <p className="font-bold text-[#0D2B4E]">
+                    Prezado(a) {cartaRascunho.cargo_ministerial || 'Ministro'} {cartaRascunho.nome},
+                  </p>
+
+                  <p className="text-justify leading-relaxed">
+                    Constatamos em nossos registros de controle de acesso via leitor de QR Code que V. Sa. obteve o seguinte índice de comparecimento durante as plenárias da <strong>{data.evento.nome}</strong>:
+                  </p>
+
+                  {/* Detalhamento de Frequência */}
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 space-y-2">
+                    <p className="font-bold text-slate-800 text-[11px] mb-1">MÉTRICAS OFICIAIS DE COMPARECIMENTO:</p>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
+                      <p className="text-gray-500">Matrícula Ministerial:</p>
+                      <p className="font-bold text-slate-800 text-right">{cartaRascunho.matricula || '—'}</p>
+
+                      <p className="text-gray-500">CPF:</p>
+                      <p className="font-bold text-slate-800 text-right">{cartaRascunho.cpf || '—'}</p>
+
+                      <p className="text-gray-500">Inscrito no Evento:</p>
+                      <p className="font-bold text-slate-800 text-right">{cartaRascunho.esta_inscrito ? 'Sim' : 'Não'}</p>
+
+                      <p className="text-gray-500">Plenárias Comparecidas:</p>
+                      <p className="font-bold text-slate-800 text-right">{cartaRascunho.dias_presentes} de {cartaRascunho.dias_presentes + cartaRascunho.dias_ausentes} plenárias</p>
+
+                      <p className="text-gray-500">Plenárias Ausentes:</p>
+                      <p className="font-bold text-red-600 text-right">{cartaRascunho.dias_ausentes} plenárias</p>
+
+                      <p className="text-gray-500">Frequência Consolidada:</p>
+                      <p className="font-black text-right text-red-700">
+                        {cartaRascunho.percentual_presenca !== null ? `${cartaRascunho.percentual_presenca}%` : '0%'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <p className="text-justify leading-relaxed">
+                    De acordo com os estatutos e regimentos internos que regem as plenárias e sessões deliberativas desta Convenção, a assiduidade mínima de 75% é obrigatória para a manutenção da regularidade das plenárias da AGO. A ausência sem justificativa nas sessões de plenárias implica na emissão da presente advertência em rascunho.
+                  </p>
+
+                  <p className="text-justify leading-relaxed font-semibold text-[#0d2b4e]">
+                    ⚠️ ORIENTAÇÕES PARA REGULARIZAÇÃO E JUSTIFICATIVA:
+                  </p>
+                  <p className="text-justify leading-relaxed">
+                    V. Sa. dispõe de um prazo regulamentar para protocolar a justificativa de suas ausências. O protocolo deve detalhar os motivos de força maior ou justificativas eclesiásticas para análise da Mesa Diretora.
+                  </p>
+
+                  <div className="pt-6 text-center space-y-1 text-[10px] text-gray-400 font-sans">
+                    <p className="h-0.5 w-32 bg-gray-200 mx-auto mb-2" />
+                    <p className="font-bold text-slate-700">MESA DIRETORA COMIEADEPA</p>
+                    <p>Secretaria Geral Administrativa</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-gray-100 bg-slate-50 flex items-center justify-end gap-2 rounded-b-2xl">
+              <button
+                onClick={() => setCartaRascunho(null)}
+                disabled={salvandoCarta}
+                className="text-xs px-4 py-2 rounded-lg bg-gray-500 text-white font-bold hover:bg-gray-600 disabled:opacity-50 transition"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={handleSalvarRascunho}
+                disabled={salvandoCarta}
+                className="text-xs px-4 py-2 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1.5 transition"
+              >
+                {salvandoCarta ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  'Salvar Rascunho'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

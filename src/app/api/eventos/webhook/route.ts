@@ -98,6 +98,95 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServerClient();
 
+    // 4. Verifica se é cobrança de complemento (externalReference inicia com "complemento:")
+    if (extRef.startsWith('complemento:')) {
+      const inscricaoId = extRef.slice(12);
+
+      // Busca a inscrição
+      const { data: inscricao, error: fetchInsErr } = await supabase
+        .from('evento_inscricoes')
+        .select('id, status_pagamento, valor_pago, valor_final, observacoes')
+        .eq('id', inscricaoId)
+        .maybeSingle();
+
+      if (fetchInsErr) {
+        console.error('[EVENTOS WEBHOOK] Erro ao buscar inscrição do complemento:', fetchInsErr.message);
+        console.timeEnd("ASAAS_WEBHOOK_TOTAL");
+        return NextResponse.json({ error: fetchInsErr.message }, { status: 500 });
+      }
+
+      if (!inscricao) {
+        console.warn('[EVENTOS WEBHOOK] Inscrição complementar não encontrada:', inscricaoId);
+        console.timeEnd("ASAAS_WEBHOOK_TOTAL");
+        return NextResponse.json({ error: 'Inscrição complementar não encontrada' }, { status: 404 });
+      }
+
+      // Idempotência
+      if (inscricao.status_pagamento === 'pago' && novoStatus !== 'cancelado') {
+        console.log('[EVENTOS WEBHOOK] Inscrição do complemento já está paga:', inscricaoId);
+        console.timeEnd("ASAAS_WEBHOOK_TOTAL");
+        return NextResponse.json({ received: true, action: 'already_paid', inscricaoId });
+      }
+
+      // Atualizar a ordem de pagamento complementar
+      const { error: ordErr } = await supabase
+        .from('evento_ordens_pagamento')
+        .update({ status: novoStatus === 'pago' ? 'pago' : 'cancelado' })
+        .eq('inscricao_id', inscricaoId)
+        .eq('tipo_ordem', 'complemento')
+        .eq('asaas_payment_id', asaasId);
+
+      if (ordErr) {
+        console.error('[EVENTOS WEBHOOK] Erro ao atualizar ordem de pagamento complementar:', ordErr.message);
+      }
+
+      // Atualizar a inscrição
+      const updateData: Record<string, unknown> = {
+        status_pagamento: novoStatus,
+      };
+
+      if (novoStatus === 'pago') {
+        const valorPagoAnterior = inscricao.valor_pago ?? 0;
+        const valorComplemento = payment?.value ?? 0;
+        updateData.valor_pago = valorPagoAnterior + valorComplemento;
+        // O valor_final já foi atualizado para o valor novo na hora de salvar a edição (470.00)
+      }
+
+      const { error: updErr } = await supabase
+        .from('evento_inscricoes')
+        .update(updateData)
+        .eq('id', inscricaoId);
+
+      if (updErr) {
+        console.error('[EVENTOS WEBHOOK] Erro ao atualizar inscrição do complemento:', updErr.message);
+        console.timeEnd("ASAAS_WEBHOOK_TOTAL");
+        return NextResponse.json({ error: updErr.message }, { status: 500 });
+      }
+
+      // Dispara autoalocação e jobs de confirmação se pago
+      if (novoStatus === 'pago') {
+        try {
+          await alocarLeitoParaInscricao(supabase, inscricaoId);
+        } catch (alocErr: any) {
+          console.error(`[EVENTOS WEBHOOK] Erro na autoalocação imediata para inscrição complementar ${inscricaoId}:`, alocErr.message);
+        }
+
+        try {
+          await enqueueWebhookJobs(supabase, [
+            { job_type: 'ALLOCATE_ACCOMMODATION', entity_type: 'inscricao', entity_id: inscricaoId, external_event_id: eventId, external_payment_id: asaasId },
+            { job_type: 'SEND_CONFIRMATION_EMAIL', entity_type: 'inscricao', entity_id: inscricaoId, external_event_id: eventId, external_payment_id: asaasId },
+            { job_type: 'REGISTER_MINISTERIAL_HISTORY', entity_type: 'inscricao', entity_id: inscricaoId, external_event_id: eventId, external_payment_id: asaasId }
+          ]);
+        } catch (jobErr: any) {
+          console.error(`[EVENTOS WEBHOOK] ERRO CRÍTICO: Falha ao enfileirar jobs do complemento da inscrição ${inscricaoId}:`, jobErr.message);
+        }
+      }
+
+      console.log('[EVENTOS WEBHOOK] Inscrição de complemento atualizada:', inscricaoId, '→', novoStatus);
+      console.timeEnd("ASAAS_WEBHOOK_TOTAL");
+      return NextResponse.json({ received: true, inscricaoId, action: 'complement_processed' });
+    }
+
     // 4. Verifica se é cobrança de lote (externalReference inicia com "lote:")
     if (extRef.startsWith('lote:')) {
       const loteId = extRef.slice(5);
