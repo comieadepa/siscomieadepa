@@ -34,6 +34,24 @@ type AlojRow       = { id: string; total_vagas: number; ativo: boolean; };
  * Painel executivo AGO — retorna todos os dados consolidados em uma única requisição.
  * As queries são paralelizadas ao máximo; o processamento é feito em memória.
  */
+/** Busca todos os registros de uma tabela paginando de 1000 em 1000. */
+async function fetchAll<T>(
+  builder: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+): Promise<T[]> {
+  const PAGE = 1000;
+  const result: T[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await builder(from, from + PAGE - 1);
+    if (error) throw error;
+    const rows = data ?? [];
+    result.push(...rows);
+    if (rows.length < PAGE) break;
+    from += PAGE;
+  }
+  return result;
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ eventoId: string }> },
@@ -63,31 +81,43 @@ export async function GET(
       .eq('id', eventoId)
       .single(),
 
-    supabase
-      .from('evento_inscricoes')
-      .select(
-        'id, nome_inscrito, cpf, tipo_inscricao, supervisao_id, campo_id, ' +
-        'status_pagamento, checkin_realizado, alimentacao, refeicoes_utilizadas, refeicoes_total, ' +
-        'quantidade_refeicoes_total, quantidade_refeicoes_usadas, quantidade_refeicoes_saldo, ' +
-        'ministro_snapshot, hospedagem',
-      )
-      .eq('evento_id', eventoId)
-      .neq('status_pagamento', 'cancelado'),
+    fetchAll<InscricaoRow>((f, t) =>
+      supabase
+        .from('evento_inscricoes')
+        .select(
+          'id, nome_inscrito, cpf, tipo_inscricao, supervisao_id, campo_id, ' +
+          'status_pagamento, checkin_realizado, alimentacao, refeicoes_utilizadas, refeicoes_total, ' +
+          'quantidade_refeicoes_total, quantidade_refeicoes_usadas, quantidade_refeicoes_saldo, ' +
+          'ministro_snapshot, hospedagem',
+        )
+        .eq('evento_id', eventoId)
+        .neq('status_pagamento', 'cancelado')
+        .range(f, t) as unknown as PromiseLike<{ data: InscricaoRow[] | null; error: unknown }>
+    ),
 
-    supabase
-      .from('evento_checkins')
-      .select('id, inscricao_id, tipo_checkin, data_plenaria, created_at')
-      .eq('evento_id', eventoId),
+    fetchAll<CheckinRow>((f, t) =>
+      supabase
+        .from('evento_checkins')
+        .select('id, inscricao_id, tipo_checkin, data_plenaria, created_at')
+        .eq('evento_id', eventoId)
+        .range(f, t) as unknown as PromiseLike<{ data: CheckinRow[] | null; error: unknown }>
+    ),
 
-    supabase
-      .from('evento_refeicoes_consumo')
-      .select('inscricao_id,data_hora,saldo_antes,saldo_depois')
-      .eq('evento_id', eventoId),
+    fetchAll<RefeicaoConsumoRow>((f, t) =>
+      supabase
+        .from('evento_refeicoes_consumo')
+        .select('inscricao_id,data_hora,saldo_antes,saldo_depois')
+        .eq('evento_id', eventoId)
+        .range(f, t) as unknown as PromiseLike<{ data: RefeicaoConsumoRow[] | null; error: unknown }>
+    ),
 
-    supabase
-      .from('evento_hospedagens')
-      .select('id, inscricao_id, status, tipo_cama, numero_cama, checkin_at')
-      .eq('evento_id', eventoId),
+    fetchAll<HospRow>((f, t) =>
+      supabase
+        .from('evento_hospedagens')
+        .select('id, inscricao_id, status, tipo_cama, numero_cama, checkin_at')
+        .eq('evento_id', eventoId)
+        .range(f, t) as unknown as PromiseLike<{ data: HospRow[] | null; error: unknown }>
+    ),
 
     supabase
       .from('ago_cartas_advertencia')
@@ -132,16 +162,17 @@ export async function GET(
     return NextResponse.json({ error: 'Evento não encontrado.' }, { status: 404 });
   }
 
-  const evento      = eventoRes.data as unknown as EventoRow;
-  const inscricoes  = (inscricoesRes.data  ?? []) as unknown as InscricaoRow[];
-  const checkins    = (checkinsRes.data    ?? []) as unknown as CheckinRow[];
-  const consumosRefeicoes = (consumoRefeicoesRes.data ?? []) as unknown as RefeicaoConsumoRow[];
-  const hospedagens = (hospRes.data        ?? []) as unknown as HospRow[];
-  const inscricaoById = new Map(inscricoes.map(i => [i.id, i]));
-  const advertencias= (advertRes.data      ?? []) as unknown as AdvertRow[];
-  const supervisoes = (supRes.data         ?? []) as unknown as SupervisaoRow[];
-  const campos      = (camposRes.data      ?? []) as unknown as CampoRow[];
-  const alojamentos = (alojRes.data        ?? []) as unknown as AlojRow[];
+  const evento           = eventoRes.data as unknown as EventoRow;
+  // fetchAll já retorna arrays tipados — sem necessidade de cast extra
+  const inscricoes       = inscricoesRes      as InscricaoRow[];
+  const checkins         = checkinsRes        as CheckinRow[];
+  const consumosRefeicoes= consumoRefeicoesRes as RefeicaoConsumoRow[];
+  const hospedagens      = hospRes            as HospRow[];
+  const inscricaoById    = new Map(inscricoes.map(i => [i.id, i]));
+  const advertencias     = (advertRes.data    ?? []) as unknown as AdvertRow[];
+  const supervisoes      = (supRes.data       ?? []) as unknown as SupervisaoRow[];
+  const campos           = (camposRes.data    ?? []) as unknown as CampoRow[];
+  const alojamentos      = (alojRes.data      ?? []) as unknown as AlojRow[];
 
   // ── Config do evento ──────────────────────────────────────────────────
   const cfg = (evento.configuracoes_ago ?? {}) as Record<string, unknown>;
