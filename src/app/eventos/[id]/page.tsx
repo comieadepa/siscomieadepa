@@ -3658,18 +3658,252 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
     }
   }
 
-  function abrirImpressaoRelatorio() {
-    const equipeSessaoAtual = getEquipeSession();
-    const p = new URLSearchParams({
-      tipo: relTipo,
-      fin:  podeVerFinanceiro ? '1' : '0',
-      ...(filtroSup     ? { sup:     filtroSup }     : {}),
-      ...(filtroCampo   ? { campo:   filtroCampo }   : {}),
-      ...(filtroPag     ? { pag:     filtroPag }     : {}),
-      ...(filtroCheckin ? { checkin: filtroCheckin } : {}),
-      ...(equipeSessaoAtual?.equipeId ? { equipeId: equipeSessaoAtual.equipeId } : {}),
-    });
-    window.open(`/eventos/${eventoId}/relatorios/print?${p}`, '_blank', 'width=960,height=720');
+  async function abrirImpressaoRelatorio() {
+    try {
+      const { jsPDF } = await import('jspdf');
+      await import('jspdf-autotable');
+
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const evNome = evento?.nome || '125ª AGO DA COMIEADEPA';
+
+      // ── Header do PDF
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(18, 59, 99); // #123b63
+      doc.text('COMIEADEPA', 14, 18);
+
+      doc.setFontSize(9);
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(100, 116, 139);
+      doc.text('Convenção Interestadual de Ministros e Igrejas Evangélicas Assembleia de Deus no Estado do Pará', 14, 23);
+      doc.text('Rodovia Mário Covas, 2500, Coqueiro, Belém, PA | CNPJ: 04.760.047/0001-04', 14, 27);
+
+      // Linha separadora
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.5);
+      doc.line(14, 31, 196, 31);
+
+      // Título do Relatório
+      doc.setFontSize(12);
+      doc.setFont('Helvetica', 'bold');
+      doc.setTextColor(18, 59, 99);
+      
+      const titulosMap: Record<string, string> = {
+        resumo: 'Resumo Geral',
+        supervisao: 'Relatório por Supervisão',
+        campo: 'Relatório por Campo',
+        tipo_inscricao: 'Relatório por Tipo de Inscrição',
+        hospedagem: 'Lista de Hospedagem',
+        alimentacao: 'Lista de Alimentação',
+        presenca: 'Lista de Presença',
+        financeiro: 'Relatório Financeiro',
+      };
+      
+      const reportTitle = titulosMap[relTipo] || 'Relatório de Evento';
+      doc.text(reportTitle.toUpperCase(), 14, 40);
+
+      // Metadados do relatório
+      doc.setFontSize(8);
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(71, 85, 105);
+
+      const period = evento?.data_inicio ? `${fmtData(evento.data_inicio)} a ${fmtData(evento.data_fim)}` : '28/06/2026 a 02/07/2026';
+      const city = evento?.cidade || 'Belém-PA';
+      doc.text(`Evento: ${evNome}`, 14, 46);
+      doc.text(`Período: ${period} | Local: ${city}`, 14, 50);
+      doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')} | Total Registros: ${filtradas.length}`, 14, 54);
+
+      if (relTipo === 'resumo') {
+        // Renderizar os cards como uma tabela
+        const dataRows = [
+          ['Total Inscritos', String(resumo.total)],
+          ['Pagos', String(resumo.pagos)],
+          ['Pendentes', String(resumo.pendentes)],
+          ['Isentos', String(resumo.isentos)],
+          ['Cancelados', String(resumo.cancelados)],
+          ['Check-ins', `${resumo.checkins} / ${resumo.total}`],
+          ['Etiquetas Impressas', String(resumo.etiquetas)],
+          ['Hospedagem', String(resumo.hospedagem)],
+          ['Alimentação', String(resumo.alimentacao)],
+          ['Brindes', String(resumo.brindes)],
+        ];
+
+        if (podeVerFinanceiro) {
+          dataRows.push(['Valor Arrecadado', fmtMoeda(resumo.valor)]);
+        }
+
+        (doc as any).autoTable({
+          startY: 60,
+          head: [['Indicador', 'Valor']],
+          body: dataRows,
+          theme: 'striped',
+          headStyles: { fillColor: [18, 59, 99], fontSize: 9, fontStyle: 'bold' },
+          bodyStyles: { fontSize: 8, textColor: [51, 65, 85] },
+          columnStyles: {
+            0: { fontStyle: 'bold', cellWidth: 100 },
+            1: { halign: 'right', fontStyle: 'bold', textColor: [18, 59, 99] }
+          },
+          margin: { left: 14, right: 14 }
+        });
+      } else if (relTipo === 'supervisao') {
+        const bodyRows = porSup.map(r => [
+          r.nome,
+          String(r.total),
+          String(r.pagos),
+          String(r.pendentes),
+          String(r.isentos),
+          String(r.checkins),
+          podeVerFinanceiro ? fmtMoeda(r.valor) : '-'
+        ]);
+
+        // Linha de total
+        bodyRows.push([
+          'TOTAL',
+          String(porSup.reduce((s, r) => s + r.total, 0)),
+          String(porSup.reduce((s, r) => s + r.pagos, 0)),
+          String(porSup.reduce((s, r) => s + r.pendentes, 0)),
+          String(porSup.reduce((s, r) => s + r.isentos, 0)),
+          String(porSup.reduce((s, r) => s + r.checkins, 0)),
+          podeVerFinanceiro ? fmtMoeda(porSup.reduce((s, r) => s + r.valor, 0)) : '-'
+        ]);
+
+        (doc as any).autoTable({
+          startY: 60,
+          head: [['Supervisão', 'Total', 'Pagos', 'Pendentes', 'Isentos', 'Check-ins', 'Arrecadado']],
+          body: bodyRows,
+          theme: 'striped',
+          headStyles: { fillColor: [18, 59, 99], fontSize: 9, fontStyle: 'bold' },
+          bodyStyles: { fontSize: 8, textColor: [51, 65, 85] },
+          footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold' },
+          margin: { left: 14, right: 14 }
+        });
+      } else if (relTipo === 'campo') {
+        const bodyRows = porCampo.map(r => [
+          r.nome,
+          r.sup,
+          String(r.total),
+          String(r.pagos),
+          String(r.pendentes),
+          String(r.checkins),
+          String(r.hosp),
+          String(r.alim)
+        ]);
+
+        (doc as any).autoTable({
+          startY: 60,
+          head: [['Campo', 'Supervisão', 'Total', 'Pagos', 'Pendentes', 'Check-ins', 'Hosp.', 'Alim.']],
+          body: bodyRows,
+          theme: 'striped',
+          headStyles: { fillColor: [18, 59, 99], fontSize: 8, fontStyle: 'bold' },
+          bodyStyles: { fontSize: 7, textColor: [51, 65, 85] },
+          margin: { left: 14, right: 14 }
+        });
+      } else if (relTipo === 'tipo_inscricao') {
+        const bodyRows = porTipo.map(r => [
+          r.nome,
+          String(r.total),
+          String(r.pagos),
+          String(r.pendentes),
+          String(r.isentos),
+          String(r.checkins),
+          podeVerFinanceiro ? fmtMoeda(r.valor) : '-'
+        ]);
+
+        (doc as any).autoTable({
+          startY: 60,
+          head: [['Tipo de Inscrição', 'Total', 'Pagos', 'Pendentes', 'Isentos', 'Check-ins', 'Arrecadado']],
+          body: bodyRows,
+          theme: 'striped',
+          headStyles: { fillColor: [18, 59, 99], fontSize: 9, fontStyle: 'bold' },
+          bodyStyles: { fontSize: 8, textColor: [51, 65, 85] },
+          margin: { left: 14, right: 14 }
+        });
+      } else if (relTipo === 'hospedagem') {
+        const bodyRows = filtradas.filter(i => i.hospedagem).map((i, index) => [
+          String(index + 1),
+          i.nome_inscrito,
+          i.cpf || '-',
+          nomeSup(i.supervisao_id),
+          nomeCampo(i.campo_id),
+          i.checkin_realizado ? 'Sim' : 'Não'
+        ]);
+
+        (doc as any).autoTable({
+          startY: 60,
+          head: [['#', 'Nome', 'CPF', 'Supervisão', 'Campo', 'Check-in']],
+          body: bodyRows,
+          theme: 'striped',
+          headStyles: { fillColor: [18, 59, 99], fontSize: 8, fontStyle: 'bold' },
+          bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
+          margin: { left: 14, right: 14 }
+        });
+      } else if (relTipo === 'alimentacao') {
+        const bodyRows = filtradas.filter(i => i.alimentacao).map((i, index) => [
+          String(index + 1),
+          i.nome_inscrito,
+          i.cpf || '-',
+          nomeSup(i.supervisao_id),
+          nomeCampo(i.campo_id),
+          i.checkin_realizado ? 'Sim' : 'Não'
+        ]);
+
+        (doc as any).autoTable({
+          startY: 60,
+          head: [['#', 'Nome', 'CPF', 'Supervisão', 'Campo', 'Check-in']],
+          body: bodyRows,
+          theme: 'striped',
+          headStyles: { fillColor: [18, 59, 99], fontSize: 8, fontStyle: 'bold' },
+          bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
+          margin: { left: 14, right: 14 }
+        });
+      } else if (relTipo === 'presenca') {
+        const bodyRows = filtradas.map((i, index) => [
+          String(index + 1),
+          i.nome_inscrito,
+          i.cpf || '-',
+          nomeSup(i.supervisao_id),
+          nomeCampo(i.campo_id),
+          i.checkin_realizado ? 'Sim' : 'Não',
+          i.checkin_at ? fmtDT(i.checkin_at) : '-'
+        ]);
+
+        (doc as any).autoTable({
+          startY: 60,
+          head: [['#', 'Nome', 'CPF', 'Supervisão', 'Campo', 'Check-in', 'Horário Check-in']],
+          body: bodyRows,
+          theme: 'striped',
+          headStyles: { fillColor: [18, 59, 99], fontSize: 8, fontStyle: 'bold' },
+          bodyStyles: { fontSize: 7, textColor: [51, 65, 85] },
+          margin: { left: 14, right: 14 }
+        });
+      } else if (relTipo === 'financeiro') {
+        const bodyRows = filtradas.map((i, index) => [
+          String(index + 1),
+          i.nome_inscrito,
+          i.cpf || '-',
+          podeVerFinanceiro ? fmtMoeda(i.valor_pago) : '-',
+          i.forma_pagamento ?? '-',
+          STATUS_PAG_CFG[i.status_pagamento]?.label ?? i.status_pagamento,
+          fmtData(i.created_at.slice(0, 10))
+        ]);
+
+        (doc as any).autoTable({
+          startY: 60,
+          head: [['#', 'Nome', 'CPF', 'Valor Pago', 'Forma Pagamento', 'Status', 'Data Inscrição']],
+          body: bodyRows,
+          theme: 'striped',
+          headStyles: { fillColor: [18, 59, 99], fontSize: 8, fontStyle: 'bold' },
+          bodyStyles: { fontSize: 7, textColor: [51, 65, 85] },
+          margin: { left: 14, right: 14 }
+        });
+      }
+
+      const filename = `relatorio_${relTipo}_${eventoId.slice(0, 8)}.pdf`;
+      doc.save(filename);
+    } catch (err) {
+      console.error('Erro ao gerar relatório em PDF:', err);
+      alert('Houve um erro ao gerar o PDF. Verifique o console para mais detalhes.');
+    }
   }
 
   // Campos filtrados por supervisão selecionada
