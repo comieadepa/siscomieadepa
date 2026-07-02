@@ -3658,36 +3658,13 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
     }
   }
 
-  async function abrirImpressaoRelatorio() {
+  function abrirImpressaoRelatorio() {
     try {
-      const { jsPDF } = await import('jspdf');
-      await import('jspdf-autotable');
-
-      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       const evNome = evento?.nome || '125ª AGO DA COMIEADEPA';
+      const period = evento?.data_inicio ? `${fmtData(evento.data_inicio)} a ${fmtData(evento.data_fim)}` : '28/06/2026 a 02/07/2026';
+      const city = evento?.cidade || 'Belém-PA';
+      const dataEmissao = new Date().toLocaleDateString('pt-BR');
 
-      // ── Header do PDF
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(14);
-      doc.setTextColor(18, 59, 99); // #123b63
-      doc.text('COMIEADEPA', 14, 18);
-
-      doc.setFontSize(9);
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(100, 116, 139);
-      doc.text('Convenção Interestadual de Ministros e Igrejas Evangélicas Assembleia de Deus no Estado do Pará', 14, 23);
-      doc.text('Rodovia Mário Covas, 2500, Coqueiro, Belém, PA | CNPJ: 04.760.047/0001-04', 14, 27);
-
-      // Linha separadora
-      doc.setDrawColor(226, 232, 240);
-      doc.setLineWidth(0.5);
-      doc.line(14, 31, 196, 31);
-
-      // Título do Relatório
-      doc.setFontSize(12);
-      doc.setFont('Helvetica', 'bold');
-      doc.setTextColor(18, 59, 99);
-      
       const titulosMap: Record<string, string> = {
         resumo: 'Resumo Geral',
         supervisao: 'Relatório por Supervisão',
@@ -3700,209 +3677,370 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
       };
       
       const reportTitle = titulosMap[relTipo] || 'Relatório de Evento';
-      doc.text(reportTitle.toUpperCase(), 14, 40);
 
-      // Metadados do relatório
-      doc.setFontSize(8);
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(71, 85, 105);
-
-      const period = evento?.data_inicio ? `${fmtData(evento.data_inicio)} a ${fmtData(evento.data_fim)}` : '28/06/2026 a 02/07/2026';
-      const city = evento?.cidade || 'Belém-PA';
-      doc.text(`Evento: ${evNome}`, 14, 46);
-      doc.text(`Período: ${period} | Local: ${city}`, 14, 50);
-      doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')} | Total Registros: ${filtradas.length}`, 14, 54);
+      let contentHtml = '';
 
       if (relTipo === 'resumo') {
-        // Renderizar os cards como uma tabela
-        const dataRows = [
-          ['Total Inscritos', String(resumo.total)],
-          ['Pagos', String(resumo.pagos)],
-          ['Pendentes', String(resumo.pendentes)],
-          ['Isentos', String(resumo.isentos)],
-          ['Cancelados', String(resumo.cancelados)],
+        const rows = [
+          ['Total Inscritos', resumo.total],
+          ['Pagos', resumo.pagos],
+          ['Pendentes', resumo.pendentes],
+          ['Isentos', resumo.isentos],
+          ['Cancelados', resumo.cancelados],
           ['Check-ins', `${resumo.checkins} / ${resumo.total}`],
-          ['Etiquetas Impressas', String(resumo.etiquetas)],
-          ['Hospedagem', String(resumo.hospedagem)],
-          ['Alimentação', String(resumo.alimentacao)],
-          ['Brindes', String(resumo.brindes)],
+          ['Etiquetas Impressas', resumo.etiquetas],
+          ['Hospedagem', resumo.hospedagem],
+          ['Alimentação', resumo.alimentacao],
+          ['Brindes', resumo.brindes],
         ];
 
         if (podeVerFinanceiro) {
-          dataRows.push(['Valor Arrecadado', fmtMoeda(resumo.valor)]);
+          rows.push(['Valor Arrecadado', fmtMoeda(resumo.valor)]);
         }
 
-        (doc as any).autoTable({
-          startY: 60,
-          head: [['Indicador', 'Valor']],
-          body: dataRows,
-          theme: 'striped',
-          headStyles: { fillColor: [18, 59, 99], fontSize: 9, fontStyle: 'bold' },
-          bodyStyles: { fontSize: 8, textColor: [51, 65, 85] },
-          columnStyles: {
-            0: { fontStyle: 'bold', cellWidth: 100 },
-            1: { halign: 'right', fontStyle: 'bold', textColor: [18, 59, 99] }
-          },
-          margin: { left: 14, right: 14 }
-        });
+        contentHtml = `
+          <table>
+            <thead>
+              <tr>
+                <th style="text-align: left;">Indicador</th>
+                <th style="text-align: right;">Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(row => `
+                <tr>
+                  <td style="font-weight: bold;">${row[0]}</td>
+                  <td style="text-align: right; font-weight: bold; color: #123b63;">${row[1]}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
       } else if (relTipo === 'supervisao') {
-        const bodyRows = porSup.map(r => [
-          r.nome,
-          String(r.total),
-          String(r.pagos),
-          String(r.pendentes),
-          String(r.isentos),
-          String(r.checkins),
-          podeVerFinanceiro ? fmtMoeda(r.valor) : '-'
-        ]);
+        const totalTotal = porSup.reduce((s, r) => s + r.total, 0);
+        const totalPagos = porSup.reduce((s, r) => s + r.pagos, 0);
+        const totalPend = porSup.reduce((s, r) => s + r.pendentes, 0);
+        const totalIsentos = porSup.reduce((s, r) => s + r.isentos, 0);
+        const totalCheck = porSup.reduce((s, r) => s + r.checkins, 0);
+        const totalValor = porSup.reduce((s, r) => s + r.valor, 0);
 
-        // Linha de total
-        bodyRows.push([
-          'TOTAL',
-          String(porSup.reduce((s, r) => s + r.total, 0)),
-          String(porSup.reduce((s, r) => s + r.pagos, 0)),
-          String(porSup.reduce((s, r) => s + r.pendentes, 0)),
-          String(porSup.reduce((s, r) => s + r.isentos, 0)),
-          String(porSup.reduce((s, r) => s + r.checkins, 0)),
-          podeVerFinanceiro ? fmtMoeda(porSup.reduce((s, r) => s + r.valor, 0)) : '-'
-        ]);
-
-        (doc as any).autoTable({
-          startY: 60,
-          head: [['Supervisão', 'Total', 'Pagos', 'Pendentes', 'Isentos', 'Check-ins', 'Arrecadado']],
-          body: bodyRows,
-          theme: 'striped',
-          headStyles: { fillColor: [18, 59, 99], fontSize: 9, fontStyle: 'bold' },
-          bodyStyles: { fontSize: 8, textColor: [51, 65, 85] },
-          footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold' },
-          margin: { left: 14, right: 14 }
-        });
+        contentHtml = `
+          <table>
+            <thead>
+              <tr>
+                <th style="text-align: left;">Supervisão</th>
+                <th style="text-align: right;">Total</th>
+                <th style="text-align: right;">Pagos</th>
+                <th style="text-align: right;">Pendentes</th>
+                <th style="text-align: right;">Isentos</th>
+                <th style="text-align: right;">Check-ins</th>
+                ${podeVerFinanceiro ? '<th style="text-align: right;">Arrecadado</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${porSup.map(r => `
+                <tr>
+                  <td>${r.nome}</td>
+                  <td style="text-align: right;">${r.total}</td>
+                  <td style="text-align: right;">${r.pagos}</td>
+                  <td style="text-align: right;">${r.pendentes}</td>
+                  <td style="text-align: right;">${r.isentos}</td>
+                  <td style="text-align: right;">${r.checkins}</td>
+                  ${podeVerFinanceiro ? `<td style="text-align: right;">${fmtMoeda(r.valor)}</td>` : ''}
+                </tr>
+              `).join('')}
+              <tr class="total-row">
+                <td>TOTAL</td>
+                <td style="text-align: right;">${totalTotal}</td>
+                <td style="text-align: right;">${totalPagos}</td>
+                <td style="text-align: right;">${totalPend}</td>
+                <td style="text-align: right;">${totalIsentos}</td>
+                <td style="text-align: right;">${totalCheck}</td>
+                ${podeVerFinanceiro ? `<td style="text-align: right;">${fmtMoeda(totalValor)}</td>` : ''}
+              </tr>
+            </tbody>
+          </table>
+        `;
       } else if (relTipo === 'campo') {
-        const bodyRows = porCampo.map(r => [
-          r.nome,
-          r.sup,
-          String(r.total),
-          String(r.pagos),
-          String(r.pendentes),
-          String(r.checkins),
-          String(r.hosp),
-          String(r.alim)
-        ]);
-
-        (doc as any).autoTable({
-          startY: 60,
-          head: [['Campo', 'Supervisão', 'Total', 'Pagos', 'Pendentes', 'Check-ins', 'Hosp.', 'Alim.']],
-          body: bodyRows,
-          theme: 'striped',
-          headStyles: { fillColor: [18, 59, 99], fontSize: 8, fontStyle: 'bold' },
-          bodyStyles: { fontSize: 7, textColor: [51, 65, 85] },
-          margin: { left: 14, right: 14 }
-        });
+        contentHtml = `
+          <table>
+            <thead>
+              <tr>
+                <th style="text-align: left;">Campo</th>
+                <th style="text-align: left;">Supervisão</th>
+                <th style="text-align: right;">Total</th>
+                <th style="text-align: right;">Pagos</th>
+                <th style="text-align: right;">Pendentes</th>
+                <th style="text-align: right;">Check-ins</th>
+                <th style="text-align: right;">Hosp.</th>
+                <th style="text-align: right;">Alim.</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${porCampo.map(r => `
+                <tr>
+                  <td>${r.nome}</td>
+                  <td>${r.sup}</td>
+                  <td style="text-align: right;">${r.total}</td>
+                  <td style="text-align: right;">${r.pagos}</td>
+                  <td style="text-align: right;">${r.pendentes}</td>
+                  <td style="text-align: right;">${r.checkins}</td>
+                  <td style="text-align: right;">${r.hosp}</td>
+                  <td style="text-align: right;">${r.alim}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
       } else if (relTipo === 'tipo_inscricao') {
-        const bodyRows = porTipo.map(r => [
-          r.nome,
-          String(r.total),
-          String(r.pagos),
-          String(r.pendentes),
-          String(r.isentos),
-          String(r.checkins),
-          podeVerFinanceiro ? fmtMoeda(r.valor) : '-'
-        ]);
-
-        (doc as any).autoTable({
-          startY: 60,
-          head: [['Tipo de Inscrição', 'Total', 'Pagos', 'Pendentes', 'Isentos', 'Check-ins', 'Arrecadado']],
-          body: bodyRows,
-          theme: 'striped',
-          headStyles: { fillColor: [18, 59, 99], fontSize: 9, fontStyle: 'bold' },
-          bodyStyles: { fontSize: 8, textColor: [51, 65, 85] },
-          margin: { left: 14, right: 14 }
-        });
+        contentHtml = `
+          <table>
+            <thead>
+              <tr>
+                <th style="text-align: left;">Tipo de Inscrição</th>
+                <th style="text-align: right;">Total</th>
+                <th style="text-align: right;">Pagos</th>
+                <th style="text-align: right;">Pendentes</th>
+                <th style="text-align: right;">Isentos</th>
+                <th style="text-align: right;">Check-ins</th>
+                ${podeVerFinanceiro ? '<th style="text-align: right;">Arrecadado</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${porTipo.map(r => `
+                <tr>
+                  <td>${r.nome}</td>
+                  <td style="text-align: right;">${r.total}</td>
+                  <td style="text-align: right;">${r.pagos}</td>
+                  <td style="text-align: right;">${r.pendentes}</td>
+                  <td style="text-align: right;">${r.isentos}</td>
+                  <td style="text-align: right;">${r.checkins}</td>
+                  ${podeVerFinanceiro ? `<td style="text-align: right;">${fmtMoeda(r.valor)}</td>` : ''}
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
       } else if (relTipo === 'hospedagem') {
-        const bodyRows = filtradas.filter(i => i.hospedagem).map((i, index) => [
-          String(index + 1),
-          i.nome_inscrito,
-          i.cpf || '-',
-          nomeSup(i.supervisao_id),
-          nomeCampo(i.campo_id),
-          i.checkin_realizado ? 'Sim' : 'Não'
-        ]);
-
-        (doc as any).autoTable({
-          startY: 60,
-          head: [['#', 'Nome', 'CPF', 'Supervisão', 'Campo', 'Check-in']],
-          body: bodyRows,
-          theme: 'striped',
-          headStyles: { fillColor: [18, 59, 99], fontSize: 8, fontStyle: 'bold' },
-          bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
-          margin: { left: 14, right: 14 }
-        });
+        const itemFiltrado = filtradas.filter(i => i.hospedagem);
+        contentHtml = `
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 40px;">#</th>
+                <th style="text-align: left;">Nome</th>
+                <th style="text-align: left;">CPF</th>
+                <th style="text-align: left;">Supervisão</th>
+                <th style="text-align: left;">Campo</th>
+                <th style="text-align: center;">Check-in</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemFiltrado.map((i, idx) => `
+                <tr>
+                  <td>${idx + 1}</td>
+                  <td>${i.nome_inscrito}</td>
+                  <td>${i.cpf || '-'}</td>
+                  <td>${nomeSup(i.supervisao_id)}</td>
+                  <td>${nomeCampo(i.campo_id)}</td>
+                  <td style="text-align: center;">${i.checkin_realizado ? 'Sim' : 'Não'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
       } else if (relTipo === 'alimentacao') {
-        const bodyRows = filtradas.filter(i => i.alimentacao).map((i, index) => [
-          String(index + 1),
-          i.nome_inscrito,
-          i.cpf || '-',
-          nomeSup(i.supervisao_id),
-          nomeCampo(i.campo_id),
-          i.checkin_realizado ? 'Sim' : 'Não'
-        ]);
-
-        (doc as any).autoTable({
-          startY: 60,
-          head: [['#', 'Nome', 'CPF', 'Supervisão', 'Campo', 'Check-in']],
-          body: bodyRows,
-          theme: 'striped',
-          headStyles: { fillColor: [18, 59, 99], fontSize: 8, fontStyle: 'bold' },
-          bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
-          margin: { left: 14, right: 14 }
-        });
+        const itemFiltrado = filtradas.filter(i => i.alimentacao);
+        contentHtml = `
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 40px;">#</th>
+                <th style="text-align: left;">Nome</th>
+                <th style="text-align: left;">CPF</th>
+                <th style="text-align: left;">Supervisão</th>
+                <th style="text-align: left;">Campo</th>
+                <th style="text-align: center;">Check-in</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemFiltrado.map((i, idx) => `
+                <tr>
+                  <td>${idx + 1}</td>
+                  <td>${i.nome_inscrito}</td>
+                  <td>${i.cpf || '-'}</td>
+                  <td>${nomeSup(i.supervisao_id)}</td>
+                  <td>${nomeCampo(i.campo_id)}</td>
+                  <td style="text-align: center;">${i.checkin_realizado ? 'Sim' : 'Não'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
       } else if (relTipo === 'presenca') {
-        const bodyRows = filtradas.map((i, index) => [
-          String(index + 1),
-          i.nome_inscrito,
-          i.cpf || '-',
-          nomeSup(i.supervisao_id),
-          nomeCampo(i.campo_id),
-          i.checkin_realizado ? 'Sim' : 'Não',
-          i.checkin_at ? fmtDT(i.checkin_at) : '-'
-        ]);
-
-        (doc as any).autoTable({
-          startY: 60,
-          head: [['#', 'Nome', 'CPF', 'Supervisão', 'Campo', 'Check-in', 'Horário Check-in']],
-          body: bodyRows,
-          theme: 'striped',
-          headStyles: { fillColor: [18, 59, 99], fontSize: 8, fontStyle: 'bold' },
-          bodyStyles: { fontSize: 7, textColor: [51, 65, 85] },
-          margin: { left: 14, right: 14 }
-        });
+        contentHtml = `
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 40px;">#</th>
+                <th style="text-align: left;">Nome</th>
+                <th style="text-align: left;">CPF</th>
+                <th style="text-align: left;">Supervisão</th>
+                <th style="text-align: left;">Campo</th>
+                <th style="text-align: center;">Check-in</th>
+                <th style="text-align: left;">Horário Check-in</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filtradas.map((i, idx) => `
+                <tr>
+                  <td>${idx + 1}</td>
+                  <td>${i.nome_inscrito}</td>
+                  <td>${i.cpf || '-'}</td>
+                  <td>${nomeSup(i.supervisao_id)}</td>
+                  <td>${nomeCampo(i.campo_id)}</td>
+                  <td style="text-align: center;">${i.checkin_realizado ? 'Sim' : 'Não'}</td>
+                  <td>${i.checkin_at ? fmtDT(i.checkin_at) : '-'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
       } else if (relTipo === 'financeiro') {
-        const bodyRows = filtradas.map((i, index) => [
-          String(index + 1),
-          i.nome_inscrito,
-          i.cpf || '-',
-          podeVerFinanceiro ? fmtMoeda(i.valor_pago) : '-',
-          i.forma_pagamento ?? '-',
-          STATUS_PAG_CFG[i.status_pagamento]?.label ?? i.status_pagamento,
-          fmtData(i.created_at.slice(0, 10))
-        ]);
-
-        (doc as any).autoTable({
-          startY: 60,
-          head: [['#', 'Nome', 'CPF', 'Valor Pago', 'Forma Pagamento', 'Status', 'Data Inscrição']],
-          body: bodyRows,
-          theme: 'striped',
-          headStyles: { fillColor: [18, 59, 99], fontSize: 8, fontStyle: 'bold' },
-          bodyStyles: { fontSize: 7, textColor: [51, 65, 85] },
-          margin: { left: 14, right: 14 }
-        });
+        contentHtml = `
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 40px;">#</th>
+                <th style="text-align: left;">Nome</th>
+                <th style="text-align: left;">CPF</th>
+                <th style="text-align: right;">Valor Pago</th>
+                <th style="text-align: left;">Forma Pagamento</th>
+                <th style="text-align: left;">Status</th>
+                <th style="text-align: left;">Data Inscrição</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filtradas.map((i, idx) => `
+                <tr>
+                  <td>${idx + 1}</td>
+                  <td>${i.nome_inscrito}</td>
+                  <td>${i.cpf || '-'}</td>
+                  <td style="text-align: right;">${podeVerFinanceiro ? fmtMoeda(i.valor_pago) : '-'}</td>
+                  <td>${i.forma_pagamento ?? '-'}</td>
+                  <td>${STATUS_PAG_CFG[i.status_pagamento]?.label ?? i.status_pagamento}</td>
+                  <td>${fmtData(i.created_at.slice(0, 10))}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
       }
 
-      const filename = `relatorio_${relTipo}_${eventoId.slice(0, 8)}.pdf`;
-      doc.save(filename);
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        alert('Por favor, permita pop-ups para imprimir o relatório.');
+        return;
+      }
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>${reportTitle} - ${evNome}</title>
+          <style>
+            body {
+              font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+              color: #334155;
+              margin: 30px;
+              font-size: 12px;
+              line-height: 1.5;
+            }
+            .header {
+              margin-bottom: 20px;
+            }
+            .title-main {
+              font-size: 18px;
+              font-weight: bold;
+              color: #123b63;
+              margin: 0 0 5px 0;
+            }
+            .subtitle {
+              font-size: 10px;
+              color: #64748b;
+              margin: 0;
+            }
+            .divider {
+              border-bottom: 1px solid #e2e8f0;
+              margin: 15px 0;
+            }
+            .report-title {
+              font-size: 14px;
+              font-weight: bold;
+              color: #123b63;
+              margin: 0 0 10px 0;
+              text-transform: uppercase;
+            }
+            .metadata {
+              font-size: 9px;
+              color: #475569;
+              margin-bottom: 20px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 10px;
+              font-size: 11px;
+            }
+            th {
+              background-color: #123b63;
+              color: #ffffff;
+              font-weight: bold;
+              padding: 8px 10px;
+              border: 1px solid #e2e8f0;
+            }
+            td {
+              padding: 6px 10px;
+              border: 1px solid #e2e8f0;
+            }
+            tr:nth-child(even) {
+              background-color: #f8fafc;
+            }
+            .total-row {
+              background-color: #f1f5f9 !important;
+              font-weight: bold;
+            }
+            @media print {
+              body { margin: 20px; }
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1 class="title-main">COMIEADEPA</h1>
+            <p class="subtitle">Convenção Interestadual de Ministros e Igrejas Evangélicas Assembleia de Deus no Estado do Pará</p>
+            <p class="subtitle">Rodovia Mário Covas, 2500, Coqueiro, Belém, PA | CNPJ: 04.760.047/0001-04</p>
+          </div>
+          <div class="divider"></div>
+          <h2 class="report-title">${reportTitle}</h2>
+          <div class="metadata">
+            <strong>Evento:</strong> ${evNome}<br>
+            <strong>Período:</strong> ${period} | <strong>Local:</strong> ${city}<br>
+            <strong>Data de Emissão:</strong> ${dataEmissao} | <strong>Total Registros:</strong> ${filtradas.length}
+          </div>
+          ${contentHtml}
+          <script>
+            window.onload = function() {
+              window.print();
+            }
+          </script>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
     } catch (err) {
-      console.error('Erro ao gerar relatório em PDF:', err);
-      alert('Houve um erro ao gerar o PDF. Verifique o console para mais detalhes.');
+      console.error('Erro ao abrir impressão de relatório:', err);
     }
   }
 
