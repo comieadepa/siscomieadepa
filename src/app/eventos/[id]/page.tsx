@@ -3660,6 +3660,7 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
 
   function abrirImpressaoRelatorio() {
     try {
+      const equipeSessaoAtual = getEquipeSession();
       const evNome = evento?.nome || '125ª AGO DA COMIEADEPA';
       const period = evento?.data_inicio ? `${fmtData(evento.data_inicio)} a ${fmtData(evento.data_fim)}` : '28/06/2026 a 02/07/2026';
       const city = evento?.cidade || 'Belém-PA';
@@ -3936,6 +3937,14 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
           </table>
         `;
       }
+ 
+      const logoUrl = getDeptLogo(evento?.departamento);
+      const userEmail = equipeSessaoAtual?.email || 'Operador do Sistema';
+      const userNome = equipeSessaoAtual?.nome || '';
+      const operatorText = userNome ? `${userNome} (${userEmail})` : userEmail;
+      const hashProtocol = Math.random().toString(36).substring(2, 10).toUpperCase();
+      const printTime = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const footerProtocolText = `Relatório emitido em ${dataEmissao} às ${printTime} por ${operatorText} — Hash de Autenticidade: SISCOM-${hashProtocol}`;
 
       const printWindow = window.open('', '_blank');
       if (!printWindow) {
@@ -3955,9 +3964,23 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
               margin: 30px;
               font-size: 12px;
               line-height: 1.5;
+              display: flex;
+              flex-direction: column;
+              min-height: calc(100vh - 60px);
+            }
+            .header-container {
+              display: flex;
+              align-items: center;
+              gap: 20px;
+              margin-bottom: 15px;
+            }
+            .logo-img {
+              width: 70px;
+              height: auto;
+              object-fit: contain;
             }
             .header {
-              margin-bottom: 20px;
+              flex: 1;
             }
             .title-main {
               font-size: 18px;
@@ -3971,8 +3994,8 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
               margin: 0;
             }
             .divider {
-              border-bottom: 1px solid #e2e8f0;
-              margin: 15px 0;
+              border-bottom: 2px solid #123b63;
+              margin: 10px 0 15px 0;
             }
             .report-title {
               font-size: 14px;
@@ -3985,6 +4008,9 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
               font-size: 9px;
               color: #475569;
               margin-bottom: 20px;
+            }
+            .content-area {
+              flex: 1;
             }
             table {
               width: 100%;
@@ -4010,26 +4036,49 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
               background-color: #f1f5f9 !important;
               font-weight: bold;
             }
+            .footer-protocol {
+              margin-top: 40px;
+              border-top: 1px dashed #cbd5e1;
+              padding-top: 8px;
+              font-size: 9px;
+              color: #94a3b8;
+              text-align: center;
+            }
             @media print {
               body { margin: 20px; }
               .no-print { display: none; }
+              .footer-protocol {
+                position: fixed;
+                bottom: 10px;
+                left: 0;
+                right: 0;
+                margin-top: 0;
+              }
             }
           </style>
         </head>
         <body>
-          <div class="header">
-            <h1 class="title-main">COMIEADEPA</h1>
-            <p class="subtitle">Convenção Interestadual de Ministros e Igrejas Evangélicas Assembleia de Deus no Estado do Pará</p>
-            <p class="subtitle">Rodovia Mário Covas, 2500, Coqueiro, Belém, PA | CNPJ: 04.760.047/0001-04</p>
+          <div class="header-container">
+            <img src="${logoUrl}" class="logo-img" alt="Logo" onerror="this.style.display='none'" />
+            <div class="header">
+              <h1 class="title-main">COMIEADEPA</h1>
+              <p class="subtitle">Convenção Interestadual de Ministros e Igrejas Evangélicas Assembleia de Deus no Estado do Pará</p>
+              <p class="subtitle">Rodovia Mário Covas, 2500, Coqueiro, Belém, PA | CNPJ: 04.760.047/0001-04</p>
+            </div>
           </div>
           <div class="divider"></div>
-          <h2 class="report-title">${reportTitle}</h2>
-          <div class="metadata">
-            <strong>Evento:</strong> ${evNome}<br>
-            <strong>Período:</strong> ${period} | <strong>Local:</strong> ${city}<br>
-            <strong>Data de Emissão:</strong> ${dataEmissao} | <strong>Total Registros:</strong> ${filtradas.length}
+          <div class="content-area">
+            <h2 class="report-title">${reportTitle}</h2>
+            <div class="metadata">
+              <strong>Evento:</strong> ${evNome}<br>
+              <strong>Período:</strong> ${period} | <strong>Local:</strong> ${city}<br>
+              <strong>Data de Emissão:</strong> ${dataEmissao} | <strong>Total Registros:</strong> ${filtradas.length}
+            </div>
+            ${contentHtml}
           </div>
-          ${contentHtml}
+          <div class="footer-protocol">
+            ${footerProtocolText}
+          </div>
           <script>
             window.onload = function() {
               window.print();
