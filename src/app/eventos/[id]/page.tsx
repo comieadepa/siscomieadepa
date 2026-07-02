@@ -3794,6 +3794,13 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
           </table>
         `;
       } else if (relTipo === 'tipo_inscricao') {
+        const totalTotal = porTipo.reduce((s, r) => s + r.total, 0);
+        const totalPagos = porTipo.reduce((s, r) => s + r.pagos, 0);
+        const totalPend = porTipo.reduce((s, r) => s + r.pendentes, 0);
+        const totalIsentos = porTipo.reduce((s, r) => s + r.isentos, 0);
+        const totalCheck = porTipo.reduce((s, r) => s + r.checkins, 0);
+        const totalValor = porTipo.reduce((s, r) => s + r.valor, 0);
+
         contentHtml = `
           <table>
             <thead>
@@ -3819,6 +3826,15 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
                   ${podeVerFinanceiro ? `<td style="text-align: right;">${fmtMoeda(r.valor)}</td>` : ''}
                 </tr>
               `).join('')}
+              <tr class="total-row">
+                <td>TOTAL</td>
+                <td style="text-align: right;">${totalTotal}</td>
+                <td style="text-align: right;">${totalPagos}</td>
+                <td style="text-align: right;">${totalPend}</td>
+                <td style="text-align: right;">${totalIsentos}</td>
+                <td style="text-align: right;">${totalCheck}</td>
+                ${podeVerFinanceiro ? `<td style="text-align: right;">${fmtMoeda(totalValor)}</td>` : ''}
+              </tr>
             </tbody>
           </table>
         `;
