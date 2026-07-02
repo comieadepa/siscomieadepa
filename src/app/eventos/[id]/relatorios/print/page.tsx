@@ -66,6 +66,7 @@ export default function RelatoriosPrintPage() {
   const filtroCampo  = searchParams?.get('campo') ?? '';
   const filtroPag    = searchParams?.get('pag') ?? '';
   const filtroCheckin= searchParams?.get('checkin') ?? '';
+  const filtroEquipe = searchParams?.get('equipeId') ?? '';
 
   const supabase = useMemo(() => createClient(), []);
   const [evento,      setEvento]      = useState<Evento | null>(null);
@@ -76,17 +77,12 @@ export default function RelatoriosPrintPage() {
 
   useEffect(() => {
     async function load() {
-      // Importado dinamicamente para não quebrar builds que usam SSR
-      const { getEquipeSession } = await import('@/lib/equipe-session');
-      const equipeSessaoAtual = getEquipeSession();
-      const isEquipe = equipeSessaoAtual && equipeSessaoAtual.eventoId === id;
-
-      if (isEquipe) {
+      if (filtroEquipe) {
         try {
           const [evRes, estruturaRes, insRes] = await Promise.all([
-            fetch(`/api/eventos/${id}/equipe-dados?equipeId=${equipeSessaoAtual.equipeId}&tipo=evento`),
+            fetch(`/api/eventos/${id}/equipe-dados?equipeId=${filtroEquipe}&tipo=evento`),
             authenticatedFetch('/api/v1/estrutura'),
-            fetch(`/api/eventos/${id}/equipe-dados?equipeId=${equipeSessaoAtual.equipeId}&tipo=inscricoes`),
+            fetch(`/api/eventos/${id}/equipe-dados?equipeId=${filtroEquipe}&tipo=inscricoes`),
           ]);
 
           if (evRes.ok) {

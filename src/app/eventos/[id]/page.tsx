@@ -3659,6 +3659,7 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
   }
 
   function abrirImpressao() {
+    const equipeSessaoAtual = getEquipeSession();
     const p = new URLSearchParams({
       tipo: relTipo,
       fin:  podeVerFinanceiro ? '1' : '0',
@@ -3666,6 +3667,7 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
       ...(filtroCampo   ? { campo:   filtroCampo }   : {}),
       ...(filtroPag     ? { pag:     filtroPag }     : {}),
       ...(filtroCheckin ? { checkin: filtroCheckin } : {}),
+      ...(equipeSessaoAtual?.equipeId ? { equipeId: equipeSessaoAtual.equipeId } : {}),
     });
     window.open(`/eventos/${eventoId}/relatorios/print?${p}`, '_blank', 'width=960,height=720');
   }
