@@ -3938,7 +3938,7 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
         `;
       }
  
-      const logoUrl = getDeptLogo(evento?.departamento);
+      const logoUrl = '/img/logo_comieadepa.png';
       const userEmail = equipeSessaoAtual?.email || 'Operador do Sistema';
       const userNome = equipeSessaoAtual?.nome || '';
       const operatorText = userNome ? `${userNome} (${userEmail})` : userEmail;
