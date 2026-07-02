@@ -3658,7 +3658,7 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
     }
   }
 
-  function abrirImpressao() {
+  function abrirImpressaoRelatorio() {
     const equipeSessaoAtual = getEquipeSession();
     const p = new URLSearchParams({
       tipo: relTipo,
@@ -3747,7 +3747,7 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition">
             📥 Exportar CSV
           </button>
-          <button onClick={abrirImpressao}
+          <button onClick={abrirImpressaoRelatorio}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#123b63] text-white text-xs font-semibold hover:bg-[#0f2a45] transition">
             🖨️ Imprimir
           </button>
