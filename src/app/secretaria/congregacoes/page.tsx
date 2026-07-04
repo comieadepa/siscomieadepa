@@ -138,6 +138,7 @@ export default function CongregacoesPage() {
   const [filterSupCampos, setFilterSupCampos] = useState('');
   const [filterCnpjCampos, setFilterCnpjCampos] = useState('');
   const [filterMissionarioCampos, setFilterMissionarioCampos] = useState(false);
+  const [sortPresidente, setSortPresidente]   = useState<'asc' | 'desc' | null>(null);
   const [pageCampos,   setPageCampos]         = useState(0);
   const [searchSups,      setSearchSups]      = useState('');
   const [filterUfSups,    setFilterUfSups]    = useState('');
@@ -3265,7 +3266,7 @@ export default function CongregacoesPage() {
 
                 {/* LIMPAR */}
                 <button
-                  onClick={() => { setSearchCampos(''); setFilterUfCampos(''); setFilterSupCampos(''); setFilterCnpjCampos(''); setFilterMissionarioCampos(false); setPageCampos(0); }}
+                  onClick={() => { setSearchCampos(''); setFilterUfCampos(''); setFilterSupCampos(''); setFilterCnpjCampos(''); setFilterMissionarioCampos(false); setSortPresidente(null); setPageCampos(0); }}
                   className="px-4 py-2 bg-teal-600 text-white text-sm font-semibold rounded-lg hover:bg-teal-700 transition"
                 >
                   LIMPAR
@@ -3273,7 +3274,7 @@ export default function CongregacoesPage() {
                 <button
                   onClick={() => {
                     const q = searchCampos.toLowerCase();
-                    const lista = divisoes2.filter(c => {
+                    let lista = divisoes2.filter(c => {
                       if (filterUfCampos && (c.uf || '') !== filterUfCampos) return false;
                       if (filterSupCampos && c.supervisao_id !== filterSupCampos) return false;
                       if (filterCnpjCampos === 'sim' && !c.cnpj) return false;
@@ -3282,6 +3283,17 @@ export default function CongregacoesPage() {
                       if (q) { const s = divisoes1.find(s => s.id === c.supervisao_id); return c.nome.toLowerCase().includes(q) || (c.cidade||'').toLowerCase().includes(q) || (c.uf||'').toLowerCase().includes(q) || (c.pastor_nome||'').toLowerCase().includes(q) || ((c as any).presidente_nome||'').toLowerCase().includes(q) || (s ? s.nome.toLowerCase().includes(q) : false); }
                       return true;
                     });
+                    if (sortPresidente) {
+                      lista = [...lista].sort((a, b) => {
+                        const nameA = ((a as any).presidente_nome || a.pastor_nome || '').trim();
+                        const nameB = ((b as any).presidente_nome || b.pastor_nome || '').trim();
+                        if (sortPresidente === 'asc') {
+                          return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
+                        } else {
+                          return nameB.localeCompare(nameA, 'pt-BR', { sensitivity: 'base' });
+                        }
+                      });
+                    }
                     handlePrintCampos(lista);
                   }}
                   className="px-4 py-2 bg-gray-700 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 transition flex items-center gap-1"
@@ -3289,11 +3301,11 @@ export default function CongregacoesPage() {
                   🖨️ Imprimir lista
                 </button>
               </div>
-
+ 
               {/* Info */}
               {(() => {
                 const q = searchCampos.toLowerCase();
-                const filtered = divisoes2.filter(c => {
+                let filtered = divisoes2.filter(c => {
                   if (filterUfCampos && (c.uf || '') !== filterUfCampos) return false;
                   if (filterSupCampos && c.supervisao_id !== filterSupCampos) return false;
                   if (filterCnpjCampos === 'sim' && !c.cnpj) return false;
@@ -3312,10 +3324,21 @@ export default function CongregacoesPage() {
                   }
                   return true;
                 });
+                if (sortPresidente) {
+                  filtered = [...filtered].sort((a, b) => {
+                    const nameA = ((a as any).presidente_nome || a.pastor_nome || '').trim();
+                    const nameB = ((b as any).presidente_nome || b.pastor_nome || '').trim();
+                    if (sortPresidente === 'asc') {
+                      return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
+                    } else {
+                      return nameB.localeCompare(nameA, 'pt-BR', { sensitivity: 'base' });
+                    }
+                  });
+                }
                 const totalPages = Math.ceil(filtered.length / PAGE_SIZE_CAMPOS) || 1;
                 const safePage = Math.min(pageCampos, totalPages - 1);
                 const paged = filtered.slice(safePage * PAGE_SIZE_CAMPOS, (safePage + 1) * PAGE_SIZE_CAMPOS);
-
+ 
                 return (
                   <>
                     <p className="text-xs text-gray-500 mb-3 text-right">
@@ -3330,7 +3353,22 @@ export default function CongregacoesPage() {
                           <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">SUPERVISÃO</th>
                           <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">ESTADO</th>
                           <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">NOME</th>
-                          <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">PRESIDENTE</th>
+                          <th className="px-4 py-3 text-left font-semibold bg-gray-200 text-gray-800">
+                            <button
+                              onClick={() => {
+                                setSortPresidente(current => {
+                                  if (current === null) return 'asc';
+                                  if (current === 'asc') return 'desc';
+                                  return null;
+                                });
+                                setPageCampos(0);
+                              }}
+                              className="font-semibold text-gray-800 flex items-center gap-1 hover:text-blue-700 transition"
+                              title="Ordenar por Presidente (A-Z / Z-A)"
+                            >
+                              PRESIDENTE {sortPresidente === 'asc' ? '↑' : sortPresidente === 'desc' ? '↓' : '↕'}
+                            </button>
+                          </th>
                           <th className="px-4 py-3 text-center font-semibold bg-gray-200 text-gray-800">CNPJ?</th>
                           <th className="px-4 py-3 text-center font-semibold bg-gray-200 text-gray-800">AÇÕES</th>
                         </tr>
