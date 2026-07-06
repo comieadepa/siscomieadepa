@@ -159,6 +159,27 @@ export default function ImprimirFichaPage() {
     instituicao.cep && `CEP: ${instituicao.cep}`
   ].filter(Boolean).join(', ') || 'Não informado';
 
+  const formatObservacoes = (text: string) => {
+    if (!text) return '';
+    let formatted = text;
+    // Highlight specific key academic cycles in observations
+    formatted = formatted.replace(
+      /CICLO I[–\- ]+NÍVEL BÁSICO E MÉDIO/g,
+      '<strong class="text-emerald-800 block mt-1.5 mb-1 font-bold text-[10px] tracking-wide uppercase">CICLO I – NÍVEL BÁSICO E MÉDIO</strong>'
+    );
+    formatted = formatted.replace(
+      /CICLO II[–\- ]+NÍVEL AVANÇADO \/ PLENO/g,
+      '<strong class="text-emerald-800 block mt-1.5 mb-1 font-bold text-[10px] tracking-wide uppercase">CICLO II – NÍVEL AVANÇADO / PLENO</strong>'
+    );
+
+    return formatted.split('\n').map(p => p.trim()).filter(Boolean).map(paragraph => {
+      if (paragraph.includes('text-emerald-800')) {
+        return `<div class="mb-1">${paragraph}</div>`;
+      }
+      return `<p class="mb-1 text-justify leading-relaxed">${paragraph}</p>`;
+    }).join('');
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 py-8 px-4 print:bg-white print:p-0 print:min-h-0 flex flex-col items-center justify-center">
       {/* Barra de Ações (Oculta na impressão) */}
@@ -261,6 +282,18 @@ export default function ImprimirFichaPage() {
           z-index: 10;
           background-color: rgba(255, 255, 255, 0.75);
           padding: 6px 12px;
+          box-sizing: border-box;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+        }
+
+        .observations-data-box {
+          border: 1.2px solid #b89353;
+          border-radius: 5px;
+          margin-bottom: 3.5mm;
+          position: relative;
+          z-index: 10;
+          background-color: rgba(255, 255, 255, 0.8);
+          padding: 10px 14px;
           box-sizing: border-box;
           box-shadow: 0 1px 3px rgba(0,0,0,0.03);
         }
@@ -423,20 +456,21 @@ export default function ImprimirFichaPage() {
             </div>
 
             {/* Bloco: OBSERVAÇÕES com altura controlada e auto-scaling de fonte */}
-            <div className="data-box mt-1 h-[36mm] max-h-[36mm] overflow-hidden relative">
+            <div className="observations-data-box mt-1 h-[42mm] max-h-[42mm] overflow-hidden relative">
               <span className="data-box-label">Observações e Histórico Institucional</span>
               <div 
                 ref={obsRef}
                 className="data-box-content text-justify leading-relaxed text-gray-800 transition-all duration-200"
                 style={{ fontSize: '11px', height: '100%', overflow: 'hidden', padding: '2px 0' }}
               >
-                <p className="mb-2 text-[10.5px]">
+                <div className="mb-2 text-[10.5px] leading-relaxed">
                   Certificamos que a instituição de ensino teológico supracitada foi submetida ao processo de avaliação e credenciamento perante o Conselho de Educação Cristã (CONEC), órgão estatutário da COMIEADEPA. Diante da conformidade técnica, pedagógica e documental apresentada, esta credencial é concedida atestando sua regularidade e habilitação para a formação de ministros e promoção da educação cristã.
-                </p>
+                </div>
                 {instituicao.observacoes_internas && (
-                  <p className="mt-1.5 pt-1.5 border-t border-dashed border-gray-300 font-sans text-[10px]">
-                    <strong>Observações Adicionais:</strong> {instituicao.observacoes_internas}
-                  </p>
+                  <div 
+                    className="mt-2 pt-2 border-t border-dashed border-gray-300 font-sans text-[10px]"
+                    dangerouslySetInnerHTML={{ __html: formatObservacoes(instituicao.observacoes_internas) }}
+                  />
                 )}
               </div>
             </div>
