@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
 import { getInstituicaoById } from '@/lib/conec-service';
@@ -12,6 +12,7 @@ export default function ImprimirFichaPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
+  const obsRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
 
   const [instituicao, setInstituicao] = useState<any>(null);
@@ -82,6 +83,24 @@ export default function ImprimirFichaPage() {
 
     if (id) fetchDados();
   }, [id]);
+
+  useEffect(() => {
+    if (!loading && obsRef.current) {
+      let size = 11;
+      obsRef.current.style.fontSize = `${size}px`;
+      // Reduce font size if content overflows
+      let attempts = 0;
+      while (
+        obsRef.current.scrollHeight > obsRef.current.clientHeight &&
+        size > 8.5 &&
+        attempts < 10
+      ) {
+        size -= 0.5;
+        obsRef.current.style.fontSize = `${size}px`;
+        attempts++;
+      }
+    }
+  }, [instituicao, loading]);
 
   if (loading) {
     return (
@@ -192,6 +211,9 @@ export default function ImprimirFichaPage() {
             background-image: url('/img/bg_termo.jpg') !important;
             background-size: 100% 100% !important;
             background-repeat: no-repeat !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
           }
         }
 
@@ -208,6 +230,9 @@ export default function ImprimirFichaPage() {
           box-sizing: border-box;
           position: relative;
           overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
         }
 
         .watermark {
@@ -229,33 +254,33 @@ export default function ImprimirFichaPage() {
         }
 
         .data-box {
-          border: 1px solid #000;
-          margin-bottom: 5mm;
+          border: 1.2px solid #b89353;
+          border-radius: 5px;
+          margin-bottom: 3.5mm;
           position: relative;
           z-index: 10;
-          background-color: transparent;
+          background-color: rgba(255, 255, 255, 0.75);
+          padding: 6px 12px;
+          box-sizing: border-box;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.03);
         }
 
         .data-box-label {
-          position: absolute;
-          top: -7px;
-          left: 8px;
-          background-color: #ffffff;
-          padding: 0 6px;
-          font-size: 9px;
+          display: block;
+          font-size: 8px;
           font-weight: bold;
           text-transform: uppercase;
-          letter-spacing: 0.5px;
-          color: #000000;
+          letter-spacing: 0.8px;
+          color: #8a6d3b;
           font-family: 'Arial', sans-serif;
+          margin-bottom: 1.5px;
         }
 
         .data-box-content {
-          padding: 10px 12px;
-          font-size: 12.5px;
-          color: #111111;
+          font-size: 11.5px;
+          color: #1a202c;
           font-family: 'Arial', sans-serif;
-          min-height: 20px;
+          line-height: 1.35;
         }
 
         .header-title-main {
@@ -303,7 +328,7 @@ export default function ImprimirFichaPage() {
       `}</style>
 
       {/* Conteúdo da Ficha */}
-      <div className="print-page relative flex flex-col justify-between">
+      <div className="print-page relative flex flex-col justify-between h-[297mm]">
         
         {/* Marca d'água de Fundo */}
         <div className="watermark" />
@@ -313,41 +338,42 @@ export default function ImprimirFichaPage() {
           REGISTRO Nº {credenciamento?.numero_registro || 'PENDENTE'}
         </div>
 
-        <div>
+        {/* Conteúdo Principal Superior */}
+        <div className="flex-grow flex flex-col justify-start">
           {/* Cabeçalho Oficial */}
-          <div className="flex items-center justify-between border-b-2 border-black pb-4 mb-4 relative z-10">
+          <div className="flex items-center justify-between border-b-2 border-black pb-3 mb-2 relative z-10">
             <img 
               src="/img/logo_comieadepa.png" 
               alt="Logo COMIEADEPA" 
-              className="w-[20mm] h-[20mm] object-contain"
+              className="w-[18mm] h-[18mm] object-contain"
             />
             <div className="flex-1 text-center px-4">
-              <h1 className="header-title-main">CONSELHO DE EDUCAÇÃO CRISTÃ - CONEC</h1>
-              <p className="header-title-sub">COMIEADEPA - CONVENÇÃO DE MINISTROS E IGREJAS EVANGÉLICAS ASSEMBLEIAS DE DEUS NO ESTADO DO PARÁ</p>
-              <p className="header-address">Rod. BR-316, Km 08, s/n - Centro, Ananindeua - PA, 67113-970</p>
+              <h1 className="header-title-main text-[14px]">CONSELHO DE EDUCAÇÃO CRISTÃ - CONEC</h1>
+              <p className="header-title-sub text-[8.5px]">COMIEADEPA - CONVENÇÃO DE MINISTROS E IGREJAS EVANGÉLICAS ASSEMBLEIAS DE DEUS NO ESTADO DO PARÁ</p>
+              <p className="header-address text-[7.5px]">Rod. BR-316, Km 08, s/n - Centro, Ananindeua - PA, 67113-970</p>
             </div>
             <img 
               src="/img/logo_conec.png" 
               alt="Logo CONEC" 
-              className="w-[20mm] h-[20mm] object-contain"
+              className="w-[18mm] h-[18mm] object-contain"
             />
           </div>
 
           {/* Título do Documento e Registro em Destaque */}
-          <div className="doc-title-container flex flex-col items-center">
-            <h2 className="doc-title">Credenciamento de Instituição</h2>
-            <div className="mt-2 text-xs font-bold text-gray-800 tracking-wider">
+          <div className="doc-title-container flex flex-col items-center mb-2">
+            <h2 className="doc-title text-[15px]">Credenciamento de Instituição</h2>
+            <div className="mt-1.5 text-xs font-bold text-gray-800 tracking-wider">
               REGISTRO CONEC Nº <span className="text-sm text-black underline decoration-2 font-mono font-bold">{credenciamento?.numero_registro || 'PENDENTE'}</span>
             </div>
           </div>
 
           {/* Selo Discreto */}
-          <div className="absolute top-[28mm] right-[20mm] border-2 border-emerald-600 text-emerald-600 px-3 py-1 text-[9px] font-bold tracking-widest rounded uppercase select-none opacity-80 print:opacity-100 rotate-12">
+          <div className="absolute top-[26mm] right-[20mm] border-2 border-emerald-600 text-emerald-600 px-3 py-1 text-[9px] font-bold tracking-widest rounded uppercase select-none opacity-80 print:opacity-100 rotate-12 z-20">
             CREDENCIADO
           </div>
 
           {/* Grid de Campos em Caixas com Bordas Pretas */}
-          <div className="flex flex-col gap-2 mt-4">
+          <div className="flex flex-col gap-1.5 mt-2">
             
             {/* Campo: NOME */}
             <div className="data-box">
@@ -377,7 +403,7 @@ export default function ImprimirFichaPage() {
             </div>
 
             {/* Linha Dupla: CNPJ e PERÍODO */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <div className="data-box">
                 <span className="data-box-label">CNPJ</span>
                 <div className="data-box-content font-semibold">
@@ -396,15 +422,19 @@ export default function ImprimirFichaPage() {
               </div>
             </div>
 
-            {/* Bloco: OBSERVAÇÕES */}
-            <div className="data-box mt-2">
+            {/* Bloco: OBSERVAÇÕES com altura controlada e auto-scaling de fonte */}
+            <div className="data-box mt-1 h-[36mm] max-h-[36mm] overflow-hidden relative">
               <span className="data-box-label">Observações e Histórico Institucional</span>
-              <div className="data-box-content text-justify leading-relaxed text-xs text-gray-800">
-                <p className="mb-3">
+              <div 
+                ref={obsRef}
+                className="data-box-content text-justify leading-relaxed text-gray-800 transition-all duration-200"
+                style={{ fontSize: '11px', height: '100%', overflow: 'hidden', padding: '2px 0' }}
+              >
+                <p className="mb-2 text-[10.5px]">
                   Certificamos que a instituição de ensino teológico supracitada foi submetida ao processo de avaliação e credenciamento perante o Conselho de Educação Cristã (CONEC), órgão estatutário da COMIEADEPA. Diante da conformidade técnica, pedagógica e documental apresentada, esta credencial é concedida atestando sua regularidade e habilitação para a formação de ministros e promoção da educação cristã.
                 </p>
                 {instituicao.observacoes_internas && (
-                  <p className="mt-3 pt-3 border-t border-dashed border-gray-300 font-sans">
+                  <p className="mt-1.5 pt-1.5 border-t border-dashed border-gray-300 font-sans text-[10px]">
                     <strong>Observações Adicionais:</strong> {instituicao.observacoes_internas}
                   </p>
                 )}
@@ -414,8 +444,8 @@ export default function ImprimirFichaPage() {
           </div>
         </div>
 
-        {/* Rodapé: Local, Data e Assinaturas */}
-        <div className="mb-6 relative z-10">
+        {/* Rodapé: Local, Data e Assinaturas (Espaço 100% isolado no rodapé) */}
+        <div className="mt-auto mb-6 relative z-10 w-full">
           
           {/* Data por Extenso */}
           <div className="text-center font-serif italic text-[13px] mb-6 relative z-10">
