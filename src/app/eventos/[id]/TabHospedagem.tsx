@@ -1004,164 +1004,156 @@ export default function TabHospedagem({
           )}
 
           {/* Botão autoalocar + filtros */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col gap-4">
-            {/* Busca no topo */}
-            <div className="w-full">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col gap-3">
+
+            {/* Linha 1: Botões de Ação */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={autoalocar}
+                disabled={autoalocando || (stats.elegiveis === 0 && stats.listaEspera === 0)}
+                title="Processa TODAS as pendências do evento, ignorando filtros visuais."
+                className="flex items-center justify-center gap-2 bg-[#0D2B4E] text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-[#0a1e38] transition disabled:opacity-50"
+              >
+                {autoalocando ? (autoalocProgresso || '⏳ Alocando...') : '🤖 Processar pendências'}
+              </button>
+
+              <a
+                href={`/eventos/${eventoId}/hospedagem/checkin`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-teal-700 transition"
+              >
+                📱 Tela Check-in
+              </a>
+
+              <button
+                onClick={() => setModalBuscarInscricao(true)}
+                className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-xl text-sm font-bold transition"
+              >
+                🔍 Buscar sem Hospedagem
+              </button>
+
+              {evento.departamento === 'AGO' && (
+                <button
+                  onClick={abrirTransferirCampoMissionario}
+                  className="flex items-center justify-center gap-2 bg-violet-700 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-violet-800 transition"
+                >
+                  🔄 Transferir Campo Missionário
+                </button>
+              )}
+            </div>
+
+            {/* Linha 2: Busca + Filtros */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+              {/* Busca — primeira coluna */}
               <div className="relative">
-                <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                  🔍
-                </span>
+                <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 text-xs">🔍</span>
                 <input
                   type="text"
                   value={busca}
                   onChange={e => setBusca(e.target.value)}
                   placeholder="Buscar nome ou CPF..."
-                  className="w-full border border-gray-200 rounded-lg pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                  className="w-full border border-gray-200 rounded-lg pl-8 pr-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]"
                 />
               </div>
-            </div>
 
-            {/* Ações empilhadas + Filtros distribuídos */}
-            <div className="flex flex-col md:flex-row gap-4">
-              {/* Botões de Ação Empilhados */}
-              <div className="flex flex-col gap-2 w-full md:w-64 shrink-0">
+              <select
+                value={filtroStatus}
+                onChange={e => {
+                  const val = e.target.value;
+                  setFiltroStatus(val);
+                  if (val && ['alocada', 'lista_espera', 'checkin_realizado', 'confirmada'].includes(val) && filtroPend) {
+                    setFiltroPend('');
+                    setAvisoFiltro('Os filtros selecionados eram conflitantes e foram ajustados automaticamente.');
+                  }
+                }}
+                className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+              >
+                <option value="">Todos os status</option>
+                <option value="aguardando_pagamento">Aguardando pagamento</option>
+                <option value="elegivel">Elegível para alocação</option>
+                <option value="pago_sem_alocacao">Pago sem alocação</option>
+                <option value="alocada">Alocada</option>
+                <option value="confirmada">Confirmada</option>
+                <option value="checkin_realizado">Check-in Realizado</option>
+                <option value="lista_espera">Lista Espera</option>
+              </select>
+
+              <select
+                value={filtroSexo}
+                onChange={e => setFiltroSexo(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+              >
+                <option value="">Todos os sexos</option>
+                <option value="M">Masculino</option>
+                <option value="F">Feminino</option>
+                <option value="N">Não informado</option>
+              </select>
+
+              <select
+                value={filtroAloj}
+                onChange={e => setFiltroAloj(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+              >
+                <option value="">Todos os alojamentos</option>
+                {alojamentos.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
+              </select>
+
+              <select
+                value={filtroSup}
+                onChange={e => setFiltroSup(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+              >
+                <option value="">Toda supervisão</option>
+                {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+              </select>
+
+              <select
+                value={filtroNecEsp}
+                onChange={e => setFiltroNecEsp(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+              >
+                <option value="">Nec. especial?</option>
+                <option value="1">Sim</option>
+                <option value="0">Não</option>
+              </select>
+
+              {evento.departamento === 'AGO' && gruposDisponiveis.length > 0 && (
+                <select
+                  value={filtroGrupo}
+                  onChange={e => setFiltroGrupo(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+                >
+                  <option value="">Todos os grupos</option>
+                  {gruposDisponiveis.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+              )}
+
+              <select
+                value={filtroPend}
+                onChange={e => {
+                  const val = e.target.value;
+                  setFiltroPend(val);
+                  if (val && filtroStatus) {
+                    setFiltroStatus('');
+                    setAvisoFiltro('Os filtros selecionados eram conflitantes e foram ajustados automaticamente.');
+                  }
+                }}
+                className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+              >
+                <option value="">Sem filtro de pendência</option>
+                {Object.entries(PENDENCIA_LABEL).map(([codigo, label]) => (
+                  <option key={codigo} value={codigo}>{label}</option>
+                ))}
+              </select>
+
+              <div className="flex items-center sm:col-span-2 lg:col-span-1">
                 <button
-                  onClick={autoalocar}
-                  disabled={autoalocando || (stats.elegiveis === 0 && stats.listaEspera === 0)}
-                  title="Processa TODAS as pendências do evento, ignorando filtros visuais."
-                  className="w-full flex items-center justify-center gap-2 bg-[#0D2B4E] text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-[#0a1e38] transition disabled:opacity-50"
+                  onClick={() => exportarCSV(hospFiltradas, 'geral')}
+                  className="w-full flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition bg-white"
                 >
-                  {autoalocando ? (autoalocProgresso || '⏳ Alocando...') : '🤖 Processar pendências'}
+                  📥 Exportar CSV
                 </button>
-
-                <a
-                  href={`/eventos/${eventoId}/hospedagem/checkin`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full flex items-center justify-center gap-2 bg-teal-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-teal-700 transition"
-                >
-                  📱 Tela Check-in
-                 </a>
-
-                <button
-                  onClick={() => setModalBuscarInscricao(true)}
-                  className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition"
-                >
-                  🔍 Buscar sem Hospedagem
-                </button>
-
-                {evento.departamento === 'AGO' && (
-                  <button
-                    onClick={abrirTransferirCampoMissionario}
-                    className="w-full flex items-center justify-center gap-2 bg-violet-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-violet-800 transition"
-                  >
-                    🔄 Transferir Campo Missionário
-                  </button>
-                )}
-              </div>
-
-              {/* Filtros Dropdowns e CSV */}
-              <div className="flex-1 flex flex-col justify-between gap-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  <select
-                    value={filtroStatus}
-                    onChange={e => {
-                      const val = e.target.value;
-                      setFiltroStatus(val);
-                      if (val && ['alocada', 'lista_espera', 'checkin_realizado', 'confirmada'].includes(val) && filtroPend) {
-                        setFiltroPend('');
-                        setAvisoFiltro('Os filtros selecionados eram conflitantes e foram ajustados automaticamente.');
-                      }
-                    }}
-                    className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
-                  >
-                    <option value="">Todos os status</option>
-                    <option value="aguardando_pagamento">Aguardando pagamento</option>
-                    <option value="elegivel">Elegível para alocação</option>
-                    <option value="pago_sem_alocacao">Pago sem alocação</option>
-                    <option value="alocada">Alocada</option>
-                    <option value="confirmada">Confirmada</option>
-                    <option value="checkin_realizado">Check-in Realizado</option>
-                    <option value="lista_espera">Lista Espera</option>
-                  </select>
-
-                  <select
-                    value={filtroSexo}
-                    onChange={e => setFiltroSexo(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
-                  >
-                    <option value="">Todos os sexos</option>
-                    <option value="M">Masculino</option>
-                    <option value="F">Feminino</option>
-                    <option value="N">Não informado</option>
-                  </select>
-
-                  <select
-                    value={filtroAloj}
-                    onChange={e => setFiltroAloj(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
-                  >
-                    <option value="">Todos os alojamentos</option>
-                    {alojamentos.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
-                  </select>
-
-                  <select
-                    value={filtroSup}
-                    onChange={e => setFiltroSup(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
-                  >
-                    <option value="">Toda supervisão</option>
-                    {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
-                  </select>
-
-                  <select
-                    value={filtroNecEsp}
-                    onChange={e => setFiltroNecEsp(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
-                  >
-                    <option value="">Nec. especial?</option>
-                    <option value="1">Sim</option>
-                    <option value="0">Não</option>
-                  </select>
-
-                  {evento.departamento === 'AGO' && gruposDisponiveis.length > 0 && (
-                    <select
-                      value={filtroGrupo}
-                      onChange={e => setFiltroGrupo(e.target.value)}
-                      className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
-                    >
-                      <option value="">Todos os grupos</option>
-                      {gruposDisponiveis.map(g => <option key={g} value={g}>{g}</option>)}
-                    </select>
-                  )}
-
-                  <select
-                    value={filtroPend}
-                    onChange={e => {
-                      const val = e.target.value;
-                      setFiltroPend(val);
-                      if (val && filtroStatus) {
-                        setFiltroStatus('');
-                        setAvisoFiltro('Os filtros selecionados eram conflitantes e foram ajustados automaticamente.');
-                      }
-                    }}
-                    className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
-                  >
-                    <option value="">Sem filtro de pendência</option>
-                    {Object.entries(PENDENCIA_LABEL).map(([codigo, label]) => (
-                      <option key={codigo} value={codigo}>{label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex justify-end">
-                  <button
-                    onClick={() => exportarCSV(hospFiltradas, 'geral')}
-                    className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition bg-white"
-                  >
-                    📥 Exportar CSV
-                  </button>
-                </div>
               </div>
             </div>
           </div>

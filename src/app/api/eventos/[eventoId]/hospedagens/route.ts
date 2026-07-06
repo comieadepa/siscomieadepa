@@ -189,7 +189,10 @@ export async function GET(
     });
     const pendencias: string[] = [];
     const statusPagamento = String(insc.status_pagamento ?? '').toLowerCase();
-    const alocacaoIncompleta = !!(resolvedAlojamentoId) && (!resolvedTipoCama || !resolvedNumeroCama);
+    const alojUsaLeitosNumerados = alojInfo
+      ? ((alojInfo as any).camas_inferiores > 0 || (alojInfo as any).camas_superiores > 0)
+      : isAGO; // fallback: assume numerados em AGO, não numerados em comuns
+    const alocacaoIncompleta = !!(resolvedAlojamentoId) && alojUsaLeitosNumerados && (!resolvedTipoCama || !resolvedNumeroCama);
     const grupoIncompativel = isAGO && !!(alojInfo && grupoFallback && !grupoMatchesAlojamento(
       grupoFallback as string,
       { publico: String((alojInfo as any).publico ?? ''), nome: String((alojInfo as any).nome ?? '') },
