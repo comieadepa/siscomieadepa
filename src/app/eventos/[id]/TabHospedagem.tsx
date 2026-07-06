@@ -1027,7 +1027,7 @@ export default function TabHospedagem({
               <div className="flex flex-col gap-2 w-full md:w-64 shrink-0">
                 <button
                   onClick={autoalocar}
-                  disabled={autoalocando || stats.elegiveis === 0}
+                  disabled={autoalocando || (stats.elegiveis === 0 && stats.listaEspera === 0)}
                   title="Processa TODAS as pendências do evento, ignorando filtros visuais."
                   className="w-full flex items-center justify-center gap-2 bg-[#0D2B4E] text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-[#0a1e38] transition disabled:opacity-50"
                 >
