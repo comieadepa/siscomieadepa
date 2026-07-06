@@ -1124,7 +1124,7 @@ export default function TabHospedagem({
                     <option value="0">Não</option>
                   </select>
 
-                  {gruposDisponiveis.length > 0 && (
+                  {evento.departamento === 'AGO' && gruposDisponiveis.length > 0 && (
                     <select
                       value={filtroGrupo}
                       onChange={e => setFiltroGrupo(e.target.value)}

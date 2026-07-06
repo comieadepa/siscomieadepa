@@ -27,6 +27,14 @@ export async function GET(
   if (!guard.ok) return guard.response;
   const supabase = guard.ctx.supabaseAdmin;
 
+  // Query evento to check if it's AGO
+  const { data: eventoDet } = await supabase
+    .from('eventos')
+    .select('departamento')
+    .eq('id', eventoId)
+    .single();
+  const isAGO = eventoDet?.departamento === 'AGO';
+
   // 1.1. Todos os alojamentos do evento (para calcular motivos)
   const { data: todosAlojamentos } = await supabase
     .from('evento_alojamentos')
@@ -182,7 +190,7 @@ export async function GET(
     const pendencias: string[] = [];
     const statusPagamento = String(insc.status_pagamento ?? '').toLowerCase();
     const alocacaoIncompleta = !!(resolvedAlojamentoId) && (!resolvedTipoCama || !resolvedNumeroCama);
-    const grupoIncompativel = !!(alojInfo && grupoFallback && !grupoMatchesAlojamento(
+    const grupoIncompativel = isAGO && !!(alojInfo && grupoFallback && !grupoMatchesAlojamento(
       grupoFallback as string,
       { publico: String((alojInfo as any).publico ?? ''), nome: String((alojInfo as any).nome ?? '') },
     ));
@@ -190,8 +198,8 @@ export async function GET(
     if (isPagamentoElegivel(statusPagamento) && !resolvedAlojamentoId && resolvedStatus !== 'lista_espera') pendencias.push('pagou_mas_nao_alocado');
     if (!isPagamentoElegivel(statusPagamento)) pendencias.push('solicitou_sem_pagamento');
     if (!!(ei.hosp_cama_inferior) && resolvedTipoCama && resolvedTipoCama !== 'inferior') pendencias.push('prioridade_sem_leito_inferior');
-    if (!grupoFallback) pendencias.push('sem_grupo_calculado');
-    if (grupoIncompativel) pendencias.push('grupo_incompativel_alojamento');
+    if (isAGO && !grupoFallback) pendencias.push('sem_grupo_calculado');
+    if (isAGO && grupoIncompativel) pendencias.push('grupo_incompativel_alojamento');
     if (alocacaoIncompleta) pendencias.push('sem_numero_leito');
 
     let motivoNaoAlocado = null;

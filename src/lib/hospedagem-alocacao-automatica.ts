@@ -432,6 +432,27 @@ export async function alocarLeitoParaInscricaoEventoComum(
   if (leitoExistente) {
     const msg = `Idempotência: Inscrito ${inscricaoId} já possui o leito ${leitoExistente.numero} no alojamento ${leitoExistente.alojamento_id}.`;
     console.warn(`[Autoalocacao] [Comum] Já tem leito: ${msg}`);
+    
+    // Garante que o registro de hospedagem também está atualizado
+    const { data: hosp } = await supabase
+      .from('evento_hospedagens')
+      .select('id, status')
+      .eq('inscricao_id', inscricaoId)
+      .maybeSingle();
+
+    if (hosp && hosp.status !== 'confirmada') {
+      await supabase
+        .from('evento_hospedagens')
+        .update({
+          alojamento_id: leitoExistente.alojamento_id,
+          tipo_cama:     null,
+          numero_cama:   leitoExistente.numero,
+          status:        'confirmada',
+          alocacao_automatica: true,
+        })
+        .eq('id', hosp.id);
+    }
+
     return {
       success: true,
       status: 'alocada',
