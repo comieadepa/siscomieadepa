@@ -331,7 +331,7 @@ export async function POST(request: NextRequest) {
     stage = 'buscar_evento';
     const { data: evento, error: evErr } = await supabase
       .from('eventos')
-      .select('id, nome, valor_inscricao, usar_tipos_inscricao, inscricoes_abertas, limite_vagas, limite_hospedagem, limite_brindes, status, departamento, configuracoes_ago')
+      .select('id, nome, valor_inscricao, usar_tipos_inscricao, inscricoes_abertas, limite_vagas, permite_hospedagem, limite_hospedagem, limite_brindes, status, departamento, configuracoes_ago')
       .eq('slug', slug)
       .single();
 
@@ -1184,8 +1184,8 @@ export async function POST(request: NextRequest) {
         }),
       ]);
 
-      // Cria registros de hospedagem AGO se solicitados
-      if (evento.departamento === 'AGO') {
+      // Cria registros de hospedagem se solicitados e evento permite
+      if (evento.permite_hospedagem) {
         if (!!hospedagem) {
           const priorPastor = calcularPrioridadeHospedagem({ id: insPastor.id, nome_inscrito: nome_inscrito.trim(), sexo: sexo || null, data_nascimento: data_nascimento || null, tipo_inscricao: tipoNome, hosp_necessidade_especial: !!hosp_necessidade_especial, hosp_descricao_necessidade: hosp_descricao_necessidade?.trim() || null, hosp_cama_inferior: hospCamaInferiorAuto, hosp_observacoes: hosp_observacoes?.trim() || null, hosp_possui_comorbidade: hospPossuiComorbidade, hosp_descricao_comorbidade: hospDescricaoComorbidade });
           await supabase.from('evento_hospedagens').insert([normalizePayloadUppercase({ evento_id: evento.id, inscricao_id: insPastor.id, status: 'solicitada', prioridade: priorPastor, necessidade_especial: !!hosp_necessidade_especial, descricao_necessidade: hosp_descricao_necessidade?.trim() || null, cama_inferior: hospCamaInferiorAuto, observacoes: hosp_observacoes?.trim() || null, grupo_hospedagem: grupoHospedagemAuto, alocacao_automatica: true })]);
@@ -1199,7 +1199,7 @@ export async function POST(request: NextRequest) {
       if (cupomUsado) await incrementarCupom(supabase, evento.id, cupomUsado);
 
       if (isGratuito2) {
-        if (evento.departamento === 'AGO') {
+        if (evento.permite_hospedagem) {
           if (!!hospedagem) {
             await alocarLeitoParaInscricao(supabase, insPastor.id);
           }
@@ -1768,9 +1768,9 @@ export async function POST(request: NextRequest) {
 
     if (cupomUsado) await incrementarCupom(supabase, evento.id, cupomUsado);
 
-    // Cria registro de hospedagem AGO se evento AGO com hospedagem
+    // Cria registro de hospedagem se o usuário deseja e o evento permite hospedagem
     stage = 'insert_evento_hospedagens';
-    if (querHospedagem && evento.departamento === 'AGO') {
+    if (querHospedagem && evento.permite_hospedagem) {
       const prioridade = calcularPrioridadeHospedagem({
         id: inscricao.id,
         nome_inscrito: nome_inscrito.trim(),
@@ -1820,7 +1820,7 @@ export async function POST(request: NextRequest) {
         request,
       });
 
-      if (evento.departamento === 'AGO' && querHospedagem) {
+      if (evento.permite_hospedagem && querHospedagem) {
         await alocarLeitoParaInscricao(supabase, inscricao.id);
       }
 

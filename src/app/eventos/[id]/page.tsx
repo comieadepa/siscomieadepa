@@ -1877,9 +1877,17 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
 
   const brindeEfetivo = !!(eventoDestino?.permite_brinde && editForm?.brinde);
 
-  const valorNovo = eventoDestino
-    ? (eventoDestino.usar_tipos_inscricao ? (tipoSelecionado ? tipoSelecionado.valor : null) : eventoDestino.valor_inscricao)
-    : null;
+  const eventoAlterado = !!(editando && editForm && editando.evento_id !== editForm.evento_id);
+  const tipoAlterado = !!(editando && (editando.tipo_inscricao ?? '') !== (tipoSelecionado?.nome ?? ''));
+  const hospedagemAlterada = !!(editando && !editando.hospedagem && hospedagemEfetiva);
+  const alimentacaoAlterada = !!(editando && !editando.alimentacao && alimentacaoEfetiva);
+  const temUpgradeFinanceiro = eventoAlterado || tipoAlterado || hospedagemAlterada || alimentacaoAlterada;
+
+  const valorNovo = temUpgradeFinanceiro
+    ? (eventoDestino
+      ? (eventoDestino.usar_tipos_inscricao ? (tipoSelecionado ? tipoSelecionado.valor : null) : eventoDestino.valor_inscricao)
+      : null)
+    : (editando?.valor_final ?? editando?.valor_original ?? editando?.valor_pago ?? 0);
 
   const valorPagoAtual = editando?.valor_pago ?? 0;
   const diferencaValor = valorNovo !== null ? valorNovo - valorPagoAtual : null;

@@ -457,14 +457,14 @@ export async function alocarLeitoParaInscricaoEventoComum(
     }
   }
 
-  // Requisito 4: Se pago mas ainda sem registro de hospedagem, cria com status pago_sem_alocacao
+  // Requisito 4: Se pago mas ainda sem registro de hospedagem, cria com status solicitada
   if (!hospedagem) {
     const { data: novaHosp, error: errInsert } = await supabase
       .from('evento_hospedagens')
       .insert(normalizePayloadUppercase({
         evento_id:           evento.id,
         inscricao_id:        inscricaoId,
-        status:              'pago_sem_alocacao',
+        status:              'solicitada',
         prioridade:          0,
         necessidade_especial: !!inscricao.hosp_necessidade_especial,
         descricao_necessidade: inscricao.hosp_descricao_necessidade ?? null,
@@ -481,17 +481,6 @@ export async function alocarLeitoParaInscricaoEventoComum(
       return { success: false, status: 'erro', motivo: msg };
     }
     hospedagem = novaHosp;
-  } else {
-    if (hospedagem.status !== 'pago_sem_alocacao') {
-      const { error: errUpdateStatus } = await supabase
-        .from('evento_hospedagens')
-        .update({ status: 'pago_sem_alocacao' })
-        .eq('id', hospedagem.id);
-      if (errUpdateStatus) {
-        console.error(`[Autoalocacao] [Comum] Erro ao atualizar status para pago_sem_alocacao:`, errUpdateStatus.message);
-      }
-      hospedagem.status = 'pago_sem_alocacao';
-    }
   }
 
   // Requisito 5: Log de auditoria - pagamento confirmado e início do fluxo
@@ -691,7 +680,7 @@ export async function alocarLeitoParaInscricaoEventoComum(
         .from('evento_hospedagens')
         .update({
           alojamento_id: alojSelecionado.id,
-          tipo_cama:     tipoCama,
+          tipo_cama:     tipoCama === 'unico' ? null : tipoCama,
           numero_cama:   numeroCama,
           status:        'confirmada',
           alocacao_automatica: true,
