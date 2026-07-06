@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase-client';
 import { getInstituicaoById } from '@/lib/conec-service';
 import { formatCnpj } from '@/lib/mascaras';
 import { Printer, ArrowLeft } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 
 export default function ImprimirFichaPage() {
   const params = useParams();
@@ -15,6 +16,7 @@ export default function ImprimirFichaPage() {
 
   const [instituicao, setInstituicao] = useState<any>(null);
   const [credenciamento, setCredenciamento] = useState<any>(null);
+  const [token, setToken] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,7 +35,42 @@ export default function ImprimirFichaPage() {
           .order('ano_referencia', { ascending: false });
 
         if (!credError && creds && creds.length > 0) {
-          setCredenciamento(creds[0]);
+          const cred = creds[0];
+          setCredenciamento(cred);
+
+          // Buscar ou criar token de validação para a ficha/termo
+          const { data: existingToken } = await supabase
+            .from('document_tokens')
+            .select('token')
+            .eq('reference_id', cred.id)
+            .eq('document_type', 'conec_credenciamento')
+            .maybeSingle();
+
+          if (existingToken?.token) {
+            setToken(existingToken.token);
+          } else {
+            const { data: newToken, error: createError } = await supabase
+              .from('document_tokens')
+              .insert({
+                template_id: '12345678-1234-1234-1234-123456789abc',
+                document_type: 'conec_credenciamento',
+                reference_id: cred.id,
+                dados_publicos: {
+                  nome_instituicao: instData.nome_instituicao,
+                  cnpj: instData.cnpj,
+                  numero_registro: cred.numero_registro,
+                  data_inicio: cred.data_inicio,
+                  data_fim: cred.data_fim,
+                  status: cred.status_credenciamento,
+                },
+              })
+              .select('token')
+              .single();
+
+            if (!createError && newToken) {
+              setToken(newToken.token);
+            }
+          }
         }
       } catch (err: any) {
         console.error(err);
@@ -142,7 +179,7 @@ export default function ImprimirFichaPage() {
           .print-page {
             width: 210mm !important;
             height: 297mm !important;
-            padding: 20mm 20mm 15mm 20mm !important;
+            padding: 22mm 22mm 15mm 22mm !important;
             margin: 0 !important;
             border: 0 !important;
             box-shadow: none !important;
@@ -152,13 +189,19 @@ export default function ImprimirFichaPage() {
             page-break-after: avoid !important;
             page-break-before: avoid !important;
             overflow: hidden !important;
+            background-image: url('/img/bg_termo.jpg') !important;
+            background-size: 100% 100% !important;
+            background-repeat: no-repeat !important;
           }
         }
 
         .print-page {
           width: 210mm;
           height: 297mm;
-          padding: 20mm 20mm 15mm 20mm;
+          padding: 22mm 22mm 15mm 22mm;
+          background-image: url('/img/bg_termo.jpg');
+          background-size: 100% 100%;
+          background-repeat: no-repeat;
           background-color: #ffffff;
           border: 1px solid #ccc;
           box-shadow: 0 4px 15px rgba(0,0,0,0.1);
@@ -168,19 +211,7 @@ export default function ImprimirFichaPage() {
         }
 
         .watermark {
-          position: absolute;
-          left: 50%;
-          top: 50%;
-          transform: translate(-50%, -50%);
-          width: 120mm;
-          height: 120mm;
-          opacity: 0.04;
-          pointer-events: none;
-          background-image: url('/img/logo_conec.png');
-          background-size: contain;
-          background-position: center;
-          background-repeat: no-repeat;
-          z-index: 0;
+          display: none;
         }
 
         .vertical-register {
@@ -302,9 +333,17 @@ export default function ImprimirFichaPage() {
             />
           </div>
 
-          {/* Título do Documento */}
-          <div className="doc-title-container">
+          {/* Título do Documento e Registro em Destaque */}
+          <div className="doc-title-container flex flex-col items-center">
             <h2 className="doc-title">Credenciamento de Instituição</h2>
+            <div className="mt-2 text-xs font-bold text-gray-800 tracking-wider">
+              REGISTRO CONEC Nº <span className="text-sm text-black underline decoration-2 font-mono font-bold">{credenciamento?.numero_registro || 'PENDENTE'}</span>
+            </div>
+          </div>
+
+          {/* Selo Discreto */}
+          <div className="absolute top-[28mm] right-[20mm] border-2 border-emerald-600 text-emerald-600 px-3 py-1 text-[9px] font-bold tracking-widest rounded uppercase select-none opacity-80 print:opacity-100 rotate-12">
+            CREDENCIADO
           </div>
 
           {/* Grid de Campos em Caixas com Bordas Pretas */}
@@ -347,11 +386,12 @@ export default function ImprimirFichaPage() {
               </div>
 
               <div className="data-box">
-                <span className="data-box-label">Período de Vigência</span>
-                <div className="data-box-content font-semibold">
-                  {dataInicioFormatada && dataFimFormatada 
-                    ? `${dataInicioFormatada} a ${dataFimFormatada}` 
-                    : 'Pendente'}
+                <span className="data-box-label">Período de Vigência / Validade</span>
+                <div className="data-box-content font-semibold text-xs flex flex-col gap-0.5">
+                  <div><strong>Emissão:</strong> {dataInicioFormatada || '—'}</div>
+                  {dataFimFormatada && (
+                    <div><strong>Validade:</strong> {dataFimFormatada}</div>
+                  )}
                 </div>
               </div>
             </div>
@@ -375,35 +415,65 @@ export default function ImprimirFichaPage() {
         </div>
 
         {/* Rodapé: Local, Data e Assinaturas */}
-        <div className="mb-4">
+        <div className="mb-6 relative z-10">
           
           {/* Data por Extenso */}
-          <div className="text-center font-serif italic text-[13px] mb-8 relative z-10">
+          <div className="text-center font-serif italic text-[13px] mb-6 relative z-10">
             Belém - PA, {emissaoLonga}.
           </div>
 
           {/* Assinaturas Oficiais */}
-          <div className="flex justify-between items-end relative z-10 px-8">
+          <div className="flex justify-between items-end relative z-10 px-4">
             
-            {/* Bloco Assinatura 1 */}
-            <div className="flex flex-col items-center w-[75mm] text-center">
+            {/* Bloco Assinatura 1: Secretário */}
+            <div className="flex flex-col items-center w-[65mm] text-center">
+              <div className="h-[15mm] flex items-end justify-center mb-1">
+                <img 
+                  src="/img/pr_assis.png" 
+                  alt="Assinatura Pr. Francisco de Assis" 
+                  className="max-h-[14mm] object-contain"
+                />
+              </div>
               <div className="w-full border-b border-black mb-1" />
-              <span className="text-[11.5px] font-bold text-black font-sans leading-tight">
-                Pr. Luciano de Falconery Souza
+              <span className="text-[10px] font-bold text-black font-sans leading-tight">
+                Pr. Francisco de Assis da Silva Alcântara
               </span>
-              <span className="text-[9.5px] text-gray-700 font-sans tracking-wider uppercase mt-0.5">
+              <span className="text-[8px] text-gray-700 font-sans tracking-wider uppercase mt-0.5">
                 Secretário do CONEC
               </span>
             </div>
 
-            {/* Bloco Assinatura 2 */}
-            <div className="flex flex-col items-center w-[75mm] text-center">
+            {/* QR Code de Validação no Centro */}
+            {token && (
+              <div className="flex flex-col items-center justify-center mb-1 max-w-[48mm] text-center">
+                <div className="p-1 bg-white border border-gray-250 rounded">
+                  <QRCodeSVG 
+                    value={`${typeof window !== 'undefined' ? window.location.origin : ''}/conec/credenciamento/validar/${token}`} 
+                    size={65} 
+                    level="M" 
+                  />
+                </div>
+                <span className="text-[5.5px] text-gray-500 font-sans mt-1 leading-normal uppercase font-semibold">
+                  Leia o QR Code para validar a autenticidade deste credenciamento.
+                </span>
+              </div>
+            )}
+
+            {/* Bloco Assinatura 2: Presidente CONEC */}
+            <div className="flex flex-col items-center w-[65mm] text-center">
+              <div className="h-[15mm] flex items-end justify-center mb-1">
+                <img 
+                  src="/img/pr_jesanias.png" 
+                  alt="Assinatura Pr. Jesanias Pereira" 
+                  className="max-h-[14mm] object-contain"
+                />
+              </div>
               <div className="w-full border-b border-black mb-1" />
-              <span className="text-[11.5px] font-bold text-black font-sans leading-tight">
-                Pr. Océlio Nauar de Araújo
+              <span className="text-[10px] font-bold text-black font-sans leading-tight">
+                Pr. Jesanias Pereira Calderaro
               </span>
-              <span className="text-[9.5px] text-gray-700 font-sans tracking-wider uppercase mt-0.5">
-                Pastor Presidente da COMIEADEPA
+              <span className="text-[8px] text-gray-700 font-sans tracking-wider uppercase mt-0.5">
+                Presidente da CONEC
               </span>
             </div>
 
