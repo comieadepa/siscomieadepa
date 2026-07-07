@@ -107,18 +107,27 @@ function CertificadoContent() {
         }
 
         if (!loadedTemplate) {
+          // Busca todos os templates do ministério
           const { data: templatesList } = await supabase
             .from('certificados_templates')
-            .select('*')
-            .or('name.ilike.conec,template_key.ilike.conec');
+            .select('*');
 
           if (templatesList && templatesList.length > 0) {
-            const sorted = [...templatesList].sort((a, b) => {
-              if (a.is_active && !b.is_active) return -1;
-              if (!a.is_active && b.is_active) return 1;
-              return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
-            });
-            loadedTemplate = sorted[0];
+            // Filtrar especificamente os do tipo certificado_conec ou os que contém 'conec' no nome
+            const conecTemplates = templatesList.filter((t: any) =>
+              t.template_data?.document_type === 'certificado_conec' ||
+              t.document_type === 'certificado_conec' ||
+              t.name.toLowerCase().includes('conec')
+            );
+
+            if (conecTemplates.length > 0) {
+              const sorted = [...conecTemplates].sort((a, b) => {
+                if (a.is_active && !b.is_active) return -1;
+                if (!a.is_active && b.is_active) return 1;
+                return new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime();
+              });
+              loadedTemplate = sorted[0];
+            }
           }
         }
 
@@ -206,6 +215,7 @@ function CertificadoContent() {
     
     // Se for o fallback local (que tem background_url em vez de backgroundUrl)
     if (template.background_url && !template.template_data) {
+      console.log('=== PRINT DEBUG: Utilizando fallback local bruto ===', template);
       return template;
     }
 
@@ -224,26 +234,23 @@ function CertificadoContent() {
       return res;
     };
 
+    console.log('=== PRINT DEBUG: [1. EDITOR ORIGINAL ENTRA] ===', JSON.stringify({
+      id: template.id,
+      nome: template.nome || template.name,
+      backgroundUrl: tData.backgroundUrl,
+      orientacao: tData.orientacao,
+      largura: tData.largura,
+      altura: tData.altura,
+      elementos_count: rawElements.length,
+      elementos: rawElements
+    }, null, 2));
+
     const mappedElements = rawElements
       .filter((el: any) => el.visivel !== false)
       .map((el: any) => {
-        let tipoFinal = 'text_fixed';
-        if (el.tipo === 'qrcode' || el.tipo === 'qr_conec') {
+        let tipoFinal = el.tipo;
+        if (el.tipo === 'qr_conec') {
           tipoFinal = 'qrcode';
-        } else if (el.tipo === 'imagem' || el.tipo === 'image') {
-          tipoFinal = 'image';
-        } else if (el.tipo === 'logo') {
-          tipoFinal = 'logo';
-        } else if (el.tipo === 'signature' || el.tipo === 'assinatura') {
-          tipoFinal = 'signature';
-        } else if (el.tipo === 'texto') {
-          tipoFinal = 'text_fixed';
-        } else if (el.tipo === 'chapa') {
-          tipoFinal = 'line';
-        } else if (el.tipo === 'caixa') {
-          tipoFinal = 'caixa';
-        } else if (el.tipo === 'tabela') {
-          tipoFinal = 'tabela';
         }
 
         let parsedLinhas = el.linhas;
@@ -255,20 +262,23 @@ function CertificadoContent() {
           }
         }
 
+        // Para QR Code, injeta o token de validação se houver elemento correspondente
+        let textoFinal = el.texto || '';
+        if (tipoFinal === 'qrcode') {
+          textoFinal = token ? `${typeof window !== 'undefined' ? window.location.origin : ''}/conec/credenciamento/validar/${token}` : '';
+        }
+
+        // Preserva integralmente todas as propriedades originais para evitar destruição de layout,
+        // mas injeta o conteudo traduzido e normaliza nomes de campos alternativos (width/height)
         return {
-          id: el.id,
+          ...el,
           tipo: tipoFinal,
           imagemUrl: el.imagemUrl || el.url || el.conteudo || '',
           x: el.x,
           y: el.y,
-          width: el.largura,
-          height: el.altura,
-          conteudo: el.tipo === 'qrcode' ? '' : parsePlaceholderText(el.texto || ''),
-          borderWidth: el.borderWidth,
-          borderColor: el.borderColor,
-          borderRadius: el.borderRadius,
-          backgroundColor: el.backgroundColor,
-          padding: el.padding,
+          width: el.largura !== undefined ? el.largura : el.width,
+          height: el.altura !== undefined ? el.altura : el.height,
+          conteudo: tipoFinal === 'qrcode' ? textoFinal : parsePlaceholderText(textoFinal),
           linhas: parsedLinhas,
           styles: {
             fontSize: el.fontSize ? `${el.fontSize}px` : '14px',
@@ -281,13 +291,17 @@ function CertificadoContent() {
         };
       });
 
-    return {
-      background_url: tData.backgroundUrl || '',
+    const out = {
+      ...tData,
+      background_url: tData.backgroundUrl || tData.background_url || '',
       largura: tData.largura || (tData.orientacao === 'portrait' ? 794 : 1123),
       altura: tData.altura || (tData.orientacao === 'portrait' ? 1123 : 794),
       orientacao: tData.orientacao || 'landscape',
       elementos: mappedElements
     };
+
+    console.log('=== PRINT DEBUG: [2. RENDERIZADOR COMPLETO SAI] ===', JSON.stringify(out, null, 2));
+    return out;
   };
 
   const finalTemplate = getMappedTemplate();
@@ -386,6 +400,14 @@ function CertificadoContent() {
           Imprimir Certificado
         </button>
       </div>
+
+      {/* Rótulo de verificação do template ativo (oculto na impressão) */}
+      {template && (
+        <div className="w-full max-w-[1123px] mb-2 p-2 bg-gray-200 border border-gray-300 rounded text-[11px] text-gray-700 font-mono print:hidden no-print">
+          📄 <strong>Template Resolvido:</strong> {template.nome || template.name || 'Fallback'} (Key: <code>{template.template_key || 'N/A'}</code>)
+        </div>
+      )}
+
 
       {/* Renderização do Certificado via Template Studio */}
       {finalTemplate && (

@@ -65,13 +65,15 @@ export default function TemplateStudioRenderer({
   const baseWidth = template.largura || (template.orientacao === 'portrait' ? 794 : 1123);
   const baseHeight = template.altura || (template.orientacao === 'portrait' ? 1123 : 794);
 
+  const bgReal = template.background_url || (template as any).backgroundUrl || '';
+
   return (
     <div
       className="print-container relative select-none overflow-hidden bg-no-repeat bg-center"
       style={{
         width: `${baseWidth}px`,
         height: `${baseHeight}px`,
-        backgroundImage: template.background_url ? `url('${template.background_url}')` : 'none',
+        backgroundImage: bgReal ? `url('${bgReal}')` : 'none',
         backgroundSize: 'cover',
       }}
     >
