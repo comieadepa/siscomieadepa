@@ -245,9 +245,24 @@ function FichaContent() {
           tipoFinal = 'logo';
         } else if (el.tipo === 'signature' || el.tipo === 'assinatura') {
           tipoFinal = 'signature';
+        } else if (el.tipo === 'texto') {
+          tipoFinal = 'text_fixed';
+        } else if (el.tipo === 'chapa') {
+          tipoFinal = 'line';
+        } else if (el.tipo === 'caixa') {
+          tipoFinal = 'caixa';
+        } else if (el.tipo === 'tabela') {
+          tipoFinal = 'tabela';
         }
 
-
+        let parsedLinhas = el.linhas;
+        if (typeof parsedLinhas === 'string') {
+          try {
+            parsedLinhas = JSON.parse(parsedLinhas);
+          } catch {
+            parsedLinhas = [['Célula 1']];
+          }
+        }
 
         return {
           id: el.id,
@@ -258,6 +273,12 @@ function FichaContent() {
           width: el.largura,
           height: el.altura,
           conteudo: el.tipo === 'qrcode' ? '' : parsePlaceholderText(el.texto || ''),
+          borderWidth: el.borderWidth,
+          borderColor: el.borderColor,
+          borderRadius: el.borderRadius,
+          backgroundColor: el.backgroundColor,
+          padding: el.padding,
+          linhas: parsedLinhas,
           styles: {
             fontSize: el.fontSize ? `${el.fontSize}px` : '14px',
             fontFamily: el.fonte || 'sans-serif',

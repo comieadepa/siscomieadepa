@@ -228,7 +228,7 @@ function CertificadoContent() {
       .filter((el: any) => el.visivel !== false)
       .map((el: any) => {
         let tipoFinal = 'text_fixed';
-        if (el.tipo === 'qrcode') {
+        if (el.tipo === 'qrcode' || el.tipo === 'qr_conec') {
           tipoFinal = 'qrcode';
         } else if (el.tipo === 'imagem' || el.tipo === 'image') {
           tipoFinal = 'image';
@@ -236,9 +236,24 @@ function CertificadoContent() {
           tipoFinal = 'logo';
         } else if (el.tipo === 'signature' || el.tipo === 'assinatura') {
           tipoFinal = 'signature';
+        } else if (el.tipo === 'texto') {
+          tipoFinal = 'text_fixed';
+        } else if (el.tipo === 'chapa') {
+          tipoFinal = 'line';
+        } else if (el.tipo === 'caixa') {
+          tipoFinal = 'caixa';
+        } else if (el.tipo === 'tabela') {
+          tipoFinal = 'tabela';
         }
 
-
+        let parsedLinhas = el.linhas;
+        if (typeof parsedLinhas === 'string') {
+          try {
+            parsedLinhas = JSON.parse(parsedLinhas);
+          } catch {
+            parsedLinhas = [['Célula 1']];
+          }
+        }
 
         return {
           id: el.id,
@@ -249,6 +264,12 @@ function CertificadoContent() {
           width: el.largura,
           height: el.altura,
           conteudo: el.tipo === 'qrcode' ? '' : parsePlaceholderText(el.texto || ''),
+          borderWidth: el.borderWidth,
+          borderColor: el.borderColor,
+          borderRadius: el.borderRadius,
+          backgroundColor: el.backgroundColor,
+          padding: el.padding,
+          linhas: parsedLinhas,
           styles: {
             fontSize: el.fontSize ? `${el.fontSize}px` : '14px',
             fontFamily: el.fonte || 'sans-serif',
@@ -272,13 +293,14 @@ function CertificadoContent() {
   const finalTemplate = getMappedTemplate();
 
   useEffect(() => {
-    if (!loading && finalTemplate && !error && !isLocked) {
+    // Aguardar token antes de acionar a impressão (QR Code precisa do token)
+    if (!loading && finalTemplate && !error && !isLocked && token) {
       const timer = setTimeout(() => {
         window.print();
-      }, 800);
+      }, 1200);
       return () => clearTimeout(timer);
     }
-  }, [loading, finalTemplate, error, isLocked]);
+  }, [loading, finalTemplate, error, isLocked, token]);
 
   if (loading) {
     return (
@@ -327,15 +349,22 @@ function CertificadoContent() {
           .no-print {
             display: none !important;
           }
+          .safe-area-guides {
+            display: none !important;
+          }
           .print-container {
             width: 297mm !important;
             height: 210mm !important;
-            background-size: 100% 100% !important;
+            background-size: cover !important;
             border: 0 !important;
             box-shadow: none !important;
             border-radius: 0 !important;
             margin: 0 !important;
-            transform: none !important;
+            position: relative !important;
+          }
+          .print-container * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
         }
       `}</style>

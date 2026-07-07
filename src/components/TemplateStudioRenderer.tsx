@@ -86,13 +86,16 @@ export default function TemplateStudioRenderer({
 
         const debugStyle = debug ? 'border border-red-500 bg-red-100/10' : '';
 
-        // Auto-detectar se as coordenadas vieram em porcentagem (<= 100) para compatibilidade reversa
+        // Compatibilidade retroativa: coordenadas em % (templates antigos usavam valores ≤ 100)
+        // O editor novo sempre gera valores em px (largura > 100). Só converte se TODOS os quatro
+        // valores forem ≤ 100, garantindo que elementos px do editor nunca sejam distorcidos.
         let absX = el.x;
         let absY = el.y;
         let absW = el.width !== undefined ? el.width : el.largura;
         let absH = el.height !== undefined ? el.height : el.altura;
 
-        if (absX <= 100 && baseWidth > 300) {
+        const parece_percentual = absX <= 100 && absY <= 100 && absW <= 100 && absH <= 100 && baseWidth > 300;
+        if (parece_percentual) {
           absX = (absX / 100) * baseWidth;
           absY = (absY / 100) * baseHeight;
           absW = (absW / 100) * baseWidth;
@@ -147,6 +150,93 @@ export default function TemplateStudioRenderer({
                   [{el.tipo.toUpperCase()}]
                 </div>
               )
+            ) : el.tipo === 'caixa' ? (
+              <div
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  backgroundColor: el.backgroundColor || 'transparent',
+                  borderWidth: `${el.borderWidth !== undefined ? el.borderWidth : 1}px`,
+                  borderStyle: el.borderWidth ? 'solid' : 'none',
+                  borderColor: el.borderColor || '#000000',
+                  borderRadius: `${el.borderRadius || 0}px`,
+                  padding: `${el.padding !== undefined ? el.padding : 8}px`,
+                  boxSizing: 'border-box',
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                }}
+              >
+                <div
+                  style={{
+                    width: '100%',
+                    fontSize: el.styles?.fontSize || (el.fontSize ? `${el.fontSize}px` : '14px'),
+                    fontFamily: el.styles?.fontFamily || (el.fonte || 'Arial').replace(' Semibold', ''),
+                    fontWeight: el.styles?.fontWeight || ((el.fonte || '').endsWith(' Semibold') ? 600 : (el.negrito ? 'bold' : 'normal')),
+                    fontStyle: el.styles?.fontStyle || (el.italico ? 'italic' : 'normal'),
+                    textDecoration: el.sublinhado ? 'underline' : 'none',
+                    color: el.styles?.color || el.cor || '#000000',
+                    textAlign: el.styles?.textAlign || el.alinhamento || 'left',
+                    lineHeight: '1.2',
+                    wordBreak: 'break-word',
+                    whiteSpace: 'pre-wrap',
+                    overflowWrap: 'break-word',
+                    display: 'block',
+                  }}
+                >
+                  {contentText}
+                </div>
+              </div>
+            ) : el.tipo === 'tabela' ? (
+              <table
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  borderCollapse: 'collapse',
+                  backgroundColor: el.backgroundColor || 'transparent',
+                  borderWidth: `${el.borderWidth !== undefined ? el.borderWidth : 1}px`,
+                  borderStyle: 'solid',
+                  borderColor: el.borderColor || '#000000',
+                  tableLayout: 'fixed',
+                }}
+              >
+                <tbody>
+                  {(el.linhas || [['Célula 1']]).map((row: string[], rIdx: number) => (
+                    <tr key={rIdx}>
+                      {row.map((cell: string, cIdx: number) => {
+                        let parsedCell = cell || '';
+                        Object.entries(dados).forEach(([key, val]) => {
+                          parsedCell = parsedCell.split(`{${key}}`).join(String(val ?? ''));
+                          parsedCell = parsedCell.split(`{{${key}}}`).join(String(val ?? ''));
+                        });
+
+                        return (
+                          <td
+                            key={cIdx}
+                            style={{
+                              borderWidth: `${el.borderWidth !== undefined ? el.borderWidth : 1}px`,
+                              borderStyle: 'solid',
+                              borderColor: el.borderColor || '#000000',
+                              padding: `${el.padding !== undefined ? el.padding : 4}px`,
+                              fontSize: el.styles?.fontSize || (el.fontSize ? `${el.fontSize}px` : '12px'),
+                              fontFamily: el.styles?.fontFamily || (el.fonte || 'Arial').replace(' Semibold', ''),
+                              fontWeight: el.styles?.fontWeight || ((el.fonte || '').endsWith(' Semibold') ? 600 : (el.negrito ? 'bold' : 'normal')),
+                              fontStyle: el.styles?.fontStyle || (el.italico ? 'italic' : 'normal'),
+                              color: el.styles?.color || el.cor || '#000000',
+                              textAlign: el.styles?.textAlign || el.alinhamento || 'left',
+                              wordBreak: 'break-word',
+                              overflowWrap: 'break-word',
+                            }}
+                          >
+                            {parsedCell}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             ) : isChapa ? (
               <div
                 style={{
@@ -180,6 +270,8 @@ export default function TemplateStudioRenderer({
                     textAlign: el.styles?.textAlign || el.alinhamento || 'left',
                     lineHeight: '1.2',
                     wordBreak: 'break-word',
+                    whiteSpace: 'pre-wrap',
+                    overflowWrap: 'break-word',
                     display: 'block',
                   }}
                 >

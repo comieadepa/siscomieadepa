@@ -20,6 +20,8 @@ const SAFE_AREA_MARGIN = 25;
 
 const ELEMENTOS_TIPOS = [
   { tipo: 'texto',          label: 'Texto / Campo Dinâmico', icone: '📝' },
+  { tipo: 'caixa',          label: 'Caixa de Campo',         icone: '🔲' },
+  { tipo: 'tabela',         label: 'Tabela',                 icone: '📊' },
   { tipo: 'logo',           label: 'Logo Oficial',           icone: '🏛️' },
   { tipo: 'imagem',         label: 'Imagem / Fundo',         icone: '🖼️' },
   { tipo: 'chapa',          label: 'Linha / Divisor',        icone: '━' },
@@ -28,7 +30,7 @@ const ELEMENTOS_TIPOS = [
 
 interface CertificadoElemento {
   id: string;
-  tipo: 'texto' | 'logo' | 'imagem' | 'chapa' | 'foto-membro' | 'qrcode';
+  tipo: 'texto' | 'logo' | 'imagem' | 'chapa' | 'foto-membro' | 'qrcode' | 'caixa' | 'tabela';
   x: number;
   y: number;
   largura: number;
@@ -38,12 +40,18 @@ interface CertificadoElemento {
   fonte?: string;
   transparencia?: number;
   texto?: string;
-  alinhamento?: 'left' | 'center' | 'right';
+  alinhamento?: 'left' | 'center' | 'right' | 'justify';
   negrito?: boolean;
   italico?: boolean;
   sublinhado?: boolean;
   imagemUrl?: string;
   visivel: boolean;
+  borderWidth?: number;
+  borderColor?: string;
+  borderRadius?: number;
+  backgroundColor?: string;
+  padding?: number;
+  linhas?: string[][];
 }
 
 interface CertificadoTemplate {
@@ -316,6 +324,49 @@ export default function ConecTemplatesPage() {
         altura: 200,
         visivel: true
       };
+    } else if (tipo === 'caixa') {
+      base = {
+        id: gId(),
+        tipo: 'caixa',
+        x: bx,
+        y: by,
+        largura: 350,
+        altura: 80,
+        fontSize: 14,
+        cor: '#111827',
+        fonte: 'Arial',
+        alinhamento: 'left',
+        texto: 'NOME: {nome_instituicao}',
+        borderWidth: 1,
+        borderColor: '#b89353',
+        borderRadius: 4,
+        backgroundColor: '#ffffff',
+        padding: 8,
+        visivel: true
+      };
+    } else if (tipo === 'tabela') {
+      base = {
+        id: gId(),
+        tipo: 'tabela',
+        x: bx,
+        y: by,
+        largura: 400,
+        altura: 100,
+        fontSize: 12,
+        cor: '#111827',
+        fonte: 'Arial',
+        alinhamento: 'left',
+        borderWidth: 1,
+        borderColor: '#cbd5e1',
+        backgroundColor: '#ffffff',
+        padding: 4,
+        linhas: [
+          ['Item', 'Descrição'],
+          ['Registro', '{numero_credenciamento}'],
+          ['Validade', '{data_validade}']
+        ],
+        visivel: true
+      };
     } else {
       base = {
         id: gId(),
@@ -331,6 +382,133 @@ export default function ConecTemplatesPage() {
         texto: 'Novo Bloco de Texto',
         visivel: true
       };
+    }
+
+    setTemplateEmEdicao({
+      ...templateEmEdicao,
+      elementos: [...templateEmEdicao.elementos, base],
+    });
+    setElementoSelecionado(base);
+    setElementosSelecionados([base]);
+  };
+
+  const handleApplyPreset = (presetType: string) => {
+    if (!templateEmEdicao) return;
+    const bx = SAFE_AREA_MARGIN + 10;
+    const by = SAFE_AREA_MARGIN + 10;
+    let base: CertificadoElemento;
+
+    switch (presetType) {
+      case 'campo_com_borda':
+        base = {
+          id: gId(),
+          tipo: 'caixa',
+          x: bx,
+          y: by,
+          largura: 350,
+          altura: 60,
+          fontSize: 14,
+          cor: '#1b202c',
+          fonte: 'Arial',
+          alinhamento: 'left',
+          texto: 'NOME DA INSTITUIÇÃO: {nome_instituicao}',
+          borderWidth: 1,
+          borderColor: '#b89353',
+          borderRadius: 4,
+          backgroundColor: '#ffffff',
+          padding: 8,
+          visivel: true
+        };
+        break;
+      case 'linha_dupla':
+        base = {
+          id: gId(),
+          tipo: 'caixa',
+          x: bx,
+          y: by,
+          largura: 400,
+          altura: 8,
+          texto: '',
+          borderWidth: 3,
+          borderColor: '#b89353',
+          borderRadius: 0,
+          backgroundColor: 'transparent',
+          padding: 0,
+          visivel: true
+        };
+        break;
+      case 'caixa_observacoes':
+        base = {
+          id: gId(),
+          tipo: 'caixa',
+          x: bx,
+          y: by,
+          largura: 500,
+          altura: 150,
+          fontSize: 12,
+          cor: '#374151',
+          fonte: 'Arial',
+          alinhamento: 'justify' as any,
+          texto: 'Observações: {observacoes}',
+          borderWidth: 1,
+          borderColor: '#9ca3af',
+          borderRadius: 6,
+          backgroundColor: '#f9fafb',
+          padding: 12,
+          visivel: true
+        };
+        break;
+      case 'tabela_2_colunas':
+        base = {
+          id: gId(),
+          tipo: 'tabela',
+          x: bx,
+          y: by,
+          largura: 450,
+          altura: 120,
+          fontSize: 12,
+          cor: '#111827',
+          fonte: 'Arial',
+          alinhamento: 'left',
+          borderWidth: 1,
+          borderColor: '#b89353',
+          backgroundColor: '#ffffff',
+          padding: 6,
+          linhas: [
+            ['PARÂMETRO', 'VALOR'],
+            ['CNPJ', '{cnpj}'],
+            ['Cidade/UF', '{municipio} - {uf}'],
+            ['Status', '{status}']
+          ],
+          visivel: true
+        };
+        break;
+      case 'tabela_1_coluna':
+        base = {
+          id: gId(),
+          tipo: 'tabela',
+          x: bx,
+          y: by,
+          largura: 300,
+          altura: 100,
+          fontSize: 12,
+          cor: '#111827',
+          fonte: 'Arial',
+          alinhamento: 'center',
+          borderWidth: 1,
+          borderColor: '#cbd5e1',
+          backgroundColor: '#ffffff',
+          padding: 6,
+          linhas: [
+            ['INFORMAÇÕES ADICIONAIS'],
+            ['Diretor: {responsavel}'],
+            ['Endereço: {endereco}']
+          ],
+          visivel: true
+        };
+        break;
+      default:
+        return;
     }
 
     setTemplateEmEdicao({
@@ -678,6 +856,48 @@ export default function ConecTemplatesPage() {
               </div>
             </div>
 
+            {/* Presets Rápidos */}
+            <div className="p-4 border-b border-gray-100">
+              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Presets Rápidos</h3>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  onClick={() => handleApplyPreset('campo_com_borda')}
+                  disabled={!templateEmEdicao}
+                  className="bg-gray-50 hover:bg-emerald-50 hover:text-emerald-700 text-gray-700 border border-gray-200 px-2 py-1.5 rounded-lg text-[9px] font-bold text-center transition disabled:opacity-50"
+                >
+                  🔲 Campo com borda
+                </button>
+                <button
+                  onClick={() => handleApplyPreset('linha_dupla')}
+                  disabled={!templateEmEdicao}
+                  className="bg-gray-50 hover:bg-emerald-50 hover:text-emerald-700 text-gray-700 border border-gray-200 px-2 py-1.5 rounded-lg text-[9px] font-bold text-center transition disabled:opacity-50"
+                >
+                  ━ Linha dupla
+                </button>
+                <button
+                  onClick={() => handleApplyPreset('caixa_observacoes')}
+                  disabled={!templateEmEdicao}
+                  className="bg-gray-50 hover:bg-emerald-50 hover:text-emerald-700 text-gray-700 border border-gray-200 px-2 py-1.5 rounded-lg text-[9px] font-bold text-center transition disabled:opacity-50 col-span-2"
+                >
+                  📝 Caixa de observações
+                </button>
+                <button
+                  onClick={() => handleApplyPreset('tabela_2_colunas')}
+                  disabled={!templateEmEdicao}
+                  className="bg-gray-50 hover:bg-emerald-50 hover:text-emerald-700 text-gray-700 border border-gray-200 px-2 py-1.5 rounded-lg text-[9px] font-bold text-center transition disabled:opacity-50"
+                >
+                  📊 Tabela 2 colunas
+                </button>
+                <button
+                  onClick={() => handleApplyPreset('tabela_1_coluna')}
+                  disabled={!templateEmEdicao}
+                  className="bg-gray-50 hover:bg-emerald-50 hover:text-emerald-700 text-gray-700 border border-gray-200 px-2 py-1.5 rounded-lg text-[9px] font-bold text-center transition disabled:opacity-50"
+                >
+                  📊 Tabela 1 coluna
+                </button>
+              </div>
+            </div>
+
             {/* Propriedades do Elemento Selecionado */}
             <div className="p-4 flex-grow">
               <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Propriedades</h3>
@@ -693,7 +913,22 @@ export default function ConecTemplatesPage() {
                     </button>
                   </div>
 
-                  {elementoSelecionado.tipo === 'texto' && (
+                  {/* URL da Imagem */}
+                  {(elementoSelecionado.tipo === 'imagem' || elementoSelecionado.tipo === 'logo') && (
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-600 mb-1.5 uppercase">URL da Imagem</label>
+                      <input
+                        type="text"
+                        value={elementoSelecionado.imagemUrl || ''}
+                        onChange={(e) => updateEl(elementoSelecionado.id, { imagemUrl: e.target.value })}
+                        placeholder="https://exemplo.com/imagem.png"
+                        className="w-full border border-gray-350 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                      />
+                    </div>
+                  )}
+
+                  {/* Conteúdo do Texto / Caixa */}
+                  {(elementoSelecionado.tipo === 'texto' || elementoSelecionado.tipo === 'caixa') && (
                     <div>
                       <label className="block text-[10px] font-bold text-gray-600 mb-1.5 uppercase">Conteúdo do Texto</label>
                       <textarea
@@ -705,87 +940,230 @@ export default function ConecTemplatesPage() {
                     </div>
                   )}
 
-                  {elementoSelecionado.tipo === 'texto' && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-[10px] font-bold text-gray-600 mb-1 uppercase">Fonte</label>
-                        <select
-                          value={elementoSelecionado.fonte || 'Arial'}
-                          onChange={(e) => updateEl(elementoSelecionado.id, { fonte: e.target.value })}
-                          className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white"
-                        >
-                          <option value="Arial">Arial</option>
-                          <option value="Times New Roman">Times New Roman</option>
-                          <option value="Courier New">Courier New</option>
-                          <option value="Georgia">Georgia</option>
-                          <option value="Verdana">Verdana</option>
-                        </select>
+                  {/* Configurações de Borda, Fundo e Margens (Para Caixa e Tabela) */}
+                  {(elementoSelecionado.tipo === 'caixa' || elementoSelecionado.tipo === 'tabela') && (
+                    <div className="border border-gray-200 p-3 rounded-lg bg-gray-50 space-y-2.5">
+                      <span className="block text-[9px] font-bold text-gray-400 uppercase">Aparência do Bloco</span>
+                      
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[9px] font-bold text-gray-500 uppercase">Borda (px)</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={20}
+                            value={elementoSelecionado.borderWidth ?? 1}
+                            onChange={(e) => updateEl(elementoSelecionado.id, { borderWidth: parseInt(e.target.value, 10) || 0 })}
+                            className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-bold text-gray-500 uppercase">Cor Borda</label>
+                          <input
+                            type="color"
+                            value={elementoSelecionado.borderColor || '#000000'}
+                            onChange={(e) => updateEl(elementoSelecionado.id, { borderColor: e.target.value })}
+                            className="w-full h-8 border border-gray-350 rounded p-0.5 cursor-pointer bg-white"
+                          />
+                        </div>
                       </div>
 
-                      <div>
-                        <label className="block text-[10px] font-bold text-gray-600 mb-1 uppercase">Tamanho</label>
-                        <input
-                          type="number"
-                          value={elementoSelecionado.fontSize || 14}
-                          onChange={(e) => updateEl(elementoSelecionado.id, { fontSize: Number(e.target.value) })}
-                          className="w-full border border-gray-300 rounded-lg px-2 py-1 text-xs"
-                        />
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[9px] font-bold text-gray-500 uppercase">Fundo</label>
+                          <input
+                            type="color"
+                            value={elementoSelecionado.backgroundColor || '#ffffff'}
+                            onChange={(e) => updateEl(elementoSelecionado.id, { backgroundColor: e.target.value })}
+                            className="w-full h-8 border border-gray-350 rounded p-0.5 cursor-pointer bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-bold text-gray-500 uppercase">Padding (px)</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={elementoSelecionado.padding ?? 8}
+                            onChange={(e) => updateEl(elementoSelecionado.id, { padding: parseInt(e.target.value, 10) || 0 })}
+                            className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white"
+                          />
+                        </div>
+                      </div>
+
+                      {elementoSelecionado.tipo === 'caixa' && (
+                        <div>
+                          <label className="block text-[9px] font-bold text-gray-500 uppercase">Arredondar Cantos (px)</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={50}
+                            value={elementoSelecionado.borderRadius ?? 4}
+                            onChange={(e) => updateEl(elementoSelecionado.id, { borderRadius: parseInt(e.target.value, 10) || 0 })}
+                            className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Edição de Células de Tabela */}
+                  {elementoSelecionado.tipo === 'tabela' && (
+                    <div className="border border-gray-200 p-3 rounded-lg bg-gray-50 space-y-2">
+                      <span className="block text-[9px] font-bold text-gray-400 uppercase">Conteúdo da Tabela</span>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            const currentRows = elementoSelecionado.linhas || [['Célula 1']];
+                            const numCols = currentRows[0]?.length || 1;
+                            const newRow = Array(numCols).fill('Nova Célula');
+                            updateEl(elementoSelecionado.id, { linhas: [...currentRows, newRow] });
+                          }}
+                          className="bg-white hover:bg-gray-100 text-gray-800 text-[10px] px-2 py-1 rounded font-bold border border-gray-300 flex-1"
+                        >
+                          + Linha
+                        </button>
+                        <button
+                          onClick={() => {
+                            const currentRows = elementoSelecionado.linhas || [['Célula 1']];
+                            if (currentRows.length > 1) {
+                              updateEl(elementoSelecionado.id, { linhas: currentRows.slice(0, -1) });
+                            }
+                          }}
+                          className="bg-red-50 hover:bg-red-100 text-red-700 text-[10px] px-2 py-1 rounded font-bold border border-red-200 flex-1"
+                        >
+                          - Linha
+                        </button>
+                        <button
+                          onClick={() => {
+                            const currentRows = elementoSelecionado.linhas || [['Célula 1']];
+                            const updatedRows = currentRows.map(row => [...row, 'Nova Coluna']);
+                            updateEl(elementoSelecionado.id, { linhas: updatedRows });
+                          }}
+                          className="bg-white hover:bg-gray-100 text-gray-800 text-[10px] px-2 py-1 rounded font-bold border border-gray-300 flex-1"
+                        >
+                          + Coluna
+                        </button>
+                        <button
+                          onClick={() => {
+                            const currentRows = elementoSelecionado.linhas || [['Célula 1']];
+                            const numCols = currentRows[0]?.length || 1;
+                            if (numCols > 1) {
+                              const updatedRows = currentRows.map(row => row.slice(0, -1));
+                              updateEl(elementoSelecionado.id, { linhas: updatedRows });
+                            }
+                          }}
+                          className="bg-red-50 hover:bg-red-100 text-red-700 text-[10px] px-2 py-1 rounded font-bold border border-red-200 flex-1"
+                        >
+                          - Coluna
+                        </button>
+                      </div>
+
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto border border-gray-200 p-2 rounded bg-white">
+                        {(elementoSelecionado.linhas || [['Célula 1']]).map((row, rIdx) => (
+                          <div key={rIdx} className="flex gap-1 items-center">
+                            <span className="text-[9px] text-gray-400 font-mono w-4">R{rIdx+1}</span>
+                            {row.map((cell, cIdx) => (
+                              <input
+                                key={cIdx}
+                                type="text"
+                                value={cell}
+                                onChange={(e) => {
+                                  const newRows = (elementoSelecionado.linhas || [['Célula 1']]).map((r, ri) => 
+                                    r.map((c, ci) => ri === rIdx && ci === cIdx ? e.target.value : c)
+                                  );
+                                  updateEl(elementoSelecionado.id, { linhas: newRows });
+                                }}
+                                className="min-w-0 flex-1 border border-gray-300 rounded px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white"
+                              />
+                            ))}
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
 
-                  {elementoSelecionado.tipo === 'texto' && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-[10px] font-bold text-gray-600 mb-1 uppercase">Cor</label>
-                        <input
-                          type="color"
-                          value={elementoSelecionado.cor || '#000000'}
-                          onChange={(e) => updateEl(elementoSelecionado.id, { cor: e.target.value })}
-                          className="w-full h-8 border border-gray-300 rounded-lg p-0.5 cursor-pointer bg-white"
-                        />
+                  {/* Propriedades comuns de fonte */}
+                  {(elementoSelecionado.tipo === 'texto' || elementoSelecionado.tipo === 'caixa' || elementoSelecionado.tipo === 'tabela') && (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-600 mb-1 uppercase">Fonte</label>
+                          <select
+                            value={elementoSelecionado.fonte || 'Arial'}
+                            onChange={(e) => updateEl(elementoSelecionado.id, { fonte: e.target.value })}
+                            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white"
+                          >
+                            <option value="Arial">Arial</option>
+                            <option value="Times New Roman">Times New Roman</option>
+                            <option value="Courier New">Courier New</option>
+                            <option value="Georgia">Georgia</option>
+                            <option value="Verdana">Verdana</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-600 mb-1 uppercase">Tamanho</label>
+                          <input
+                            type="number"
+                            value={elementoSelecionado.fontSize || 14}
+                            onChange={(e) => updateEl(elementoSelecionado.id, { fontSize: Number(e.target.value) })}
+                            className="w-full border border-gray-300 rounded-lg px-2 py-1 text-xs"
+                          />
+                        </div>
                       </div>
 
-                      <div>
-                        <label className="block text-[10px] font-bold text-gray-600 mb-1 uppercase">Alinhamento</label>
-                        <select
-                          value={elementoSelecionado.alinhamento || 'left'}
-                          onChange={(e) => updateEl(elementoSelecionado.id, { alinhamento: e.target.value as any })}
-                          className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white"
-                        >
-                          <option value="left">Esquerda</option>
-                          <option value="center">Centralizado</option>
-                          <option value="right">Direita</option>
-                        </select>
-                      </div>
-                    </div>
-                  )}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-600 mb-1 uppercase">Cor Fonte</label>
+                          <input
+                            type="color"
+                            value={elementoSelecionado.cor || '#000000'}
+                            onChange={(e) => updateEl(elementoSelecionado.id, { cor: e.target.value })}
+                            className="w-full h-8 border border-gray-300 rounded-lg p-0.5 cursor-pointer bg-white"
+                          />
+                        </div>
 
-                  {elementoSelecionado.tipo === 'texto' && (
-                    <div className="flex gap-4">
-                      <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={!!elementoSelecionado.negrito}
-                          onChange={(e) => updateEl(elementoSelecionado.id, { negrito: e.target.checked })}
-                          className="rounded text-emerald-600"
-                        />
-                        Negrito
-                      </label>
-                      <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={!!elementoSelecionado.italico}
-                          onChange={(e) => updateEl(elementoSelecionado.id, { italico: e.target.checked })}
-                          className="rounded text-emerald-600"
-                        />
-                        Itálico
-                      </label>
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-600 mb-1 uppercase">Alinhamento</label>
+                          <select
+                            value={elementoSelecionado.alinhamento || 'left'}
+                            onChange={(e) => updateEl(elementoSelecionado.id, { alinhamento: e.target.value as any })}
+                            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white"
+                          >
+                            <option value="left">Esquerda</option>
+                            <option value="center">Centralizado</option>
+                            <option value="right">Direita</option>
+                            <option value="justify">Justificado</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-4">
+                        <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={!!elementoSelecionado.negrito}
+                            onChange={(e) => updateEl(elementoSelecionado.id, { negrito: e.target.checked })}
+                            className="rounded text-emerald-600"
+                          />
+                          Negrito
+                        </label>
+                        <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={!!elementoSelecionado.italico}
+                            onChange={(e) => updateEl(elementoSelecionado.id, { italico: e.target.checked })}
+                            className="rounded text-emerald-600"
+                          />
+                          Itálico
+                        </label>
+                      </div>
                     </div>
                   )}
 
                   {/* Placeholders / Campos Dinâmicos do CONEC */}
-                  {elementoSelecionado.tipo === 'texto' && (
+                  {(elementoSelecionado.tipo === 'texto' || elementoSelecionado.tipo === 'caixa' || elementoSelecionado.tipo === 'tabela') && (
                     <div className="border-t border-gray-150 pt-3">
                       <span className="block text-[9px] font-bold text-gray-400 uppercase mb-2">Campos Dinâmicos CONEC</span>
                       <div className="flex flex-wrap gap-1">
@@ -805,6 +1183,9 @@ export default function ConecTemplatesPage() {
                           <button
                             key={ph.placeholder}
                             onClick={() => {
+                              if (elementoSelecionado.tipo === 'tabela') {
+                                return;
+                              }
                               const currText = elementoSelecionado.texto || '';
                               updateEl(elementoSelecionado.id, { texto: currText + ph.placeholder });
                             }}

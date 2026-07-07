@@ -12,7 +12,7 @@ const SNAP_THRESHOLD   = 8;  // px para snap suave nas bordas da safe area
 
 interface ElementoCartao {
     id: string;
-    tipo: 'texto' | 'qrcode' | 'logo' | 'foto-membro' | 'chapa' | 'imagem';
+    tipo: 'texto' | 'qrcode' | 'logo' | 'foto-membro' | 'chapa' | 'imagem' | 'caixa' | 'tabela';
     x: number;
     y: number;
     largura: number;
@@ -24,7 +24,7 @@ interface ElementoCartao {
     transparencia?: number;
     borderRadius?: number;
     texto?: string;
-    alinhamento?: 'left' | 'center' | 'right';
+    alinhamento?: 'left' | 'center' | 'right' | 'justify';
     negrito?: boolean;
     italico?: boolean;
     sublinhado?: boolean;
@@ -32,20 +32,24 @@ interface ElementoCartao {
     imagemUrl?: string;
     foto?: string;
     visivel: boolean;
+    borderWidth?: number;
+    borderColor?: string;
+    padding?: number;
+    linhas?: string[][];
 }
 
-interface InteractiveCanvasProps {
-    elementos: ElementoCartao[];
-    elementoSelecionado: ElementoCartao | null;
-    elementosSelecionados: ElementoCartao[];
+interface InteractiveCanvasProps<T extends ElementoCartao = ElementoCartao> {
+    elementos: T[];
+    elementoSelecionado: T | null;
+    elementosSelecionados: T[];
     nomenclaturas?: any;
     getPreviewText?: (text: string) => string;
     backgroundUrl?: string;
-    onElementoSelecionado: (elemento: ElementoCartao | null) => void;
-    onElementosSelecionados: (elementos: ElementoCartao[]) => void;
-    onElementoAtualizado: (elementoId: string, propriedades: Partial<ElementoCartao>) => void;
-    onMultiplosElementosAtualizados?: (atualizacoes: Array<{ id: string; propriedades: Partial<ElementoCartao> }>) => void;
-    onElementosAdicionados?: (novoElementos: ElementoCartao[]) => void;
+    onElementoSelecionado: (elemento: T | null) => void;
+    onElementosSelecionados: (elementos: T[]) => void;
+    onElementoAtualizado: (elementoId: string, propriedades: Partial<T>) => void;
+    onMultiplosElementosAtualizados?: (atualizacoes: Array<{ id: string; propriedades: Partial<T> }>) => void;
+    onElementosAdicionados?: (novoElementos: T[]) => void;
     onElementoRemovido?: (elementoId: string) => void;
     larguraCanvas?: number;
     alturaCanvas?: number;
@@ -68,7 +72,7 @@ function snapTo(val: number, target: number): number {
  * Verifica se um elemento está fora da safe area.
  * Retorna true se estiver total ou parcialmente fora.
  */
-function estaForaDaSafeArea(el: ElementoCartao, w: number, h: number): boolean {
+function estaForaDaSafeArea(el: { x: number; y: number; largura: number; altura: number }, w: number, h: number): boolean {
     const sl = SAFE_AREA_MARGIN;
     const st = SAFE_AREA_MARGIN;
     const sr = w - SAFE_AREA_MARGIN;
@@ -76,7 +80,7 @@ function estaForaDaSafeArea(el: ElementoCartao, w: number, h: number): boolean {
     return el.x < sl || el.y < st || el.x + el.largura > sr || el.y + el.altura > sb;
 }
 
-export default function InteractiveCanvas({
+export default function InteractiveCanvas<T extends ElementoCartao = ElementoCartao>({
     elementos = [],
     elementoSelecionado,
     elementosSelecionados = [],
@@ -91,10 +95,10 @@ export default function InteractiveCanvas({
     onElementoRemovido,
     larguraCanvas = 465,
     alturaCanvas = 291
-}: InteractiveCanvasProps) {
+}: InteractiveCanvasProps<T>) {
     const [isDragging, setIsDragging] = useState(false);
     const [configIgreja, setConfigIgreja] = useState<any>(null);
-    const [clipboard, setClipboard] = useState<ElementoCartao[]>([]);
+    const [clipboard, setClipboard] = useState<T[]>([]);
 
     useEffect(() => {
         const supabase = createClient();
@@ -140,7 +144,7 @@ export default function InteractiveCanvas({
 
     // ─── Event Handlers ────────────────────────────────────────────────────
 
-    const handleElementMouseDown = (e: React.MouseEvent, elemento: ElementoCartao) => {
+    const handleElementMouseDown = (e: React.MouseEvent, elemento: T) => {
         e.preventDefault();
         e.stopPropagation();
         canvasRef.current?.focus();
@@ -210,10 +214,10 @@ export default function InteractiveCanvas({
                     if (startPos) {
                         const raw = { x: startPos.x + deltaX, y: startPos.y + deltaY };
                         const { x, y } = aplicarClampESnap(raw.x, raw.y, elemento.largura, elemento.altura);
-                        return { id: elemento.id, propriedades: { x, y } };
+                        return { id: elemento.id, propriedades: { x, y } as any };
                     }
                     return null;
-                }).filter(Boolean) as Array<{ id: string; propriedades: Partial<ElementoCartao> }>;
+                }).filter(Boolean) as Array<{ id: string; propriedades: Partial<T> }>;
                 onMultiplosElementosAtualizados(atualizacoes);
             } else {
                 elementosSelecionados.forEach(elemento => {
@@ -221,7 +225,7 @@ export default function InteractiveCanvas({
                     if (startPos) {
                         const raw = { x: startPos.x + deltaX, y: startPos.y + deltaY };
                         const { x, y } = aplicarClampESnap(raw.x, raw.y, elemento.largura, elemento.altura);
-                        onElementoAtualizado(elemento.id, { x, y });
+                        onElementoAtualizado(elemento.id, { x, y } as any);
                     }
                 });
             }
@@ -257,7 +261,7 @@ export default function InteractiveCanvas({
                 y: Math.max(0, novoY),
                 largura: novaLargura,
                 altura:  novaAltura
-            });
+            } as any);
         }
     };
 
@@ -312,7 +316,7 @@ export default function InteractiveCanvas({
             if (clipboard.length > 0 && onElementosAdicionados) {
                 e.preventDefault();
                 const offset = 15;
-                const elementosCopias: ElementoCartao[] = clipboard.map(el => {
+                const elementosCopias: T[] = clipboard.map(el => {
                     const rawX = el.x + offset;
                     const rawY = el.y + offset;
                     const { x, y } = aplicarClampESnap(rawX, rawY, el.largura, el.altura);
@@ -361,7 +365,7 @@ export default function InteractiveCanvas({
                     elemento.largura,
                     elemento.altura
                 );
-                return { id: elemento.id, propriedades: { x, y } };
+                return { id: elemento.id, propriedades: { x, y } as any };
             });
             onMultiplosElementosAtualizados(atualizacoes);
         }
@@ -369,7 +373,7 @@ export default function InteractiveCanvas({
 
     // ─── Renderização dos elementos ────────────────────────────────────────
 
-    const renderElemento = (elemento: ElementoCartao) => {
+    const renderElemento = (elemento: T) => {
         const isSelected    = elementoSelecionado?.id === elemento.id;
         const isInSelection = elementosSelecionados.some(el => el.id === elemento.id);
         const foraDoSafeArea = estaForaDaSafeArea(elemento, larguraCanvas, alturaCanvas);
@@ -430,6 +434,8 @@ export default function InteractiveCanvas({
                                 textAlign: elemento.alinhamento || 'left',
                                 lineHeight: '1.2',
                                 wordBreak: 'break-word',
+                                whiteSpace: 'pre-wrap',
+                                overflowWrap: 'break-word',
                                 display: 'block'
                             }}
                             dangerouslySetInnerHTML={{ __html: (getPreviewText ? getPreviewText(elemento.texto || 'Texto') : obterPreviewTexto(elemento.texto || 'Texto', nomenclaturas)) || 'Texto' }}
@@ -437,6 +443,96 @@ export default function InteractiveCanvas({
                     </div>
                 );
                 break;
+
+            case 'caixa':
+                conteudo = (
+                    <div
+                        style={{
+                            width: '100%',
+                            height: '100%',
+                            backgroundColor: elemento.backgroundColor || 'transparent',
+                            borderWidth: `${elemento.borderWidth !== undefined ? elemento.borderWidth : 1}px`,
+                            borderStyle: elemento.borderWidth ? 'solid' : 'none',
+                            borderColor: elemento.borderColor || '#000000',
+                            borderRadius: `${elemento.borderRadius || 0}px`,
+                            padding: `${elemento.padding !== undefined ? elemento.padding : 8}px`,
+                            boxSizing: 'border-box',
+                            overflow: 'hidden',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'center',
+                        }}
+                    >
+                        <div
+                            style={{
+                                width: '100%',
+                                fontSize: `${elemento.fontSize || 12}px`,
+                                fontFamily: (elemento.fonte || 'Arial').replace(' Semibold', ''),
+                                fontWeight: (elemento.fonte || '').endsWith(' Semibold') ? 600 : (elemento.negrito ? 'bold' : 'normal'),
+                                fontStyle: elemento.italico ? 'italic' : 'normal',
+                                textDecoration: elemento.sublinhado ? 'underline' : 'none',
+                                color: elemento.cor || '#000',
+                                textAlign: elemento.alinhamento || 'left',
+                                lineHeight: '1.2',
+                                wordBreak: 'break-word',
+                                whiteSpace: 'pre-wrap',
+                                overflowWrap: 'break-word',
+                                display: 'block'
+                            }}
+                            dangerouslySetInnerHTML={{ __html: (getPreviewText ? getPreviewText(elemento.texto || 'Caixa de Texto') : obterPreviewTexto(elemento.texto || 'Caixa de Texto', nomenclaturas)) || 'Caixa de Texto' }}
+                        />
+                    </div>
+                );
+                break;
+
+            case 'tabela': {
+                const tableRows = elemento.linhas || [['Célula 1']];
+                conteudo = (
+                    <table
+                        style={{
+                            width: '100%',
+                            height: '100%',
+                            borderCollapse: 'collapse',
+                            backgroundColor: elemento.backgroundColor || 'transparent',
+                            borderWidth: `${elemento.borderWidth !== undefined ? elemento.borderWidth : 1}px`,
+                            borderStyle: 'solid',
+                            borderColor: elemento.borderColor || '#000000',
+                            tableLayout: 'fixed',
+                        }}
+                    >
+                        <tbody>
+                            {tableRows.map((row, rIdx) => (
+                                <tr key={rIdx}>
+                                    {row.map((cell, cIdx) => {
+                                        const parsedCell = getPreviewText ? getPreviewText(cell) : obterPreviewTexto(cell, nomenclaturas);
+                                        return (
+                                            <td
+                                                key={cIdx}
+                                                style={{
+                                                    borderWidth: `${elemento.borderWidth !== undefined ? elemento.borderWidth : 1}px`,
+                                                    borderStyle: 'solid',
+                                                    borderColor: elemento.borderColor || '#000000',
+                                                    padding: `${elemento.padding !== undefined ? elemento.padding : 4}px`,
+                                                    fontSize: `${elemento.fontSize || 12}px`,
+                                                    fontFamily: (elemento.fonte || 'Arial').replace(' Semibold', ''),
+                                                    fontWeight: (elemento.fonte || '').endsWith(' Semibold') ? 600 : (elemento.negrito ? 'bold' : 'normal'),
+                                                    fontStyle: elemento.italico ? 'italic' : 'normal',
+                                                    color: elemento.cor || '#000000',
+                                                    textAlign: elemento.alinhamento || 'left',
+                                                    wordBreak: 'break-word',
+                                                    overflowWrap: 'break-word',
+                                                }}
+                                                dangerouslySetInnerHTML={{ __html: parsedCell || '' }}
+                                            />
+                                        );
+                                    })}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                );
+                break;
+            }
 
             case 'qrcode':
                 conteudo = (
