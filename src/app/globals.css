@@ -100,3 +100,12 @@
     margin-top: 48px;
   }
 }
+
+/* ── Ocultar guias de safe area e elementos de UI na impressão ─────────── */
+@media print {
+  .no-print,
+  .safe-area-guides {
+    display: none !important;
+  }
+}
+

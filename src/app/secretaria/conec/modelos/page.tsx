@@ -14,6 +14,9 @@ import {
 } from '@/lib/certificados-templates-sync';
 import { Award, Trash2, RefreshCw } from 'lucide-react';
 import { obterPreviewTextoCertificado } from '@/lib/certificados-utils';
+import ToastNotification, { useToasts } from '@/components/ToastNotification';
+
+const SAFE_AREA_MARGIN = 25;
 
 const ELEMENTOS_TIPOS = [
   { tipo: 'texto',          label: 'Texto / Campo Dinâmico', icone: '📝' },
@@ -122,6 +125,8 @@ export default function ConecTemplatesPage() {
   const [renomearNome, setRenomearNome]                   = useState('');
   const [confirmDeleteId, setConfirmDeleteId]             = useState<string | null>(null);
 
+  const { toasts, showToast, removeToast } = useToasts();
+
   const mostrarStatus = (msg: string) => {
     setStatusMensagem(msg);
     setTimeout(() => setStatusMensagem(''), 3000);
@@ -173,24 +178,19 @@ export default function ConecTemplatesPage() {
     setTemplateEmEdicao(tmpl);
     setOrientacaoAtual(tmpl.orientacao || 'landscape');
     setNovoNome('');
-    mostrarStatus(`Modelo "${nome}" criado.`);
+    showToast('success', `✔ Modelo "${nome}" criado.`);
   };
 
   const handleSalvar = async () => {
     if (!templateEmEdicao || !ministryId) return;
     setSalvando(true);
     try {
-      console.log('=== LOG SALVAR: INICIANDO SALVAMENTO ===');
-      console.log('Template em edicao:', templateEmEdicao);
       const prox = templates.map((t) => (t.id === templateEmEdicao.id ? templateEmEdicao : t));
-      console.log('Payload total a salvar:', prox);
       await salvarTodos(prox);
-      console.log('=== LOG SALVAR: SALVO COM SUCESSO ===');
-      alert('Modelo salvo com sucesso!');
+      showToast('success', '✔ Modelo salvo com sucesso.');
 
       // Recarrega do banco para garantir persistencia
       const res = await loadCertificadosTemplatesForCurrentUser(supabase);
-      console.log('=== LOG SALVAR: recarregados do banco ===', res.templates);
       const conecTemplates = (res.templates as any[]).filter(
         t => t.document_type === 'termo_conec' || t.document_type === 'certificado_conec' ||
              t.nome.toLowerCase().includes('conec') || t.nome.toLowerCase().includes('termo') || t.nome.toLowerCase().includes('credenciamento')
@@ -205,8 +205,7 @@ export default function ConecTemplatesPage() {
         setOrientacaoAtual(updated.orientacao || 'landscape');
       }
     } catch (err: any) {
-      console.error('=== LOG SALVAR: ERRO NO SALVAMENTO ===', err);
-      alert('Erro ao salvar modelo: ' + (err.message || err));
+      showToast('error', '❌ Não foi possível salvar o modelo: ' + (err.message || String(err)));
     } finally {
       setSalvando(false);
     }
@@ -230,7 +229,7 @@ export default function ConecTemplatesPage() {
       if (prox[0]) setOrientacaoAtual(prox[0].orientacao || 'landscape');
     }
     setConfirmDeleteId(null);
-    mostrarStatus('Modelo excluido.');
+    showToast('info', '🗑 Modelo removido.');
   };
 
   const handleSelect = (t: CertificadoTemplate) => {
@@ -269,13 +268,15 @@ export default function ConecTemplatesPage() {
   const handleAddEl = (tipo: any) => {
     if (!templateEmEdicao) return;
     let base: CertificadoElemento;
+    const bx = SAFE_AREA_MARGIN + 10;
+    const by = SAFE_AREA_MARGIN + 10;
 
     if (tipo === 'chapa') {
       base = {
         id: gId(),
         tipo: 'chapa',
-        x: 100,
-        y: 100,
+        x: bx,
+        y: by,
         largura: 250,
         altura: 6,
         cor: '#b89353',
@@ -286,8 +287,8 @@ export default function ConecTemplatesPage() {
       base = {
         id: gId(),
         tipo: 'qrcode',
-        x: 100,
-        y: 100,
+        x: bx,
+        y: by,
         largura: 110,
         altura: 110,
         texto: 'qr_code_validacao',
@@ -297,8 +298,8 @@ export default function ConecTemplatesPage() {
       base = {
         id: gId(),
         tipo: 'logo',
-        x: 100,
-        y: 100,
+        x: bx,
+        y: by,
         largura: 120,
         altura: 120,
         imagemUrl: '/img/logo_conec.png',
@@ -308,8 +309,8 @@ export default function ConecTemplatesPage() {
       base = {
         id: gId(),
         tipo: 'imagem',
-        x: 0,
-        y: 0,
+        x: bx,
+        y: by,
         largura: 200,
         imagemUrl: '/img/bg_termo.jpg',
         altura: 200,
@@ -319,8 +320,8 @@ export default function ConecTemplatesPage() {
       base = {
         id: gId(),
         tipo: 'texto',
-        x: 100,
-        y: 100,
+        x: bx,
+        y: by,
         largura: 350,
         altura: 60,
         fontSize: 18,
@@ -372,9 +373,9 @@ export default function ConecTemplatesPage() {
       if (!res.ok) throw new Error(resData.error || 'Erro ao enviar arquivo.');
 
       setTemplateEmEdicao({ ...templateEmEdicao, backgroundUrl: resData.url });
-      mostrarStatus('Imagem de fundo carregada.');
+      showToast('success', '✔ Background enviado com sucesso.');
     } catch (err: any) {
-      alert(err.message || 'Erro ao fazer upload da imagem.');
+      showToast('error', '❌ Erro ao enviar o background: ' + (err.message || String(err)));
     } finally {
       e.target.value = '';
     }
@@ -399,8 +400,8 @@ export default function ConecTemplatesPage() {
       const elImg: CertificadoElemento = {
         id: gId(),
         tipo: 'imagem',
-        x: 40,
-        y: 40,
+        x: SAFE_AREA_MARGIN + 10,
+        y: SAFE_AREA_MARGIN + 10,
         largura: 150,
         altura: 150,
         imagemUrl: resData.url,
@@ -413,9 +414,9 @@ export default function ConecTemplatesPage() {
       });
       setElementoSelecionado(elImg);
       setElementosSelecionados([elImg]);
-      mostrarStatus('Imagem adicionada ao modelo.');
+      showToast('success', '✔ Upload concluído. Imagem adicionada ao modelo.');
     } catch (err: any) {
-      alert(err.message || 'Erro ao adicionar imagem.');
+      showToast('error', '❌ Erro ao adicionar imagem: ' + (err.message || String(err)));
     } finally {
       e.target.value = '';
     }
@@ -828,6 +829,9 @@ export default function ConecTemplatesPage() {
 
       <input ref={backgroundInputRef} type="file" accept="image/*" className="hidden" onChange={handleBgUpload} />
       <input ref={imagemInputRef} type="file" accept="image/*" className="hidden" onChange={handleImgUpload} />
+
+      {/* Toast de notificações */}
+      <ToastNotification toasts={toasts} onRemove={removeToast} />
     </div>
   );
 }

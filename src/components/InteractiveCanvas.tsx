@@ -6,6 +6,10 @@ import { obterPreviewTexto } from '@/lib/cartoes-utils';
 import { createClient } from '@/lib/supabase-client';
 import { fetchConfiguracaoIgrejaFromSupabase } from '@/lib/igreja-config-utils';
 
+// ─── Constantes da Safe Area ───────────────────────────────────────────────
+const SAFE_AREA_MARGIN = 25; // px em todas as bordas
+const SNAP_THRESHOLD   = 8;  // px para snap suave nas bordas da safe area
+
 interface ElementoCartao {
     id: string;
     tipo: 'texto' | 'qrcode' | 'logo' | 'foto-membro' | 'chapa' | 'imagem';
@@ -26,7 +30,7 @@ interface ElementoCartao {
     sublinhado?: boolean;
     sombreado?: boolean;
     imagemUrl?: string;
-    foto?: string; // URL da foto do membro (base64)
+    foto?: string;
     visivel: boolean;
 }
 
@@ -45,6 +49,31 @@ interface InteractiveCanvasProps {
     onElementoRemovido?: (elementoId: string) => void;
     larguraCanvas?: number;
     alturaCanvas?: number;
+}
+
+// ─── Utilitários ────────────────────────────────────────────────────────────
+
+/** Clamp numérico */
+const clamp = (val: number, min: number, max: number) => Math.max(min, Math.min(max, val));
+
+/**
+ * Aplica snap suave: se o valor estiver dentro do threshold da borda, encaixa nela.
+ * Retorna o valor possivelmente "snapped".
+ */
+function snapTo(val: number, target: number): number {
+    return Math.abs(val - target) <= SNAP_THRESHOLD ? target : val;
+}
+
+/**
+ * Verifica se um elemento está fora da safe area.
+ * Retorna true se estiver total ou parcialmente fora.
+ */
+function estaForaDaSafeArea(el: ElementoCartao, w: number, h: number): boolean {
+    const sl = SAFE_AREA_MARGIN;
+    const st = SAFE_AREA_MARGIN;
+    const sr = w - SAFE_AREA_MARGIN;
+    const sb = h - SAFE_AREA_MARGIN;
+    return el.x < sl || el.y < st || el.x + el.largura > sr || el.y + el.altura > sb;
 }
 
 export default function InteractiveCanvas({
@@ -85,61 +114,65 @@ export default function InteractiveCanvas({
 
     const canvasRef = useRef<HTMLDivElement>(null);
 
+    // ─── Limites da Safe Area ──────────────────────────────────────────────
+    const safeLeft   = SAFE_AREA_MARGIN;
+    const safeTop    = SAFE_AREA_MARGIN;
+    const safeRight  = larguraCanvas - SAFE_AREA_MARGIN;
+    const safeBottom = alturaCanvas  - SAFE_AREA_MARGIN;
+
+    /**
+     * Aplica clamp + snap para a posição de um elemento durante drag.
+     * Restringe dentro da safe area e encaixa nas bordas se perto o suficiente.
+     */
+    function aplicarClampESnap(rawX: number, rawY: number, elLargura: number, elAltura: number) {
+        // Clamp dentro da safe area
+        let x = clamp(rawX, safeLeft, safeRight  - elLargura);
+        let y = clamp(rawY, safeTop,  safeBottom - elAltura);
+
+        // Snap nas bordas da safe area
+        x = snapTo(x, safeLeft);
+        x = snapTo(x, safeRight  - elLargura);
+        y = snapTo(y, safeTop);
+        y = snapTo(y, safeBottom - elAltura);
+
+        return { x, y };
+    }
+
+    // ─── Event Handlers ────────────────────────────────────────────────────
+
     const handleElementMouseDown = (e: React.MouseEvent, elemento: ElementoCartao) => {
         e.preventDefault();
         e.stopPropagation();
-
-        // Focar canvas para permitir atalhos de teclado
         canvasRef.current?.focus();
 
-        // Ctrl+Click para multi-seleção
         if (e.ctrlKey || e.metaKey) {
             const jaEstaSelecionado = elementosSelecionados.some(el => el.id === elemento.id);
-
             if (jaEstaSelecionado) {
-                // Remove da seleção
                 onElementosSelecionados(elementosSelecionados.filter(el => el.id !== elemento.id));
             } else {
-                // Adiciona à seleção
                 onElementosSelecionados([...elementosSelecionados, elemento]);
             }
             return;
         }
 
-        // Click normal
         const elementoJaEstaSelecionado = elementosSelecionados.some(el => el.id === elemento.id);
 
         if (elementosSelecionados.length > 1 && elementoJaEstaSelecionado) {
-            // Se há múltiplos selecionados e clicou em um deles, iniciar drag de todos
             setIsDragging(true);
-            const startPositions = new Map();
+            const startPositions = new Map<string, { x: number; y: number }>();
             elementosSelecionados.forEach(el => {
                 startPositions.set(el.id, { x: el.x, y: el.y });
             });
             setMultiDragStart(startPositions);
-            setDragStart({
-                x: e.clientX,
-                y: e.clientY,
-                elementX: 0,
-                elementY: 0
-            });
+            setDragStart({ x: e.clientX, y: e.clientY, elementX: 0, elementY: 0 });
         } else {
-            // Seleção única
             onElementoSelecionado(elemento);
             onElementosSelecionados([elemento]);
             setIsDragging(true);
-
-            // Definir multiDragStart também para seleção única
-            const startPositions = new Map();
+            const startPositions = new Map<string, { x: number; y: number }>();
             startPositions.set(elemento.id, { x: elemento.x, y: elemento.y });
             setMultiDragStart(startPositions);
-
-            setDragStart({
-                x: e.clientX,
-                y: e.clientY,
-                elementX: elemento.x,
-                elementY: elemento.y
-            });
+            setDragStart({ x: e.clientX, y: e.clientY, elementX: elemento.x, elementY: elemento.y });
         }
     };
 
@@ -162,38 +195,33 @@ export default function InteractiveCanvas({
 
     const handleMouseMove = (e: React.MouseEvent) => {
         if (isBoxSelecting) {
-            // Atualizar o retângulo de seleção
             const rect = e.currentTarget.getBoundingClientRect();
             setBoxSelectionEnd({
                 x: e.clientX - rect.left,
                 y: e.clientY - rect.top
             });
         } else if (isDragging && elementosSelecionados.length > 0) {
-            // Arrastar múltiplos elementos
             const deltaX = e.clientX - dragStart.x;
             const deltaY = e.clientY - dragStart.y;
 
             if (onMultiplosElementosAtualizados && elementosSelecionados.length > 1) {
-                // Atualizar todos de uma vez para evitar condição de corrida
                 const atualizacoes = elementosSelecionados.map(elemento => {
                     const startPos = multiDragStart.get(elemento.id);
                     if (startPos) {
-                        const novoX = Math.max(0, Math.min(larguraCanvas - elemento.largura, startPos.x + deltaX));
-                        const novoY = Math.max(0, Math.min(alturaCanvas - elemento.altura, startPos.y + deltaY));
-                        return { id: elemento.id, propriedades: { x: novoX, y: novoY } };
+                        const raw = { x: startPos.x + deltaX, y: startPos.y + deltaY };
+                        const { x, y } = aplicarClampESnap(raw.x, raw.y, elemento.largura, elemento.altura);
+                        return { id: elemento.id, propriedades: { x, y } };
                     }
                     return null;
                 }).filter(Boolean) as Array<{ id: string; propriedades: Partial<ElementoCartao> }>;
-
                 onMultiplosElementosAtualizados(atualizacoes);
             } else {
-                // Fallback: atualizar um por um
                 elementosSelecionados.forEach(elemento => {
                     const startPos = multiDragStart.get(elemento.id);
                     if (startPos) {
-                        const novoX = Math.max(0, Math.min(larguraCanvas - elemento.largura, startPos.x + deltaX));
-                        const novoY = Math.max(0, Math.min(alturaCanvas - elemento.altura, startPos.y + deltaY));
-                        onElementoAtualizado(elemento.id, { x: novoX, y: novoY });
+                        const raw = { x: startPos.x + deltaX, y: startPos.y + deltaY };
+                        const { x, y } = aplicarClampESnap(raw.x, raw.y, elemento.largura, elemento.altura);
+                        onElementoAtualizado(elemento.id, { x, y });
                     }
                 });
             }
@@ -202,24 +230,24 @@ export default function InteractiveCanvas({
             const deltaY = e.clientY - resizeStart.y;
 
             let novaLargura = resizeStart.width;
-            let novaAltura = resizeStart.height;
-            let novoX = resizeStart.elementX;
-            let novoY = resizeStart.elementY;
+            let novaAltura  = resizeStart.height;
+            let novoX       = resizeStart.elementX;
+            let novoY       = resizeStart.elementY;
 
             if (resizeHandle === 'br') {
                 novaLargura = Math.max(20, resizeStart.width + deltaX);
-                novaAltura = Math.max(20, resizeStart.height + deltaY);
+                novaAltura  = Math.max(20, resizeStart.height + deltaY);
             } else if (resizeHandle === 'bl') {
                 novaLargura = Math.max(20, resizeStart.width - deltaX);
-                novaAltura = Math.max(20, resizeStart.height + deltaY);
+                novaAltura  = Math.max(20, resizeStart.height + deltaY);
                 novoX = resizeStart.elementX + (resizeStart.width - novaLargura);
             } else if (resizeHandle === 'tr') {
                 novaLargura = Math.max(20, resizeStart.width + deltaX);
-                novaAltura = Math.max(20, resizeStart.height - deltaY);
+                novaAltura  = Math.max(20, resizeStart.height - deltaY);
                 novoY = resizeStart.elementY + (resizeStart.height - novaAltura);
             } else if (resizeHandle === 'tl') {
                 novaLargura = Math.max(20, resizeStart.width - deltaX);
-                novaAltura = Math.max(20, resizeStart.height - deltaY);
+                novaAltura  = Math.max(20, resizeStart.height - deltaY);
                 novoX = resizeStart.elementX + (resizeStart.width - novaLargura);
                 novoY = resizeStart.elementY + (resizeStart.height - novaAltura);
             }
@@ -228,14 +256,13 @@ export default function InteractiveCanvas({
                 x: Math.max(0, novoX),
                 y: Math.max(0, novoY),
                 largura: novaLargura,
-                altura: novaAltura
+                altura:  novaAltura
             });
         }
     };
 
     const handleMouseUp = () => {
         if (isBoxSelecting) {
-            // Finalizar seleção por área
             const minX = Math.min(boxSelectionStart.x, boxSelectionEnd.x);
             const maxX = Math.max(boxSelectionStart.x, boxSelectionEnd.x);
             const minY = Math.min(boxSelectionStart.y, boxSelectionEnd.y);
@@ -243,17 +270,15 @@ export default function InteractiveCanvas({
 
             const elementosDentroDoBox = elementos.filter(elemento => {
                 if (!elemento.visivel) return false;
-                const elementoCenterX = elemento.x + elemento.largura / 2;
-                const elementoCenterY = elemento.y + elemento.altura / 2;
-                return elementoCenterX >= minX && elementoCenterX <= maxX &&
-                    elementoCenterY >= minY && elementoCenterY <= maxY;
+                const cx = elemento.x + elemento.largura / 2;
+                const cy = elemento.y + elemento.altura / 2;
+                return cx >= minX && cx <= maxX && cy >= minY && cy <= maxY;
             });
 
             if (elementosDentroDoBox.length > 0) {
                 onElementosSelecionados(elementosDentroDoBox);
                 onElementoSelecionado(elementosDentroDoBox[0]);
             }
-
             setIsBoxSelecting(false);
         }
         setIsDragging(false);
@@ -263,7 +288,6 @@ export default function InteractiveCanvas({
 
     const handleCanvasMouseDown = (e: React.MouseEvent) => {
         if (e.target === e.currentTarget && !e.ctrlKey && !e.metaKey) {
-            // Iniciar seleção por área
             const rect = e.currentTarget.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
@@ -276,92 +300,90 @@ export default function InteractiveCanvas({
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
-        // Copiar: Ctrl+C ou Cmd+C
         if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
             if (elementosSelecionados.length > 0) {
                 e.preventDefault();
                 setClipboard(elementosSelecionados);
-                console.log(`📋 ${elementosSelecionados.length} elemento(s) copiado(s)`);
             }
             return;
         }
 
-        // Colar: Ctrl+V ou Cmd+V
         if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
             if (clipboard.length > 0 && onElementosAdicionados) {
                 e.preventDefault();
-                
-                // Criar cópias dos elementos com IDs novos e offset de posição
                 const offset = 15;
-                const elementosCopias: ElementoCartao[] = clipboard.map(el => ({
-                    ...JSON.parse(JSON.stringify(el)), // Deep clone
-                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-                    x: Math.min(el.x + offset, larguraCanvas - el.largura),
-                    y: Math.min(el.y + offset, alturaCanvas - el.altura)
-                }));
-
+                const elementosCopias: ElementoCartao[] = clipboard.map(el => {
+                    const rawX = el.x + offset;
+                    const rawY = el.y + offset;
+                    const { x, y } = aplicarClampESnap(rawX, rawY, el.largura, el.altura);
+                    return {
+                        ...JSON.parse(JSON.stringify(el)),
+                        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                        x,
+                        y
+                    };
+                });
                 onElementosAdicionados(elementosCopias);
                 onElementosSelecionados(elementosCopias);
-                console.log(`📌 ${elementosCopias.length} elemento(s) colado(s)`);
             }
             return;
         }
 
-        // Deletar: Delete ou Backspace
         if ((e.key === 'Delete' || e.key === 'Backspace') && elementosSelecionados.length > 0) {
             e.preventDefault();
             elementosSelecionados.forEach(el => {
-                if (onElementoRemovido) {
-                    onElementoRemovido(el.id);
-                }
+                if (onElementoRemovido) onElementoRemovido(el.id);
             });
             return;
         }
 
-        // Mover elementos selecionados com setas do teclado
         if (!elementoSelecionado && elementosSelecionados.length === 0) return;
 
         const arrows = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
         if (!arrows.includes(e.key)) return;
-
         e.preventDefault();
 
-        // Shift + Seta = movimento de 10px (rápido)
-        // Seta sozinha = movimento de 1px (preciso)
         const step = e.shiftKey ? 10 : 1;
-
         let deltaX = 0;
         let deltaY = 0;
-
         switch (e.key) {
-            case 'ArrowUp':
-                deltaY = -step;
-                break;
-            case 'ArrowDown':
-                deltaY = step;
-                break;
-            case 'ArrowLeft':
-                deltaX = -step;
-                break;
-            case 'ArrowRight':
-                deltaX = step;
-                break;
+            case 'ArrowUp':    deltaY = -step; break;
+            case 'ArrowDown':  deltaY =  step; break;
+            case 'ArrowLeft':  deltaX = -step; break;
+            case 'ArrowRight': deltaX =  step; break;
         }
 
-        // Atualizar posição dos elementos selecionados
         if (onMultiplosElementosAtualizados && elementosSelecionados.length > 0) {
             const atualizacoes = elementosSelecionados.map(elemento => {
-                const novoX = Math.max(0, Math.min(larguraCanvas - elemento.largura, elemento.x + deltaX));
-                const novoY = Math.max(0, Math.min(alturaCanvas - elemento.altura, elemento.y + deltaY));
-                return { id: elemento.id, propriedades: { x: novoX, y: novoY } };
+                const { x, y } = aplicarClampESnap(
+                    elemento.x + deltaX,
+                    elemento.y + deltaY,
+                    elemento.largura,
+                    elemento.altura
+                );
+                return { id: elemento.id, propriedades: { x, y } };
             });
             onMultiplosElementosAtualizados(atualizacoes);
         }
     };
 
+    // ─── Renderização dos elementos ────────────────────────────────────────
+
     const renderElemento = (elemento: ElementoCartao) => {
-        const isSelected = elementoSelecionado?.id === elemento.id;
+        const isSelected    = elementoSelecionado?.id === elemento.id;
         const isInSelection = elementosSelecionados.some(el => el.id === elemento.id);
+        const foraDoSafeArea = estaForaDaSafeArea(elemento, larguraCanvas, alturaCanvas);
+
+        // Borda: azul se selecionado, laranja se fora da safe area, cinza dashed se normal
+        let borderStyle = '1px dashed rgba(0,0,0,0.2)';
+        if (isSelected) {
+            borderStyle = '2px solid #3b82f6';
+        } else if (isInSelection) {
+            borderStyle = '2px solid #60a5fa';
+        } else if (foraDoSafeArea) {
+            borderStyle = '2px dashed #f97316'; // laranja — fora da safe area
+        }
+
         const baseStyle: React.CSSProperties = {
             position: 'absolute',
             left: `${elemento.x}px`,
@@ -369,7 +391,7 @@ export default function InteractiveCanvas({
             width: `${elemento.largura}px`,
             height: `${elemento.altura}px`,
             cursor: isDragging ? 'grabbing' : 'grab',
-            border: isSelected ? '2px solid #3b82f6' : isInSelection ? '2px solid #60a5fa' : '1px dashed rgba(0,0,0,0.2)',
+            border: borderStyle,
             outline: isInSelection && !isSelected ? '1px solid #93c5fd' : 'none',
             outlineOffset: '2px',
             boxSizing: 'border-box',
@@ -381,7 +403,6 @@ export default function InteractiveCanvas({
         switch (elemento.tipo) {
             case 'texto':
                 conteudo = (
-
                     <div
                         style={{
                             width: '100%',
@@ -393,7 +414,7 @@ export default function InteractiveCanvas({
                             overflow: 'hidden',
                             display: 'flex',
                             flexDirection: 'column',
-                            justifyContent: 'center', // Centralização vertical padrão
+                            justifyContent: 'center',
                         }}
                     >
                         <div
@@ -409,13 +430,12 @@ export default function InteractiveCanvas({
                                 textAlign: elemento.alinhamento || 'left',
                                 lineHeight: '1.2',
                                 wordBreak: 'break-word',
-                                display: 'block' // Fluxo de texto normal
+                                display: 'block'
                             }}
                             dangerouslySetInnerHTML={{ __html: (getPreviewText ? getPreviewText(elemento.texto || 'Texto') : obterPreviewTexto(elemento.texto || 'Texto', nomenclaturas)) || 'Texto' }}
                         />
                     </div>
                 );
-
                 break;
 
             case 'qrcode':
@@ -440,98 +460,35 @@ export default function InteractiveCanvas({
                 );
                 break;
 
-            case 'logo':
+            case 'logo': {
                 const logoUrl = configIgreja?.logo || elemento.imagemUrl;
-
                 conteudo = logoUrl ? (
-                    <img
-                        src={logoUrl}
-                        alt="Logo da Igreja"
-                        style={{
-                            width: '100%',
-                            height: '100%',
-                            objectFit: 'contain',
-                            opacity: elemento.transparencia || 1
-                        }}
-                    />
+                    <img src={logoUrl} alt="Logo da Igreja" style={{ width: '100%', height: '100%', objectFit: 'contain', opacity: elemento.transparencia || 1 }} />
                 ) : (
-                    <div
-                        style={{
-                            width: '100%',
-                            height: '100%',
-                            backgroundColor: 'rgba(200,200,200,0.3)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '10px',
-                            color: '#666',
-                            opacity: elemento.transparencia || 1
-                        }}
-                    >
+                    <div style={{ width: '100%', height: '100%', backgroundColor: 'rgba(200,200,200,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#666', opacity: elemento.transparencia || 1 }}>
                         🏛️ Logo
                     </div>
                 );
                 break;
+            }
 
-            case 'foto-membro':
-                // Renderizar foto do membro se disponível
+            case 'foto-membro': {
                 const fotoUrl = elemento.foto || elemento.imagemUrl;
-
                 conteudo = fotoUrl ? (
-                    <img
-                        src={fotoUrl}
-                        alt="Foto do Membro"
-                        style={{
-                            width: '100%',
-                            height: '100%',
-                            objectFit: 'cover',
-                            borderRadius: '4px'
-                        }}
-                    />
+                    <img src={fotoUrl} alt="Foto do Membro" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '4px' }} />
                 ) : (
-                    <div
-                        style={{
-                            width: '100%',
-                            height: '100%',
-                            backgroundColor: 'rgba(200,200,200,0.3)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '10px',
-                            color: '#666'
-                        }}
-                    >
+                    <div style={{ width: '100%', height: '100%', backgroundColor: 'rgba(200,200,200,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#666' }}>
                         📸 Foto
                     </div>
                 );
                 break;
+            }
 
             case 'imagem':
                 conteudo = elemento.imagemUrl ? (
-                    <img
-                        src={elemento.imagemUrl}
-                        alt="Imagem"
-                        style={{
-                            width: '100%',
-                            height: '100%',
-                            objectFit: 'contain',
-                            opacity: elemento.transparencia || 1
-                        }}
-                    />
+                    <img src={elemento.imagemUrl} alt="Imagem" style={{ width: '100%', height: '100%', objectFit: 'contain', opacity: elemento.transparencia || 1 }} />
                 ) : (
-                    <div
-                        style={{
-                            width: '100%',
-                            height: '100%',
-                            backgroundColor: 'rgba(200,200,200,0.3)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '10px',
-                            color: '#666',
-                            opacity: elemento.transparencia || 1
-                        }}
-                    >
+                    <div style={{ width: '100%', height: '100%', backgroundColor: 'rgba(200,200,200,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#666', opacity: elemento.transparencia || 1 }}>
                         🖼️ Imagem
                     </div>
                 );
@@ -568,74 +525,46 @@ export default function InteractiveCanvas({
             >
                 {conteudo}
 
+                {/* Tooltip de aviso fora da safe area */}
+                {foraDoSafeArea && !isSelected && (
+                    <div
+                        style={{
+                            position: 'absolute',
+                            top: '-20px',
+                            left: '0',
+                            fontSize: '9px',
+                            color: '#f97316',
+                            fontWeight: 'bold',
+                            whiteSpace: 'nowrap',
+                            pointerEvents: 'none',
+                            backgroundColor: 'rgba(255,255,255,0.9)',
+                            padding: '1px 4px',
+                            borderRadius: '3px',
+                            border: '1px solid #f97316',
+                        }}
+                    >
+                        ⚠ Fora da área segura
+                    </div>
+                )}
+
                 {/* Handles de redimensionamento */}
                 {isSelected && (
                     <>
                         {/* Top-left */}
-                        <div
-                            onMouseDown={(e) => handleResizeMouseDown(e, 'tl')}
-                            style={{
-                                position: 'absolute',
-                                left: '-4px',
-                                top: '-4px',
-                                width: '8px',
-                                height: '8px',
-                                backgroundColor: '#3b82f6',
-                                border: '1px solid #fff',
-                                cursor: 'nwse-resize',
-                                zIndex: 10
-                            }}
-                        />
+                        <div onMouseDown={(e) => handleResizeMouseDown(e, 'tl')} style={{ position: 'absolute', left: '-4px', top: '-4px', width: '8px', height: '8px', backgroundColor: '#3b82f6', border: '1px solid #fff', cursor: 'nwse-resize', zIndex: 10 }} />
                         {/* Top-right */}
-                        <div
-                            onMouseDown={(e) => handleResizeMouseDown(e, 'tr')}
-                            style={{
-                                position: 'absolute',
-                                right: '-4px',
-                                top: '-4px',
-                                width: '8px',
-                                height: '8px',
-                                backgroundColor: '#3b82f6',
-                                border: '1px solid #fff',
-                                cursor: 'nesw-resize',
-                                zIndex: 10
-                            }}
-                        />
+                        <div onMouseDown={(e) => handleResizeMouseDown(e, 'tr')} style={{ position: 'absolute', right: '-4px', top: '-4px', width: '8px', height: '8px', backgroundColor: '#3b82f6', border: '1px solid #fff', cursor: 'nesw-resize', zIndex: 10 }} />
                         {/* Bottom-left */}
-                        <div
-                            onMouseDown={(e) => handleResizeMouseDown(e, 'bl')}
-                            style={{
-                                position: 'absolute',
-                                left: '-4px',
-                                bottom: '-4px',
-                                width: '8px',
-                                height: '8px',
-                                backgroundColor: '#3b82f6',
-                                border: '1px solid #fff',
-                                cursor: 'nesw-resize',
-                                zIndex: 10
-                            }}
-                        />
+                        <div onMouseDown={(e) => handleResizeMouseDown(e, 'bl')} style={{ position: 'absolute', left: '-4px', bottom: '-4px', width: '8px', height: '8px', backgroundColor: '#3b82f6', border: '1px solid #fff', cursor: 'nesw-resize', zIndex: 10 }} />
                         {/* Bottom-right */}
-                        <div
-                            onMouseDown={(e) => handleResizeMouseDown(e, 'br')}
-                            style={{
-                                position: 'absolute',
-                                right: '-4px',
-                                bottom: '-4px',
-                                width: '8px',
-                                height: '8px',
-                                backgroundColor: '#3b82f6',
-                                border: '1px solid #fff',
-                                cursor: 'nwse-resize',
-                                zIndex: 10
-                            }}
-                        />
+                        <div onMouseDown={(e) => handleResizeMouseDown(e, 'br')} style={{ position: 'absolute', right: '-4px', bottom: '-4px', width: '8px', height: '8px', backgroundColor: '#3b82f6', border: '1px solid #fff', cursor: 'nwse-resize', zIndex: 10 }} />
                     </>
                 )}
             </div>
         );
     };
+
+    // ─── Render Principal ──────────────────────────────────────────────────
 
     return (
         <div
@@ -667,9 +596,36 @@ export default function InteractiveCanvas({
                 }
             }}
         >
+            {/* ── Guias da Safe Area (nunca aparecem na impressão) ── */}
+            <div
+                className="safe-area-guides no-print"
+                aria-hidden="true"
+                style={{
+                    position: 'absolute',
+                    inset: 0,
+                    pointerEvents: 'none',
+                    zIndex: 500,
+                }}
+            >
+                {/* Linha superior */}
+                <div style={{ position: 'absolute', top: `${safeTop}px`, left: `${safeLeft}px`, right: `${SAFE_AREA_MARGIN}px`, height: '1px', borderTop: '1px dashed rgba(99,102,241,0.45)' }} />
+                {/* Linha inferior */}
+                <div style={{ position: 'absolute', bottom: `${SAFE_AREA_MARGIN}px`, left: `${safeLeft}px`, right: `${SAFE_AREA_MARGIN}px`, height: '1px', borderTop: '1px dashed rgba(99,102,241,0.45)' }} />
+                {/* Linha esquerda */}
+                <div style={{ position: 'absolute', left: `${safeLeft}px`, top: `${safeTop}px`, bottom: `${SAFE_AREA_MARGIN}px`, width: '1px', borderLeft: '1px dashed rgba(99,102,241,0.45)' }} />
+                {/* Linha direita */}
+                <div style={{ position: 'absolute', right: `${SAFE_AREA_MARGIN}px`, top: `${safeTop}px`, bottom: `${SAFE_AREA_MARGIN}px`, width: '1px', borderLeft: '1px dashed rgba(99,102,241,0.45)' }} />
+
+                {/* Rótulo discreto da safe area */}
+                <span style={{ position: 'absolute', top: `${safeTop + 3}px`, left: `${safeLeft + 4}px`, fontSize: '8px', color: 'rgba(99,102,241,0.6)', fontFamily: 'monospace', letterSpacing: '0.05em', userSelect: 'none' }}>
+                    ÁREA SEGURA
+                </span>
+            </div>
+
+            {/* ── Elementos ── */}
             {elementos.filter(e => e.visivel).map(elemento => renderElemento(elemento))}
 
-            {/* Box de seleção por área */}
+            {/* ── Box de seleção por área ── */}
             {isBoxSelecting && (
                 <div
                     style={{
