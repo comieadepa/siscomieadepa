@@ -8,6 +8,7 @@ import { getEquipeSession } from '@/lib/equipe-session';
 import {
   AlertTriangle,
   ArrowRight,
+  Award,
   BarChart3,
   Building2,
   ChevronDown,
@@ -135,6 +136,7 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
     const menusComSubmenu: Record<string, string[]> = {
       secretaria: ['estrutura-hierarquica', 'membros', 'funcionarios', 'consagracao', 'cartas', 'permutas', 'impressoes-credenciais'],
       cgadb: ['cgadb-dashboard', 'cgadb-debitos', 'cgadb-relatorios', 'cgadb-historico'],
+      conec: ['conec-dashboard', 'conec-editor'],
       configuracoes: ['config-geral', 'importar-membros', 'config-certificados', 'config-cartoes', 'config-video-presidente'],
     };
     for (const [parent, children] of Object.entries(menusComSubmenu)) {
@@ -168,7 +170,16 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
             { id: 'impressoes-credenciais', label: 'Impressões de Credenciais', icon: CreditCard, path: '/secretaria/impressoes-credenciais' },
           ],
         },
-        { id: 'conec', label: 'CONEC', icon: ShieldCheck, path: '/secretaria/conec' },
+        {
+          id: 'conec',
+          label: 'CONEC',
+          icon: ShieldCheck,
+          path: '/secretaria/conec',
+          submenu: [
+            { id: 'conec-dashboard', label: 'Instituições', icon: Building2, path: '/secretaria/conec' },
+            { id: 'conec-editor', label: 'Editor de Modelos', icon: Award, path: '/secretaria/conec/modelos' },
+          ],
+        },
         {
           id: 'cgadb',
           label: 'Débitos CGADB',

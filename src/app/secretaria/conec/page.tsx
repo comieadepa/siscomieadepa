@@ -53,7 +53,7 @@ export default function ConecDashboardPage() {
   const [instituicoes, setInstituicoes] = useState<InstitutionWithId[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeMenu, setActiveMenu] = useState('conec');
+  const [activeMenu, setActiveMenu] = useState('conec-dashboard');
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'todos' | 'ativo' | 'inativo'>('todos');

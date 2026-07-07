@@ -150,6 +150,13 @@ function CertificadoContent() {
 
   const dataFimFormatada = credenciamento?.data_fim ? new Date(credenciamento.data_fim).toLocaleDateString('pt-BR') : '';
 
+  const enderecoCompleto = [
+    instituicao?.logradouro && `${instituicao.logradouro}, ${instituicao.numero || 'S/N'}${instituicao.complemento ? ` - ${instituicao.complemento}` : ''}`,
+    instituicao?.bairro,
+    instituicao?.cidade && `${instituicao.cidade} - ${instituicao.estado || ''}`,
+    instituicao?.cep && `CEP: ${instituicao.cep}`
+  ].filter(Boolean).join(', ') || 'Não informado';
+
   // Dados dinâmicos mapeados para os placeholders do template
   const dados = {
     instituicao_nome: instituicao?.nome_instituicao || '',
@@ -159,7 +166,22 @@ function CertificadoContent() {
     data_credenciamento: dataEmissaoFormatada,
     validade: dataFimFormatada,
     ano_referencia: credenciamento?.ano_referencia || '',
-    qr_code_validacao: token ? `${typeof window !== 'undefined' ? window.location.origin : ''}/validar/${token}` : '',
+    qr_code_validacao: token ? `${typeof window !== 'undefined' ? window.location.origin : ''}/conec/credenciamento/validar/${token}` : '',
+    
+    // Novos placeholders para compatibilidade total com o Editor de Modelos CONEC
+    responsavel: instituicao?.nome_representante || '',
+    nome_representante: instituicao?.nome_representante || '',
+    municipio: instituicao?.cidade || '',
+    cidade: instituicao?.cidade || '',
+    uf: instituicao?.estado || '',
+    estado: instituicao?.estado || '',
+    endereco: enderecoCompleto,
+    endereco_completo: enderecoCompleto,
+    numero_credenciamento: credenciamento?.numero_registro || '',
+    data_emissao: dataEmissaoFormatada,
+    data_validade: dataFimFormatada,
+    status: credenciamento?.status_credenciamento || '',
+    observacoes: instituicao?.observacoes_internas || '',
   };
 
   // Mapeia e normaliza o template do visual editor para o formato do renderizador

@@ -424,7 +424,7 @@ function CadastroForm() {
 export default function ConecCadastroPage() {
   return (
     <div className="flex h-screen bg-gray-100">
-      <Sidebar activeMenu="conec" setActiveMenu={() => {}} />
+      <Sidebar activeMenu="conec-dashboard" setActiveMenu={() => {}} />
       <div className="flex-1 overflow-auto">
         <Suspense fallback={<div className="p-8">Carregando formulário...</div>}>
           <CadastroForm />
