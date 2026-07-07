@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
-import { createServerClient, createServerClientFromRequest } from '@/lib/supabase-server';
+import { createServerClient } from '@/lib/supabase-server';
+import { requireUser } from '@/lib/auth/require-auth';
 
 const BUCKET = 'cert-backgrounds';
 const MAX_BYTES = 5 * 1024 * 1024; // 5MB
@@ -23,15 +24,11 @@ async function ensureBucket(supabaseAdmin: any) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabaseUser = createServerClientFromRequest(request);
-
-    const {
-      data: { user },
-    } = await supabaseUser.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    const auth = await requireUser(request);
+    if (!auth.ok) {
+      return auth.response;
     }
+    const user = auth.ctx.user;
 
     const form = await request.formData();
     const file = form.get('file');

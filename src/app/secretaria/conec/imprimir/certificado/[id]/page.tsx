@@ -91,7 +91,9 @@ function CertificadoContent() {
             currentToken = newToken.token;
             setToken(currentToken);
           }
-            // 4. Buscar o template do visual editor
+        }
+
+        // 4. Buscar o template do visual editor
         const requestedTemplateId = searchParams?.get('templateId') || '';
         let loadedTemplate = null;
 
@@ -139,8 +141,6 @@ function CertificadoContent() {
             ]
           });
         }
-        }
-
       } catch (err: any) {
         console.error(err);
         setError(err.message || 'Erro ao carregar dados do certificado.');
@@ -219,6 +219,7 @@ function CertificadoContent() {
       let res = text;
       Object.entries(dados).forEach(([key, val]) => {
         res = res.split(`{${key}}`).join(String(val ?? ''));
+        res = res.split(`{{${key}}}`).join(String(val ?? ''));
       });
       return res;
     };
