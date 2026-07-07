@@ -238,17 +238,16 @@ function CertificadoContent() {
           tipoFinal = 'signature';
         }
 
-        const baseWidth = tData.largura || (tData.orientacao === 'portrait' ? 794 : 1123);
-        const baseHeight = tData.altura || (tData.orientacao === 'portrait' ? 1123 : 794);
+
 
         return {
           id: el.id,
           tipo: tipoFinal,
           imagemUrl: el.imagemUrl || el.url || el.conteudo || '',
-          x: (el.x / baseWidth) * 100,
-          y: (el.y / baseHeight) * 100,
-          width: (el.largura / baseWidth) * 100,
-          height: (el.altura / baseHeight) * 100,
+          x: el.x,
+          y: el.y,
+          width: el.largura,
+          height: el.altura,
           conteudo: el.tipo === 'qrcode' ? '' : parsePlaceholderText(el.texto || ''),
           styles: {
             fontSize: el.fontSize ? `${el.fontSize}px` : '14px',

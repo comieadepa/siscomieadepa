@@ -1514,7 +1514,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
       }
     }
 
-    const valorNovoFinal = valorNovo ?? 0;
+
 
     let novoStatus = editando.status_pagamento;
     if ((diferencaValor ?? 0) > 0) {
@@ -1883,14 +1883,22 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   const alimentacaoAlterada = !!(editando && !editando.alimentacao && alimentacaoEfetiva);
   const temUpgradeFinanceiro = eventoAlterado || tipoAlterado || hospedagemAlterada || alimentacaoAlterada;
 
+  const valorOriginalHistorico = editando?.valor_final ?? editando?.valor_original ?? editando?.valor_pago ?? 0;
+
   const valorNovo = temUpgradeFinanceiro
     ? (eventoDestino
       ? (eventoDestino.usar_tipos_inscricao ? (tipoSelecionado ? tipoSelecionado.valor : null) : eventoDestino.valor_inscricao)
       : null)
-    : (editando?.valor_final ?? editando?.valor_original ?? editando?.valor_pago ?? 0);
+    : valorOriginalHistorico;
 
   const valorPagoAtual = editando?.valor_pago ?? 0;
-  const diferencaValor = valorNovo !== null ? valorNovo - valorPagoAtual : null;
+  
+  // Gerar complemento apenas se houver upgrade financeiro E o novo valor for maior que o historico
+  const diferencaValor = temUpgradeFinanceiro && valorNovo !== null
+    ? Math.max(0, valorNovo - valorOriginalHistorico)
+    : 0;
+
+  const valorNovoFinal = valorOriginalHistorico + diferencaValor;
   const statusHospLCase = String(dadosOperacionais?.statusHospedagem || '').toLowerCase();
   const temQualquerHospedagemOuLeito = !!(
     dadosOperacionais?.hospedagem ||

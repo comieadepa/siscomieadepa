@@ -94,12 +94,19 @@ export default function ConecTemplatesPage() {
   const canvasWrapperRef = useCallback((el: HTMLDivElement | null) => {
     if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
     if (!el) return;
-    const update = () => setCanvasScale(el.clientWidth / currentCanvasWidth);
+    const update = () => {
+      const parentWidth = el.clientWidth - 64; // 32px padding left/right
+      const parentHeight = el.clientHeight - 80; // 40px padding top/bottom
+      const scaleX = parentWidth / currentCanvasWidth;
+      const scaleY = parentHeight / currentCanvasHeight;
+      const newScale = Math.max(0.15, Math.min(scaleX, scaleY, 1.0)); // Zoom max 100%, min 15%
+      setCanvasScale(newScale);
+    };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
     roRef.current = ro;
-  }, [currentCanvasWidth]);
+  }, [currentCanvasWidth, currentCanvasHeight]);
 
   const [loadingData, setLoadingData]     = useState(true);
   const [ministryId, setMinistryId]       = useState<string | null>(null);
@@ -556,11 +563,12 @@ export default function ConecTemplatesPage() {
           </div>
 
           {/* Centro: Canvas */}
-          <div className="flex-grow bg-gray-150 p-6 flex flex-col items-center justify-center overflow-hidden">
+          {/* Centro: Canvas (Com área cinza estilo workspace) */}
+          <div ref={canvasWrapperRef} className="flex-grow bg-gray-200 p-8 flex items-center justify-center overflow-auto relative">
             {templateEmEdicao ? (
-              <div className="flex flex-col gap-3 max-w-full">
-                <div className="flex items-center justify-between text-xs text-gray-500 px-1">
-                  <span>Modelo em edição: <strong>{templateEmEdicao.nome}</strong></span>
+              <div className="flex flex-col gap-3 items-center">
+                <div className="flex items-center justify-between text-xs text-gray-600 px-1 w-full max-w-full">
+                  <span>Modelo em edição: <strong>{templateEmEdicao.nome}</strong> (A4 {orientacaoAtual === 'portrait' ? 'Retrato' : 'Paisagem'} - {Math.round(canvasScale * 100)}%)</span>
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => {
@@ -573,22 +581,34 @@ export default function ConecTemplatesPage() {
                           altura: newOr === 'portrait' ? 1123 : 794
                         });
                       }}
-                      className="text-emerald-700 hover:underline flex items-center gap-1"
+                      className="text-emerald-700 hover:underline flex items-center gap-1 font-semibold"
                     >
                       <RefreshCw className="w-3 h-3" /> Alternar Orientação
                     </button>
                   </div>
                 </div>
 
-                <div ref={canvasWrapperRef} className="bg-white p-4 rounded-2xl shadow-xl max-w-full overflow-hidden flex items-center justify-center" style={{ height: `${Math.round(currentCanvasHeight * canvasScale) + 32}px`, lineHeight: 0 }}>
+                <div 
+                  style={{
+                    width: `${currentCanvasWidth * canvasScale}px`,
+                    height: `${currentCanvasHeight * canvasScale}px`,
+                    position: 'relative',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.15)',
+                    borderRadius: '4px',
+                    overflow: 'hidden',
+                  }}
+                  className="shrink-0 bg-white"
+                >
                   <div
                     style={{
                       width: `${currentCanvasWidth}px`,
                       height: `${currentCanvasHeight}px`,
                       transform: `scale(${canvasScale})`,
                       transformOrigin: 'top left',
+                      position: 'absolute',
+                      left: 0,
+                      top: 0,
                     }}
-                    className="shrink-0"
                   >
                     <InteractiveCanvas
                       elementos={templateEmEdicao.elementos}

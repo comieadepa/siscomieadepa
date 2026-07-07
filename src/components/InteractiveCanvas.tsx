@@ -647,7 +647,7 @@ export default function InteractiveCanvas({
                 height: `${alturaCanvas}px`,
                 backgroundColor: '#fff',
                 backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : 'none',
-                backgroundSize: '100% 100%',
+                backgroundSize: 'cover',
                 backgroundPosition: 'center',
                 backgroundRepeat: 'no-repeat',
                 border: 'none',
