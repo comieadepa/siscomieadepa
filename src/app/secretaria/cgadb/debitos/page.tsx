@@ -276,6 +276,7 @@ function AbaMinistros({
   const [filtroCampo, setFiltroCampo] = useState('');
   const [filtroBusca, setFiltroBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<'todos' | 'com_debito' | 'sem_debito'>('todos');
+  const [filtroStatusMinisterio, setFiltroStatusMinisterio] = useState('');
   const [apenasNaoRegistrados, setApenasNaoRegistrados] = useState(initialNaoRegistrados);
 
   // Expandir detalhes de débito por ministro
@@ -534,6 +535,7 @@ function AbaMinistros({
       const cpfBusca = busca.replace(/\D/g, '');
       if (!m.nome.toLowerCase().includes(busca) && !(cpfBusca.length > 0 && normalizeCpf(m.cpf).includes(cpfBusca))) return false;
     }
+    if (filtroStatusMinisterio && m.status.toLowerCase() !== filtroStatusMinisterio.toLowerCase()) return false;
     if (filtroStatus === 'com_debito' && m.debitos.length === 0) return false;
     if (filtroStatus === 'sem_debito' && m.debitos.length > 0) return false;
     if (apenasNaoRegistrados && m.debitos.length > 0) return false;
@@ -694,6 +696,20 @@ function AbaMinistros({
         </div>
 
         <select
+          value={filtroStatusMinisterio}
+          onChange={e => { setFiltroStatusMinisterio(e.target.value); resetPage(); }}
+          className="flex-1 min-w-[130px] px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition"
+        >
+          <option value="">STATUS</option>
+          <option value="ativo">ATIVO</option>
+          <option value="desligado">DESLIGADO</option>
+          <option value="em processo">EM PROCESSO</option>
+          <option value="falecido">FALECIDO</option>
+          <option value="inativo">INATIVO</option>
+          <option value="jubilado">JUBILADO</option>
+        </select>
+
+        <select
           value={filtroStatus}
           onChange={e => { setFiltroStatus(e.target.value as any); resetPage(); }}
           className="flex-1 min-w-[120px] px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition"
@@ -704,7 +720,7 @@ function AbaMinistros({
         </select>
 
         <button
-          onClick={() => { setFiltroSupervisao(''); setFiltroCampo(''); setFiltroBusca(''); setFiltroStatus('todos'); resetPage(); }}
+          onClick={() => { setFiltroSupervisao(''); setFiltroCampo(''); setFiltroBusca(''); setFiltroStatusMinisterio(''); setFiltroStatus('todos'); resetPage(); }}
           className="shrink-0 px-4 py-2.5 bg-[#0D2B4E] hover:bg-[#1A3A5C] text-white text-sm font-semibold rounded-xl transition"
         >
           LIMPAR
