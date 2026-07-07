@@ -357,7 +357,7 @@ export default function InteractiveCanvas<T extends ElementoCartao = ElementoCar
             case 'ArrowRight': deltaX =  step; break;
         }
 
-        if (onMultiplosElementosAtualizados && elementosSelecionados.length > 0) {
+        if (elementosSelecionados.length > 1 && onMultiplosElementosAtualizados) {
             const atualizacoes = elementosSelecionados.map(elemento => {
                 const { x, y } = aplicarClampESnap(
                     elemento.x + deltaX,
@@ -368,6 +368,18 @@ export default function InteractiveCanvas<T extends ElementoCartao = ElementoCar
                 return { id: elemento.id, propriedades: { x, y } as any };
             });
             onMultiplosElementosAtualizados(atualizacoes);
+        } else {
+            // Mover elemento individual ativo
+            const target = elementoSelecionado || elementosSelecionados[0];
+            if (target) {
+                const { x, y } = aplicarClampESnap(
+                    target.x + deltaX,
+                    target.y + deltaY,
+                    target.largura,
+                    target.altura
+                );
+                onElementoAtualizado(target.id, { x, y } as any);
+            }
         }
     };
 
