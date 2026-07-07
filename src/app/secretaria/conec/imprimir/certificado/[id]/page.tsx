@@ -91,22 +91,37 @@ function CertificadoContent() {
             currentToken = newToken.token;
             setToken(currentToken);
           }
+            // 4. Buscar o template do visual editor
+        const requestedTemplateId = searchParams?.get('templateId') || '';
+        let loadedTemplate = null;
+
+        if (requestedTemplateId) {
+          const { data: tmpl } = await supabase
+            .from('certificados_templates')
+            .select('*')
+            .eq('template_key', requestedTemplateId)
+            .maybeSingle();
+          if (tmpl) loadedTemplate = tmpl;
         }
 
-        // 4. Buscar o template ativo para certificado CONEC do Template Studio (tabela certificados_templates)
-        const { data: templatesList } = await supabase
-          .from('certificados_templates')
-          .select('*')
-          .or('name.ilike.conec,template_key.ilike.conec');
+        if (!loadedTemplate) {
+          const { data: templatesList } = await supabase
+            .from('certificados_templates')
+            .select('*')
+            .or('name.ilike.conec,template_key.ilike.conec');
 
-        if (templatesList && templatesList.length > 0) {
-          // Ordena: ativo primeiro, depois atualizado por último
-          const sorted = [...templatesList].sort((a, b) => {
-            if (a.is_active && !b.is_active) return -1;
-            if (!a.is_active && b.is_active) return 1;
-            return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
-          });
-          setTemplate(sorted[0]);
+          if (templatesList && templatesList.length > 0) {
+            const sorted = [...templatesList].sort((a, b) => {
+              if (a.is_active && !b.is_active) return -1;
+              if (!a.is_active && b.is_active) return 1;
+              return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+            });
+            loadedTemplate = sorted[0];
+          }
+        }
+
+        if (loadedTemplate) {
+          setTemplate(loadedTemplate);
         } else {
           // Fallback para estrutura interna local se não existir modelo no banco
           setTemplate({
@@ -123,6 +138,7 @@ function CertificadoContent() {
               { id: 'qr_code_validacao', tipo: 'qrcode', placeholder: 'qr_code_validacao', x: 78, y: 76, width: 10, height: 10 }
             ]
           });
+        }
         }
 
       } catch (err: any) {

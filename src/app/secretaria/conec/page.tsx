@@ -58,6 +58,16 @@ export default function ConecDashboardPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'todos' | 'ativo' | 'inativo'>('todos');
 
+  // Modelos do CONEC carregados para seleção de impressão
+  const [modelosTermo, setModelosTermo] = useState<any[]>([]);
+  const [modelosCertificado, setModelosCertificado] = useState<any[]>([]);
+  const [modalPrint, setModalPrint] = useState<{
+    isOpen: boolean;
+    type: 'termo' | 'certificado';
+    instId: string;
+    credId?: string;
+  } | null>(null);
+
   // Modal de Cobrança Gerada
   const [billingModal, setBillingModal] = useState<{
     isOpen: boolean;
@@ -112,6 +122,23 @@ export default function ConecDashboardPage() {
 
   useEffect(() => {
     fetchDados();
+    
+    // Buscar templates salvos do CONEC para impressão
+    (async () => {
+      try {
+        const { data: templates } = await supabase
+          .from('certificados_templates')
+          .select('*');
+        if (templates) {
+          const termos = templates.filter((t: any) => t.template_data?.document_type === 'termo_conec' || t.name.toLowerCase().includes('termo'));
+          const certs = templates.filter((t: any) => t.template_data?.document_type === 'certificado_conec' || (!t.template_data?.document_type && t.name.toLowerCase().includes('conec')));
+          setModelosTermo(termos);
+          setModelosCertificado(certs);
+        }
+      } catch (err) {
+        console.warn('Erro ao carregar templates para listagem:', err);
+      }
+    })();
   }, []);
 
   const handleDelete = async (id: string, name: string) => {
@@ -126,7 +153,11 @@ export default function ConecDashboardPage() {
 
   // Botão Ficha: abrir em nova aba
   const handleFicha = (instId: string) => {
-    window.open(`/secretaria/conec/imprimir/ficha/${instId}`, '_blank');
+    if (modelosTermo.length > 0) {
+      setModalPrint({ isOpen: true, type: 'termo', instId });
+    } else {
+      window.open(`/secretaria/conec/imprimir/ficha/${instId}`, '_blank');
+    }
   };
 
   // Botão Certificado: abrir em nova aba usando credenciamento ativo mais recente
@@ -140,7 +171,12 @@ export default function ConecDashboardPage() {
       return;
     }
 
-    window.open(`/secretaria/conec/imprimir/certificado/${activeCreds[0].id}`, '_blank');
+    const credId = activeCreds[0].id;
+    if (modelosCertificado.length > 0) {
+      setModalPrint({ isOpen: true, type: 'certificado', instId: inst.id, credId });
+    } else {
+      window.open(`/secretaria/conec/imprimir/certificado/${credId}`, '_blank');
+    }
   };
 
   // Botão Gerar Taxa ASAAS
@@ -541,6 +577,118 @@ export default function ConecDashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Modal de Seleção de Modelo para Impressão */}
+      {modalPrint && modalPrint.isOpen && (
+        <ModalPrintSelection
+          type={modalPrint.type}
+          templates={modalPrint.type === 'termo' ? modelosTermo : modelosCertificado}
+          onClose={() => setModalPrint(null)}
+          onConfirm={(templateId) => {
+            const url = modalPrint.type === 'termo'
+              ? `/secretaria/conec/imprimir/ficha/${modalPrint.instId}${templateId !== 'default' ? `?templateId=${templateId}` : ''}`
+              : `/secretaria/conec/imprimir/certificado/${modalPrint.credId}${templateId !== 'default' ? `?templateId=${templateId}` : ''}`;
+            window.open(url, '_blank');
+            setModalPrint(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Modal de Seleção de Modelo para Impressão
+interface ModalPrintSelectionProps {
+  type: 'termo' | 'certificado';
+  templates: any[];
+  onConfirm: (templateId: string) => void;
+  onClose: () => void;
+}
+
+function ModalPrintSelection({ type, templates, onConfirm, onClose }: ModalPrintSelectionProps) {
+  const [selectedId, setSelectedId] = useState<string>('default');
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="relative bg-white rounded-2xl max-w-md w-full shadow-2xl border border-gray-100 overflow-hidden transform transition-all duration-300 scale-100">
+        
+        {/* Header */}
+        <div className="bg-emerald-600 px-6 py-4 flex items-center justify-between text-white">
+          <div className="flex items-center gap-2">
+            <Award className="w-5 h-5 text-emerald-100" />
+            <h3 className="font-bold text-sm">Selecione o Modelo de Impressão</h3>
+          </div>
+          <button onClick={onClose} className="text-emerald-100 hover:text-white transition">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-6 space-y-4">
+          <p className="text-xs text-gray-500 leading-relaxed">
+            Escolha abaixo o modelo visual de documento que deseja utilizar para gerar o(a) {type === 'termo' ? 'Termo de Credenciamento A4' : 'Certificado Oficial'}.
+          </p>
+
+          <div className="space-y-2">
+            <label className="flex items-center gap-3 p-3 rounded-xl border border-emerald-500 bg-emerald-50/20 hover:bg-emerald-50/30 transition cursor-pointer">
+              <input
+                type="radio"
+                name="print-template"
+                value="default"
+                checked={selectedId === 'default'}
+                onChange={() => setSelectedId('default')}
+                className="text-emerald-600 focus:ring-emerald-500 animate-none"
+              />
+              <div className="flex-1">
+                <span className="block text-xs font-bold text-gray-800">Modelo Padrão do Sistema</span>
+                <span className="block text-[10px] text-emerald-700 font-medium">Layout oficial polido do CONEC</span>
+              </div>
+            </label>
+
+            {templates.map((t) => (
+              <label
+                key={t.template_key}
+                className={`flex items-center gap-3 p-3 rounded-xl border transition cursor-pointer ${
+                  selectedId === t.template_key
+                    ? 'border-emerald-500 bg-emerald-50/20'
+                    : 'border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="print-template"
+                  value={t.template_key}
+                  checked={selectedId === t.template_key}
+                  onChange={() => setSelectedId(t.template_key)}
+                  className="text-emerald-600 focus:ring-emerald-500 animate-none"
+                />
+                <div className="flex-1">
+                  <span className="block text-xs font-bold text-gray-800">{t.name}</span>
+                  <span className="block text-[10px] text-gray-400 font-medium">
+                    Orientação: {t.template_data?.orientacao === 'portrait' ? 'Retrato (A4)' : 'Paisagem'}
+                  </span>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="bg-gray-50 px-6 py-4 flex justify-end gap-2 border-t border-gray-100">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold rounded-lg text-xs transition"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => onConfirm(selectedId)}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-xs transition shadow-sm"
+          >
+            Confirmar e Abrir
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

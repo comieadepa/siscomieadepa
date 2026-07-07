@@ -1,22 +1,26 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useEffect, useState, useRef, Suspense } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
 import { getInstituicaoById } from '@/lib/conec-service';
 import { formatCnpj } from '@/lib/mascaras';
 import { Printer, ArrowLeft } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import TemplateStudioRenderer from '@/components/TemplateStudioRenderer';
 
-export default function ImprimirFichaPage() {
+function FichaContent() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const templateId = searchParams?.get('templateId') || '';
   const id = params.id as string;
   const obsRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
 
   const [instituicao, setInstituicao] = useState<any>(null);
   const [credenciamento, setCredenciamento] = useState<any>(null);
+  const [template, setTemplate] = useState<any>(null);
   const [token, setToken] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +77,16 @@ export default function ImprimirFichaPage() {
             }
           }
         }
+
+        // Buscar template se solicitado
+        if (templateId) {
+          const { data: tmpl } = await supabase
+            .from('certificados_templates')
+            .select('*')
+            .eq('template_key', templateId)
+            .maybeSingle();
+          if (tmpl) setTemplate(tmpl);
+        }
       } catch (err: any) {
         console.error(err);
         setError(err.message || 'Erro ao carregar dados para a ficha.');
@@ -82,7 +96,7 @@ export default function ImprimirFichaPage() {
     };
 
     if (id) fetchDados();
-  }, [id]);
+  }, [id, templateId]);
 
   useEffect(() => {
     if (!loading && obsRef.current) {
@@ -179,6 +193,99 @@ export default function ImprimirFichaPage() {
       return `<p class="mb-1 text-justify leading-relaxed">${paragraph}</p>`;
     }).join('');
   };
+
+  const dados = {
+    instituicao_nome: instituicao?.nome_instituicao || '',
+    nome_instituicao: instituicao?.nome_instituicao || '',
+    cnpj: instituicao?.cnpj ? formatCnpj(instituicao.cnpj) : '',
+    numero_registro: credenciamento?.numero_registro || '',
+    data_credenciamento: dataInicioFormatada || '',
+    validade: dataFimFormatada || '',
+    ano_referencia: credenciamento?.ano_referencia || '',
+    qr_code_validacao: token ? `${typeof window !== 'undefined' ? window.location.origin : ''}/conec/credenciamento/validar/${token}` : '',
+    responsavel: instituicao?.nome_representante || '',
+    nome_representante: instituicao?.nome_representante || '',
+    municipio: instituicao?.cidade || '',
+    cidade: instituicao?.cidade || '',
+    uf: instituicao?.estado || '',
+    estado: instituicao?.estado || '',
+    endereco: enderecoCompleto,
+    endereco_completo: enderecoCompleto,
+    numero_credenciamento: credenciamento?.numero_registro || '',
+    data_emissao: dataInicioFormatada || '',
+    data_validade: dataFimFormatada || '',
+    status: credenciamento?.status_credenciamento || '',
+    observacoes: instituicao?.observacoes_internas || '',
+  };
+
+  const getMappedTemplate = () => {
+    if (!template) return null;
+    const tData = template.template_data || template;
+    const rawElements = Array.isArray(tData.elementos) ? tData.elementos : [];
+
+    const parsePlaceholderText = (text: string) => {
+      if (!text) return '';
+      let res = text;
+      Object.entries(dados).forEach(([key, val]) => {
+        res = res.split(`{${key}}`).join(String(val ?? ''));
+      });
+      return res;
+    };
+
+    const mappedElements = rawElements
+      .filter((el: any) => el.visivel !== false)
+      .map((el: any) => {
+        let tipoFinal = 'text_fixed';
+        if (el.tipo === 'qrcode') {
+          tipoFinal = 'qrcode';
+        } else if (el.tipo === 'imagem' || el.tipo === 'image') {
+          tipoFinal = 'image';
+        } else if (el.tipo === 'logo') {
+          tipoFinal = 'logo';
+        } else if (el.tipo === 'signature' || el.tipo === 'assinatura') {
+          tipoFinal = 'signature';
+        }
+
+        return {
+          id: el.id,
+          tipo: tipoFinal,
+          imagemUrl: el.imagemUrl || el.url || el.conteudo || '',
+          x: (el.x / 595) * 100,
+          y: (el.y / 840) * 100,
+          width: (el.largura / 595) * 100,
+          height: (el.altura / 840) * 100,
+          conteudo: el.tipo === 'qrcode' ? '' : parsePlaceholderText(el.texto || ''),
+          styles: {
+            fontSize: el.fontSize ? `${el.fontSize}px` : '14px',
+            fontFamily: el.fonte || 'sans-serif',
+            fontWeight: el.negrito ? 'bold' : 'normal',
+            fontStyle: el.italico ? 'italic' : 'normal',
+            textAlign: el.alinhamento || 'left',
+            color: el.cor || '#000000',
+          }
+        };
+      });
+
+    return {
+      background_url: tData.backgroundUrl || '',
+      largura: 595,
+      altura: 840,
+      orientacao: 'portrait' as 'portrait',
+      elementos: mappedElements
+    };
+  };
+
+  const finalTemplate = getMappedTemplate();
+
+  if (finalTemplate) {
+    return (
+      <TemplateStudioRenderer
+        template={finalTemplate}
+        dados={dados}
+        validationToken={token}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 py-8 px-4 print:bg-white print:p-0 print:min-h-0 flex flex-col items-center justify-center">
@@ -547,5 +654,13 @@ export default function ImprimirFichaPage() {
 
       </div>
     </div>
+  );
+}
+
+export default function ImprimirFichaPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-gray-50"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600" /></div>}>
+      <FichaContent />
+    </Suspense>
   );
 }

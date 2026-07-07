@@ -65,7 +65,8 @@ const novoTemplateEmBranco = (nome: string, type: 'termo' | 'certificado'): Cert
   ativo: false,
   criado_pelo_usuario: true,
   elementos: [],
-});
+  document_type: type === 'termo' ? 'termo_conec' : 'certificado_conec',
+} as any);
 
 export default function ConecTemplatesPage() {
   const { loading } = useRequireSupabaseAuth();
@@ -118,9 +119,13 @@ export default function ConecTemplatesPage() {
       setMinistryId(mid);
       const res = await loadCertificadosTemplatesForCurrentUser(supabase);
       // Filtrar apenas templates do CONEC ou templates genéricos
-      const conecTemplates = (res.templates as CertificadoTemplate[]).filter(
-        t => t.nome.toLowerCase().includes('conec') || t.nome.toLowerCase().includes('termo') || t.nome.toLowerCase().includes('credenciamento')
-      );
+      const conecTemplates = (res.templates as any[]).filter(
+        t => t.document_type === 'termo_conec' || t.document_type === 'certificado_conec' ||
+             t.nome.toLowerCase().includes('conec') || t.nome.toLowerCase().includes('termo') || t.nome.toLowerCase().includes('credenciamento')
+      ).map(t => ({
+        ...t,
+        document_type: t.document_type || (t.nome.toLowerCase().includes('termo') ? 'termo_conec' : 'certificado_conec')
+      }));
       setTemplates(conecTemplates);
       if (conecTemplates.length > 0) {
         setTemplateEmEdicao(conecTemplates[0]);
@@ -312,11 +317,11 @@ export default function ConecTemplatesPage() {
     try {
       const ext = file.name.split('.').pop();
       const path = `conec_templates/${ministryId}_bg_${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from('certificados').upload(path, file);
+      const { error } = await supabase.storage.from('cert-backgrounds').upload(path, file);
 
       if (error) throw error;
 
-      const { data: pub } = supabase.storage.from('certificados').getPublicUrl(path);
+      const { data: pub } = supabase.storage.from('cert-backgrounds').getPublicUrl(path);
       setTemplateEmEdicao({ ...templateEmEdicao, backgroundUrl: pub.publicUrl });
       mostrarStatus('Imagem de fundo carregada.');
     } catch (err: any) {
@@ -331,11 +336,11 @@ export default function ConecTemplatesPage() {
     try {
       const ext = file.name.split('.').pop();
       const path = `conec_templates/${ministryId}_img_${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from('certificados').upload(path, file);
+      const { error } = await supabase.storage.from('cert-backgrounds').upload(path, file);
 
       if (error) throw error;
 
-      const { data: pub } = supabase.storage.from('certificados').getPublicUrl(path);
+      const { data: pub } = supabase.storage.from('cert-backgrounds').getPublicUrl(path);
       
       const elImg: CertificadoElemento = {
         id: gId(),
