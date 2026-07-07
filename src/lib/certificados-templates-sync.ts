@@ -110,9 +110,11 @@ export async function persistCertificadosTemplatesSnapshotToSupabase(
     is_active: t.ativo === true,
   }));
 
+  console.log('=== PERSIST: payload rows a serem upsertados ===', rows);
   const up = await supabase
     .from('certificados_templates')
     .upsert(rows as any, { onConflict: 'ministry_id,template_key' });
+  console.log('=== PERSIST: resposta do upsert ===', up);
 
   if (up.error) {
     throw new Error('Erro ao salvar templates: ' + up.error.message);
@@ -126,8 +128,10 @@ export async function loadCertificadosTemplatesForCurrentUser(
     const ministryId = await resolveMinistryId(supabase);
     if (!ministryId) return { templates: [], ministryId: null };
     const fromDb = await fetchCertificadosTemplatesFromSupabase(supabase, ministryId);
+    console.log('=== LOAD TEMPLATES: carregados do banco ===', fromDb);
     return { templates: fromDb, ministryId };
-  } catch {
+  } catch (err: any) {
+    console.error('=== LOAD TEMPLATES: falha ===', err);
     return { templates: [], ministryId: null };
   }
 }

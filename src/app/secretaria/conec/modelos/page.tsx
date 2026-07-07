@@ -105,6 +105,7 @@ export default function ConecTemplatesPage() {
   const [ministryId, setMinistryId]       = useState<string | null>(null);
 
   const [templates, setTemplates]                         = useState<CertificadoTemplate[]>([]);
+  const [salvando, setSalvando]                           = useState(false);
   const [templateEmEdicao, setTemplateEmEdicao]           = useState<CertificadoTemplate | null>(null);
   const [elementoSelecionado, setElementoSelecionado]     = useState<CertificadoElemento | null>(null);
   const [elementosSelecionados, setElementosSelecionados] = useState<CertificadoElemento[]>([]);
@@ -170,12 +171,37 @@ export default function ConecTemplatesPage() {
 
   const handleSalvar = async () => {
     if (!templateEmEdicao || !ministryId) return;
+    setSalvando(true);
     try {
+      console.log('=== LOG SALVAR: INICIANDO SALVAMENTO ===');
+      console.log('Template em edicao:', templateEmEdicao);
       const prox = templates.map((t) => (t.id === templateEmEdicao.id ? templateEmEdicao : t));
+      console.log('Payload total a salvar:', prox);
       await salvarTodos(prox);
-      mostrarStatus('Modelo salvo com sucesso.');
+      console.log('=== LOG SALVAR: SALVO COM SUCESSO ===');
+      alert('Modelo salvo com sucesso!');
+
+      // Recarrega do banco para garantir persistencia
+      const res = await loadCertificadosTemplatesForCurrentUser(supabase);
+      console.log('=== LOG SALVAR: recarregados do banco ===', res.templates);
+      const conecTemplates = (res.templates as any[]).filter(
+        t => t.document_type === 'termo_conec' || t.document_type === 'certificado_conec' ||
+             t.nome.toLowerCase().includes('conec') || t.nome.toLowerCase().includes('termo') || t.nome.toLowerCase().includes('credenciamento')
+      ).map(t => ({
+        ...t,
+        document_type: t.document_type || (t.nome.toLowerCase().includes('termo') ? 'termo_conec' : 'certificado_conec')
+      }));
+      setTemplates(conecTemplates);
+      const updated = conecTemplates.find(t => t.id === templateEmEdicao.id);
+      if (updated) {
+        setTemplateEmEdicao(updated);
+        setOrientacaoAtual(updated.orientacao || 'landscape');
+      }
     } catch (err: any) {
-      alert(err.message || 'Erro ao salvar modelo no banco.');
+      console.error('=== LOG SALVAR: ERRO NO SALVAMENTO ===', err);
+      alert('Erro ao salvar modelo: ' + (err.message || err));
+    } finally {
+      setSalvando(false);
     }
   };
 
@@ -416,10 +442,10 @@ export default function ConecTemplatesPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={handleSalvar}
-              disabled={!templateEmEdicao}
+              disabled={!templateEmEdicao || salvando}
               className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-sm transition shadow-md disabled:opacity-50"
             >
-              💾 Salvar Alterações
+              {salvando ? '💾 Salvando...' : '💾 Salvar Alterações'}
             </button>
           </div>
         </div>
