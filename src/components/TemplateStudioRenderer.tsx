@@ -57,7 +57,10 @@ export default function TemplateStudioRenderer({
     : template.elementos || [];
 
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://siscomieadepa.com.br';
-  const qrUrl = validationToken ? `${origin}/validar/${validationToken}` : '';
+  const isConec = typeof window !== 'undefined' && window.location.pathname.includes('/conec');
+  const qrUrl = validationToken
+    ? (isConec ? `${origin}/conec/credenciamento/validar/${validationToken}` : `${origin}/validar/${validationToken}`)
+    : '';
 
   return (
     <div

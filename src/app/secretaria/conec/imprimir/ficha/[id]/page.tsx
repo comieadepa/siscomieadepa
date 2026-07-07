@@ -228,6 +228,7 @@ function FichaContent() {
       let res = text;
       Object.entries(dados).forEach(([key, val]) => {
         res = res.split(`{${key}}`).join(String(val ?? ''));
+        res = res.split(`{{${key}}}`).join(String(val ?? ''));
       });
       return res;
     };
@@ -276,16 +277,6 @@ function FichaContent() {
   };
 
   const finalTemplate = getMappedTemplate();
-
-  if (finalTemplate) {
-    return (
-      <TemplateStudioRenderer
-        template={finalTemplate}
-        dados={dados}
-        validationToken={token}
-      />
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gray-100 py-8 px-4 print:bg-white print:p-0 print:min-h-0 flex flex-col items-center justify-center">
@@ -342,6 +333,16 @@ function FichaContent() {
             display: flex !important;
             flex-direction: column !important;
             justify-content: space-between !important;
+          }
+          .print-container {
+            width: 210mm !important;
+            height: 297mm !important;
+            background-size: 100% 100% !important;
+            border: 0 !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            margin: 0 !important;
+            transform: none !important;
           }
         }
 
@@ -468,7 +469,14 @@ function FichaContent() {
       `}</style>
 
       {/* Conteúdo da Ficha */}
-      <div className="print-page relative flex flex-col justify-between h-[297mm]">
+      {finalTemplate ? (
+        <TemplateStudioRenderer
+          template={finalTemplate}
+          dados={dados}
+          validationToken={token}
+        />
+      ) : (
+        <div className="print-container print-page relative flex flex-col justify-between h-[297mm]">
         
         {/* Marca d'água de Fundo */}
         <div className="watermark" />
@@ -653,6 +661,7 @@ function FichaContent() {
         </div>
 
       </div>
+      )}
     </div>
   );
 }
