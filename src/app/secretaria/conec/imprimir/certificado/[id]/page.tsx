@@ -238,14 +238,17 @@ function CertificadoContent() {
           tipoFinal = 'signature';
         }
 
+        const baseWidth = tData.largura || (tData.orientacao === 'portrait' ? 794 : 1123);
+        const baseHeight = tData.altura || (tData.orientacao === 'portrait' ? 1123 : 794);
+
         return {
           id: el.id,
           tipo: tipoFinal,
           imagemUrl: el.imagemUrl || el.url || el.conteudo || '',
-          x: (el.x / 840) * 100,
-          y: (el.y / 595) * 100,
-          width: (el.largura / 840) * 100,
-          height: (el.altura / 595) * 100,
+          x: (el.x / baseWidth) * 100,
+          y: (el.y / baseHeight) * 100,
+          width: (el.largura / baseWidth) * 100,
+          height: (el.altura / baseHeight) * 100,
           conteudo: el.tipo === 'qrcode' ? '' : parsePlaceholderText(el.texto || ''),
           styles: {
             fontSize: el.fontSize ? `${el.fontSize}px` : '14px',
@@ -260,8 +263,8 @@ function CertificadoContent() {
 
     return {
       background_url: tData.backgroundUrl || '',
-      largura: 840,
-      altura: 595,
+      largura: tData.largura || (tData.orientacao === 'portrait' ? 794 : 1123),
+      altura: tData.altura || (tData.orientacao === 'portrait' ? 1123 : 794),
       orientacao: tData.orientacao || 'landscape',
       elementos: mappedElements
     };
@@ -326,8 +329,8 @@ function CertificadoContent() {
             display: none !important;
           }
           .print-container {
-            width: 1123px !important;
-            height: 794px !important;
+            width: 297mm !important;
+            height: 210mm !important;
             background-size: 100% 100% !important;
             border: 0 !important;
             box-shadow: none !important;

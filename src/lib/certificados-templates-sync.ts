@@ -73,50 +73,49 @@ export async function persistCertificadosTemplatesSnapshotToSupabase(
 ): Promise<void> {
   const templatesToSave = templatesSnapshot.map(sanitizeTemplateForStorage);
 
-  try {
-    const { data: existingRows, error: listErr } = await supabase
+  const { data: existingRows, error: listErr } = await supabase
+    .from('certificados_templates')
+    .select('template_key')
+    .eq('ministry_id', ministryId);
+
+  if (listErr) {
+    throw new Error('Erro ao listar templates: ' + listErr.message);
+  }
+
+  const existingKeys = new Set(((existingRows as any[]) || []).map((r) => r.template_key));
+  const nextKeys = new Set(templatesToSave.map((t) => String(t.id)));
+
+  const toDelete = Array.from(existingKeys).filter((k) => !nextKeys.has(k));
+  if (toDelete.length > 0) {
+    const del = await supabase
       .from('certificados_templates')
-      .select('template_key')
-      .eq('ministry_id', ministryId);
-
-    if (listErr) {
-      console.warn('Aviso ao listar certificados_templates:', getSupabaseErrorText(listErr));
-      return;
+      .delete()
+      .eq('ministry_id', ministryId)
+      .in('template_key', toDelete);
+    if (del.error) {
+      throw new Error('Erro ao deletar templates antigos: ' + del.error.message);
     }
+  }
 
-    const existingKeys = new Set(((existingRows as any[]) || []).map((r) => r.template_key));
-    const nextKeys = new Set(templatesToSave.map((t) => String(t.id)));
+  if (templatesToSave.length === 0) return;
 
-    const toDelete = Array.from(existingKeys).filter((k) => !nextKeys.has(k));
-    if (toDelete.length > 0) {
-      const del = await supabase
-        .from('certificados_templates')
-        .delete()
-        .eq('ministry_id', ministryId)
-        .in('template_key', toDelete);
-      if (del.error) console.warn('Aviso ao deletar certificados:', getSupabaseErrorText(del.error));
-    }
+  const rows = templatesToSave.map((t) => ({
+    ministry_id: ministryId,
+    template_key: String(t.id),
+    name: String(t.nome || t.name || t.id),
+    description: null as null,
+    template_data: t,
+    preview_url: null as null,
+    is_default: false,
+    is_active: t.ativo === true,
+  }));
 
-    if (templatesToSave.length === 0) return;
+  const up = await supabase
+    .from('certificados_templates')
+    .upsert(rows as any, { onConflict: 'ministry_id,template_key' });
 
-    const rows = templatesToSave.map((t) => ({
-      ministry_id: ministryId,
-      template_key: String(t.id),
-      name: String(t.nome || t.name || t.id),
-      description: null as null,
-      template_data: t,
-      preview_url: null as null,
-      is_default: false,
-      is_active: t.ativo === true,
-    }));
-
-    const up = await supabase
-      .from('certificados_templates')
-      .upsert(rows as any, { onConflict: 'ministry_id,template_key' });
-
-    if (up.error) console.warn('Aviso ao salvar certificados_templates:', getSupabaseErrorText(up.error));
-  } catch {
-    console.warn('Persistencia de certificados_templates ignorada.');
+  if (up.error) {
+    throw new Error('Erro ao salvar templates: ' + up.error.message);
   }
 }
 

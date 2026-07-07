@@ -49,6 +49,9 @@ interface CertificadoTemplate {
   backgroundUrl?: string;
   elementos: CertificadoElemento[];
   orientacao?: 'landscape' | 'portrait';
+  largura?: number;
+  altura?: number;
+  document_type?: string;
   ativo?: boolean;
   criado_pelo_usuario?: boolean;
 }
@@ -58,15 +61,20 @@ const gId = () =>
     ? (crypto as any).randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-const novoTemplateEmBranco = (nome: string, type: 'termo' | 'certificado'): CertificadoTemplate => ({
-  id: gId(),
-  nome: `${nome} (${type === 'termo' ? 'Termo A4' : 'Certificado CONEC'})`,
-  orientacao: type === 'termo' ? 'portrait' : 'landscape',
-  ativo: false,
-  criado_pelo_usuario: true,
-  elementos: [],
-  document_type: type === 'termo' ? 'termo_conec' : 'certificado_conec',
-} as any);
+const novoTemplateEmBranco = (nome: string, type: 'termo' | 'certificado'): CertificadoTemplate => {
+  const isTermo = type === 'termo';
+  return {
+    id: gId(),
+    nome: `${nome} (${isTermo ? 'Termo A4' : 'Certificado CONEC'})`,
+    orientacao: isTermo ? 'portrait' : 'landscape',
+    largura: isTermo ? 794 : 1123,
+    altura: isTermo ? 1123 : 794,
+    ativo: false,
+    criado_pelo_usuario: true,
+    elementos: [],
+    document_type: isTermo ? 'termo_conec' : 'certificado_conec',
+  } as any;
+};
 
 export default function ConecTemplatesPage() {
   const { loading } = useRequireSupabaseAuth();
@@ -80,8 +88,8 @@ export default function ConecTemplatesPage() {
   // Calcula escala com base na orientação do modelo
   const [orientacaoAtual, setOrientacaoAtual] = useState<'landscape' | 'portrait'>('landscape');
   
-  const currentCanvasWidth = orientacaoAtual === 'portrait' ? 595 : 840;
-  const currentCanvasHeight = orientacaoAtual === 'portrait' ? 840 : 595;
+  const currentCanvasWidth = orientacaoAtual === 'portrait' ? 794 : 1123;
+  const currentCanvasHeight = orientacaoAtual === 'portrait' ? 1123 : 794;
 
   const canvasWrapperRef = useCallback((el: HTMLDivElement | null) => {
     if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
@@ -162,9 +170,13 @@ export default function ConecTemplatesPage() {
 
   const handleSalvar = async () => {
     if (!templateEmEdicao || !ministryId) return;
-    const prox = templates.map((t) => (t.id === templateEmEdicao.id ? templateEmEdicao : t));
-    await salvarTodos(prox);
-    mostrarStatus('Modelo salvo com sucesso.');
+    try {
+      const prox = templates.map((t) => (t.id === templateEmEdicao.id ? templateEmEdicao : t));
+      await salvarTodos(prox);
+      mostrarStatus('Modelo salvo com sucesso.');
+    } catch (err: any) {
+      alert(err.message || 'Erro ao salvar modelo no banco.');
+    }
   };
 
   const handleRenomear = async (id: string) => {
@@ -229,10 +241,10 @@ export default function ConecTemplatesPage() {
       base = {
         id: gId(),
         tipo: 'chapa',
-        x: 40,
-        y: 40,
-        largura: 200,
-        altura: 4,
+        x: 100,
+        y: 100,
+        largura: 250,
+        altura: 6,
         cor: '#b89353',
         transparencia: 1,
         visivel: true
@@ -241,10 +253,10 @@ export default function ConecTemplatesPage() {
       base = {
         id: gId(),
         tipo: 'qrcode',
-        x: 40,
-        y: 40,
-        largura: 80,
-        altura: 80,
+        x: 100,
+        y: 100,
+        largura: 110,
+        altura: 110,
         texto: 'qr_code_validacao',
         visivel: true
       };
@@ -252,10 +264,10 @@ export default function ConecTemplatesPage() {
       base = {
         id: gId(),
         tipo: 'logo',
-        x: 40,
-        y: 40,
-        largura: 90,
-        altura: 90,
+        x: 100,
+        y: 100,
+        largura: 120,
+        altura: 120,
         imagemUrl: '/img/logo_conec.png',
         visivel: true
       };
@@ -265,20 +277,20 @@ export default function ConecTemplatesPage() {
         tipo: 'imagem',
         x: 0,
         y: 0,
-        largura: 150,
-        imgUrl: '/img/bg_termo.jpg',
-        altura: 150,
+        largura: 200,
+        imagemUrl: '/img/bg_termo.jpg',
+        altura: 200,
         visivel: true
-      } as any;
+      };
     } else {
       base = {
         id: gId(),
         tipo: 'texto',
-        x: 40,
-        y: 40,
-        largura: 250,
-        altura: 40,
-        fontSize: 14,
+        x: 100,
+        y: 100,
+        largura: 350,
+        altura: 60,
+        fontSize: 18,
         cor: '#111827',
         fonte: 'Arial',
         alinhamento: 'left',
@@ -528,7 +540,12 @@ export default function ConecTemplatesPage() {
                       onClick={() => {
                         const newOr = orientacaoAtual === 'portrait' ? 'landscape' : 'portrait';
                         setOrientacaoAtual(newOr);
-                        setTemplateEmEdicao({ ...templateEmEdicao, orientacao: newOr });
+                        setTemplateEmEdicao({
+                          ...templateEmEdicao,
+                          orientacao: newOr,
+                          largura: newOr === 'portrait' ? 794 : 1123,
+                          altura: newOr === 'portrait' ? 1123 : 794
+                        });
                       }}
                       className="text-emerald-700 hover:underline flex items-center gap-1"
                     >

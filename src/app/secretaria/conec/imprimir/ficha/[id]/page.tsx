@@ -247,14 +247,17 @@ function FichaContent() {
           tipoFinal = 'signature';
         }
 
+        const baseWidth = tData.largura || (tData.orientacao === 'portrait' ? 794 : 1123);
+        const baseHeight = tData.altura || (tData.orientacao === 'portrait' ? 1123 : 794);
+
         return {
           id: el.id,
           tipo: tipoFinal,
           imagemUrl: el.imagemUrl || el.url || el.conteudo || '',
-          x: (el.x / 595) * 100,
-          y: (el.y / 840) * 100,
-          width: (el.largura / 595) * 100,
-          height: (el.altura / 840) * 100,
+          x: (el.x / baseWidth) * 100,
+          y: (el.y / baseHeight) * 100,
+          width: (el.largura / baseWidth) * 100,
+          height: (el.altura / baseHeight) * 100,
           conteudo: el.tipo === 'qrcode' ? '' : parsePlaceholderText(el.texto || ''),
           styles: {
             fontSize: el.fontSize ? `${el.fontSize}px` : '14px',
@@ -269,9 +272,9 @@ function FichaContent() {
 
     return {
       background_url: tData.backgroundUrl || '',
-      largura: 595,
-      altura: 840,
-      orientacao: 'portrait' as 'portrait',
+      largura: tData.largura || (tData.orientacao === 'portrait' ? 794 : 1123),
+      altura: tData.altura || (tData.orientacao === 'portrait' ? 1123 : 794),
+      orientacao: tData.orientacao || 'portrait',
       elementos: mappedElements
     };
   };
