@@ -315,17 +315,23 @@ export default function ConecTemplatesPage() {
     if (!file || !templateEmEdicao || !ministryId) return;
 
     try {
-      const ext = file.name.split('.').pop();
-      const path = `conec_templates/${ministryId}_bg_${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from('cert-backgrounds').upload(path, file);
+      const formData = new FormData();
+      formData.append('file', file);
 
-      if (error) throw error;
+      const res = await fetch('/api/v1/secretaria/uploads/conec-template-asset', {
+        method: 'POST',
+        body: formData,
+      });
 
-      const { data: pub } = supabase.storage.from('cert-backgrounds').getPublicUrl(path);
-      setTemplateEmEdicao({ ...templateEmEdicao, backgroundUrl: pub.publicUrl });
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error || 'Erro ao enviar arquivo.');
+
+      setTemplateEmEdicao({ ...templateEmEdicao, backgroundUrl: resData.url });
       mostrarStatus('Imagem de fundo carregada.');
     } catch (err: any) {
       alert(err.message || 'Erro ao fazer upload da imagem.');
+    } finally {
+      e.target.value = '';
     }
   };
 
@@ -334,13 +340,16 @@ export default function ConecTemplatesPage() {
     if (!file || !templateEmEdicao || !ministryId) return;
 
     try {
-      const ext = file.name.split('.').pop();
-      const path = `conec_templates/${ministryId}_img_${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from('cert-backgrounds').upload(path, file);
+      const formData = new FormData();
+      formData.append('file', file);
 
-      if (error) throw error;
+      const res = await fetch('/api/v1/secretaria/uploads/conec-template-asset', {
+        method: 'POST',
+        body: formData,
+      });
 
-      const { data: pub } = supabase.storage.from('cert-backgrounds').getPublicUrl(path);
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error || 'Erro ao enviar arquivo.');
       
       const elImg: CertificadoElemento = {
         id: gId(),
@@ -349,7 +358,7 @@ export default function ConecTemplatesPage() {
         y: 40,
         largura: 150,
         altura: 150,
-        imagemUrl: pub.publicUrl,
+        imagemUrl: resData.url,
         visivel: true,
       };
 
@@ -362,6 +371,8 @@ export default function ConecTemplatesPage() {
       mostrarStatus('Imagem adicionada ao modelo.');
     } catch (err: any) {
       alert(err.message || 'Erro ao adicionar imagem.');
+    } finally {
+      e.target.value = '';
     }
   };
 
