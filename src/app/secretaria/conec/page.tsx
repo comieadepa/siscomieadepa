@@ -172,9 +172,19 @@ export default function ConecDashboardPage() {
     }
 
     const credId = activeCreds[0].id;
-    if (modelosCertificado.length > 0) {
+
+    // Se existe apenas 1 modelo customizado, abrir diretamente sem modal
+    if (modelosCertificado.length === 1) {
+      const templateId = modelosCertificado[0].template_key;
+      window.open(`/secretaria/conec/imprimir/certificado/${credId}?templateId=${templateId}`, '_blank');
+      return;
+    }
+
+    // Se existe mais de 1 modelo, ou nenhum (usa fallback padrão), abrir modal ou ir direto
+    if (modelosCertificado.length > 1) {
       setModalPrint({ isOpen: true, type: 'certificado', instId: inst.id, credId });
     } else {
+      // Nenhum modelo customizado: abre direto com fallback interno
       window.open(`/secretaria/conec/imprimir/certificado/${credId}`, '_blank');
     }
   };
@@ -628,22 +638,24 @@ function ModalPrintSelection({ type, templates, onConfirm, onClose }: ModalPrint
           <p className="text-xs text-gray-500 leading-relaxed">
             Escolha abaixo o modelo visual de documento que deseja utilizar para gerar o(a) {type === 'termo' ? 'Termo de Credenciamento A4' : 'Certificado Oficial'}.
           </p>
-
           <div className="space-y-2">
-            <label className="flex items-center gap-3 p-3 rounded-xl border border-emerald-500 bg-emerald-50/20 hover:bg-emerald-50/30 transition cursor-pointer">
-              <input
-                type="radio"
-                name="print-template"
-                value="default"
-                checked={selectedId === 'default'}
-                onChange={() => setSelectedId('default')}
-                className="text-emerald-600 focus:ring-emerald-500 animate-none"
-              />
-              <div className="flex-1">
-                <span className="block text-xs font-bold text-gray-800">Modelo Padrão do Sistema</span>
-                <span className="block text-[10px] text-emerald-700 font-medium">Layout oficial polido do CONEC</span>
-              </div>
-            </label>
+            {/* Mostrar opção padrão apenas se não houver modelos customizados */}
+            {templates.length === 0 && (
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-emerald-500 bg-emerald-50/20 hover:bg-emerald-50/30 transition cursor-pointer">
+                <input
+                  type="radio"
+                  name="print-template"
+                  value="default"
+                  checked={selectedId === 'default'}
+                  onChange={() => setSelectedId('default')}
+                  className="text-emerald-600 focus:ring-emerald-500 animate-none"
+                />
+                <div className="flex-1">
+                  <span className="block text-xs font-bold text-gray-800">Modelo Padrão do Sistema</span>
+                  <span className="block text-[10px] text-emerald-700 font-medium">Layout oficial polido do CONEC</span>
+                </div>
+              </label>
+            )}
 
             {templates.map((t) => (
               <label
@@ -672,6 +684,7 @@ function ModalPrintSelection({ type, templates, onConfirm, onClose }: ModalPrint
             ))}
           </div>
         </div>
+
 
         {/* Footer */}
         <div className="bg-gray-50 px-6 py-4 flex justify-end gap-2 border-t border-gray-100">

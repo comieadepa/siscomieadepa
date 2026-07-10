@@ -1393,11 +1393,12 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   }
 
   async function carregarTiposEvento(eventoId: string) {
+    // Busca todos os tipos (ativos e inativos) para que o tipo histórico do inscrito
+    // apareça corretamente no select mesmo que o lote original já tenha encerrado.
     const { data } = await supabase
       .from('evento_tipos_inscricao')
       .select('id,nome,valor,inclui_alimentacao,inclui_hospedagem,ativo,ordem')
       .eq('evento_id', eventoId)
-      .eq('ativo', true)
       .order('ordem');
     setTiposPorEvento(p => ({ ...p, [eventoId]: (data as TipoInscricao[]) || [] }));
   }
@@ -1479,8 +1480,10 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
       setErroEdit('Supervisao e obrigatoria.');
       return;
     }
-    if (eventoDestino.usar_tipos_inscricao && !tipoSelecionado) {
-      setErroEdit('Selecione um tipo de inscricao.');
+    // Só bloqueia se o tipo original da inscrição também não foi reconhecido
+    // (i.e., o campo está realmente vazio e nenhum tipo está selecionado).
+    if (eventoDestino.usar_tipos_inscricao && !tipoSelecionado && !editForm.tipo_inscricao) {
+      setErroEdit('Selecione um tipo de inscrição.');
       return;
     }
     if (eventoDestino.status === 'cancelado') {
@@ -1854,6 +1857,8 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
     [editForm?.evento_id, tiposPorEvento]
   );
 
+  const tiposCarregados = !!(editForm?.evento_id && tiposPorEvento[editForm.evento_id]);
+
   const tipoSelecionado = useMemo(() => {
     if (!eventoDestino?.usar_tipos_inscricao) return null;
     return tiposDestino.find(t => t.nome === editForm?.tipo_inscricao) ?? null;
@@ -1878,7 +1883,16 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   const brindeEfetivo = !!(eventoDestino?.permite_brinde && editForm?.brinde);
 
   const eventoAlterado = !!(editando && editForm && editando.evento_id !== editForm.evento_id);
-  const tipoAlterado = !!(editando && (editando.tipo_inscricao ?? '') !== (tipoSelecionado?.nome ?? ''));
+
+  // tipoAlterado só é verdadeiro quando:
+  //  1. Os tipos já foram carregados do banco (evita falso-positivo enquanto a lista ainda carrega)
+  //  2. O tipo selecionado é diferente do tipo original
+  //  3. E o tipo selecionado realmente existe na lista (não é apenas o campo vazio/histórico sem match)
+  const tipoAlterado = !!(editando
+    && tiposCarregados
+    && tipoSelecionado !== null
+    && (editando.tipo_inscricao ?? '') !== (tipoSelecionado?.nome ?? ''));
+
   const hospedagemAlterada = !!(editando && !editando.hospedagem && hospedagemEfetiva);
   const alimentacaoAlterada = !!(editando && !editando.alimentacao && alimentacaoEfetiva);
   const temUpgradeFinanceiro = eventoAlterado || tipoAlterado || hospedagemAlterada || alimentacaoAlterada;
@@ -1892,13 +1906,15 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
     : valorOriginalHistorico;
 
   const valorPagoAtual = editando?.valor_pago ?? 0;
-  
-  // Gerar complemento apenas se houver upgrade financeiro E o novo valor for maior que o historico
-  const diferencaValor = temUpgradeFinanceiro && valorNovo !== null
-    ? Math.max(0, valorNovo - valorOriginalHistorico)
+
+  // Gerar complemento apenas se houver upgrade financeiro real E o novo valor for estritamente maior
+  const diferencaValor = temUpgradeFinanceiro && valorNovo !== null && valorNovo > valorOriginalHistorico
+    ? valorNovo - valorOriginalHistorico
     : 0;
 
-  const valorNovoFinal = valorOriginalHistorico + diferencaValor;
+  const valorNovoFinal = temUpgradeFinanceiro && valorNovo !== null && valorNovo > valorOriginalHistorico
+    ? valorNovo
+    : valorOriginalHistorico;
   const statusHospLCase = String(dadosOperacionais?.statusHospedagem || '').toLowerCase();
   const temQualquerHospedagemOuLeito = !!(
     dadosOperacionais?.hospedagem ||
@@ -2317,16 +2333,33 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
               {eventoDestino?.usar_tipos_inscricao && (
                 <div className="md:col-span-2">
                   <label className={labelCls}>Tipo de inscrição</label>
-                  <select
-                    value={editForm.tipo_inscricao}
-                    onChange={e => setEditForm(f => f ? { ...f, tipo_inscricao: e.target.value } : f)}
-                    className={inputCls}
-                  >
-                    <option value="">Selecione...</option>
-                    {tiposDestino.map(t => (
-                      <option key={t.id} value={t.nome}>{t.nome} — {t.valor === 0 ? 'Gratuito' : fmtMoeda(t.valor)}</option>
-                    ))}
-                  </select>
+                  {!tiposCarregados ? (
+                    <div className={inputCls + ' text-gray-400 flex items-center gap-2'}>
+                      <span className="animate-spin text-xs">⏳</span> Carregando tipos...
+                    </div>
+                  ) : (
+                    <select
+                      value={editForm.tipo_inscricao}
+                      onChange={e => setEditForm(f => f ? { ...f, tipo_inscricao: e.target.value } : f)}
+                      className={inputCls}
+                    >
+                      <option value="">Selecione...</option>
+                      {/* Se o tipo original não está na lista (inativo/removido), mostra como opção bloqueada */}
+                      {editando?.tipo_inscricao && !tiposDestino.find(t => t.nome === editando.tipo_inscricao) && (
+                        <option value={editando.tipo_inscricao} disabled>
+                          {editando.tipo_inscricao} — lote original (valor pago: {fmtMoeda(valorOriginalHistorico)})
+                        </option>
+                      )}
+                      {tiposDestino.filter(t => t.ativo).map(t => (
+                        <option key={t.id} value={t.nome}>
+                          {t.nome} — {t.valor === 0 ? 'Gratuito' : fmtMoeda(t.valor)}{!t.ativo ? ' (encerrado)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {editando?.tipo_inscricao && editForm.tipo_inscricao === editando.tipo_inscricao && (
+                    <p className="text-xs text-gray-400 mt-1">✔ Tipo original mantido — sem cobrança complementar.</p>
+                  )}
                 </div>
               )}
 

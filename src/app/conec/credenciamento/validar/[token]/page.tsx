@@ -2,7 +2,6 @@
 
 import { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase-client';
 import { CheckCircle, AlertTriangle, ShieldAlert, Calendar, Landmark, User, MapPin } from 'lucide-react';
 import { formatCnpj } from '@/lib/mascaras';
 
@@ -22,7 +21,6 @@ export default function ConecValidationPage({ params }: { params: Promise<{ toke
   const resolvedParams = use(params);
   const router = useRouter();
   const token = resolvedParams.token;
-  const supabase = createClient();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,53 +29,12 @@ export default function ConecValidationPage({ params }: { params: Promise<{ toke
   useEffect(() => {
     const validateToken = async () => {
       try {
-        // 1. Buscar o token na tabela document_tokens
-        const { data: docToken, error: tokenError } = await supabase
-          .from('document_tokens')
-          .select('reference_id, document_type, dados_publicos')
-          .eq('token', token)
-          .maybeSingle();
-
-        if (tokenError || !docToken) {
+        const res = await fetch(`/api/conec/credenciamento/validar/${token}`);
+        if (!res.ok) {
           throw new Error('Credenciamento não pôde ser validado.');
         }
-
-        // 2. Buscar o credenciamento para obter os dados mais atualizados e consistentes
-        const { data: cred, error: credError } = await supabase
-          .from('conec_credenciamentos')
-          .select('*')
-          .eq('id', docToken.reference_id)
-          .is('deleted_at', null)
-          .maybeSingle();
-
-        if (credError || !cred) {
-          throw new Error('Credenciamento não pôde ser validado.');
-        }
-
-        // 3. Buscar a instituição
-        const { data: inst, error: instError } = await supabase
-          .from('conec_instituicoes')
-          .select('*')
-          .eq('id', cred.instituicao_id)
-          .is('deleted_at', null)
-          .maybeSingle();
-
-        if (instError || !inst) {
-          throw new Error('Credenciamento não pôde ser validado.');
-        }
-
-        setDados({
-          nome_instituicao: inst.nome_instituicao,
-          cnpj: inst.cnpj,
-          nome_representante: inst.nome_representante,
-          cidade: inst.cidade,
-          estado: inst.estado,
-          numero_registro: cred.numero_registro,
-          data_emissao: cred.data_emissao || cred.data_inicio,
-          data_fim: cred.data_fim,
-          status: cred.status_credenciamento,
-        });
-
+        const data = await res.json();
+        setDados(data);
       } catch (err: any) {
         console.error(err);
         setError(err.message || 'Credenciamento não pôde ser validado.');

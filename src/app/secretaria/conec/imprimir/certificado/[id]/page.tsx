@@ -386,7 +386,7 @@ function CertificadoContent() {
       {/* Barra de Ações (Oculta na impressão) */}
       <div className="w-full max-w-[1123px] mb-6 flex items-center justify-between print:hidden no-print">
         <button
-          onClick={() => router.back()}
+          onClick={() => window.close()}
           className="flex items-center gap-2 text-gray-600 hover:text-gray-900 font-semibold text-sm transition"
         >
           <ArrowLeft className="w-4 h-4" />
