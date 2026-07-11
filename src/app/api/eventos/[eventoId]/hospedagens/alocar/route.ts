@@ -197,8 +197,7 @@ export async function POST(
         .from('evento_hospedagens')
         .upsert(
           semRegistro.map(i => {
-            const isPago = ['pago', 'isento'].includes((i.status_pagamento || '').toLowerCase());
-            const statusInicial = (evento.departamento !== 'AGO' && isPago) ? 'pago_sem_alocacao' : 'solicitada';
+            const statusInicial = 'solicitada';
             return {
               evento_id:            eventoId,
               inscricao_id:         i.id,
