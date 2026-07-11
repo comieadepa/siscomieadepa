@@ -5508,7 +5508,7 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
             { key: 'operador' as const, titulo: 'Operador', url: operadorUrl, desc: 'Entra com e-mail e senha definidos pelo administrador.' },
             { key: 'checkin_plenaria' as const, titulo: 'Plenária', url: checkinPlenariaUrl, desc: 'Leitura de QR Code para presença em plenária.' },
             { key: 'checkin_refeitorio' as const, titulo: 'Refeitório', url: checkinRefeitorioUrl, desc: 'Leitura de QR Code para débito de refeições.' },
-            ...(evento?.departamento === 'AGO' || (evento as any)?.formato === 'AGO' ? [
+            ...(evento?.departamento === 'AGO' || (evento as any)?.formato === 'AGO' || evento?.permite_hospedagem ? [
               { key: 'hospedagem' as const, titulo: 'Hospedagem', url: hospedagemUrl, desc: 'Entra com e-mail e senha para operar somente a area de hospedagem.' },
               { key: 'checkin_hospedagem' as const, titulo: 'Check-in de Hospedagem', url: checkinHospedagemUrl, desc: 'Acessa com e-mail cadastrado para check-in/check-out de hospedagem.' }
             ] : [])
