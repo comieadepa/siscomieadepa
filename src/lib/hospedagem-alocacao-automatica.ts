@@ -12,6 +12,29 @@ import {
 } from '@/lib/hospedagem-operacional';
 import { normalizePayloadUppercase } from '@/lib/text';
 
+async function fetchAllRows<T>(queryBuilder: any): Promise<T[]> {
+  const allRows: T[] = [];
+  let from = 0;
+  const step = 1000;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data, error } = await queryBuilder.range(from, from + step - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      hasMore = false;
+    } else {
+      allRows.push(...data);
+      if (data.length < step) {
+        hasMore = false;
+      } else {
+        from += step;
+      }
+    }
+  }
+  return allRows;
+}
+
 async function colocarEmListaEspera(supabase: any, hospedagemId: string, prioridade: number) {
   const { error } = await supabase
     .from('evento_hospedagens')
@@ -255,12 +278,19 @@ export async function alocarLeitoParaInscricaoAGO(
   }
 
   // 5. Conta ocupantes atuais
-  const { data: ocupantesDb } = await supabase
-    .from('evento_hospedagens')
-    .select('alojamento_id, tipo_cama')
-    .eq('evento_id', evento.id)
-    .in('status', ['alocada', 'confirmada', 'checkin_realizado'])
-    .not('alojamento_id', 'is', null);
+  let ocupantesDb: any[] = [];
+  try {
+    ocupantesDb = await fetchAllRows<any>(
+      supabase
+        .from('evento_hospedagens')
+        .select('alojamento_id, tipo_cama')
+        .eq('evento_id', evento.id)
+        .in('status', ['alocada', 'confirmada', 'checkin_realizado'])
+        .not('alojamento_id', 'is', null)
+    );
+  } catch (err: any) {
+    console.error(`[Autoalocacao] [AGO] Erro ao buscar ocupantes:`, err.message);
+  }
 
   const vagasMap: Record<string, { total: number; inferiores: number; superiores: number }> = {};
   for (const aloj of alojamentosRaw) {
@@ -587,14 +617,17 @@ export async function alocarLeitoParaInscricaoEventoComum(
   }
 
   // 6. Conta ocupantes atuais para verificar vagas livres
-  const { data: ocupantesDb, error: errOcup } = await supabase
-    .from('evento_hospedagens')
-    .select('alojamento_id, tipo_cama')
-    .eq('evento_id', evento.id)
-    .in('status', ['alocada', 'confirmada', 'checkin_realizado'])
-    .not('alojamento_id', 'is', null);
-
-  if (errOcup) {
+  let ocupantesDb: any[] = [];
+  try {
+    ocupantesDb = await fetchAllRows<any>(
+      supabase
+        .from('evento_hospedagens')
+        .select('alojamento_id, tipo_cama')
+        .eq('evento_id', evento.id)
+        .in('status', ['alocada', 'confirmada', 'checkin_realizado'])
+        .not('alojamento_id', 'is', null)
+    );
+  } catch (errOcup: any) {
     const msg = `Erro ao contar ocupantes: ${errOcup.message}`;
     console.error(`[Autoalocacao] [Comum] ${msg}`);
     return { success: false, status: 'erro', motivo: msg };

@@ -13,6 +13,29 @@ import {
 } from '@/lib/hospedagem-operacional';
 import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
 
+async function fetchAllRows<T>(queryBuilder: any): Promise<T[]> {
+  const allRows: T[] = [];
+  let from = 0;
+  const step = 1000;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data, error } = await queryBuilder.range(from, from + step - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      hasMore = false;
+    } else {
+      allRows.push(...data);
+      if (data.length < step) {
+        hasMore = false;
+      } else {
+        from += step;
+      }
+    }
+  }
+  return allRows;
+}
+
 export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ eventoId: string }> }
@@ -145,22 +168,26 @@ export async function POST(
       alojamentosRaw = recarregados ?? [];
     }
 
-    const { data: todasInscricoes } = await supabase
-      .from('evento_inscricoes')
-      .select(`
-        id, nome_inscrito, sexo, data_nascimento, tipo_inscricao,
-        status_pagamento,
-        hosp_necessidade_especial, hosp_descricao_necessidade,
-        hosp_cama_inferior, hosp_observacoes, grupo_hospedagem,
-        hosp_possui_comorbidade, hosp_descricao_comorbidade
-      `)
-      .eq('evento_id', eventoId)
-      .eq('hospedagem', true);
+    const todasInscricoes = await fetchAllRows<any>(
+      supabase
+        .from('evento_inscricoes')
+        .select(`
+          id, nome_inscrito, sexo, data_nascimento, tipo_inscricao,
+          status_pagamento,
+          hosp_necessidade_especial, hosp_descricao_necessidade,
+          hosp_cama_inferior, hosp_observacoes, grupo_hospedagem,
+          hosp_possui_comorbidade, hosp_descricao_comorbidade
+        `)
+        .eq('evento_id', eventoId)
+        .eq('hospedagem', true)
+    );
 
-    const { data: hospExistentes } = await supabase
-      .from('evento_hospedagens')
-      .select('inscricao_id')
-      .eq('evento_id', eventoId);
+    const hospExistentes = await fetchAllRows<any>(
+      supabase
+        .from('evento_hospedagens')
+        .select('inscricao_id')
+        .eq('evento_id', eventoId)
+    );
 
     const idsComRegistro = new Set((hospExistentes ?? []).map(h => h.inscricao_id));
     const semRegistro = (todasInscricoes ?? []).filter(i => !idsComRegistro.has(i.id));
@@ -190,23 +217,29 @@ export async function POST(
       if (errUpsert) console.error('[alocar] upsert hospedagens:', errUpsert.message);
     }
 
-    const { data: hospedagensRaw, error: errHosp } = await supabase
-      .from('evento_hospedagens')
-      .select(`
-        id, prioridade, necessidade_especial, descricao_necessidade,
-        cama_inferior, inscricao_id, grupo_hospedagem,
-        status, alojamento_id, tipo_cama, numero_cama, observacoes,
-        evento_inscricoes (
-          id, nome_inscrito, sexo, data_nascimento, tipo_inscricao,
-          status_pagamento,
-          hosp_necessidade_especial, hosp_descricao_necessidade,
-          hosp_cama_inferior, hosp_observacoes, grupo_hospedagem,
-          hosp_possui_comorbidade, hosp_descricao_comorbidade
-        )
-      `)
-      .eq('evento_id', eventoId);
-
-    if (errHosp) return NextResponse.json({ error: errHosp.message }, { status: 500 });
+    let hospedagensRaw: any[] = [];
+    try {
+      const fetched = await fetchAllRows<any>(
+        supabase
+          .from('evento_hospedagens')
+          .select(`
+            id, prioridade, necessidade_especial, descricao_necessidade,
+            cama_inferior, inscricao_id, grupo_hospedagem,
+            status, alojamento_id, tipo_cama, numero_cama, observacoes,
+            evento_inscricoes (
+              id, nome_inscrito, sexo, data_nascimento, tipo_inscricao,
+              status_pagamento,
+              hosp_necessidade_especial, hosp_descricao_necessidade,
+              hosp_cama_inferior, hosp_observacoes, grupo_hospedagem,
+              hosp_possui_comorbidade, hosp_descricao_comorbidade
+            )
+          `)
+          .eq('evento_id', eventoId)
+      );
+      hospedagensRaw = fetched;
+    } catch (errHosp: any) {
+      return NextResponse.json({ error: errHosp.message }, { status: 500 });
+    }
 
     const pendentesPagamento: string[] = [];
     const atualizacoesPendencia: Array<PromiseLike<unknown>> = [];
