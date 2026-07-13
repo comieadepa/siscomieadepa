@@ -129,6 +129,7 @@ interface EditFormBalcao {
   whatsapp: string;
   supervisao_id: string;
   campo_id: string;
+  visitante: boolean;
 }
 
 interface FormState {
@@ -141,6 +142,7 @@ interface FormState {
   cupom: string;
   forma_pagamento: string; // 'dinheiro' | 'pix_manual' | 'cartao' | 'isento' | 'asaas'
   observacoes: string;
+  visitante: boolean;
   // Campos hospedagem AGO
   hosp_necessidade_especial: boolean;
   hosp_descricao_necessidade: string;
@@ -158,6 +160,7 @@ const FORM_VAZIO: FormState = {
   supervisao_id: '', campo_id: '',
   hospedagem: false, brinde: false,
   tipo_id: '', cupom: '', forma_pagamento: 'dinheiro', observacoes: '',
+  visitante: false,
   hosp_necessidade_especial: false,
   hosp_descricao_necessidade: '',
   hosp_cama_inferior: false,
@@ -1251,7 +1254,7 @@ export default function BalcaoPage() {
       setErroSave('Nome do inscrito é obrigatório.');
       return;
     }
-    if (!form.supervisao_id) {
+    if (!form.visitante && !form.supervisao_id) {
       setErroSave('Supervisão é obrigatória.');
       return;
     }
@@ -1283,8 +1286,9 @@ export default function BalcaoPage() {
         whatsapp:         form.whatsapp.trim() || undefined,
         sexo:             form.sexo || undefined,
         data_nascimento:  form.data_nascimento || undefined,
-        supervisao_id:    form.supervisao_id,
-        campo_id:         form.campo_id || undefined,
+        supervisao_id:    form.visitante ? null : (form.supervisao_id || undefined),
+        campo_id:         form.visitante ? null : (form.campo_id || undefined),
+        visitante:        !!form.visitante,
         hospedagem,
         alimentacao,
         brinde:           form.brinde,
@@ -1917,6 +1921,7 @@ export default function BalcaoPage() {
       whatsapp: ins.whatsapp ?? '',
       supervisao_id: ins.supervisao_id ?? '',
       campo_id: ins.campo_id ?? '',
+      visitante: !ins.supervisao_id,
     });
   }
 
@@ -1927,7 +1932,7 @@ export default function BalcaoPage() {
       setErroEdit('Nome do inscrito e obrigatorio.');
       return;
     }
-    if (!editForm.supervisao_id) {
+    if (!editForm.visitante && !editForm.supervisao_id) {
       setErroEdit('Supervisao e obrigatoria.');
       return;
     }
@@ -1940,8 +1945,8 @@ export default function BalcaoPage() {
         cpf: cpfLimpo,
         email: editForm.email.trim() || null,
         whatsapp: editForm.whatsapp.trim() || null,
-        supervisao_id: editForm.supervisao_id,
-        campo_id: editForm.campo_id || null,
+        supervisao_id: editForm.visitante ? null : (editForm.supervisao_id || null),
+        campo_id: editForm.visitante ? null : (editForm.campo_id || null),
       });
       const { error } = await supabase
         .from('evento_inscricoes')
@@ -2442,38 +2447,60 @@ export default function BalcaoPage() {
                   className={inputCls}
                 />
               </div>
-              <div>
-                <label className={labelCls}>Supervisão *</label>
-                {evento.departamento === 'AGO' && ministroInfo ? (
-                  <div className={inputCls + ' cursor-default opacity-70'}>
-                    {supervisoes.find(s => s.id === form.supervisao_id)?.nome ?? '-'}
-                  </div>
-                ) : (
-                  <select
-                    ref={supRef}
-                    name="supervisao_id"
-                    value={form.supervisao_id}
-                    onChange={e => { handleText(e); setForm(f => ({ ...f, campo_id: '' })); }}
-                    className={inputCls}
-                  >
-                    <option value="">Selecione...</option>
-                    {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
-                  </select>
-                )}
-              </div>
-              <div>
-                <label className={labelCls}>Campo</label>
-                {evento.departamento === 'AGO' && ministroInfo && form.campo_id ? (
-                  <div className={inputCls + ' cursor-default opacity-70'}>
-                    {campos.find(c => c.id === form.campo_id)?.nome ?? '-'}
-                  </div>
-                ) : (
-                  <select name="campo_id" value={form.campo_id ?? ''} onChange={handleText} className={inputCls}>
-                    <option value="">Selecione...</option>
-                    {camposFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                  </select>
-                )}
-              </div>
+              {/* Visitante Checkbox (UMADESPA) */}
+              {(evento?.departamento === 'UMADESPA' || evento?.nome?.toUpperCase().includes('UMADESPA')) && (
+                <div className="flex items-center gap-2 mt-4 sm:col-span-1">
+                  <input
+                    type="checkbox"
+                    id="checkbox-visitante-balcao"
+                    checked={!!form.visitante}
+                    onChange={(e) => setForm(prev => ({ ...prev, visitante: e.target.checked }))}
+                    className="w-4 h-4 text-[#F39C12] border-gray-600 rounded bg-[#1a3050] focus:ring-[#F39C12]"
+                  />
+                  <label htmlFor="checkbox-visitante-balcao" className="text-xs font-semibold text-gray-300 select-none cursor-pointer uppercase tracking-wide">
+                    Visitante
+                  </label>
+                </div>
+              )}
+
+              {!form.visitante && (
+                <div>
+                  <label className={labelCls}>Supervisão *</label>
+                  {evento.departamento === 'AGO' && ministroInfo ? (
+                    <div className={inputCls + ' cursor-default opacity-70'}>
+                      {supervisoes.find(s => s.id === form.supervisao_id)?.nome ?? '-'}
+                    </div>
+                  ) : (
+                    <select
+                      ref={supRef}
+                      name="supervisao_id"
+                      value={form.supervisao_id}
+                      onChange={e => { handleText(e); setForm(f => ({ ...f, campo_id: '' })); }}
+                      className={inputCls}
+                      required={!form.visitante}
+                    >
+                      <option value="">Selecione...</option>
+                      {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                    </select>
+                  )}
+                </div>
+              )}
+
+              {!form.visitante && (
+                <div>
+                  <label className={labelCls}>Campo</label>
+                  {evento.departamento === 'AGO' && ministroInfo && form.campo_id ? (
+                    <div className={inputCls + ' cursor-default opacity-70'}>
+                      {campos.find(c => c.id === form.campo_id)?.nome ?? '-'}
+                    </div>
+                  ) : (
+                    <select name="campo_id" value={form.campo_id ?? ''} onChange={handleText} className={inputCls}>
+                      <option value="">Selecione...</option>
+                      {camposFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                    </select>
+                  )}
+                </div>
+              )}
             </div>
           </section>
 
@@ -3311,29 +3338,50 @@ export default function BalcaoPage() {
                       className={inputCls}
                     />
                   </div>
-                  <div>
-                    <label className={labelCls}>Supervisão *</label>
-                    <select
-                      value={editForm.supervisao_id}
-                      onChange={e => { setEditForm(f => f ? { ...f, supervisao_id: e.target.value, campo_id: '' } : f); }}
-                      className={inputCls}
-                    >
-                      <option value="">Selecione...</option>
-                      {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className={labelCls}>Campo</label>
-                    <select
-                      value={editForm.campo_id}
-                      onChange={e => setEditForm(f => f ? { ...f, campo_id: e.target.value } : f)}
-                      className={inputCls}
-                    >
-                      <option value="">Selecione...</option>
-                      {campos.filter(c => !editForm.supervisao_id || c.supervisao_id === editForm.supervisao_id)
-                        .map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                    </select>
-                  </div>
+                  {/* Visitante Checkbox (UMADESPA) */}
+                  {(evento?.departamento === 'UMADESPA' || evento?.nome?.toUpperCase().includes('UMADESPA')) && (
+                    <div className="sm:col-span-2 flex items-center gap-2 mt-2">
+                      <input
+                        type="checkbox"
+                        id="checkbox-visitante-edit"
+                        checked={!!editForm.visitante}
+                        onChange={(e) => setEditForm(f => f ? { ...f, visitante: e.target.checked } : f)}
+                        className="w-4 h-4 text-[#F39C12] border-gray-600 rounded bg-[#1a3050] focus:ring-[#F39C12]"
+                      />
+                      <label htmlFor="checkbox-visitante-edit" className="text-xs font-semibold text-gray-300 select-none cursor-pointer uppercase tracking-wide">
+                        Visitante
+                      </label>
+                    </div>
+                  )}
+
+                  {!editForm.visitante && (
+                    <div>
+                      <label className={labelCls}>Supervisão *</label>
+                      <select
+                        value={editForm.supervisao_id}
+                        onChange={e => { setEditForm(f => f ? { ...f, supervisao_id: e.target.value, campo_id: '' } : f); }}
+                        className={inputCls}
+                        required={!editForm.visitante}
+                      >
+                        <option value="">Selecione...</option>
+                        {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  {!editForm.visitante && (
+                    <div>
+                      <label className={labelCls}>Campo</label>
+                      <select
+                        value={editForm.campo_id}
+                        onChange={e => setEditForm(f => f ? { ...f, campo_id: e.target.value } : f)}
+                        className={inputCls}
+                      >
+                        <option value="">Selecione...</option>
+                        {campos.filter(c => !editForm.supervisao_id || c.supervisao_id === editForm.supervisao_id)
+                          .map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                      </select>
+                    </div>
+                  )}
                 </div>
 
                 {/* Dados operacionais */}

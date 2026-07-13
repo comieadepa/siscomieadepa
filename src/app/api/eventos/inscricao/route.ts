@@ -290,6 +290,7 @@ export async function POST(request: NextRequest) {
       hosp_necessidade_especial,
       hosp_descricao_necessidade,
       hosp_observacoes,
+      visitante,
     } = body;
 
     const hospPossuiComorbidade = !!(body as any).hosp_possui_comorbidade;
@@ -298,9 +299,15 @@ export async function POST(request: NextRequest) {
     let grupoHospedagemAuto: string | null = null;
 
     payloadResumo = {
-      evento_slug: slug ?? null,
-      nome: nome_inscrito ?? null,
+      nome_inscrito: nome_inscrito ?? null,
       cpf: cpf ?? null,
+      email: email ?? null,
+      telefone: telefone ?? null,
+      whatsapp: whatsapp ?? null,
+      sexo: sexo ?? null,
+      data_nascimento: data_nascimento ?? null,
+      supervisao_id: supervisao_id ?? null,
+      campo_id: campo_id ?? null,
       tipo_inscricao: tipo_inscricao ?? null,
       valor_final: null,
       alimentacao: null,
@@ -317,7 +324,7 @@ export async function POST(request: NextRequest) {
       possui_lote: Array.isArray(participantes) && participantes.length > 0,
     });
 
-    if (!slug || !nome_inscrito?.trim() || !supervisao_id) {
+    if (!slug || !nome_inscrito?.trim() || (!supervisao_id && !visitante)) {
       return buildErrorResponse(400, {
         error: 'Campos obrigatórios ausentes',
         stage: 'validacao_campos_obrigatorios',

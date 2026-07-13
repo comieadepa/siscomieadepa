@@ -120,6 +120,7 @@ interface FormData {
   hosp_possui_comorbidade: boolean;
   hosp_descricao_comorbidade: string;
   grupo_hospedagem: string;
+  visitante?: boolean;
 }
 
 // Participante adicional (lote)
@@ -133,6 +134,7 @@ interface ParticipanteExtra {
   hosp_observacoes: string;
   hosp_possui_comorbidade: boolean;
   hosp_descricao_comorbidade: string;
+  visitante?: boolean;
 }
 
 interface ExtraMinisterialInfo {
@@ -197,6 +199,7 @@ const FORM_VAZIO: FormData = {
   hosp_possui_comorbidade: false,
   hosp_descricao_comorbidade: '',
   grupo_hospedagem: '',
+  visitante: false,
 };
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -1181,7 +1184,7 @@ export default function InscricaoPublicaPage() {
     if (!form.cpf.replace(/\D/g, ''))  return setErroForm('CPF é obrigatório.');
     if (!form.whatsapp.replace(/\D/g, '')) return setErroForm('WhatsApp/Celular é obrigatório.');
     if (!form.data_nascimento) return setErroForm('Data de nascimento é obrigatória.');
-    if (!form.supervisao_id)           return setErroForm('Selecione a supervisão.');
+    if (!form.visitante && !form.supervisao_id)           return setErroForm('Selecione a supervisão.');
 
     const errDataTitular = validarDataNascimento(form.data_nascimento);
     if (errDataTitular) return setErroForm(errDataTitular);
@@ -1287,8 +1290,8 @@ export default function InscricaoPublicaPage() {
         whatsapp:        form.whatsapp.trim() || null,
         sexo:            form.sexo || null,
         data_nascimento: formatDmaToYmd(form.data_nascimento) || null,
-        supervisao_id:   form.supervisao_id || null,
-        campo_id:        form.campo_id || null,
+        supervisao_id:   form.visitante ? null : (form.supervisao_id || null),
+        campo_id:        form.visitante ? null : (form.campo_id || null),
         // Regra 8: Hospedagem é opt-in quando o evento/tipo permitir
         hospedagem:      evento.usar_tipos_inscricao ? solicitaHospedagem : form.hospedagem,
         alimentacao:     !!tipoSelecionado?.inclui_alimentacao,
@@ -1304,6 +1307,8 @@ export default function InscricaoPublicaPage() {
         hosp_descricao_comorbidade: form.hosp_descricao_comorbidade.trim() || null,
         lgpd_aceito:                true,
       });
+
+      body.visitante = !!form.visitante;
 
       if (!fluxoCampoMissionarioEspecial && modoLote && participantesExtra.length > 0) {
         body.participantes = participantesExtra.map(p => normalizePayloadUppercase({
@@ -1829,27 +1834,47 @@ export default function InscricaoPublicaPage() {
               </div>
             </div>
 
+            {/* Visitante Checkbox (UMADESPA) */}
+            {(evento?.departamento === 'UMADESPA' || evento?.nome?.toUpperCase().includes('UMADESPA')) && (
+              <div className="mb-4 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="checkbox-visitante"
+                  checked={!!form.visitante}
+                  onChange={(e) => setForm(prev => ({ ...prev, visitante: e.target.checked }))}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <label htmlFor="checkbox-visitante" className="text-sm font-semibold text-gray-700 select-none">
+                  Visitante
+                </label>
+              </div>
+            )}
+
             {/* Supervisão */}
-            <div className="mb-4">
-              <label className={LBL}>Supervisão *</label>
-              <select name="supervisao_id" value={form.supervisao_id} onChange={handleText}
-                className={classeCampoObrigatorio(erroSupervisaoTitular)} required>
-                <option value="">Selecione a supervisão...</option>
-                {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
-              </select>
-            </div>
+            {!form.visitante && (
+              <div className="mb-4">
+                <label className={LBL}>Supervisão *</label>
+                <select name="supervisao_id" value={form.supervisao_id} onChange={handleText}
+                  className={classeCampoObrigatorio(erroSupervisaoTitular)} required={!form.visitante}>
+                  <option value="">Selecione a supervisão...</option>
+                  {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                </select>
+              </div>
+            )}
 
             {/* Campo */}
-            <div className="mb-6">
-              <label className={LBL}>Campo</label>
-              <select name="campo_id" value={form.campo_id} onChange={handleText} className={INP}
-                disabled={carregandoCampos || !form.supervisao_id}>
-                <option value="">
-                  {carregandoCampos ? 'Carregando...' : !form.supervisao_id ? 'Selecione a supervisão primeiro' : 'Selecione o campo...'}
-                </option>
-                {campos.filter(c => !form.supervisao_id || c.supervisao_id === form.supervisao_id).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-              </select>
-            </div>
+            {!form.visitante && (
+              <div className="mb-6">
+                <label className={LBL}>Campo</label>
+                <select name="campo_id" value={form.campo_id} onChange={handleText} className={INP}
+                  disabled={carregandoCampos || !form.supervisao_id}>
+                  <option value="">
+                    {carregandoCampos ? 'Carregando...' : !form.supervisao_id ? 'Selecione a supervisão primeiro' : 'Selecione o campo...'}
+                  </option>
+                  {campos.filter(c => !form.supervisao_id || c.supervisao_id === form.supervisao_id).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                </select>
+              </div>
+            )}
 
             {/* Tipos de inscrição */}
             {evento.usar_tipos_inscricao && (

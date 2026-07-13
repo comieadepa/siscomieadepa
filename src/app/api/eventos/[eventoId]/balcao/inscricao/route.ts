@@ -247,6 +247,7 @@ export async function POST(
       incluir_esposa,
       esposa,
       participantes,
+      visitante,
     } = body;
 
     const hospPossuiComorbidade = !!(body as any).hosp_possui_comorbidade;
@@ -254,7 +255,7 @@ export async function POST(
     let hospCamaInferiorAuto = false;
     let grupoHospedagemAuto: string | null = null;
 
-    if (!nome_inscrito || !String(nome_inscrito).trim() || !supervisao_id) {
+    if (!nome_inscrito || !String(nome_inscrito).trim() || (!supervisao_id && !visitante)) {
       return NextResponse.json({ error: 'Nome e Supervisão são obrigatórios.' }, { status: 400 });
     }
 
