@@ -8,6 +8,7 @@ type EventoRow = {
   id: string; nome: string; status: string;
   configuracoes_ago: Record<string, unknown> | null;
   data_inicio: string | null; data_fim: string | null;
+  usar_tipos_inscricao: boolean | null; permite_alimentacao: boolean | null;
 };
 type InscricaoRow = {
   id: string; nome_inscrito: string; cpf: string | null;
@@ -74,10 +75,11 @@ export async function GET(
     alojRes,
     semCpfRes,
     semCatRes,
+    tiposRes,
   ] = await Promise.all([
     supabase
       .from('eventos')
-      .select('id, nome, status, configuracoes_ago, data_inicio, data_fim')
+      .select('id, nome, status, configuracoes_ago, data_inicio, data_fim, usar_tipos_inscricao, permite_alimentacao')
       .eq('id', eventoId)
       .single(),
 
@@ -156,6 +158,11 @@ export async function GET(
       .eq('evento_id', eventoId)
       .neq('status_pagamento', 'cancelado')
       .or('tipo_inscricao.is.null,tipo_inscricao.eq.'),
+
+    supabase
+      .from('evento_tipos_inscricao')
+      .select('nome, inclui_alimentacao')
+      .eq('evento_id', eventoId),
   ]);
 
   if (!eventoRes.data) {
@@ -173,6 +180,7 @@ export async function GET(
   const supervisoes      = (supRes.data       ?? []) as unknown as SupervisaoRow[];
   const campos           = (camposRes.data    ?? []) as unknown as CampoRow[];
   const alojamentos      = (alojRes.data      ?? []) as unknown as AlojRow[];
+  const tiposInscricao   = (tiposRes.data     ?? []) as Array<{ nome: string; inclui_alimentacao: boolean }>;
 
   // ── Config do evento ──────────────────────────────────────────────────
   const cfg = (evento.configuracoes_ago ?? {}) as Record<string, unknown>;
@@ -434,7 +442,17 @@ export async function GET(
     const total = i.quantidade_refeicoes_total ?? i.refeicoes_total ?? 0;
     const usadas = i.quantidade_refeicoes_usadas ?? i.refeicoes_utilizadas ?? 0;
     const saldo = i.quantidade_refeicoes_saldo ?? Math.max(0, total - usadas);
-    const inclui = !!i.alimentacao;
+    const inclui = (() => {
+      if (evento.status === 'AGO') return true;
+      if (evento.usar_tipos_inscricao) {
+        if (!i.tipo_inscricao) return false;
+        const tMatch = tiposInscricao.find(
+          t => t.nome.trim().toLowerCase() === (i.tipo_inscricao || '').trim().toLowerCase()
+        );
+        return tMatch ? !!tMatch.inclui_alimentacao : false;
+      }
+      return !!i.alimentacao;
+    })();
     if (inclui) totalComAlimentacao += 1;
     refeicoesPrevistas += total;
     refeicoesUsadas += usadas;
