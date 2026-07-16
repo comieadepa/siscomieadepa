@@ -417,6 +417,44 @@ export default function GerenciarEventoPage() {
     if (!id) return;
     setLoadingInsc(true);
 
+    // Carrega metadados do evento e tipos de inscrição para o enriquecimento
+    let evDet: any = null;
+    let tiposData: any[] = [];
+    try {
+      const { data: ev } = await supabase.from('eventos').select('departamento, usar_tipos_inscricao').eq('id', id).maybeSingle();
+      evDet = ev;
+      const { data: tp } = await supabase.from('evento_tipos_inscricao').select('nome, inclui_alimentacao').eq('evento_id', id);
+      tiposData = tp || [];
+    } catch (e) {
+      console.error("Erro ao carregar tipos de inscricao para enriquecimento:", e);
+    }
+
+    const isAgo = evDet?.departamento === 'AGO';
+    const usarTipos = !!evDet?.usar_tipos_inscricao;
+
+    const enrichData = (list: Inscricao[], lotesMap: Record<string, any> = {}) => {
+      return list.map((i) => {
+        let hasAlim = !!i.alimentacao;
+        if (isAgo) {
+          hasAlim = true;
+        } else if (usarTipos) {
+          if (!i.tipo_inscricao) {
+            hasAlim = false;
+          } else {
+            const tMatch = tiposData.find(
+              t => t.nome.trim().toLowerCase() === (i.tipo_inscricao || '').trim().toLowerCase()
+            );
+            hasAlim = tMatch ? !!tMatch.inclui_alimentacao : false;
+          }
+        }
+        return {
+          ...i,
+          alimentacao: hasAlim,
+          lote: i.lote_id ? (lotesMap[i.lote_id] || null) : null,
+        };
+      });
+    };
+
     // Usuários de equipe sem conta Supabase: usa endpoint dedicado (bypass RLS)
     const equipeSessaoAtual = getEquipeSession();
     if (equipeSessaoAtual && equipeSessaoAtual.eventoId === id) {
@@ -424,7 +462,8 @@ export default function GerenciarEventoPage() {
         const res = await fetch(`/api/eventos/${id}/equipe-dados?equipeId=${equipeSessaoAtual.equipeId}&tipo=inscricoes`);
         if (res.ok) {
           const json = await res.json();
-          setInscricoes((json.inscricoes as Inscricao[]) || []);
+          const rawList = (json.inscricoes as Inscricao[]) || [];
+          setInscricoes(enrichData(rawList));
           setLoadingInsc(false);
           return;
         }
@@ -463,10 +502,7 @@ export default function GerenciarEventoPage() {
       });
     }
 
-    const enriched = allData.map((i) => ({
-      ...i,
-      lote: i.lote_id ? (lotesMap[i.lote_id] || null) : null,
-    }));
+    const enriched = enrichData(allData, lotesMap);
 
     setInscricoes(enriched);
     setLoadingInsc(false);
