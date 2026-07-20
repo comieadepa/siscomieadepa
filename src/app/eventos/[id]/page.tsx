@@ -2691,7 +2691,8 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                             valor_pago: 0,
                             valor_final: 0,
                             valor_original: 0,
-                            observacoes: editForm.observacoes ? `${editForm.observacoes}\n[${new Date().toLocaleString('pt-BR')}] Valores zerados pelo administrador.` : `[${new Date().toLocaleString('pt-BR')}] Valores zerados pelo administrador.`
+                            status_pagamento: 'isento',
+                            observacoes: editForm.observacoes ? `${editForm.observacoes}\n[${new Date().toLocaleString('pt-BR')}] Valores zerados e inscrição marcada como isenta pelo administrador.` : `[${new Date().toLocaleString('pt-BR')}] Valores zerados e inscrição marcada como isenta pelo administrador.`
                           })
                           .eq('id', editando.id);
                         if (error) {
