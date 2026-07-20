@@ -907,6 +907,7 @@ export default function GerenciarEventoPage() {
           podeMover={podeMoverInscricao}
           podeComunicacao={podeComunicacao}
           podeCertificados={podeCertificados}
+          perfil={perfil}
         />
       )}
       {activeTab === 'inscricao-manual' && (
@@ -1081,7 +1082,7 @@ export default function GerenciarEventoPage() {
 // ═══════════════════════════════════════════════════════════════
 // ABA INSCRITOS
 // ═══════════════════════════════════════════════════════════════
-function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeCampo, onRefresh, supabase, evento, podeEditar, podeRemover, podeMover, podeComunicacao, podeCertificados }: {
+function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeCampo, onRefresh, supabase, evento, podeEditar, podeRemover, podeMover, podeComunicacao, podeCertificados, perfil }: {
   inscricoes: Inscricao[]; loading: boolean;
   supervisoes: Supervisao[]; campos: Campo[];
   nomeSup: (id: string | null) => string;
@@ -1094,6 +1095,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   podeMover: boolean;
   podeComunicacao: boolean;
   podeCertificados: boolean;
+  perfil: any;
 }) {
   const [busca,       setBusca]       = useState('');
   const [filtroSup,   setFiltroSup]   = useState('');
@@ -2674,20 +2676,61 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
             )}
 
             {/* Rodapé fixo */}
-            <div className="flex items-center justify-end gap-2 px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-100 shrink-0">
-              <button
-                onClick={() => { setEditando(null); setEditForm(null); setDadosOperacionais(null); }}
-                className="px-4 py-2 text-sm rounded-lg border border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100 transition"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={salvarEdicao}
-                disabled={salvandoEdit || !!ordemGerada}
-                className="px-4 py-2 text-sm rounded-lg bg-[#123b63] text-white font-semibold hover:bg-[#0f2a45] transition disabled:opacity-50"
-              >
-                {salvandoEdit ? 'Salvando...' : 'Salvar alterações'}
-              </button>
+            <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-100 shrink-0">
+              <div>
+                {podeEditar && editando && perfil.nivelSistema === 'super' && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!confirm('Deseja realmente ZERAR todos os valores desta inscrição? Esta ação definirá o valor pago, valor final e valor original como R$ 0,00.')) return;
+                      setSalvandoEdit(true);
+                      try {
+                        const { error } = await supabase
+                          .from('evento_inscricoes')
+                          .update({
+                            valor_pago: 0,
+                            valor_final: 0,
+                            valor_original: 0,
+                            observacoes: editForm.observacoes ? `${editForm.observacoes}\n[${new Date().toLocaleString('pt-BR')}] Valores zerados pelo administrador.` : `[${new Date().toLocaleString('pt-BR')}] Valores zerados pelo administrador.`
+                          })
+                          .eq('id', editando.id);
+                        if (error) {
+                          setErroEdit('Erro ao zerar valores: ' + error.message);
+                          return;
+                        }
+                        // Refresh e fechar
+                        setEditando(null);
+                        setEditForm(null);
+                        setDadosOperacionais(null);
+                        onRefresh();
+                      } catch (err: any) {
+                        setErroEdit(err?.message || 'Erro ao processar.');
+                      } finally {
+                        setSalvandoEdit(false);
+                      }
+                    }}
+                    disabled={salvandoEdit || !!ordemGerada}
+                    className="px-3 py-2 text-xs text-red-700 bg-red-50 hover:bg-red-100 rounded-lg border border-red-200 transition font-semibold disabled:opacity-50"
+                  >
+                    🪙 Zerar valores (Isentar)
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setEditando(null); setEditForm(null); setDadosOperacionais(null); }}
+                  className="px-4 py-2 text-sm rounded-lg border border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={salvarEdicao}
+                  disabled={salvandoEdit || !!ordemGerada}
+                  className="px-4 py-2 text-sm rounded-lg bg-[#123b63] text-white font-semibold hover:bg-[#0f2a45] transition disabled:opacity-50"
+                >
+                  {salvandoEdit ? 'Salvando...' : 'Salvar alterações'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
