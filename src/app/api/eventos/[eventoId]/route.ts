@@ -59,6 +59,10 @@ export async function PATCH(
 
   const supabase = guard.ctx.supabaseAdmin;
 
+  // Apenas muda o status do evento para cancelado e fecha inscrições.
+  // IMPORTANTE: inscrições são preservadas com seus status originais.
+  // Cancelar inscrições individualmente deve ser feito de forma explícita,
+  // nunca em massa via cancelamento do evento (evita perda de dados financeiros).
   const { error: eventoError } = await supabase
     .from('eventos')
     .update({ status: 'cancelado', inscricoes_abertas: false })
@@ -67,16 +71,8 @@ export async function PATCH(
     return NextResponse.json({ error: eventoError.message }, { status: 500 });
   }
 
-  const { error: inscError } = await supabase
-    .from('evento_inscricoes')
-    .update({ status_pagamento: 'cancelado' })
-    .eq('evento_id', eventoId);
-  if (inscError) {
-    return NextResponse.json({ error: inscError.message }, { status: 500 });
-  }
-
   void registrarAuditoria(
-    { userId: guard.ctx.user?.id || '', userEmail: guard.ctx.user?.email ?? undefined, acao: 'editar', modulo: 'eventos', entidadeId: eventoId, descricao: 'Evento cancelado' },
+    { userId: guard.ctx.user?.id || '', userEmail: guard.ctx.user?.email ?? undefined, acao: 'editar', modulo: 'eventos', entidadeId: eventoId, descricao: 'Evento cancelado (inscrições preservadas)' },
     request,
   );
   return NextResponse.json({ success: true });

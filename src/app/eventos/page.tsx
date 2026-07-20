@@ -832,9 +832,10 @@ export default function EventosPage() {
             <p className="mt-2 text-sm text-gray-600">
               Escolha o que deseja fazer com <strong>{modalEvento.nome}</strong>.
             </p>
-            <div className="mt-4 space-y-1 text-xs text-gray-500">
-              <p>• Deletar: remove o evento e todas as inscricoes vinculadas.</p>
-              <p>• Cancelar: define status Cancelado e marca inscricoes como canceladas.</p>
+            <div className="mt-4 space-y-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+              <p className="font-semibold">⚠️ Atenção — leia antes de confirmar:</p>
+              <p>• <strong>Cancelar:</strong> muda o status do evento para Cancelado e fecha as inscrições. As inscrições e seus valores financeiros são <strong>preservados</strong>.</p>
+              <p>• <strong>Deletar:</strong> remove permanentemente o evento <em>e todas as inscrições vinculadas</em>. Esta ação <strong>não pode ser desfeita</strong>.</p>
             </div>
 
             {acaoErro && (
@@ -856,14 +857,14 @@ export default function EventosPage() {
                 disabled={acaoLoading || modalEvento.status === 'cancelado'}
                 className="rounded-lg bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
               >
-                Cancelar evento
+                {acaoLoading ? 'Aguarde...' : 'Cancelar evento'}
               </button>
               <button
                 onClick={handleDeletarEvento}
                 disabled={acaoLoading}
                 className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300"
               >
-                Deletar evento
+                {acaoLoading ? 'Aguarde...' : '🗑️ Deletar evento'}
               </button>
             </div>
           </div>
