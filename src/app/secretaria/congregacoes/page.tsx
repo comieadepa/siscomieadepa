@@ -2314,21 +2314,33 @@ export default function CongregacoesPage() {
     const titulo = `LISTA DE CAMPOS${filtros.length ? ' — ' + filtros.join(' | ') : ''} — QTD.: ${lista.length}`;
     const rows = lista.map(c => {
       const sup = divisoes1.find(s => s.id === c.supervisao_id);
-      const cpfRaw = (c as any).presidente_cpf || '';
-      const cpfFmt = cpfRaw.replace(/\D/g, '').replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4') || '—';
+      const rawContato = (c as any).presidente_contato || c.telefone || '';
+      let telFmt = rawContato;
+      if (rawContato && !rawContato.includes('(')) {
+        const apenasDigitos = rawContato.replace(/\D/g, '');
+        const semDdi = apenasDigitos.startsWith('55') && apenasDigitos.length > 10
+          ? apenasDigitos.slice(2)
+          : apenasDigitos;
+        if (semDdi.length === 11) {
+          telFmt = semDdi.replace(/^(\d{2})(\d{5})(\d{4})$/, '($1) $2-$3');
+        } else if (semDdi.length === 10) {
+          telFmt = semDdi.replace(/^(\d{2})(\d{4})(\d{4})$/, '($1) $2-$3');
+        }
+      }
+      if (!telFmt) telFmt = '—';
       return `<tr>
         <td>${sup ? sup.nome : '—'}</td>
         <td>${c.uf || '—'}</td>
         <td>${c.nome}${ (c as any).is_campo_missionario ? ' <span style="color:#166534;font-weight:700;font-size:0.75em">[Missionário]</span>' : ''}</td>
         <td>${(c as any).presidente_nome || c.pastor_nome || '—'}</td>
-        <td>${cpfFmt}</td>
+        <td>${telFmt}</td>
         <td>${c.cnpj ? 'SIM' : 'NÃO'}</td>
       </tr>`;
     }).join('');
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>${titulo}</title><style>${PRINT_STYLES}</style></head><body>
       ${PRINT_HEADER}
       <div class="report-title">${titulo}</div>
-      <table><thead><tr><th>SUPERVISÃO</th><th>UF</th><th>NOME DO CAMPO</th><th>PRESIDENTE</th><th>CPF</th><th>CNPJ</th></tr></thead><tbody>${rows}</tbody></table>
+      <table><thead><tr><th>SUPERVISÃO</th><th>UF</th><th>NOME DO CAMPO</th><th>PRESIDENTE</th><th>CONTATO</th><th>CNPJ</th></tr></thead><tbody>${rows}</tbody></table>
     </body></html>`;
     const win = window.open('', '_blank', 'width=1100,height=750');
     if (!win) return;

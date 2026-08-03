@@ -12,6 +12,38 @@ export async function GET(request: NextRequest) {
 
   const supabase = createServerClient();
 
+  // Busca contatos de members com paginação para enriquecer
+  let membersData: any[] = [];
+  let mFrom = 0;
+  const mLimit = 1000;
+  let mHasMore = true;
+  while (mHasMore) {
+    const { data: mData, error: mErr } = await supabase
+      .from('members')
+      .select('cpf, celular, whatsapp, phone')
+      .range(mFrom, mFrom + mLimit - 1);
+    if (mErr || !mData || mData.length === 0) {
+      mHasMore = false;
+    } else {
+      membersData = [...membersData, ...mData];
+      if (mData.length < mLimit) {
+        mHasMore = false;
+      } else {
+        mFrom += mLimit;
+      }
+    }
+  }
+  
+  const memberContactMap = new Map();
+  if (membersData.length > 0) {
+    membersData.forEach((m: any) => {
+      if (m.cpf) {
+        const contact = m.whatsapp || m.celular || m.phone || '';
+        memberContactMap.set(m.cpf.replace(/\D/g, ''), contact);
+      }
+    });
+  }
+
   if (id) {
     const { data, error } = await supabase
       .from('campos')
@@ -23,7 +55,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ data });
+    const enrichedSingle = data ? {
+      ...data,
+      presidente_contato: memberContactMap.get((data.presidente_cpf || '').replace(/\D/g, '')) || data.telefone || null
+    } : null;
+
+    return NextResponse.json({ data: enrichedSingle });
   }
 
   let allData: any[] = [];
@@ -52,7 +89,15 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ data: allData });
+  const enrichedData = allData.map(c => {
+    const cpfLimpo = (c.presidente_cpf || '').replace(/\D/g, '');
+    return {
+      ...c,
+      presidente_contato: memberContactMap.get(cpfLimpo) || c.telefone || null
+    };
+  });
+
+  return NextResponse.json({ data: enrichedData });
 }
 
 export async function POST(request: NextRequest) {
