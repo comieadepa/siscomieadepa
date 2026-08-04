@@ -74,9 +74,15 @@ export default function RelatoriosPrintPage() {
   const [supervisoes, setSupervisoes] = useState<Supervisao[]>([]);
   const [campos,      setCampos]      = useState<Campo[]>([]);
   const [loading,     setLoading]     = useState(true);
+  const [operador,    setOperador]    = useState('');
 
   useEffect(() => {
     async function load() {
+      supabase.auth.getUser().then((res: any) => {
+        const name = res.data?.user?.user_metadata?.name || res.data?.user?.email || '';
+        setOperador(name);
+      });
+
       if (filtroEquipe) {
         try {
           const [evRes, estruturaRes, insRes] = await Promise.all([
@@ -404,6 +410,8 @@ export default function RelatoriosPrintPage() {
                   <td style={tdNumS}>{r.alim}</td>
                 </tr>
               ))}
+            </tbody>
+            <tfoot>
               <tr style={{ backgroundColor: '#F3F4F6', fontWeight: 700, borderTop: '2px solid #D1D5DB' }}>
                 <td style={{ ...tdS, fontWeight: 800 }} colSpan={2}>TOTAL</td>
                 <td style={tdNumS}>{porCampo.reduce((s, r) => s + r.total, 0)}</td>
@@ -413,7 +421,7 @@ export default function RelatoriosPrintPage() {
                 <td style={tdNumS}>{porCampo.reduce((s, r) => s + r.hosp, 0)}</td>
                 <td style={tdNumS}>{porCampo.reduce((s, r) => s + r.alim, 0)}</td>
               </tr>
-            </tbody>
+            </tfoot>
           </table>
         )}
 
@@ -539,6 +547,14 @@ export default function RelatoriosPrintPage() {
             <p style={{ fontSize: '13px' }}>Você não tem permissão para visualizar dados financeiros.</p>
           </div>
         )}
+        {/* Rodapé impresso fixo em todas as páginas */}
+        <div className="print-footer print:flex hidden">
+          <div>Emissão: {fmtDT(new Date().toISOString())} {operador ? `· Operador: ${operador}` : ''}</div>
+          <div style={{ flex: 1, textAlign: 'center' }}>
+            Página <span className="page-number"></span> de <span className="page-count"></span>
+          </div>
+          <div>COADESPA</div>
+        </div>
       </div>
 
       {/* ── Estilos de impressão ──────────────────────────────── */}
@@ -564,7 +580,6 @@ export default function RelatoriosPrintPage() {
           background: #fff;
           min-height: 62px;
         }
-        table,
         tr,
         td,
         th {
@@ -586,17 +601,64 @@ export default function RelatoriosPrintPage() {
         }
         @media print {
           @page {
-            size: A4 portrait;
-            margin: 10mm;
+            size: A4 landscape;
+            margin: 15mm 10mm 15mm 10mm;
           }
-          body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          html, body, #__next, [data-reactroot] {
+            height: auto !important;
+            min-height: auto !important;
+            overflow: visible !important;
+            display: block !important;
+          }
+          body {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
           .report-page {
-            width: 210mm;
-            min-height: 297mm;
+            width: 100%;
             max-width: none;
-            margin: 0 auto;
-            padding: 12mm;
+            margin: 0;
+            padding: 0 0 10mm 0;
             background: white;
+            overflow: visible !important;
+          }
+          table {
+            display: table !important;
+            width: 100% !important;
+            border-collapse: collapse !important;
+          }
+          thead {
+            display: table-header-group !important;
+          }
+          tfoot {
+            display: table-footer-group !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+          tr {
+            display: table-row !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+          .print-footer {
+            display: flex !important;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            justify-content: space-between;
+            font-size: 8px;
+            color: #6B7280;
+            border-top: 1px solid #E5E7EB;
+            padding-top: 6px;
+            background: white;
+            font-family: Arial, sans-serif;
+          }
+          .page-number:after {
+            content: counter(page);
+          }
+          .page-count:after {
+            content: counter(pages);
           }
           .print-grid {
             grid-template-columns: repeat(4, minmax(0, 1fr));
