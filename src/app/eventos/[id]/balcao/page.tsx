@@ -403,7 +403,7 @@ export default function BalcaoPage() {
     };
 
     if (!evento || evento.departamento !== 'AGO') {
-      return { ministroAtivo: ativo, ministroInativo: inativo, tiposParaExibir: [...tipos, virtualEquipeApoio] };
+      return { ministroAtivo: ativo, ministroInativo: inativo, tiposParaExibir: [...tipos, virtualEquipeApoio], ministroSemPerfil: false };
     }
 
     if (esposaJubiladoAutomaticoAtivo && tipoEsposaJubiladoAutomatico) {
@@ -439,7 +439,7 @@ export default function BalcaoPage() {
     });
 
     // Ministro ativo mas sem nenhum tipo ministerial compatível → perfil indefinido
-    const semPerfil = ativo && filtered.length === 0;
+    const semPerfil = evento.departamento === 'AGO' && ativo && filtered.length === 0;
     return { ministroAtivo: ativo, ministroInativo: inativo, tiposParaExibir: [...filtered, virtualEquipeApoio], ministroSemPerfil: semPerfil };
   }, [cpfStatus, ministroInfo, form.sexo, form.data_nascimento, tipos, evento, jubiladoAutomaticoAtivo, tipoJubiladoAutomatico, esposaJubiladoAutomaticoAtivo, tipoEsposaJubiladoAutomatico]);
 

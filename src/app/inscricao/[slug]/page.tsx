@@ -1003,7 +1003,7 @@ export default function InscricaoPublicaPage() {
       return qtdPPNoCampoSemAtual < 1;
     });
   };
-  const ministroSemPerfil = ministroAtivo && tiposParaExibir.length === 0;
+  const ministroSemPerfil = evento?.departamento === 'AGO' && ministroAtivo && tiposParaExibir.length === 0;
 
   useEffect(() => {
     if (!fluxoCampoMissionarioEspecial) return;
