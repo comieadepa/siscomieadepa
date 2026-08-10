@@ -1106,6 +1106,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   const [filtroAlim,  setFiltroAlim]  = useState('');
   const [filtroSexo,  setFiltroSexo]  = useState('');
   const [filtroTipo,  setFiltroTipo]  = useState('');
+  const [ordenacao,   setOrdenacao]   = useState<'nome' | 'campo' | 'pagamento' | null>(null);
   const [pagina,      setPagina]      = useState(1);
   const [salvando,    setSalvando]    = useState<string | null>(null);
   const [enviandoCert, setEnviandoCert] = useState<Record<string, boolean>>({});
@@ -1134,7 +1135,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   const POR_PAG = 20;
 
   const filtrados = useMemo(() => {
-    return inscricoes.filter(i => {
+    let list = inscricoes.filter(i => {
       if (busca && !i.nome_inscrito.toLowerCase().includes(busca.toLowerCase()) &&
           !(i.cpf || '').includes(busca) && !(i.whatsapp || '').includes(busca)) return false;
       if (filtroSup   && i.supervisao_id !== filtroSup)      return false;
@@ -1147,12 +1148,30 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
       if (filtroTipo  && (i.tipo_inscricao ?? '') !== filtroTipo)  return false;
       return true;
     });
-  }, [inscricoes, busca, filtroSup, filtroCampo, filtroPag, filtroCI, filtroHosp, filtroAlim, filtroSexo, filtroTipo]);
+
+    if (ordenacao === 'nome') {
+      list = [...list].sort((a, b) => a.nome_inscrito.localeCompare(b.nome_inscrito, 'pt-BR'));
+    } else if (ordenacao === 'campo') {
+      list = [...list].sort((a, b) => {
+        const campoA = nomeCampo(a.campo_id);
+        const campoB = nomeCampo(b.campo_id);
+        return campoA.localeCompare(campoB, 'pt-BR');
+      });
+    } else if (ordenacao === 'pagamento') {
+      list = [...list].sort((a, b) => {
+        const pagA = STATUS_PAG_CFG[a.status_pagamento]?.label ?? a.status_pagamento;
+        const pagB = STATUS_PAG_CFG[b.status_pagamento]?.label ?? b.status_pagamento;
+        return pagA.localeCompare(pagB, 'pt-BR');
+      });
+    }
+
+    return list;
+  }, [inscricoes, busca, filtroSup, filtroCampo, filtroPag, filtroCI, filtroHosp, filtroAlim, filtroSexo, filtroTipo, ordenacao, supervisoes, campos]);
 
   const totalPags = Math.max(1, Math.ceil(filtrados.length / POR_PAG));
   const paginados = filtrados.slice((pagina - 1) * POR_PAG, pagina * POR_PAG);
 
-  useEffect(() => { setPagina(1); }, [busca, filtroSup, filtroCampo, filtroPag, filtroCI, filtroHosp, filtroAlim, filtroSexo, filtroTipo]);
+  useEffect(() => { setPagina(1); }, [busca, filtroSup, filtroCampo, filtroPag, filtroCI, filtroHosp, filtroAlim, filtroSexo, filtroTipo, ordenacao]);
 
   useEffect(() => () => {
     timeoutsRef.current.forEach(t => clearTimeout(t));
@@ -2059,9 +2078,37 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
             <table className="w-full min-w-[1100px] text-sm">
               <thead>
                 <tr className="border-b border-[#D4DCEA] bg-[#E3ECF7]">
-                  {['Nome', 'Supervisão', 'Campo', 'Valor', 'Pagamento', 'Etiq.', 'Ações'].map(h => (
-                    <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-600 whitespace-nowrap">{h}</th>
-                  ))}
+                  {['Nome', 'Supervisão', 'Campo', 'Valor', 'Pagamento', 'Etiq.', 'Ações'].map(h => {
+                    const isSortable = h === 'Nome' || h === 'Campo' || h === 'Pagamento';
+                    const keyMap: Record<string, 'nome' | 'campo' | 'pagamento'> = {
+                      'Nome': 'nome',
+                      'Campo': 'campo',
+                      'Pagamento': 'pagamento'
+                    };
+                    const fieldKey = keyMap[h];
+                    return (
+                      <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-600 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span>{h}</span>
+                          {isSortable && (
+                            <input
+                              type="checkbox"
+                              checked={ordenacao === fieldKey}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setOrdenacao(fieldKey);
+                                } else {
+                                  setOrdenacao(null);
+                                }
+                              }}
+                              className="w-3 h-3 text-[#123b63] border-gray-300 rounded focus:ring-[#123b63] focus:ring-offset-0 cursor-pointer"
+                              title="Classificar em ordem alfabética"
+                            />
+                          )}
+                        </div>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
