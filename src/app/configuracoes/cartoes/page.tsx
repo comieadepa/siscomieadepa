@@ -226,7 +226,8 @@ export default function ConfiguracaoCartoesPage() {
       if (typeof window === 'undefined') return;
 
       // 1. Tentar carregar do localStorage (salvo mais recentemente pelo usuário)
-      const localCached = localStorage.getItem('cartoes_templates_v3');
+      localStorage.removeItem('cartoes_templates_v3');
+      const localCached = localStorage.getItem('cartoes_templates_v4');
       if (localCached) {
         try {
           const cached = JSON.parse(localCached) as any[];
@@ -235,7 +236,7 @@ export default function ConfiguracaoCartoesPage() {
           const nativoAtualizado = !nativoEmCache || nativoEmCache.backgroundUrl === '/img/cred_minf.png';
           if (!nativoAtualizado) {
             // Template nativo mudou — limpar cache para forçar rebuild
-            localStorage.removeItem('cartoes_templates_v3');
+            localStorage.removeItem('cartoes_templates_v4');
           } else if (Array.isArray(cached) && cached.length > 0) {
             setTemplates(cached);
             const ativoLocal = cached.find((t: any) => t.ativo && t.tipoCadastro === 'ministro');
@@ -250,7 +251,7 @@ export default function ConfiguracaoCartoesPage() {
             }
           }
         } catch {
-          localStorage.removeItem('cartoes_templates_v3');
+          localStorage.removeItem('cartoes_templates_v4');
         }
       }
 
@@ -684,7 +685,7 @@ export default function ConfiguracaoCartoesPage() {
     setTemplates(novasTemplates);
 
     // Limpar cache local ao resetar para nativo
-    try { localStorage.removeItem('cartoes_templates_v3'); } catch { /* ignore */ }
+    try { localStorage.removeItem('cartoes_templates_v4'); } catch { /* ignore */ }
 
     if (ministryId) {
       persistTemplatesSnapshotToSupabase(supabase, ministryId, (templateEmEdicao.tipoCadastro as TipoCartao) || 'ministro', novasTemplates)
@@ -806,7 +807,7 @@ export default function ConfiguracaoCartoesPage() {
 
     // Cache local confiável (fonte primária ao recarregar)
     try {
-      localStorage.setItem('cartoes_templates_v3', JSON.stringify(novasTemplates));
+      localStorage.setItem('cartoes_templates_v4', JSON.stringify(novasTemplates));
     } catch { /* ignore */ }
 
     if (ministryId) {

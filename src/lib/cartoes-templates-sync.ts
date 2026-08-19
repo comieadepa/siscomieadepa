@@ -298,7 +298,7 @@ export async function loadTemplatesForCurrentUser(
 }
 
 /**
- * Versão com cache local: lê cartoes_templates_v3 do localStorage primeiro.
+ * Versão com cache local: lê cartoes_templates_v4 do localStorage primeiro.
  * Use esta função nos componentes de impressão/visualização.
  */
 export async function loadTemplatesWithLocalCache(
@@ -307,7 +307,9 @@ export async function loadTemplatesWithLocalCache(
 ): Promise<{ templates: any[]; ministryId: string | null }> {
   if (typeof window !== 'undefined') {
     try {
-      const cached = localStorage.getItem('cartoes_templates_v3');
+      // Invalidação: Remove o cache antigo v3 se existir
+      localStorage.removeItem('cartoes_templates_v3');
+      const cached = localStorage.getItem('cartoes_templates_v4');
       if (cached) {
         const parsed = JSON.parse(cached) as any[];
         if (Array.isArray(parsed) && parsed.length > 0) {

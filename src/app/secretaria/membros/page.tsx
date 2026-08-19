@@ -381,7 +381,8 @@ export default function MembrosPage() {
     // Priorizar cache local (salvo pelo editor de cartões)
     if (typeof window !== 'undefined') {
       try {
-        const cached = localStorage.getItem('cartoes_templates_v3');
+        localStorage.removeItem('cartoes_templates_v3');
+        const cached = localStorage.getItem('cartoes_templates_v4');
         if (cached) {
           const parsed = JSON.parse(cached) as any[];
           if (Array.isArray(parsed) && parsed.length > 0) {
