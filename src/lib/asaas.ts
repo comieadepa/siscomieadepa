@@ -245,6 +245,7 @@ export interface AsaasEventoPaymentResult {
   bankSlipUrl: string | null;
   pixQrCode: string | null;
   pixCopiaECola: string | null;
+  installment?: string | null;
 }
 
 /**
@@ -327,17 +328,34 @@ export const createEventoPayment = async (payload: {
   dueDate: string;
   description: string;
   externalReference: string;
+  billingType?: string;
+  installmentCount?: number;
+  totalValue?: number;
+  installmentValue?: number;
 }): Promise<AsaasEventoPaymentResult> => {
+  const isParcelado = typeof payload.installmentCount === 'number' && payload.installmentCount >= 2;
+
+  const body: Record<string, unknown> = {
+    customer: payload.customerId,
+    billingType: payload.billingType || 'UNDEFINED',
+    dueDate: payload.dueDate,
+    description: payload.description,
+    externalReference: payload.externalReference,
+  };
+
+  if (isParcelado) {
+    body.installmentCount = payload.installmentCount;
+    body.totalValue = payload.totalValue ?? payload.value;
+    if (typeof payload.installmentValue === 'number' && payload.installmentValue > 0) {
+      body.installmentValue = payload.installmentValue;
+    }
+  } else {
+    body.value = payload.value;
+  }
+
   const payment = await asaasFetch('/payments', {
     method: 'POST',
-    body: JSON.stringify({
-      customer: payload.customerId,
-      billingType: 'UNDEFINED',
-      value: payload.value,
-      dueDate: payload.dueDate,
-      description: payload.description,
-      externalReference: payload.externalReference,
-    }),
+    body: JSON.stringify(body),
   });
 
   // Busca QR Code PIX separadamente
@@ -358,6 +376,7 @@ export const createEventoPayment = async (payload: {
     bankSlipUrl:   payment.bankSlipUrl   ?? null,
     pixQrCode,
     pixCopiaECola,
+    installment:   payment.installment   ?? null,
   };
 };
 

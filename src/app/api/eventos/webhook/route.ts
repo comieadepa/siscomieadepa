@@ -272,9 +272,9 @@ export async function POST(request: NextRequest) {
     }
 
     // 4b. Localiza inscrição individual pelo asaas_payment_id
-    const { data: ins, error: findErr } = await supabase
+    let { data: ins, error: findErr } = await supabase
       .from('evento_inscricoes')
-      .select('id, status_pagamento, evento_id, ministro_id, cpf, tipo_inscricao')
+      .select('id, status_pagamento, evento_id, ministro_id, cpf, tipo_inscricao, valor_final')
       .eq('asaas_payment_id', asaasId)
       .maybeSingle();
 
@@ -282,6 +282,21 @@ export async function POST(request: NextRequest) {
       console.error('[EVENTOS WEBHOOK] Erro ao buscar inscrição:', findErr.message);
       console.timeEnd("ASAAS_WEBHOOK_TOTAL");
       return NextResponse.json({ error: findErr.message }, { status: 500 });
+    }
+
+    // Fallback: se não encontrou por asaas_payment_id, busca por externalReference (UUID da inscrição)
+    if (!ins && extRef && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(extRef)) {
+      const { data: insByRef, error: findRefErr } = await supabase
+        .from('evento_inscricoes')
+        .select('id, status_pagamento, evento_id, ministro_id, cpf, tipo_inscricao, valor_final')
+        .eq('id', extRef)
+        .maybeSingle();
+
+      if (findRefErr) {
+        console.error('[EVENTOS WEBHOOK] Erro ao buscar inscrição por fallback externalReference:', findRefErr.message);
+      } else if (insByRef) {
+        ins = insByRef;
+      }
     }
 
     if (!ins) {
@@ -310,7 +325,11 @@ export async function POST(request: NextRequest) {
     };
 
     if (novoStatus === 'pago') {
-      updateData.valor_pago    = payment?.value ?? 0;
+      const valorRecebido = payment?.value ?? 0;
+      updateData.valor_pago =
+        ins.valor_final && ins.valor_final > valorRecebido
+          ? ins.valor_final
+          : valorRecebido;
       updateData.comprovante_url = payment?.transactionReceiptUrl ?? null;
     }
 

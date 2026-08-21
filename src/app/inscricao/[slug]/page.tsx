@@ -359,6 +359,9 @@ export default function InscricaoPublicaPage() {
   const [participantesExtra,setParticipantesExtra] = useState<ParticipanteExtra[]>([]);
   const [extrasMinisteriais, setExtrasMinisteriais] = useState<ExtraMinisterialInfo[]>([]);
 
+  // Opção de pagamento selecionada pelo participante
+  const [opcaoPagamento, setOpcaoPagamento] = useState<'pix' | 'cartao_3x'>('pix');
+
   // Confirmação + pagamento
   const [confirmacao,    setConfirmacao]    = useState<{
     qr_code: string;
@@ -373,7 +376,9 @@ export default function InscricaoPublicaPage() {
       pixCopiaECola: string | null;
       valor: number;
       vencimento: string;
+      installment?: string | null;
     } | null;
+    opcaoPagamentoUsada?: 'pix' | 'cartao_3x';
     asaasError?: string;
   } | null>(null);
   const [totalInscritos, setTotalInscritos] = useState(0);
@@ -451,6 +456,9 @@ export default function InscricaoPublicaPage() {
     setTipos(tiposLimpos);
 
     setEvento(ev);
+    if (!ev.usar_tipos_inscricao && ev.permite_hospedagem) {
+      setSolicitaHospedagem(true);
+    }
     setSupervisoes((estrutura?.supervisoes as Supervisao[]) || []);
     // Campos serão carregados on-demand ao selecionar supervisão
     setCampos([]);
@@ -1299,6 +1307,7 @@ export default function InscricaoPublicaPage() {
         qr_code:         qr,
         tipo_inscricao:  tipoSelecionado?.nome ?? null,
         cupom_codigo:    cupomStatus === 'ok' && cupomCodigo ? cupomCodigo.toUpperCase() : null,
+        opcao_pagamento: opcaoPagamento,
         // Campos hospedagem AGO
         hosp_necessidade_especial:  form.hosp_necessidade_especial,
         hosp_descricao_necessidade: form.hosp_descricao_necessidade.trim() || null,
@@ -1365,13 +1374,14 @@ export default function InscricaoPublicaPage() {
         throw new Error(msg || 'Erro ao realizar inscrição');
       }
       setConfirmacao({
-        qr_code:         qr,
-        inscricaoId:     json.inscricaoId,
-        loteId:          json.loteId,
-        qtdLote:         json.inscricoes,
-        statusPagamento: json.statusPagamento,
-        pagamento:       json.pagamento ?? null,
-        asaasError:      json.asaasError,
+        qr_code:             qr,
+        inscricaoId:         json.inscricaoId,
+        loteId:              json.loteId,
+        qtdLote:             json.inscricoes,
+        statusPagamento:     json.statusPagamento,
+        pagamento:           json.pagamento ?? null,
+        opcaoPagamentoUsada: opcaoPagamento,
+        asaasError:          json.asaasError,
       });
     } catch (err: unknown) {
       setErroForm('Erro ao realizar inscrição: ' + (err instanceof Error ? err.message : String(err)));
@@ -1517,15 +1527,36 @@ export default function InscricaoPublicaPage() {
                       </div>
                     )}
 
-                    {/* Link de pagamento alternativo */}
+                    {/* Link de pagamento / Destaque para cartão 3x */}
                     {pag.invoiceUrl && (
                       <div className="border-t border-gray-100 pt-4">
-                        <p className="text-xs text-gray-500 mb-2 text-center">Prefere pagar de outra forma?</p>
-                        <a href={pag.invoiceUrl} target="_blank" rel="noopener noreferrer"
-                          className="flex items-center justify-center gap-2 w-full bg-white border-2 border-[#123b63] text-[#123b63] font-semibold text-sm py-2.5 rounded-xl hover:bg-[#123b63] hover:text-white transition">
-                          💳 Abrir link de pagamento
-                        </a>
-                        <p className="text-center text-xs text-gray-400 mt-1">PIX, boleto, cartão de crédito</p>
+                        {confirmacao.opcaoPagamentoUsada === 'cartao_3x' ? (
+                          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                            <p className="text-xs font-bold text-[#123b63] mb-1">
+                              💳 Pagamento via Cartão de Crédito (3x de {fmtMoeda(pag.valor / 3)})
+                            </p>
+                            <p className="text-xs text-gray-600 mb-3">
+                              Clique no botão abaixo para concluir o pagamento em até 3x no ambiente seguro do Asaas:
+                            </p>
+                            <a
+                              href={pag.invoiceUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center justify-center gap-2 w-full bg-[#123b63] text-white font-bold text-sm py-3 rounded-xl hover:bg-[#0f2a45] shadow-sm transition"
+                            >
+                              💳 Pagar com cartão em 3x
+                            </a>
+                          </div>
+                        ) : (
+                          <>
+                            <p className="text-xs text-gray-500 mb-2 text-center">Prefere pagar de outra forma?</p>
+                            <a href={pag.invoiceUrl} target="_blank" rel="noopener noreferrer"
+                              className="flex items-center justify-center gap-2 w-full bg-white border-2 border-[#123b63] text-[#123b63] font-semibold text-sm py-2.5 rounded-xl hover:bg-[#123b63] hover:text-white transition">
+                              💳 Abrir link de pagamento
+                            </a>
+                            <p className="text-center text-xs text-gray-400 mt-1">PIX, boleto, cartão de crédito</p>
+                          </>
+                        )}
                       </div>
                     )}
 
@@ -2037,7 +2068,13 @@ export default function InscricaoPublicaPage() {
             {/* Campos de hospedagem (opt-in) */}
             {podeHospedagem && (
               <div className="mb-6">
-                {!(tipoSelecionado && tipoSelecionado.inclui_hospedagem && evento.departamento !== 'AGO') && (
+                {(!evento.usar_tipos_inscricao && evento.permite_hospedagem) || (tipoSelecionado && tipoSelecionado.inclui_hospedagem && evento.departamento !== 'AGO') ? (
+                  <div className="mb-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                    <p className="text-sm font-semibold text-emerald-800 flex items-center gap-2">
+                      🛏️ Hospedagem e Alimentação inclusas neste evento.
+                    </p>
+                  </div>
+                ) : (
                   <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
                     <label className="flex items-center gap-3 cursor-pointer">
                       <input type="checkbox" id="solicita_hospedagem"
@@ -2363,6 +2400,12 @@ export default function InscricaoPublicaPage() {
                   <span>Total a pagar</span>
                   <span>{modoLote && qtdTotal > 1 ? fmtMoeda(totalLote) : fmtMoeda(incluirEsposa ? totalComEsposa : valorFinal)}</span>
                 </div>
+                {opcaoPagamento === 'cartao_3x' && (modoLote && qtdTotal > 1 ? totalLote : (incluirEsposa ? totalComEsposa : valorFinal)) > 0 && (
+                  <div className="flex justify-between text-xs text-[#123b63] font-semibold mt-2 pt-2 border-t border-[#123b63]/15">
+                    <span>Forma de pagamento</span>
+                    <span>Cartão de crédito — 3x de {fmtMoeda((modoLote && qtdTotal > 1 ? totalLote : (incluirEsposa ? totalComEsposa : valorFinal)) / 3)}</span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2610,6 +2653,58 @@ export default function InscricaoPublicaPage() {
                   className="w-full py-2.5 border-2 border-dashed border-[#123b63]/40 text-[#123b63] text-sm font-semibold rounded-xl hover:border-[#123b63] hover:bg-[#123b63]/5 transition">
                   ➕ Adicionar participante
                 </button>
+              </div>
+            )}
+
+            {/* Seletor da Forma de Pagamento */}
+            {(evento.valor_inscricao > 0 || (modoLote && qtdTotal > 1 ? totalLote : (incluirEsposa ? totalComEsposa : valorFinal)) > 0) && (
+              <div className="mb-5 p-4 bg-white rounded-xl border border-gray-200 shadow-sm">
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5">
+                  💳 Escolha a Forma de Pagamento
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setOpcaoPagamento('pix')}
+                    className={`flex items-center gap-3 p-3 rounded-xl border text-left transition ${
+                      opcaoPagamento === 'pix'
+                        ? 'border-[#123b63] bg-[#123b63]/5 ring-2 ring-[#123b63]/20'
+                        : 'border-gray-200 hover:border-gray-300 bg-white'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${
+                      opcaoPagamento === 'pix' ? 'border-[#123b63] bg-[#123b63]' : 'border-gray-300'
+                    }`}>
+                      {opcaoPagamento === 'pix' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-gray-900">📱 PIX à vista</p>
+                      <p className="text-[11px] text-gray-500">QR Code e código copia e cola</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setOpcaoPagamento('cartao_3x')}
+                    className={`flex items-center gap-3 p-3 rounded-xl border text-left transition ${
+                      opcaoPagamento === 'cartao_3x'
+                        ? 'border-[#123b63] bg-[#123b63]/5 ring-2 ring-[#123b63]/20'
+                        : 'border-gray-200 hover:border-gray-300 bg-white'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${
+                      opcaoPagamento === 'cartao_3x' ? 'border-[#123b63] bg-[#123b63]' : 'border-gray-300'
+                    }`}>
+                      {opcaoPagamento === 'cartao_3x' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-gray-900">💳 Cartão de crédito em 3x</p>
+                      <p className="text-[11px] text-gray-500">
+                        3x de {fmtMoeda((modoLote && qtdTotal > 1 ? totalLote : (incluirEsposa ? totalComEsposa : valorFinal)) / 3)}
+                      </p>
+                    </div>
+                  </button>
+                </div>
               </div>
             )}
 

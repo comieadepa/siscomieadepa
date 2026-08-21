@@ -293,6 +293,17 @@ export async function POST(request: NextRequest) {
       visitante,
     } = body;
 
+    const rawOpcao = (body as any).opcao_pagamento || (body as any).forma_pagamento;
+    const opcao_pagamento = String(rawOpcao || '').trim().toLowerCase();
+
+    if (opcao_pagamento && !['pix', 'cartao_3x'].includes(opcao_pagamento)) {
+      return buildErrorResponse(400, {
+        error: 'Opção de pagamento inválida. Opções aceitas: pix, cartao_3x.',
+        stage: 'validacao_opcao_pagamento',
+        payloadResumo,
+      });
+    }
+
     const hospPossuiComorbidade = !!(body as any).hosp_possui_comorbidade;
     const hospDescricaoComorbidade = ((body as any).hosp_descricao_comorbidade as string)?.trim() || null;
     let hospCamaInferiorAuto = false;
@@ -1844,12 +1855,27 @@ export async function POST(request: NextRequest) {
         whatsapp: whatsapp || null,
       });
 
+      const isCartao3x = opcao_pagamento === 'cartao_3x';
+
+      if (isCartao3x && valorFinal <= 0) {
+        return buildErrorResponse(400, {
+          error: 'Valor total inválido para parcelamento em cartão.',
+          stage: 'validacao_valor_cartao_3x',
+          payloadResumo,
+        });
+      }
+
       const pagamento = await createEventoPayment({
         customerId,
         value:             valorFinal,
         dueDate:           dueDateFromNow(),
         description:       `Inscrição — ${evento.nome}${tipoNome ? ` (${tipoNome})` : ''}`,
         externalReference: inscricao.id,
+        ...(isCartao3x ? {
+          billingType:      'CREDIT_CARD',
+          installmentCount: 3,
+          totalValue:       valorFinal,
+        } : {}),
       });
 
       // Salva dados ASAAS na inscrição
@@ -1859,7 +1885,7 @@ export async function POST(request: NextRequest) {
         .from('evento_inscricoes')
         .update({
           asaas_payment_id: pagamento.id,
-          forma_pagamento:  'pix',
+          forma_pagamento:  isCartao3x ? 'cartao' : 'pix',
           invoice_url:      pagamento.invoiceUrl,
           pix_copia_cola:   pagamento.pixCopiaECola,
           pix_qr_code:      pagamento.pixQrCode,
@@ -1876,7 +1902,7 @@ export async function POST(request: NextRequest) {
         entidadeId: inscricao.id,
         descricao: `[Público] Nova inscrição (pago): ${nome_inscrito} — ${evento.nome}`,
         request,
-      })
+      });
 
       return NextResponse.json({
         inscricaoId:     inscricao.id,
@@ -1888,6 +1914,7 @@ export async function POST(request: NextRequest) {
           pixCopiaECola:pagamento.pixCopiaECola,
           valor:        valorFinal,
           vencimento:   dueDate,
+          ...(pagamento.installment ? { installment: pagamento.installment } : {}),
         },
       });
     } catch (asaasErr) {
