@@ -98,6 +98,7 @@ interface Evento {
   suporte_nome: string | null;
   suporte_whatsapp: string | null;
   configuracoes_ago?: { enabled?: boolean; grupos?: string[]; leitos_inferiores_preferenciais?: boolean; preferencia_60_mais?: boolean; preferencia_necessidade_especial?: boolean; observacoes?: string; habilitar_desconto_campo_missionario?: boolean; valor_pastor_presidente_campo_missionario?: number | string; campo_missionario?: { enabled?: boolean; valor_pastor_presidente?: number | string; valor_esposa?: number | string; } | null; } | null;
+  tipo_inscricao_avulso?: 'individual' | 'casal' | 'individual_casal' | null;
   possuiCupomAtivo?: boolean;
 }
 
@@ -456,6 +457,14 @@ export default function InscricaoPublicaPage() {
     setTipos(tiposLimpos);
 
     setEvento(ev);
+    if (!['AGO', 'UMADESPA', 'SEIADEPA', 'COADESPA'].includes((ev.departamento || '').toUpperCase())) {
+      const modoAvulso = ev.tipo_inscricao_avulso || 'individual';
+      if (modoAvulso === 'casal') {
+        setIncluirEsposa(true);
+      } else if (modoAvulso === 'individual') {
+        setIncluirEsposa(false);
+      }
+    }
     if (!ev.usar_tipos_inscricao && ev.permite_hospedagem) {
       setSolicitaHospedagem(true);
     }
@@ -1827,8 +1836,8 @@ export default function InscricaoPublicaPage() {
 
 
 
-            {/* Seletor do tipo de inscrição (exclusivamente para Eventos Avulsos) */}
-            {isEventoAvulso && (
+            {/* Seletor do tipo de inscrição (exclusivamente para Eventos Avulsos quando configurado para escolha do participante) */}
+            {isEventoAvulso && evento?.tipo_inscricao_avulso === 'individual_casal' && (
               <div className="mb-5 p-4 bg-gray-50 rounded-xl border border-gray-200">
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5">
                   Tipo de Inscrição

@@ -40,6 +40,7 @@ interface FormData {
   status: string;
   suporte_nome: string;
   suporte_whatsapp: string;
+  tipo_inscricao_avulso: 'individual' | 'casal' | 'individual_casal';
 }
 
 interface TipoDraft {
@@ -83,7 +84,9 @@ const FORM_INICIAL: FormData = {
   gerar_certificado: false,
   inscricoes_abertas: false,
   status: 'programado',  suporte_nome: '',
-  suporte_whatsapp: '',};
+  suporte_whatsapp: '',
+  tipo_inscricao_avulso: 'individual',
+};
 
 // ─── Gerador de slug ─────────────────────────────────────────
 function gerarSlug(nome: string): string {
@@ -334,6 +337,7 @@ export default function NovoEventoPage() {
         limite_brindes:         form.limite_brindes ? parseInt(form.limite_brindes) : null,
         publico_alvo:           form.publico_alvo.trim() || null,
         status:                 form.status,
+        tipo_inscricao_avulso:  form.departamento === 'AVULSO' ? form.tipo_inscricao_avulso : 'individual',
       });
 
       const { data: novoEvento, error } = await supabase
@@ -636,6 +640,29 @@ export default function NovoEventoPage() {
             <h2 className="text-base font-bold text-[#123b63]">Inscrições</h2>
           </div>
           <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+
+            {/* Modalidade de Inscrição Avulsa (exclusivo para departamento AVULSO) */}
+            {form.departamento === 'AVULSO' && (
+              <div className="md:col-span-2 p-4 bg-blue-50/60 border border-blue-200 rounded-xl">
+                <label className={labelClass} htmlFor="tipo_inscricao_avulso">
+                  Modalidade de Inscrição do Evento Avulso
+                </label>
+                <select
+                  id="tipo_inscricao_avulso"
+                  name="tipo_inscricao_avulso"
+                  value={form.tipo_inscricao_avulso}
+                  onChange={handleText}
+                  className={selectClass}
+                >
+                  <option value="individual">Individual — somente inscrição individual</option>
+                  <option value="casal">Casal — somente inscrição de casal</option>
+                  <option value="individual_casal">Individual ou Casal — participante escolhe na hora da inscrição</option>
+                </select>
+                <p className="mt-1 text-xs text-blue-700">
+                  Define se o evento aceitará inscrições individuais, de casal ou se dará a opção de escolha no formulário público.
+                </p>
+              </div>
+            )}
 
             {/* Toggle: valor único ou tipos */}
             <div className="md:col-span-2">

@@ -40,6 +40,7 @@ interface FormData {
   status: string;
   suporte_nome: string;
   suporte_whatsapp: string;
+  tipo_inscricao_avulso: 'individual' | 'casal' | 'individual_casal';
 }
 
 interface TipoDraft {
@@ -155,6 +156,7 @@ const FORM_INICIAL: FormData = {
   status: 'programado',
   suporte_nome: '',
   suporte_whatsapp: '',
+  tipo_inscricao_avulso: 'individual',
 };
 
 async function loadImageFromFile(file: File): Promise<HTMLImageElement> {
@@ -308,6 +310,7 @@ export default function EditarEventoPage() {
         status: data.status ?? 'programado',
         suporte_nome: data.suporte_nome ?? '',
         suporte_whatsapp: data.suporte_whatsapp ?? '',
+        tipo_inscricao_avulso: data.tipo_inscricao_avulso || 'individual',
       });
       if (data.banner_url) setBannerPreview(data.banner_url);
 
@@ -535,6 +538,7 @@ export default function EditarEventoPage() {
         limite_brindes:         form.limite_brindes ? parseInt(form.limite_brindes) : null,
         publico_alvo:           form.publico_alvo.trim() || null,
         status:                 form.status,
+        tipo_inscricao_avulso:  form.departamento === 'AVULSO' ? form.tipo_inscricao_avulso : 'individual',
         configuracoes_ago:      isAGO ? { ...agoHospConfig, enabled: true, campo_missionario: agoHospConfig.habilitar_desconto_campo_missionario ? { enabled: true, valor_pastor_presidente: parseFloat(agoHospConfig.valor_pastor_presidente_campo_missionario) || 0, valor_esposa: parseFloat(agoHospConfig.valor_esposa_campo_missionario) || 0 } : null } : null,
       });
 
@@ -993,6 +997,28 @@ export default function EditarEventoPage() {
               </div>
             ) : (
               <>
+                {form.departamento === 'AVULSO' && (
+                  <div className="md:col-span-2 p-4 bg-blue-50/60 border border-blue-200 rounded-xl mb-2">
+                    <label className={labelClass} htmlFor="tipo_inscricao_avulso">
+                      Modalidade de Inscrição do Evento Avulso
+                    </label>
+                    <select
+                      id="tipo_inscricao_avulso"
+                      name="tipo_inscricao_avulso"
+                      value={form.tipo_inscricao_avulso}
+                      onChange={handleText}
+                      className={selectClass}
+                    >
+                      <option value="individual">Individual — somente inscrição individual</option>
+                      <option value="casal">Casal — somente inscrição de casal</option>
+                      <option value="individual_casal">Individual ou Casal — participante escolhe na hora da inscrição</option>
+                    </select>
+                    <p className="mt-1 text-xs text-blue-700">
+                      Define se o evento aceitará inscrições individuais, de casal ou se dará a opção de escolha no formulário público.
+                    </p>
+                  </div>
+                )}
+
                 <div className="md:col-span-2">
                   <CheckboxField
                     name="usar_tipos_inscricao"
