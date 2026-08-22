@@ -458,7 +458,7 @@ export default function InscricaoPublicaPage() {
 
     setEvento(ev);
     if (!['AGO', 'UMADESPA', 'SEIADEPA', 'COADESPA'].includes((ev.departamento || '').toUpperCase())) {
-      const modoAvulso = ev.tipo_inscricao_avulso || 'individual';
+      const modoAvulso = (ev.tipo_inscricao_avulso || 'individual').toLowerCase();
       if (modoAvulso === 'casal') {
         setIncluirEsposa(true);
       } else if (modoAvulso === 'individual') {
@@ -1843,7 +1843,7 @@ export default function InscricaoPublicaPage() {
 
 
             {/* Seletor do tipo de inscrição (exclusivamente para Eventos Avulsos quando configurado para escolha do participante) */}
-            {isEventoAvulso && evento?.tipo_inscricao_avulso === 'individual_casal' && (
+            {isEventoAvulso && (evento?.tipo_inscricao_avulso || '').toLowerCase() === 'individual_casal' && (
               <div className="mb-5 p-4 bg-gray-50 rounded-xl border border-gray-200">
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5">
                   Tipo de Inscrição

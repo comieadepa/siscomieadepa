@@ -310,7 +310,7 @@ export default function EditarEventoPage() {
         status: data.status ?? 'programado',
         suporte_nome: data.suporte_nome ?? '',
         suporte_whatsapp: data.suporte_whatsapp ?? '',
-        tipo_inscricao_avulso: data.tipo_inscricao_avulso || 'individual',
+        tipo_inscricao_avulso: (data.tipo_inscricao_avulso || 'individual').toLowerCase() as any,
       });
       if (data.banner_url) setBannerPreview(data.banner_url);
 

@@ -63,6 +63,7 @@ const DENY_TOKENS = [
   'pagamento',
   'checkin',
   'sexo',
+  'tipo_inscricao_avulso',
 ];
 
 export function normalizeUppercase(value: string): string {
