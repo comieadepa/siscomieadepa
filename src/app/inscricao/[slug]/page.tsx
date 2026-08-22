@@ -2026,19 +2026,11 @@ export default function InscricaoPublicaPage() {
               )
             )}
 
-            {/* Serviços opcionais (apenas se não houver tipos configurados) */}
-            {!evento.usar_tipos_inscricao && (evento.permite_hospedagem || evento.permite_brinde) && (
+            {/* Serviços opcionais (apenas se houver brinde configurado) */}
+            {!evento.usar_tipos_inscricao && evento.permite_brinde && (
               <div className="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
                 <p className="text-sm font-semibold text-gray-700 mb-3">Serviços adicionais</p>
                 <div className="flex flex-wrap gap-4">
-                  {evento.permite_hospedagem && (
-                    <div>
-                      <ChkPublico name="hospedagem"  label="🛏️ Hospedagem"  checked={form.hospedagem}  onChange={handleCheck} />
-                      {vagasHospedagem !== null && (
-                        <p className="text-xs text-gray-500 mt-1 ml-6">{vagasHospedagem} vagas restantes</p>
-                      )}
-                    </div>
-                  )}
                   {evento.permite_brinde && (
                     <ChkPublico name="brinde"      label="🎁 Brinde"       checked={form.brinde}      onChange={handleCheck} />
                   )}
