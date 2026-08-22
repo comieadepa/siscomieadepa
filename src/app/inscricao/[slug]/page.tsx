@@ -2065,37 +2065,53 @@ export default function InscricaoPublicaPage() {
               </div>
             )}
 
-            {/* Campos de hospedagem (opt-in) */}
-            {podeHospedagem && (
-              <div className="mb-6">
-                {(!evento.usar_tipos_inscricao && evento.permite_hospedagem) || (tipoSelecionado && tipoSelecionado.inclui_hospedagem && evento.departamento !== 'AGO') ? (
-                  <div className="mb-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
-                    <p className="text-sm font-semibold text-emerald-800 flex items-center gap-2">
-                      🛏️ Hospedagem e Alimentação inclusas neste evento.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input type="checkbox" id="solicita_hospedagem"
-                        checked={solicitaHospedagem}
-                        onChange={e => setSolicitaHospedagem(e.target.checked)}
-                        className="accent-[#123b63]" />
-                      <div>
-                        <span className="text-sm font-semibold text-gray-700">🛏️ Desejo solicitar hospedagem</span>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          A solicitação não garante alocação. A organização fará a distribuição conforme disponibilidade.
-                          {evento.departamento === 'AGO' && mainGroup ? (mainGroup === 'Misto' ? ' (Informe sexo/data/perfil para verificar vagas de hospedagem.)' : ` (Grupo: ${mainGroup} - ${mainVagasGrupo} vagas restantes)`) : (vagasHospedagem !== null && ` (${vagasHospedagem} vagas restantes)`)}
-                        </p>
-                        {mainGrupoEsgotado && mainGroup !== 'Misto' && (
-                          <p className="text-xs text-red-600 font-bold mt-1.5">
-                            ⚠️ Não há mais vagas de hospedagem disponíveis para o grupo {mainGroup}. Você ainda pode concluir a inscrição sem hospedagem.
+            {/* Campos de hospedagem (opt-in ou inclusa) */}
+            {(() => {
+              const hospedagemInclusa = (!evento.usar_tipos_inscricao && !!evento.permite_hospedagem) || (!!tipoSelecionado && !!tipoSelecionado.inclui_hospedagem && evento.departamento !== 'AGO');
+              const alimentacaoInclusa = (evento.departamento === 'AGO') || (!evento.usar_tipos_inscricao && !!evento.permite_alimentacao) || (!!tipoSelecionado && !!tipoSelecionado.inclui_alimentacao);
+
+              const textoInclusos = hospedagemInclusa && alimentacaoInclusa
+                ? '🛏️ Hospedagem e Alimentação inclusas neste evento.'
+                : hospedagemInclusa
+                ? '🛏️ Hospedagem inclusa neste evento.'
+                : alimentacaoInclusa
+                ? '🍽️ Alimentação inclusa neste evento.'
+                : null;
+
+              if (!textoInclusos && !podeHospedagem) return null;
+
+              return (
+                <div className="mb-6">
+                  {textoInclusos && (
+                    <div className="mb-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                      <p className="text-sm font-semibold text-emerald-800 flex items-center gap-2">
+                        {textoInclusos}
+                      </p>
+                    </div>
+                  )}
+
+                  {!hospedagemInclusa && podeHospedagem && (
+                    <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input type="checkbox" id="solicita_hospedagem"
+                          checked={solicitaHospedagem}
+                          onChange={e => setSolicitaHospedagem(e.target.checked)}
+                          className="accent-[#123b63]" />
+                        <div>
+                          <span className="text-sm font-semibold text-gray-700">🛏️ Desejo solicitar hospedagem</span>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            A solicitação não garante alocação. A organização fará a distribuição conforme disponibilidade.
+                            {evento.departamento === 'AGO' && mainGroup ? (mainGroup === 'Misto' ? ' (Informe sexo/data/perfil para verificar vagas de hospedagem.)' : ` (Grupo: ${mainGroup} - ${mainVagasGrupo} vagas restantes)`) : (vagasHospedagem !== null && ` (${vagasHospedagem} vagas restantes)`)}
                           </p>
-                        )}
-                      </div>
-                    </label>
-                  </div>
-                )}
+                          {mainGrupoEsgotado && mainGroup !== 'Misto' && (
+                            <p className="text-xs text-red-600 font-bold mt-1.5">
+                              ⚠️ Não há mais vagas de hospedagem disponíveis para o grupo {mainGroup}. Você ainda pode concluir a inscrição sem hospedagem.
+                            </p>
+                          )}
+                        </div>
+                      </label>
+                    </div>
+                  )}
 
                 {/* Detalhes de hospedagem: aparece somente quando o usuário solicitar e for evento AGO */}
                 {evento.departamento === 'AGO' && solicitaHospedagem && (
@@ -2183,7 +2199,8 @@ export default function InscricaoPublicaPage() {
                   </div>
                 )}
               </div>
-            )}
+            );
+          })()}
 
             {/* Badge Campo Missionário */}
             {descontoCampoMissionario && isPastorPresidenteTipo && (
@@ -2550,12 +2567,24 @@ export default function InscricaoPublicaPage() {
 
                       {(() => {
                         const tipoExtra = tipos.find(t => t.nome === p.tipo_inscricao);
+                        const extraHospInclusa = (!evento.usar_tipos_inscricao && !!evento.permite_hospedagem) || (!!tipoExtra && !!tipoExtra.inclui_hospedagem && evento.departamento !== 'AGO');
+                        const extraAlimInclusa = (evento.departamento === 'AGO') || (!evento.usar_tipos_inscricao && !!evento.permite_alimentacao) || (!!tipoExtra && !!tipoExtra.inclui_alimentacao);
+
                         const podeHospedagemExtra = !!evento.permite_hospedagem && (
                           evento.departamento === 'AGO'
                             ? true
                             : (tipoExtra ? !!tipoExtra.inclui_hospedagem : !evento.usar_tipos_inscricao)
                         );
-                        if (!podeHospedagemExtra) return null;
+
+                        const textoInclusosExtra = extraHospInclusa && extraAlimInclusa
+                          ? '🛏️ Hospedagem e Alimentação inclusas.'
+                          : extraHospInclusa
+                          ? '🛏️ Hospedagem inclusa.'
+                          : extraAlimInclusa
+                          ? '🍽️ Alimentação inclusa.'
+                          : null;
+
+                        if (!textoInclusosExtra && !podeHospedagemExtra) return null;
 
                         const extraGroup = resolveGrupoHospedagemAGO({
                           sexo: p.sexo || null,
@@ -2569,7 +2598,13 @@ export default function InscricaoPublicaPage() {
 
                         return (
                           <div className="sm:col-span-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                            {!(tipoExtra && tipoExtra.inclui_hospedagem && evento.departamento !== 'AGO') && (
+                            {textoInclusosExtra && (
+                              <div className="mb-2 text-xs font-bold text-emerald-800 flex items-center gap-1.5">
+                                {textoInclusosExtra}
+                              </div>
+                            )}
+
+                            {!extraHospInclusa && podeHospedagemExtra && (
                               <label className="flex items-start gap-3 cursor-pointer select-none">
                                 <input
                                   type="checkbox"
