@@ -457,7 +457,10 @@ export default function InscricaoPublicaPage() {
     setTipos(tiposLimpos);
 
     setEvento(ev);
-    if (!['AGO', 'UMADESPA', 'SEIADEPA', 'COADESPA'].includes((ev.departamento || '').toUpperCase())) {
+    const isAvulsoEv = !['AGO', 'UMADESPA', 'SEIADEPA', 'COADESPA'].includes((ev.departamento || '').toUpperCase());
+    if (isAvulsoEv) {
+      setModoLote(false);
+      setParticipantesExtra([]);
       const modoAvulso = (ev.tipo_inscricao_avulso || 'individual').toLowerCase();
       if (modoAvulso === 'casal') {
         setIncluirEsposa(true);
@@ -592,12 +595,18 @@ export default function InscricaoPublicaPage() {
         setIncluirEsposa(false);
         setFormEsposa({ ...FORM_ESPOSA_VAZIO });
         setHospEsposa({ ...HOSP_ESPOSA_VAZIO });
-      } else if (payload.nome_conjuge || payload.cpf_conjuge) {
-        setFormEsposa(f => ({
-          ...f,
-          nome: f.nome || payload.nome_conjuge || '',
-          cpf: f.cpf || (payload.cpf_conjuge ? formatarCPF(payload.cpf_conjuge) : ''),
-        }));
+      } else {
+        const modoAvulsoEv = (evento?.tipo_inscricao_avulso || 'individual').toLowerCase();
+        if (modoAvulsoEv === 'casal') {
+          setIncluirEsposa(true);
+        }
+        if (payload.nome_conjuge || payload.cpf_conjuge) {
+          setFormEsposa(f => ({
+            ...f,
+            nome: f.nome || payload.nome_conjuge || '',
+            cpf: f.cpf || (payload.cpf_conjuge ? formatarCPF(payload.cpf_conjuge) : ''),
+          }));
+        }
       }
 
       setForm(f => ({
@@ -615,9 +624,13 @@ export default function InscricaoPublicaPage() {
       setMinistroInfo(null);
       setEsposaJubiladoAuto(null);
       setDescontoCampoMissionario(false);
-      setIncluirEsposa(false);
-      setFormEsposa({ ...FORM_ESPOSA_VAZIO });
-      setHospEsposa({ ...HOSP_ESPOSA_VAZIO });
+      if (!isEventoAvulso) {
+        setIncluirEsposa(false);
+        setFormEsposa({ ...FORM_ESPOSA_VAZIO });
+        setHospEsposa({ ...HOSP_ESPOSA_VAZIO });
+      } else if ((evento?.tipo_inscricao_avulso || 'individual').toLowerCase() === 'casal') {
+        setIncluirEsposa(true);
+      }
     }
   }
 
@@ -2519,8 +2532,8 @@ export default function InscricaoPublicaPage() {
               </div>
             )}
 
-            {/* Inscrição em lote */}
-            {!fluxoCampoMissionarioEspecial && (
+            {/* Inscrição em lote (apenas para eventos de departamento fixo da convenção) */}
+            {!fluxoCampoMissionarioEspecial && !isEventoAvulso && (
               <div className="mb-5">
                 <button type="button" onClick={() => {
                   setModoLote(m => !m);
