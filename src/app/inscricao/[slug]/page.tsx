@@ -580,18 +580,24 @@ export default function InscricaoPublicaPage() {
         isCampoMissionario: campoMissionario,
       });
 
-      const podeEsposa = ministerioAtivo && isPP && campoMissionario;
-      if (podeEsposa) {
+      const podeEsposaAGO = isAGO && ministerioAtivo && isPP && campoMissionario;
+      if (podeEsposaAGO) {
         setFormEsposa({
           nome: payload.nome_conjuge || '',
           cpf: payload.cpf_conjuge ? formatarCPF(payload.cpf_conjuge) : '',
           data_nascimento: payload.data_nascimento_conjuge ? formatYmdToDma(payload.data_nascimento_conjuge) : '',
           whatsapp: '',
         });
-      } else {
+      } else if (!isEventoAvulso) {
         setIncluirEsposa(false);
         setFormEsposa({ ...FORM_ESPOSA_VAZIO });
         setHospEsposa({ ...HOSP_ESPOSA_VAZIO });
+      } else if (payload.nome_conjuge || payload.cpf_conjuge) {
+        setFormEsposa(f => ({
+          ...f,
+          nome: f.nome || payload.nome_conjuge || '',
+          cpf: f.cpf || (payload.cpf_conjuge ? formatarCPF(payload.cpf_conjuge) : ''),
+        }));
       }
 
       setForm(f => ({
