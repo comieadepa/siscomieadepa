@@ -763,6 +763,9 @@ export default function InscricaoPublicaPage() {
     }
   }
 
+  // Identifica evento avulso (não pertencente a departamentos específicos da convenção)
+  const isEventoAvulso = !!evento && !['AGO', 'UMADESPA', 'SEIADEPA', 'COADESPA'].includes((evento.departamento || '').toUpperCase());
+
   // Valor a pagar calculado
   const isPastorPresidenteTipo = !!(tipoSelecionado && /pastor\s*presidente/i.test(tipoSelecionado.nome));
   const configCM = parseCampoMissionarioConfig(evento?.configuracoes_ago ?? null);
@@ -1205,6 +1208,13 @@ export default function InscricaoPublicaPage() {
       if (errDataEsposa) return setErroForm(`Cônjuge: ${errDataEsposa}`);
     }
 
+    if (isEventoAvulso && incluirEsposa) {
+      if (!formEsposa.nome.trim()) return setErroForm('Informe o nome completo da esposa/cônjuge.');
+      const cpfLimpoEsposa = formEsposa.cpf.replace(/\D/g, '');
+      if (!cpfLimpoEsposa) return setErroForm('Informe o CPF da esposa/cônjuge.');
+      if (cpfLimpoEsposa.length !== 11) return setErroForm('CPF da esposa/cônjuge deve conter 11 dígitos.');
+    }
+
     if (evento.usar_tipos_inscricao && !tipoSelecionado)
       return setErroForm(evento.departamento === 'AGO' ? 'Selecione o tipo de inscrição.' : 'Selecione a modalidade de inscrição.');
     if (ministroSemPerfil)
@@ -1316,6 +1326,11 @@ export default function InscricaoPublicaPage() {
         hosp_descricao_comorbidade: form.hosp_descricao_comorbidade.trim() || null,
         lgpd_aceito:                true,
       });
+
+      if (incluirEsposa && formEsposa.nome.trim()) {
+        body.nome_esposa = formEsposa.nome.trim();
+        body.cpf_esposa = formEsposa.cpf ? formEsposa.cpf.replace(/\D/g, '') : null;
+      }
 
       body.visitante = !!form.visitante;
 
@@ -1812,6 +1827,43 @@ export default function InscricaoPublicaPage() {
 
 
 
+            {/* Seletor do tipo de inscrição (exclusivamente para Eventos Avulsos) */}
+            {isEventoAvulso && (
+              <div className="mb-5 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5">
+                  Tipo de Inscrição
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIncluirEsposa(false);
+                      setFormEsposa({ ...FORM_ESPOSA_VAZIO });
+                    }}
+                    className={`flex items-center justify-center gap-2 p-3 rounded-xl border font-semibold text-sm transition ${
+                      !incluirEsposa
+                        ? 'border-[#123b63] bg-[#123b63] text-white shadow-sm'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    👤 Individual
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIncluirEsposa(true)}
+                    className={`flex items-center justify-center gap-2 p-3 rounded-xl border font-semibold text-sm transition ${
+                      incluirEsposa
+                        ? 'border-[#123b63] bg-[#123b63] text-white shadow-sm'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    👥 Casal
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Nome */}
             <div className="mb-5">
               <label className={LBL}>Nome completo *</label>
@@ -1864,6 +1916,40 @@ export default function InscricaoPublicaPage() {
                 />
               </div>
             </div>
+
+            {/* Dados da esposa / cônjuge (quando Casal estiver selecionado em eventos Avulsos) */}
+            {isEventoAvulso && incluirEsposa && (
+              <div className="mb-5 p-4 bg-rose-50/60 border border-rose-200 rounded-xl">
+                <p className="text-sm font-bold text-rose-900 mb-3 flex items-center gap-2">
+                  💍 Dados da Esposa / Cônjuge
+                </p>
+                <div className="space-y-3">
+                  <div>
+                    <label className={LBL}>Nome completo da esposa *</label>
+                    <input
+                      type="text"
+                      value={formEsposa.nome}
+                      onChange={e => setFormEsposa(f => ({ ...f, nome: e.target.value }))}
+                      placeholder="Nome completo da esposa"
+                      className={INP}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className={LBL}>CPF da esposa *</label>
+                    <input
+                      type="text"
+                      value={formEsposa.cpf}
+                      onChange={e => setFormEsposa(f => ({ ...f, cpf: formatarCPF(e.target.value) }))}
+                      placeholder="000.000.000-00"
+                      maxLength={14}
+                      className={INP}
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Visitante Checkbox (UMADESPA) */}
             {(evento?.departamento === 'UMADESPA' || evento?.nome?.toUpperCase().includes('UMADESPA')) && (
