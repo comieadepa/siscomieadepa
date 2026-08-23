@@ -136,39 +136,63 @@ export default async function EventosPorDepartamentoPage({ params }: PageProps) 
           </div>
         ) : (
           <div className="grid justify-center gap-6 [grid-template-columns:repeat(auto-fit,minmax(280px,360px))]">
-            {eventos.map(ev => (
-              <div key={ev.id} className="flex h-full flex-col rounded-3xl border border-slate-200 bg-white/90 p-6 shadow">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Evento</div>
-                    <h3 className="mt-2 text-xl font-semibold text-slate-900">{ev.nome}</h3>
-                  </div>
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold text-white ${BADGE_CLASSES[dep.key]}`}>
-                    Inscricoes abertas
-                  </span>
-                </div>
-                <div className="mt-4 text-sm text-slate-600">
-                  <div className="font-semibold text-slate-700">
-                    {formatDate(ev.data_inicio)}{ev.data_fim ? ` a ${formatDate(ev.data_fim)}` : ''}
-                  </div>
-                  <div className="mt-1">{[ev.local, ev.cidade].filter(Boolean).join(' - ') || 'Local a confirmar'}</div>
-                </div>
-                <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-700">
-                  <span className={`rounded-full px-3 py-1 ${dep.tonalidade.chip}`}>{formatValor(ev.valor_inscricao, ev.usar_tipos_inscricao)}</span>
-                  {ev.vagas_disponiveis !== null ? (
-                    <span className="rounded-full bg-emerald-100 px-3 py-1">{ev.vagas_disponiveis} vagas</span>
+            {eventos.map(ev => {
+              const bannerCard = ev.banner_url || dep.banner;
+              return (
+                <div key={ev.id} className="flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white/90 shadow transition hover:shadow-md">
+                  {bannerCard ? (
+                    <div className="relative h-44 w-full overflow-hidden bg-slate-100">
+                      <img
+                        src={bannerCard}
+                        alt={ev.nome}
+                        className="h-full w-full object-cover"
+                      />
+                      <div className="absolute right-3 top-3">
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold text-white shadow-sm ${BADGE_CLASSES[dep.key]}`}>
+                          Inscricoes abertas
+                        </span>
+                      </div>
+                    </div>
                   ) : null}
+
+                  <div className="flex flex-1 flex-col p-6">
+                    {!bannerCard ? (
+                      <div className="flex items-start justify-between gap-4 mb-2">
+                        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Evento</div>
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold text-white ${BADGE_CLASSES[dep.key]}`}>
+                          Inscricoes abertas
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="text-xs uppercase tracking-[0.3em] text-slate-500 mb-1">Evento</div>
+                    )}
+
+                    <h3 className="text-xl font-semibold text-slate-900 leading-tight">{ev.nome}</h3>
+
+                    <div className="mt-4 text-sm text-slate-600">
+                      <div className="font-semibold text-slate-700">
+                        {formatDate(ev.data_inicio)}{ev.data_fim ? ` a ${formatDate(ev.data_fim)}` : ''}
+                      </div>
+                      <div className="mt-1">{[ev.local, ev.cidade].filter(Boolean).join(' - ') || 'Local a confirmar'}</div>
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-700">
+                      <span className={`rounded-full px-3 py-1 ${dep.tonalidade.chip}`}>{formatValor(ev.valor_inscricao, ev.usar_tipos_inscricao)}</span>
+                      {ev.vagas_disponiveis !== null ? (
+                        <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-800">{ev.vagas_disponiveis} vagas</span>
+                      ) : null}
+                    </div>
+                    <div className="mt-auto pt-6">
+                      <Link
+                        href={`/inscricao/${ev.slug}`}
+                        className={`inline-flex w-full items-center justify-center rounded-full px-5 py-3 text-sm font-semibold text-white shadow transition ${CTA_CLASSES[dep.key]}`}
+                      >
+                        Fazer inscricao
+                      </Link>
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-auto pt-6">
-                  <Link
-                    href={`/inscricao/${ev.slug}`}
-                    className={`inline-flex w-full items-center justify-center rounded-full px-5 py-3 text-sm font-semibold text-white shadow transition ${CTA_CLASSES[dep.key]}`}
-                  >
-                    Fazer inscricao
-                  </Link>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
