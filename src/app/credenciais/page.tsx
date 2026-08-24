@@ -121,6 +121,8 @@ const memberToMembro = (member: Member): Membro => {
     dataValidadeCredencial: String(member.data_validade_credencial || member.cred_validade || (cf as any).dataValidadeCredencial || ''),
     qualFuncao: String(member.qual_funcao || member.profissao || (cf as any).qualFuncao || ''),
     fotoUrl: member.foto_url || (cf as any).fotoUrl || undefined,
+    diretoria: (member as any).diretoria ?? (cf as any).diretoria ?? false,
+    diretoriaCargo: String((member as any).diretoria_cargo || (member as any).cargo_diretoria || (cf as any).diretoriaCargo || ''),
   };
 };
 

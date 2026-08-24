@@ -118,6 +118,7 @@ const PLACEHOLDERS_DISPONIVEIS = [
   { campo: 'whatsapp', label: 'WhatsApp', placeholder: '{whatsapp}' },
   { campo: 'endereco', label: 'Endereço Completo', placeholder: '{endereco}' },
   { campo: 'uniqueId', label: 'ID Único (QR Code)', placeholder: '{uniqueId}' },
+  { campo: 'funcaoDiretoria', label: 'Função da Diretoria', placeholder: '{funcao_diretoria}' },
   // Placeholders de divisões - atualizados dinamicamente com nomenclaturas
   { campo: 'divisao1', label: 'Rótulo da Primeira Divisão', placeholder: '{divisao1}' },
   { campo: 'divisao1_valor', label: 'Valor da Primeira Divisão', placeholder: '{divisao1_valor}' },

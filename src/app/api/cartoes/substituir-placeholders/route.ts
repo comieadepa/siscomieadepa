@@ -33,7 +33,8 @@ const PLACEHOLDERS = [
   { campo: 'whatsapp', placeholder: '{whatsapp}' },
   { campo: 'endereco', placeholder: '{endereco}' },
   { campo: 'uniqueId', placeholder: '{uniqueId}' },
-  { campo: 'registroCgadb', placeholder: '{registro_cgadb}' }
+  { campo: 'registroCgadb', placeholder: '{registro_cgadb}' },
+  { campo: 'funcaoDiretoria', placeholder: '{funcao_diretoria}' }
 ];
 
 function substituirPlaceholders(texto: string, membro: any, nomenclaturas?: any): string {
@@ -105,6 +106,22 @@ function substituirPlaceholders(texto: string, membro: any, nomenclaturas?: any)
     const regex = new RegExp(ph.placeholder.replace(/[{}]/g, '\\$&'), 'g');
     let valor = membro[ph.campo] || '';
     
+    // Tratamento de Função da Diretoria
+    if (ph.campo === 'funcaoDiretoria') {
+      const isDiretoria = membro.diretoria === true || String(membro.diretoria).toLowerCase() === 'true';
+      valor = isDiretoria ? (membro.diretoria_cargo || membro.diretoriaCargo || membro.cargo_diretoria || '') : '';
+
+      if (!isDiretoria || !valor) {
+        // Se NÃO for diretoria, remove a linha/parágrafo contendo o rótulo da função junto com o placeholder
+        resultado = resultado
+          .replace(/<p[^>]*>(?:(?!<\/p>).)*?FUNÇ[ÃA]O:?\s*.*?\{funcao_diretoria\}.*?<\/p>\s*/gi, '')
+          .replace(/<div[^>]*>(?:(?!<\/div>).)*?FUNÇ[ÃA]O:?\s*.*?\{funcao_diretoria\}.*?<\/div>\s*/gi, '')
+          .replace(/(?:<br\s*\/?>|\n)?(?:[^<>\n]*?)FUNÇ[ÃA]O:?\s*.*?\{funcao_diretoria\}(?:[^<>\n]*?)(?:<br\s*\/?>|\n)?/gi, '');
+
+        valor = '';
+      }
+    }
+
     // Para endereço completo, monta a string
     if (ph.campo === 'endereco') {
       valor = [membro.logradouro, membro.numero, membro.bairro, membro.cidade]

@@ -28,7 +28,8 @@ export const PLACEHOLDERS_CONFIG = [
   { campo: 'whatsapp', placeholder: '{whatsapp}', label: 'WhatsApp' },
   { campo: 'endereco', placeholder: '{endereco}', label: 'Endereço Completo' },
   { campo: 'uniqueId', placeholder: '{uniqueId}', label: 'ID Único (QR Code)' },
-  { campo: 'congregacao', placeholder: '{congregacao}', label: 'Congregação (Nome da Igreja Local)' }
+  { campo: 'congregacao', placeholder: '{congregacao}', label: 'Congregação (Nome da Igreja Local)' },
+  { campo: 'funcaoDiretoria', placeholder: '{funcao_diretoria}', label: 'Função da Diretoria' }
   // Nota: Placeholders de divisões ({divisao1}, {divisao1_valor}, etc.) são tratados separadamente
   // com lógica dinâmica baseada em nomenclaturas
 ];
@@ -202,6 +203,22 @@ export function substituirPlaceholders(texto: string, membro: any, nomenclaturas
       else if (normalizado === 'viuvo') valor = isFeminino ? 'Viúva' : 'Viúvo';
       else if (normalizado === 'divorciado') valor = isFeminino ? 'Divorciada' : 'Divorciado';
       else valor = membro.estadoCivil || '';
+    }
+
+    // Tratamento de Função da Diretoria
+    if (ph.campo === 'funcaoDiretoria') {
+      const isDiretoria = membro.diretoria === true || String(membro.diretoria).toLowerCase() === 'true';
+      valor = isDiretoria ? (membro.diretoriaCargo || membro.cargo_diretoria || membro.diretoria_cargo || '') : '';
+
+      if (!isDiretoria || !valor) {
+        // Se NÃO for diretoria, remove a linha/parágrafo contendo o rótulo da função junto com o placeholder
+        resultado = resultado
+          .replace(/<p[^>]*>(?:(?!<\/p>).)*?FUNÇ[ÃA]O:?\s*.*?\{funcao_diretoria\}.*?<\/p>\s*/gi, '')
+          .replace(/<div[^>]*>(?:(?!<\/div>).)*?FUNÇ[ÃA]O:?\s*.*?\{funcao_diretoria\}.*?<\/div>\s*/gi, '')
+          .replace(/(?:<br\s*\/?>|\n)?(?:[^<>\n]*?)FUNÇ[ÃA]O:?\s*.*?\{funcao_diretoria\}(?:[^<>\n]*?)(?:<br\s*\/?>|\n)?/gi, '');
+
+        valor = '';
+      }
     }
 
     // Formatação de data (se for do tipo YYYY-MM-DD)
