@@ -390,14 +390,14 @@ export default function InteractiveCanvas<T extends ElementoCartao = ElementoCar
         const isInSelection = elementosSelecionados.some(el => el.id === elemento.id);
         const foraDoSafeArea = estaForaDaSafeArea(elemento, larguraCanvas, alturaCanvas);
 
-        // Borda: azul se selecionado, laranja se fora da safe area, cinza dashed se normal
-        let borderStyle = '1px dashed rgba(0,0,0,0.2)';
+        // Borda: azul se selecionado, azul claro se em seleção múltipla, pontilhado fino sutil
+        let borderStyle = '1px dashed rgba(0, 0, 0, 0.15)';
         if (isSelected) {
             borderStyle = '2px solid #3b82f6';
         } else if (isInSelection) {
             borderStyle = '2px solid #60a5fa';
         } else if (foraDoSafeArea) {
-            borderStyle = '2px dashed #f97316'; // laranja — fora da safe area
+            borderStyle = '1px dashed #f97316'; // pontilhado sutil de 1px
         }
 
         const baseStyle: React.CSSProperties = {
@@ -633,27 +633,7 @@ export default function InteractiveCanvas<T extends ElementoCartao = ElementoCar
             >
                 {conteudo}
 
-                {/* Tooltip de aviso fora da safe area */}
-                {foraDoSafeArea && !isSelected && (
-                    <div
-                        style={{
-                            position: 'absolute',
-                            top: '-20px',
-                            left: '0',
-                            fontSize: '9px',
-                            color: '#f97316',
-                            fontWeight: 'bold',
-                            whiteSpace: 'nowrap',
-                            pointerEvents: 'none',
-                            backgroundColor: 'rgba(255,255,255,0.9)',
-                            padding: '1px 4px',
-                            borderRadius: '3px',
-                            border: '1px solid #f97316',
-                        }}
-                    >
-                        ⚠ Fora da área segura
-                    </div>
-                )}
+
 
                 {/* Handles de redimensionamento */}
                 {isSelected && (
