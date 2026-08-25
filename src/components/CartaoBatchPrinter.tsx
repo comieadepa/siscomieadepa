@@ -4,7 +4,7 @@ import { useRef, useEffect, useState } from 'react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { QRCodeSVG as QRCode } from 'qrcode.react';
-import { substituirPlaceholders } from '@/lib/cartoes-utils';
+import { substituirPlaceholders, processarElementosComReflow } from '@/lib/cartoes-utils';
 import { createClient } from '@/lib/supabase-client';
 import { loadOrgNomenclaturasFromSupabaseOrMigrate } from '@/lib/org-nomenclaturas';
 import { loadTemplatesWithLocalCache } from '@/lib/cartoes-templates-sync';
@@ -191,7 +191,9 @@ export default function CartaoBatchPrinter({ membros, onComplete }: CartaoBatchP
         dataEmissao: template.dataEmissao || membro.dataEmissao
       };
 
-      container.innerHTML = elementos.filter((el: any) => el.visivel).map((el: any) => {
+      const elementosAjustados = processarElementosComReflow(elementos, membroComConfig, orgNomenclaturas);
+
+      container.innerHTML = elementosAjustados.filter((el: any) => el.visivel).map((el: any) => {
         if (el.tipo === 'qrcode') {
           const style = `position: absolute; left: ${el.x}px; top: ${el.y}px; width: ${el.largura}px; height: ${el.altura}px; display: flex; align-items: center; justify-content: center;`;
           return `<div style="${style}"><div id="batch-qrcode-${membro.id}-${isVerso ? 'v' : 'f'}" style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;"></div></div>`;

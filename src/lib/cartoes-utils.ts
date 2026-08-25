@@ -281,3 +281,51 @@ export function getMensagemSemTemplate(tipoCadastro: string): string {
   const tipoFormatado = tipoCadastro.charAt(0).toUpperCase() + tipoCadastro.slice(1);
   return `Não há template ativo para ${tipoFormatado}. Configure um template em Configurações → Cartões.`;
 }
+
+/**
+ * Processa o array de elementos do cartão aplicando reflow/recalculo de posições Y
+ * caso algum elemento de texto com placeholder condicional (ex: {funcao_diretoria}) resulte em vazio.
+ */
+export function processarElementosComReflow<T extends { id: string; tipo: string; x: number; y: number; largura: number; altura: number; texto?: string; visivel?: boolean; [key: string]: any }>(
+  elementos: T[],
+  membro: any,
+  _nomenclaturasInput?: any
+): T[] {
+  if (!elementos || !Array.isArray(elementos) || elementos.length === 0) return elementos;
+  if (!membro) return elementos;
+
+  // 1. Identificar se o membro tem diretoria ou se a função da diretoria é válida
+  const isDiretoria = membro.diretoria === true || String(membro.diretoria).toLowerCase() === 'true';
+  const valorCargo = isDiretoria ? (membro.diretoriaCargo || membro.cargo_diretoria || membro.diretoria_cargo || '') : '';
+
+  // 2. Localizar elementos de texto que contenham {funcao_diretoria}
+  const elementosFuncao = elementos.filter(el => el.tipo === 'texto' && (el.texto || '').includes('{funcao_diretoria}'));
+
+  // Se não há elementos com {funcao_diretoria}, ou se o ministro TEM diretoria com valor válido, retorna os elementos intactos
+  if (elementosFuncao.length === 0 || (isDiretoria && String(valorCargo).trim().length > 0)) {
+    return elementos;
+  }
+
+  // 3. Caso o ministro NÃO tenha diretoria (ou valor vazio), colapsa os elementos com {funcao_diretoria}
+  const resultado = elementos.map(el => ({ ...el }));
+
+  elementosFuncao.forEach(target => {
+    const targetY = target.y;
+    // O valor do recuo para cima é a altura do próprio elemento colapsado (mínimo de 22px)
+    const deslocamentoY = Math.max(target.altura || 0, 22);
+
+    resultado.forEach(el => {
+      if (el.id === target.id) {
+        // Torna o elemento colapsado invisível
+        el.visivel = false;
+      } else if (el.tipo === 'texto' || el.tipo === 'caixa' || el.tipo === 'tabela') {
+        // Apenas elementos de texto/conteúdo textual posicionados verticalmente abaixo do elemento colapsado sobem
+        if (el.y > targetY - 5) {
+          el.y = Math.max(0, el.y - deslocamentoY);
+        }
+      }
+    });
+  });
+
+  return resultado;
+}

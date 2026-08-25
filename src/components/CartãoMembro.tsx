@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { QRCodeSVG as QRCode } from 'qrcode.react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import { substituirPlaceholders } from '@/lib/cartoes-utils';
+import { substituirPlaceholders, processarElementosComReflow } from '@/lib/cartoes-utils';
 import { createClient } from '@/lib/supabase-client';
 import { loadOrgNomenclaturasFromSupabaseOrMigrate } from '@/lib/org-nomenclaturas';
 import { loadTemplatesWithLocalCache } from '@/lib/cartoes-templates-sync';
@@ -607,7 +607,7 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
             }}
           >
             {/* Renderizar elementos da frente */}
-            {template.elementos.map((elemento) => renderizarElemento(elemento, false))}
+            {processarElementosComReflow(template.elementos, membro, orgNomenclaturas).map((elemento) => renderizarElemento(elemento, false))}
           </div>
         </div>
       )}
@@ -634,7 +634,7 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
             }}
           >
             {/* Renderizar elementos do verso */}
-            {template.elementosVerso?.map((elemento) => renderizarElemento(elemento, false))}
+            {processarElementosComReflow(template.elementosVerso || [], membro, orgNomenclaturas).map((elemento) => renderizarElemento(elemento, false))}
           </div>
         </div>
       )}
