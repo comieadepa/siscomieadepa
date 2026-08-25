@@ -283,8 +283,10 @@ export function getMensagemSemTemplate(tipoCadastro: string): string {
 }
 
 /**
- * Processa o array de elementos do cartão aplicando reflow/recalculo de posições Y
- * caso algum elemento de texto com placeholder condicional (ex: {funcao_diretoria}) resulte em vazio.
+ * Processa os elementos do cartão preservando ESTRITAMENTE a posição original do rodapé.
+ * Caso o ministro NÃO possua diretoria, a linha {funcao_diretoria} é ocultada e
+ * o bloco superior de dados (REG, NOME, CARGO) é suavizado para baixo (+6px),
+ * enquanto o rodapé, foto, logo e QR code permanecem 100% fixos na posição do template.
  */
 export function processarElementosComReflow<T extends { id: string; tipo: string; x: number; y: number; largura: number; altura: number; texto?: string; visivel?: boolean; [key: string]: any }>(
   elementos: T[],
@@ -294,36 +296,51 @@ export function processarElementosComReflow<T extends { id: string; tipo: string
   if (!elementos || !Array.isArray(elementos) || elementos.length === 0) return elementos;
   if (!membro) return elementos;
 
-  // 1. Identificar se o membro tem diretoria ou se a função da diretoria é válida
+  // 1. Identificar se o ministro tem diretoria ativada com valor de cargo preenchido
   const isDiretoria = membro.diretoria === true || String(membro.diretoria).toLowerCase() === 'true';
   const valorCargo = isDiretoria ? (membro.diretoriaCargo || membro.cargo_diretoria || membro.diretoria_cargo || '') : '';
 
   // 2. Localizar elementos de texto que contenham {funcao_diretoria}
   const elementosFuncao = elementos.filter(el => el.tipo === 'texto' && (el.texto || '').includes('{funcao_diretoria}'));
 
-  // Se não há elementos com {funcao_diretoria}, ou se o ministro TEM diretoria com valor válido, retorna os elementos intactos
+  // REGRA C: Modelo antigo sem {funcao_diretoria} ou REGRA A: diretoria = true com cargo preenchido
+  // Em ambos os casos, os elementos permanecem 100% INTACTOS sem qualquer alteração.
   if (elementosFuncao.length === 0 || (isDiretoria && String(valorCargo).trim().length > 0)) {
     return elementos;
   }
 
-  // 3. Caso o ministro NÃO tenha diretoria (ou valor vazio), colapsa os elementos com {funcao_diretoria}
+  // REGRA B: diretoria = false (ou sem cargo preenchido)
+  // O elemento contendo {funcao_diretoria} deve ser ocultado.
+  // NENHUM elemento posicionado abaixo (como o rodapé) pode subir!
   const resultado = elementos.map(el => ({ ...el }));
 
   elementosFuncao.forEach(target => {
     const targetY = target.y;
-    // O valor do recuo para cima é a altura do próprio elemento colapsado (mínimo de 22px)
-    const deslocamentoY = Math.max(target.altura || 0, 22);
 
     resultado.forEach(el => {
       if (el.id === target.id) {
-        // Torna o elemento colapsado invisível
+        // Oculta o elemento da função para não ser renderizado
         el.visivel = false;
-      } else if (el.tipo === 'texto' || el.tipo === 'caixa' || el.tipo === 'tabela') {
-        // Apenas elementos de texto/conteúdo textual posicionados verticalmente abaixo do elemento colapsado sobem
-        if (el.y > targetY - 5) {
-          el.y = Math.max(0, el.y - deslocamentoY);
+      } else if (el.tipo === 'texto') {
+        const txt = el.texto || '';
+
+        // Identifica se é o elemento de dados do ministro acima da função (REG, NOME, CARGO)
+        const isBlocoIdentificacao = (
+          txt.includes('{matricula}') ||
+          txt.includes('{nome}') ||
+          txt.includes('{cargo_ministerial}') ||
+          txt.includes('REG.:') ||
+          txt.includes('NOME:') ||
+          txt.includes('CARGO:')
+        ) && el.y < targetY;
+
+        // Se for do bloco de dados de identificação do ministro acima da função, ajusta suavemente para baixo (+6px)
+        // para distribuir o espaço liberado sem colidir com o rodapé que fica intocado
+        if (isBlocoIdentificacao) {
+          el.y = el.y + 6;
         }
       }
+      // RODAPÉ, FOTO, LOGO, QR CODE, CHAPAS E FUNDOS PERMANECEM 100% INTACTOS (sem alterar Y)
     });
   });
 
