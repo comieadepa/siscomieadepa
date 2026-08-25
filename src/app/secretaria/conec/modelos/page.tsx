@@ -16,7 +16,7 @@ import { Award, Trash2, RefreshCw } from 'lucide-react';
 import { obterPreviewTextoCertificado } from '@/lib/certificados-utils';
 import ToastNotification, { useToasts } from '@/components/ToastNotification';
 
-const SAFE_AREA_MARGIN = 35;
+const SAFE_AREA_MARGIN = 10;
 
 const ELEMENTOS_TIPOS = [
   { tipo: 'texto',          label: 'Texto / Campo Dinâmico', icone: '📝' },

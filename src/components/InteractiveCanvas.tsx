@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase-client';
 import { fetchConfiguracaoIgrejaFromSupabase } from '@/lib/igreja-config-utils';
 
 // ─── Constantes da Safe Area ───────────────────────────────────────────────
-const SAFE_AREA_MARGIN = 35; // px em todas as bordas (margem de segurança aumentada)
+const SAFE_AREA_MARGIN = 10; // px em todas as bordas (margem de segurança reduzida para maior área útil)
 const SNAP_THRESHOLD   = 8;  // px para snap suave nas bordas da safe area
 
 interface ElementoCartao {
