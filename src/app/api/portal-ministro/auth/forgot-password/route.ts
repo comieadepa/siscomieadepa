@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
     // Busca ministro ativo
     const { data: ministro, error: mErr } = await supabase
       .from('members')
-      .select('id, name, email, status')
+      .select('id, name, email, status, custom_fields')
       .eq('cpf', cpf)
       .maybeSingle();
 
@@ -76,8 +76,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Erro interno ao processar solicitação.' }, { status: 500 });
     }
 
+    const cf = (ministro?.custom_fields && typeof ministro.custom_fields === 'object')
+      ? (ministro.custom_fields as Record<string, any>)
+      : {};
+    const emailDestino = String(ministro?.email || cf.email || '').trim();
+
     // Prevenção de enumeração: se não existir ou estiver inativo ou sem e-mail, retorna resposta genérica de sucesso
-    if (!ministro || ministro.status !== 'active' || !ministro.email || !ministro.email.includes('@')) {
+    if (!ministro || ministro.status !== 'active' || !emailDestino || !emailDestino.includes('@')) {
       return NextResponse.json({
         ok: true,
         emailMascarado: null,
@@ -107,7 +112,7 @@ export async function POST(request: NextRequest) {
       });
 
     if (insertErr) {
-      console.error('[forgot-password] Erro ao criar token de recuperação:', insertErr.message);
+      console.error('[forgot-password] Erro ao criar token de recuperação:', insertErr.message, insertErr.code);
       return NextResponse.json({ error: 'Erro ao gerar link de recuperação.' }, { status: 500 });
     }
 
@@ -142,14 +147,14 @@ export async function POST(request: NextRequest) {
 
     // Envia o e-mail através do serviço do projeto
     await sendEmail({
-      para: ministro.email,
+      para: emailDestino,
       assunto: 'Recuperação de Senha — Portal do Ministro COMIEADEPA',
       mensagem: `Olá ${ministro.name}, acesse o link para redefinir sua senha: ${resetUrl}`,
       html: htmlMensagem,
       nomeDestinatario: ministro.name,
     });
 
-    const emailMascarado = maskEmail(ministro.email);
+    const emailMascarado = maskEmail(emailDestino);
 
     return NextResponse.json({
       ok: true,
