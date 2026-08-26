@@ -6,8 +6,18 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
+import { checkRateLimit } from '@/lib/rate-limit';
+
+const RATE_LIMIT_ATTEMPTS = 5;
+const RATE_LIMIT_WINDOW_MS = 60_000;
 
 const cleanCpf = (v: string) => v.replace(/\D/g, '');
+
+function getClientIp(request: NextRequest): string {
+  const forwarded = request.headers.get('x-forwarded-for');
+  if (forwarded) return forwarded.split(',')[0]?.trim() || 'unknown';
+  return request.headers.get('x-real-ip') || 'unknown';
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,6 +26,25 @@ export async function POST(request: NextRequest) {
 
     if (!cpf || cpf.length !== 11) {
       return NextResponse.json({ error: 'CPF inválido.' }, { status: 400 });
+    }
+
+    const ip = getClientIp(request);
+    const rate = checkRateLimit({
+      key: `portal-ministro:check-cpf:${ip}:${cpf}`,
+      limit: RATE_LIMIT_ATTEMPTS,
+      windowMs: RATE_LIMIT_WINDOW_MS,
+    });
+
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: 'Muitas tentativas. Aguarde um minuto antes de tentar novamente.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(rate.retryAfterSeconds),
+          },
+        },
+      );
     }
 
     const supabase = createServerClient();

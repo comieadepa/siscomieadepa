@@ -1,17 +1,26 @@
 /**
  * POST /api/portal-ministro/auth/login
- * Suporta dois fluxos:
- *   tipo='primeiro_acesso' — valida CPF + data_nascimento e cria senha (bcrypt)
- *   tipo='senha'           — valida CPF + senha com bcrypt.compare
+ * Autenticação exclusiva de ministro com senha (bcrypt.compare).
+ * Cria sessão de 24h e emite cookie ministro_token.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { setSessionCookie, SESSION_DURATION_HOURS } from '@/lib/ministro-session';
 import { logDB } from '@/lib/audit';
+import { checkRateLimit } from '@/lib/rate-limit';
 import bcrypt from 'bcrypt';
 
+const RATE_LIMIT_ATTEMPTS = 5;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+
 const cleanCpf = (v: string) => v.replace(/\D/g, '');
+
+function getClientIp(request: NextRequest): string {
+  const forwarded = request.headers.get('x-forwarded-for');
+  if (forwarded) return forwarded.split(',')[0]?.trim() || 'unknown';
+  return request.headers.get('x-real-ip') || 'unknown';
+}
 
 async function criarSessao(supabase: ReturnType<typeof createServerClient>, ministroId: string) {
   const expiresAt = new Date(Date.now() + SESSION_DURATION_HOURS * 3600 * 1000).toISOString();
@@ -34,11 +43,30 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'CPF inválido.' }, { status: 400 });
     }
 
+    const ip = getClientIp(request);
+    const rate = checkRateLimit({
+      key: `portal-ministro:login:${ip}:${cpf}`,
+      limit: RATE_LIMIT_ATTEMPTS,
+      windowMs: RATE_LIMIT_WINDOW_MS,
+    });
+
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: 'Muitas tentativas. Aguarde um minuto antes de tentar novamente.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(rate.retryAfterSeconds),
+          },
+        },
+      );
+    }
+
     const supabase = createServerClient();
 
     const { data: ministro, error: memberError } = await supabase
       .from('members')
-      .select('id, name, cpf, data_nascimento, status, cargo_ministerial, pastor_presidente')
+      .select('id, name, cpf, status, cargo_ministerial, pastor_presidente')
       .eq('cpf', cpf)
       .in('status', ['active'])
       .maybeSingle();
@@ -59,65 +87,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── Primeiro acesso: criar senha ──────────────────────────────────────
+    // Rejeita qualquer tentativa de primeiro acesso nesta rota (deve usar /first-access/*)
     if (tipo === 'primeiro_acesso') {
-      const dataNascimento = String(body?.data_nascimento || '').trim();
-      const senha = String(body?.senha || '');
+      return NextResponse.json(
+        { error: 'O primeiro acesso deve ser realizado exclusivamente com código de confirmação.' },
+        { status: 400 },
+      );
+    }
 
-      if (!dataNascimento || !/^\d{4}-\d{2}-\d{2}$/.test(dataNascimento)) {
-        return NextResponse.json({ error: 'Data de nascimento inválida.' }, { status: 400 });
-      }
-      if (!senha || senha.length < 6) {
-        return NextResponse.json(
-          { error: 'A senha deve ter pelo menos 6 caracteres.' },
-          { status: 400 },
-        );
-      }
-
-      const dbDate = String(ministro.data_nascimento || '').slice(0, 10);
-      if (dbDate !== dataNascimento) {
-        return NextResponse.json({ error: 'Data de nascimento incorreta.' }, { status: 401 });
-      // Note: message is intentionally generic to avoid user enumeration on birth date
-      }
-
-      // Verifica se já existe conta
-      const { data: existingAccount } = await supabase
-        .from('ministro_portal_accounts')
-        .select('ministro_id')
-        .eq('ministro_id', ministro.id)
-        .maybeSingle();
-
-      if (existingAccount) {
-        return NextResponse.json(
-          { error: 'Conta já criada. Use seu login e senha.' },
-          { status: 409 },
-        );
-      }
-
-      const senhaHash = await bcrypt.hash(senha, 10);
-      const { error: insertErr } = await supabase
-        .from('ministro_portal_accounts')
-        .insert({ ministro_id: ministro.id, senha_hash: senhaHash });
-
-      if (insertErr) {
-        console.error('[portal-ministro/login/primeiro_acesso]', insertErr.message);
-        return NextResponse.json({ error: 'Erro ao criar conta.' }, { status: 500 });
-      }
-
-      const token = await criarSessao(supabase, ministro.id);
-      if (!token) return NextResponse.json({ error: 'Erro ao criar sessão.' }, { status: 500 });
-
-      void logDB({
-        acao: 'primeiro_acesso',
-        modulo: 'portal_ministro',
-        entidade: 'ministro',
-        entidadeId: ministro.id,
-        descricao: `Primeiro acesso ao portal: ${ministro.name}`,
-        status: 'sucesso',
-      });
-
-      const res = NextResponse.json({ ok: true, nome: ministro.name });
-      return setSessionCookie(res, token);
+    if (tipo !== 'senha') {
+      return NextResponse.json({ error: 'Tipo de autenticação inválido.' }, { status: 400 });
     }
 
     // ── Login com senha ───────────────────────────────────────────────────

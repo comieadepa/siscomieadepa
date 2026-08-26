@@ -7,6 +7,8 @@ import Image from 'next/image';
 import {
   LayoutDashboard,
   IdCard,
+  Calendar,
+  Award,
   History,
   DollarSign,
   Printer,
@@ -20,6 +22,8 @@ import { MinistroContext, type MinistroData } from './ministro-context';
 const NAV_ITEMS = [
   { href: '/portal-ministro/dashboard', label: 'Início', icon: LayoutDashboard },
   { href: '/portal-ministro/credencial', label: 'Minha Credencial', icon: IdCard },
+  { href: '/portal-ministro/eventos', label: 'Meus Eventos', icon: Calendar },
+  { href: '/portal-ministro/certificados', label: 'Meus Certificados', icon: Award },
   { href: '/portal-ministro/historico', label: 'Histórico', icon: History },
   { href: '/portal-ministro/impressao', label: 'Solicitar Impressão', icon: Printer },
 ];

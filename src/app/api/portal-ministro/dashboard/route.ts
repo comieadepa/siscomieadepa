@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   // Dados do ministro para verificar pendências
   const { data: ministro } = await supabase
     .from('members')
-    .select('id, data_validade_credencial, status, pastor_presidente, telefone, email')
+    .select('id, data_validade_credencial, status, pastor_presidente, telefone, email, custom_fields')
     .eq('id', session.ministroId)
     .maybeSingle();
 
@@ -76,12 +76,26 @@ export async function GET(request: NextRequest) {
     if (ministro.pastor_presidente) {
       const mesAtual = new Date().getMonth() + 1;
       const anoAtual = new Date().getFullYear();
-      const { data: contrib } = await supabase
+      const cf = (ministro.custom_fields && typeof ministro.custom_fields === 'object')
+        ? (ministro.custom_fields as Record<string, any>)
+        : {};
+      const campNome = String(cf.campo || '').trim();
+
+      let contribQuery = supabase
         .from('contribuicoes_estatutarias')
         .select('id')
         .eq('mes', mesAtual)
-        .eq('ano', anoAtual)
-        .maybeSingle();
+        .eq('ano', anoAtual);
+
+      if (cf.campo_id) {
+        contribQuery = contribQuery.eq('campo_id', cf.campo_id);
+      } else if (campNome) {
+        contribQuery = contribQuery.ilike('campo_nome', `%${campNome}%`);
+      } else {
+        contribQuery = contribQuery.eq('pastor_member_id', session.ministroId);
+      }
+
+      const { data: contrib } = await contribQuery.limit(1).maybeSingle();
 
       if (!contrib) {
         pendencias.push({

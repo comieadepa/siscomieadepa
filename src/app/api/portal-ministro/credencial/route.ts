@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
   }
 
   const credencialUrl = ministro.unique_id
-    ? `${process.env.NEXT_PUBLIC_APP_URL || ''}/credencial/${ministro.unique_id}`
+    ? `${process.env.NEXT_PUBLIC_APP_URL || ''}/autentica_qrcode-05985642/${ministro.unique_id}`
     : null;
 
   return NextResponse.json({
