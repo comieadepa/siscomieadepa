@@ -11,14 +11,13 @@ import {
   ShieldCheck,
   UserCheck,
   Mail,
-  Smartphone,
-  RotateCw,
+  Lock,
+  Calendar,
 } from 'lucide-react';
 
 type Stage =
   | 'cpf'
-  | 'first_access_date'
-  | 'first_access_code'
+  | 'first_access'
   | 'password'
   | 'forgot_password'
   | 'forgot_sent';
@@ -36,16 +35,13 @@ export default function PortalMinistroLoginPage() {
   const [cpf, setCpf] = useState('');
   const [nomeMinistro, setNomeMinistro] = useState('');
   const [dataNascimento, setDataNascimento] = useState('');
-  const [codigoOtp, setCodigoOtp] = useState('');
-  const [canalOtp, setCanalOtp] = useState<'email' | 'whatsapp' | ''>('');
-  const [destinoOtpMascarado, setDestinoOtpMascarado] = useState('');
+  const [emailRecuperacao, setEmailRecuperacao] = useState('');
 
   const [senha, setSenha] = useState('');
   const [senhaConfirm, setSenhaConfirm] = useState('');
   const [showSenha, setShowSenha] = useState(false);
   const [showSenhaConfirm, setShowSenhaConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [reenviandoOtp, setReenviandoOtp] = useState(false);
   const [erro, setErro] = useState('');
   const [emailMascarado, setEmailMascarado] = useState('');
 
@@ -79,7 +75,7 @@ export default function PortalMinistroLoginPage() {
         return;
       }
       setNomeMinistro(json.nome || '');
-      setStage(json.hasPassword ? 'password' : 'first_access_date');
+      setStage(json.hasPassword ? 'password' : 'first_access');
     } catch {
       setErro('Erro de conexão com o servidor. Tente novamente.');
     } finally {
@@ -87,8 +83,8 @@ export default function PortalMinistroLoginPage() {
     }
   };
 
-  // Etapa 2A: Validar data de nascimento e solicitar código OTP 2FA
-  const handleRequestOtp = async (e: React.FormEvent) => {
+  // Etapa 2: Criar Senha e Salvar E-mail no 1º Acesso
+  const handleFirstAccessCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro('');
 
@@ -97,70 +93,9 @@ export default function PortalMinistroLoginPage() {
       return;
     }
 
-    setLoading(true);
-    try {
-      const res = await fetch('/api/portal-ministro/auth/first-access/request-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cpf: cpfLimpo,
-          data_nascimento: dataNascimento,
-        }),
-      });
-      const json = await res.json();
-
-      if (!res.ok) {
-        setErro(json.error || 'Erro ao validar dados.');
-        setLoading(false);
-        return;
-      }
-
-      setCanalOtp(json.canal || 'email');
-      setDestinoOtpMascarado(json.destinoMascarado || '');
-      setStage('first_access_code');
-    } catch {
-      setErro('Erro de conexão com o servidor. Tente novamente.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Reenviar código OTP
-  const handleResendOtp = async () => {
-    setErro('');
-    setReenviandoOtp(true);
-    try {
-      const res = await fetch('/api/portal-ministro/auth/first-access/request-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cpf: cpfLimpo,
-          data_nascimento: dataNascimento,
-        }),
-      });
-      const json = await res.json();
-
-      if (!res.ok) {
-        setErro(json.error || 'Erro ao reenviar código.');
-        return;
-      }
-
-      setDestinoOtpMascarado(json.destinoMascarado || '');
-    } catch {
-      setErro('Erro de conexão. Tente novamente.');
-    } finally {
-      setReenviandoOtp(false);
-    }
-  };
-
-  // Etapa 2B: Confirmar código OTP e criar senha (1º Acesso)
-  const handleVerifyOtpAndCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErro('');
-
-    const codigoLimpo = codigoOtp.replace(/\D/g, '');
-    if (!codigoLimpo || codigoLimpo.length !== 6) {
-      setErro('Digite o código de confirmação de 6 dígitos.');
+    const emailLimpo = emailRecuperacao.trim();
+    if (!emailLimpo || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailLimpo)) {
+      setErro('Informe um e-mail de recuperação válido.');
       return;
     }
 
@@ -182,7 +117,7 @@ export default function PortalMinistroLoginPage() {
         body: JSON.stringify({
           cpf: cpfLimpo,
           data_nascimento: dataNascimento,
-          codigo: codigoLimpo,
+          email: emailLimpo,
           senha,
           senhaConfirm,
         }),
@@ -190,7 +125,7 @@ export default function PortalMinistroLoginPage() {
       const json = await res.json();
 
       if (!res.ok) {
-        setErro(json.error || 'Erro ao confirmar código e criar senha.');
+        setErro(json.error || 'Erro ao cadastrar senha de acesso.');
         setLoading(false);
         return;
       }
@@ -202,13 +137,12 @@ export default function PortalMinistroLoginPage() {
     }
   };
 
-  // Login com senha existente
+  // Etapa 3: Login com Senha Existente
   const handleLoginPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro('');
-
     if (!senha) {
-      setErro('Digite sua senha para entrar.');
+      setErro('Digite sua senha.');
       return;
     }
 
@@ -273,36 +207,42 @@ export default function PortalMinistroLoginPage() {
 
   const handleResetToCpf = () => {
     setStage('cpf');
-    setErro('');
     setSenha('');
     setSenhaConfirm('');
     setDataNascimento('');
-    setCodigoOtp('');
+    setEmailRecuperacao('');
+    setErro('');
     setNomeMinistro('');
     setEmailMascarado('');
-    setDestinoOtpMascarado('');
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0D2B4E] via-[#123b63] to-[#1a4a7a] px-4 py-8">
-      <div className="w-full max-w-md">
-        
-        {/* Cabeçalho com Logo Institucional */}
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0D2B4E] via-[#123b63] to-[#1a4a7a] px-4 py-8 relative overflow-hidden">
+      
+      {/* Elementos Decorativos de Fundo */}
+      <div className="absolute -top-32 -left-32 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="w-full max-w-md relative z-10">
+
+        {/* Logo & Título Institucional */}
         <div className="text-center mb-6">
-          <Image
-            src="/img/logo_comieadepa.png"
-            alt="COMIEADEPA"
-            width={110}
-            height={110}
-            className="mx-auto mb-3 drop-shadow-xl"
-            style={{ width: '110px', height: 'auto' }}
-            priority
-          />
+          <div className="inline-block p-1 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 shadow-2xl mb-3">
+            <Image
+              src="/img/logo_comieadepa.png"
+              alt="COMIEADEPA"
+              width={100}
+              height={100}
+              className="drop-shadow-lg"
+              style={{ width: '100px', height: 'auto' }}
+              priority
+            />
+          </div>
           <h1 className="text-white text-2xl font-extrabold tracking-tight">
             Portal do Ministro
           </h1>
-          <p className="text-blue-200 text-xs uppercase tracking-widest mt-1 font-medium">
-            SISCOMIEADEPA · Convenção Estadual
+          <p className="text-blue-200/90 text-xs uppercase tracking-widest mt-1 font-semibold">
+            COMIEADEPA · Convenção Estadual
           </p>
         </div>
 
@@ -318,10 +258,10 @@ export default function PortalMinistroLoginPage() {
                   Acesso Restrito ao Ministro
                 </div>
                 <h2 className="text-xl font-bold text-gray-900 leading-tight">
-                  Identificação
+                  Identifique-se para entrar
                 </h2>
-                <p className="text-gray-500 text-xs mt-1">
-                  Digite seu CPF cadastrado para acessar o portal.
+                <p className="text-gray-500 text-xs mt-1 leading-relaxed">
+                  Digite seu CPF cadastrado na COMIEADEPA para continuar.
                 </p>
               </div>
 
@@ -368,8 +308,8 @@ export default function PortalMinistroLoginPage() {
             </div>
           )}
 
-          {/* ── ETAPA 2A: 1º Acesso - Confirmação de Data de Nascimento ── */}
-          {stage === 'first_access_date' && (
+          {/* ── ETAPA 2: 1º Acesso - Confirmação de Identidade e Criação de Senha ── */}
+          {stage === 'first_access' && (
             <div>
               <div className="flex items-center justify-between mb-4">
                 <button
@@ -379,7 +319,7 @@ export default function PortalMinistroLoginPage() {
                   <ArrowLeft size={14} /> Trocar CPF
                 </button>
                 <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
-                  1º Acesso
+                  1º Acesso ao Portal
                 </span>
               </div>
 
@@ -399,129 +339,69 @@ export default function PortalMinistroLoginPage() {
                 </div>
               </div>
 
-              <h2 className="text-lg font-bold text-gray-900 mb-1">
-                Confirme seus Dados
-              </h2>
-              <p className="text-gray-500 text-xs mb-5">
-                Informe sua data de nascimento cadastrada para enviarmos um código de segurança.
-              </p>
+              <div className="mb-4">
+                <h2 className="text-lg font-bold text-gray-900 leading-tight">
+                  Cadastre sua Senha de Acesso
+                </h2>
+                <p className="text-gray-500 text-xs mt-1">
+                  Confirme sua data de nascimento, informe seu e-mail de recuperação e defina sua senha.
+                </p>
+              </div>
 
-              <form onSubmit={handleRequestOtp} className="space-y-5">
+              <form onSubmit={handleFirstAccessCreate} className="space-y-4">
+                {/* Data de Nascimento */}
                 <div>
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                    Data de Nascimento
+                    <span className="flex items-center gap-1">
+                      <Calendar size={13} className="text-[#0D2B4E]" />
+                      Data de Nascimento (Confirmação)
+                    </span>
                   </label>
                   <input
                     type="date"
                     value={dataNascimento}
                     onChange={(e) => setDataNascimento(e.target.value)}
                     autoFocus
-                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition-all bg-gray-50/50 hover:bg-white font-medium"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition-all bg-gray-50/50 hover:bg-white font-medium"
                     required
                   />
                 </div>
 
-                {erro && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-xs flex items-start gap-2">
-                    <AlertCircle size={16} className="text-red-600 flex-shrink-0 mt-0.5" />
-                    <span>{erro}</span>
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-[#0D2B4E] hover:bg-[#163f6d] text-white font-bold py-3.5 rounded-xl shadow-lg shadow-[#0D2B4E]/20 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm tracking-wide"
-                >
-                  {loading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Validando e enviando código...</span>
-                    </>
-                  ) : (
-                    'Confirmar e Enviar Código'
-                  )}
-                </button>
-              </form>
-            </div>
-          )}
-
-          {/* ── ETAPA 2B: 1º Acesso - Digitar Código OTP 2FA + Criar Senha ── */}
-          {stage === 'first_access_code' && (
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <button
-                  onClick={() => {
-                    setStage('first_access_date');
-                    setErro('');
-                    setCodigoOtp('');
-                  }}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-[#0D2B4E] transition-colors"
-                >
-                  <ArrowLeft size={14} /> Voltar
-                </button>
-                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                  2FA · Código Enviado
-                </span>
-              </div>
-
-              {/* Informação do Destino do Código */}
-              <div className="bg-blue-50/90 border border-blue-200 rounded-2xl p-3.5 mb-5 flex items-start gap-3">
-                <div className="w-9 h-9 rounded-xl bg-[#0D2B4E] text-white flex items-center justify-center flex-shrink-0 shadow-sm mt-0.5">
-                  {canalOtp === 'whatsapp' ? <Smartphone size={18} /> : <Mail size={18} />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-gray-600 leading-tight">
-                    Enviamos um código de 6 dígitos via{' '}
-                    <strong>{canalOtp === 'whatsapp' ? 'WhatsApp' : 'E-mail'}</strong> para:
-                  </p>
-                  <p className="text-xs font-mono font-bold text-[#0D2B4E] mt-0.5 truncate">
-                    {destinoOtpMascarado}
-                  </p>
-                </div>
-              </div>
-
-              <form onSubmit={handleVerifyOtpAndCreate} className="space-y-4">
-                {/* Campo Código OTP */}
+                {/* E-mail de Recuperação */}
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                      Código de 6 Dígitos
-                    </label>
-                    <button
-                      type="button"
-                      onClick={handleResendOtp}
-                      disabled={reenviandoOtp}
-                      className="text-xs font-semibold text-[#0D2B4E] hover:text-[#1a4a7a] hover:underline flex items-center gap-1 disabled:opacity-50"
-                    >
-                      <RotateCw size={11} className={reenviandoOtp ? 'animate-spin' : ''} />
-                      {reenviandoOtp ? 'Reenviando...' : 'Reenviar código'}
-                    </button>
-                  </div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                    <span className="flex items-center gap-1">
+                      <Mail size={13} className="text-[#0D2B4E]" />
+                      E-mail de Recuperação (Obrigatório)
+                    </span>
+                  </label>
                   <input
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={6}
-                    placeholder="000000"
-                    value={codigoOtp}
-                    onChange={(e) => setCodigoOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    autoFocus
-                    className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-center text-xl font-mono tracking-widest text-gray-900 font-bold focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition-all bg-gray-50/50 hover:bg-white"
+                    type="email"
+                    placeholder="seuemail@exemplo.com"
+                    value={emailRecuperacao}
+                    onChange={(e) => setEmailRecuperacao(e.target.value)}
+                    className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition-all bg-gray-50/50 hover:bg-white"
                     required
                   />
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    Utilizado exclusivamente caso precise redefinir sua senha no futuro.
+                  </p>
                 </div>
 
                 {/* Nova Senha */}
                 <div>
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                    Criar Nova Senha
+                    <span className="flex items-center gap-1">
+                      <Lock size={13} className="text-[#0D2B4E]" />
+                      Nova Senha
+                    </span>
                   </label>
                   <div className="relative">
                     <input
                       type={showSenha ? 'text' : 'password'}
                       value={senha}
                       onChange={(e) => setSenha(e.target.value)}
-                      placeholder="Digite sua senha"
+                      placeholder="Digite sua nova senha"
                       className="w-full border border-gray-300 rounded-xl px-4 py-2.5 pr-11 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition-all bg-gray-50/50 hover:bg-white"
                       required
                     />
@@ -612,10 +492,10 @@ export default function PortalMinistroLoginPage() {
                   {loading ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Validando e criando acesso...</span>
+                      <span>Criando acesso e entrando...</span>
                     </>
                   ) : (
-                    'Confirmar Código e Criar Acesso'
+                    'Criar Senha e Acessar o Portal'
                   )}
                 </button>
               </form>
@@ -834,56 +714,46 @@ export default function PortalMinistroLoginPage() {
 
           {/* ── ETAPA 5: Confirmação de Envio do E-mail de Recuperação ── */}
           {stage === 'forgot_sent' && (
-            <div className="text-center py-2 animate-fadeIn">
-              <div className="w-14 h-14 bg-blue-100 text-[#0D2B4E] rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-sm">
-                <Mail size={30} />
+            <div className="text-center py-2">
+              <div className="w-14 h-14 bg-green-100 text-green-700 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-inner">
+                <Mail size={28} />
               </div>
-              <h2 className="text-xl font-bold text-gray-900 mb-1">Instruções Enviadas!</h2>
-              <p className="text-xs text-gray-600 mb-4 leading-relaxed">
-                Se o CPF informado estiver cadastrado e possuir um e-mail válido, enviamos o link para:
+
+              <h2 className="text-xl font-bold text-gray-900 mb-2">
+                Instruções Enviadas!
+              </h2>
+
+              <p className="text-gray-600 text-xs leading-relaxed mb-4">
+                Se os dados informados estiverem corretos, enviamos um link para redefinição de senha para o e-mail cadastrado:
               </p>
 
               {emailMascarado ? (
-                <div className="bg-blue-50/80 border border-blue-200 rounded-xl p-3 mb-5">
-                  <p className="text-xs font-mono font-bold text-[#0D2B4E]">
+                <div className="bg-gray-50 border border-gray-200 rounded-xl py-2.5 px-4 mb-6 inline-block">
+                  <span className="font-mono text-sm font-bold text-[#0D2B4E]">
                     {emailMascarado}
-                  </p>
+                  </span>
                 </div>
               ) : (
-                <div className="bg-blue-50/80 border border-blue-200 rounded-xl p-3 mb-5">
-                  <p className="text-xs text-gray-600">
-                    O e-mail cadastrado junto à Secretaria da COMIEADEPA.
-                  </p>
-                </div>
+                <div className="mb-6" />
               )}
 
-              <p className="text-[11px] text-gray-400 mb-6 leading-relaxed">
+              <p className="text-[11px] text-gray-400 mb-6">
                 O link é válido por <strong>15 minutos</strong>. Verifique sua caixa de entrada e a pasta de spam.
               </p>
 
               <button
                 type="button"
                 onClick={handleResetToCpf}
-                className="w-full bg-[#0D2B4E] hover:bg-[#163f6d] text-white font-bold py-3.5 rounded-xl shadow-lg shadow-[#0D2B4E]/20 transition-all text-sm"
+                className="w-full bg-[#0D2B4E] hover:bg-[#163f6d] text-white font-bold py-3.5 rounded-xl transition-all text-sm shadow-md"
               >
-                Voltar para o Login
+                Voltar para o Início
               </button>
             </div>
           )}
 
-          {/* Rodapé Interno do Card */}
-          <div className="mt-6 pt-4 border-t border-gray-100 text-center">
-            <p className="text-xs text-gray-400">
-              Dúvidas ou dificuldades de acesso?{' '}
-              <span className="font-semibold text-gray-600 block sm:inline">
-                Procure a Secretaria Geral
-              </span>
-            </p>
-          </div>
-
         </div>
 
-        {/* Rodapé Externo da Página */}
+        {/* Rodapé Externo */}
         <div className="text-center mt-6">
           <p className="text-xs text-blue-200/60 font-medium">
             COMIEADEPA &copy; {new Date().getFullYear()} · Todos os direitos reservados

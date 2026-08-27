@@ -1,7 +1,8 @@
 /**
  * POST /api/portal-ministro/auth/first-access/verify-and-create
- * Valida o código de 6 dígitos (2FA OTP) enviado ao ministro e cria sua senha com hash bcrypt.
- * Invalida o código imediatamente e inicia a sessão autenticada.
+ * Valida os dados de identificação (CPF + Data de Nascimento), salva o e-mail de recuperação
+ * no cadastro do ministro e cria sua senha com hash bcrypt.
+ * Inicia a sessão autenticada com cookie ministro_token.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -13,7 +14,6 @@ import bcrypt from 'bcrypt';
 
 const RATE_LIMIT_ATTEMPTS = 5;
 const RATE_LIMIT_WINDOW_MS = 60_000;
-const MAX_CODE_ATTEMPTS = 5;
 
 const cleanCpf = (v: string) => v.replace(/\D/g, '');
 
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const cpf = cleanCpf(String(body?.cpf || ''));
     const dataNascimento = String(body?.data_nascimento || '').trim();
-    const codigo = String(body?.codigo || '').trim();
+    const email = String(body?.email || '').trim().toLowerCase();
     const senha = String(body?.senha || '');
     const senhaConfirm = String(body?.senhaConfirm || '');
 
@@ -47,13 +47,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'CPF inválido.' }, { status: 400 });
     }
 
-    if (!codigo || codigo.length !== 6) {
-      return NextResponse.json({ error: 'Código de confirmação de 6 dígitos é obrigatório.' }, { status: 400 });
+    if (!dataNascimento || !/^\d{4}-\d{2}-\d{2}$/.test(dataNascimento)) {
+      return NextResponse.json({ error: 'Data de nascimento inválida.' }, { status: 400 });
+    }
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json({ error: 'Informe um e-mail de recuperação válido.' }, { status: 400 });
     }
 
     const ip = getClientIp(request);
     const rate = checkRateLimit({
-      key: `portal-ministro:fa-verify:${ip}:${cpf}`,
+      key: `portal-ministro:fa-create:${ip}:${cpf}`,
       limit: RATE_LIMIT_ATTEMPTS,
       windowMs: RATE_LIMIT_WINDOW_MS,
     });
@@ -88,10 +92,10 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServerClient();
 
-    // Busca ministro
+    // Busca ministro ativo
     const { data: ministro, error: mErr } = await supabase
       .from('members')
-      .select('id, name, cpf, data_nascimento, status, custom_fields')
+      .select('id, name, cpf, data_nascimento, status, email, custom_fields')
       .eq('cpf', cpf)
       .maybeSingle();
 
@@ -103,6 +107,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Acesso não disponível. Procure a Secretaria.' }, { status: 403 });
     }
 
+    // Verifica se já tem conta criada
+    const { data: existingAccount } = await supabase
+      .from('ministro_portal_accounts')
+      .select('ministro_id')
+      .eq('ministro_id', ministro.id)
+      .maybeSingle();
+
+    if (existingAccount) {
+      return NextResponse.json(
+        { error: 'Conta já cadastrada. Por favor, utilize seu login e senha.' },
+        { status: 409 },
+      );
+    }
+
     // Valida data de nascimento
     const cf = (ministro.custom_fields && typeof ministro.custom_fields === 'object')
       ? (ministro.custom_fields as Record<string, any>)
@@ -112,67 +130,29 @@ export async function POST(request: NextRequest) {
     const dbDate = String(rawBirthDate).trim().slice(0, 10);
 
     if (dbDate !== dataNascimento) {
-      return NextResponse.json({ error: 'Dados de identificação divergentes.' }, { status: 401 });
+      return NextResponse.json({ error: 'Data de nascimento incorreta.' }, { status: 401 });
     }
 
-    // Busca o código ativo mais recente
-    const agora = new Date().toISOString();
-    const { data: activeCode, error: codeErr } = await supabase
-      .from('ministro_portal_first_access_codes')
-      .select('id, codigo, tentativas, expires_at, used')
-      .eq('ministro_id', ministro.id)
-      .eq('used', false)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // Atualiza o e-mail de recuperação no cadastro do ministro (members)
+    const updatedCustomFields = {
+      ...cf,
+      email,
+    };
 
-    if (codeErr || !activeCode) {
-      return NextResponse.json(
-        { error: 'Nenhum código ativo encontrado. Solicite o envio de um novo código.' },
-        { status: 400 },
-      );
+    const { error: updateMemberErr } = await supabase
+      .from('members')
+      .update({
+        email,
+        custom_fields: updatedCustomFields,
+      })
+      .eq('id', ministro.id);
+
+    if (updateMemberErr) {
+      console.error('[first-access] Erro ao atualizar e-mail do ministro:', updateMemberErr.message);
     }
-
-    if (new Date(activeCode.expires_at) <= new Date(agora)) {
-      return NextResponse.json(
-        { error: 'O código de confirmação expirou (validade: 15 minutos). Solicite um novo código.' },
-        { status: 410 },
-      );
-    }
-
-    // Incrementa tentativas e previne brute-force no OTP
-    const novasTentativas = (activeCode.tentativas || 0) + 1;
-    if (novasTentativas > MAX_CODE_ATTEMPTS) {
-      await supabase
-        .from('ministro_portal_first_access_codes')
-        .update({ used: true, used_at: agora, tentativas: novasTentativas })
-        .eq('id', activeCode.id);
-
-      return NextResponse.json(
-        { error: 'Limite de tentativas excedido para este código. Solicite um novo código de confirmação.' },
-        { status: 429 },
-      );
-    }
-
-    await supabase
-      .from('ministro_portal_first_access_codes')
-      .update({ tentativas: novasTentativas })
-      .eq('id', activeCode.id);
-
-    if (activeCode.codigo.trim() !== codigo) {
-      return NextResponse.json(
-        { error: 'Código de confirmação incorreto. Verifique o número recebido.' },
-        { status: 401 },
-      );
-    }
-
-    // Código correto: invalida o código imediatamente
-    await supabase
-      .from('ministro_portal_first_access_codes')
-      .update({ used: true, used_at: agora })
-      .eq('id', activeCode.id);
 
     // Hashing da senha com bcrypt
+    const agora = new Date().toISOString();
     const senhaHash = await bcrypt.hash(senha, 10);
 
     const { error: insertAccErr } = await supabase
@@ -184,7 +164,7 @@ export async function POST(request: NextRequest) {
       }, { onConflict: 'ministro_id' });
 
     if (insertAccErr) {
-      console.error('[first-access/verify-and-create] Erro ao cadastrar senha:', insertAccErr.message);
+      console.error('[first-access] Erro ao cadastrar senha:', insertAccErr.message);
       return NextResponse.json({ error: 'Erro ao criar senha de acesso.' }, { status: 500 });
     }
 
@@ -195,11 +175,11 @@ export async function POST(request: NextRequest) {
     }
 
     void logDB({
-      acao: 'primeiro_acesso_2fa_concluido',
+      acao: 'primeiro_acesso_concluido',
       modulo: 'portal_ministro',
       entidade: 'ministro',
       entidadeId: ministro.id,
-      descricao: `Primeiro acesso com autenticação 2FA concluído com sucesso: ${ministro.name}`,
+      descricao: `Primeiro acesso concluído e senha cadastrada com sucesso: ${ministro.name}`,
       status: 'sucesso',
     });
 
