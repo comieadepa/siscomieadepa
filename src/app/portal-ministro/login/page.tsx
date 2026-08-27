@@ -13,11 +13,13 @@ import {
   Mail,
   Lock,
   Calendar,
+  CheckCircle2,
 } from 'lucide-react';
 
 type Stage =
   | 'cpf'
-  | 'first_access'
+  | 'first_access_date'
+  | 'first_access_create'
   | 'password'
   | 'forgot_password'
   | 'forgot_sent';
@@ -54,7 +56,7 @@ export default function PortalMinistroLoginPage() {
   const isSenhaValid = hasMinLen && hasLetter && hasNumber;
   const senhasCoincidem = senha.length > 0 && senhaConfirm.length > 0 && senha === senhaConfirm;
 
-  // Etapa 1: verificar CPF
+  // Etapa 1: Verificar CPF
   const handleCheckCpf = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro('');
@@ -75,7 +77,7 @@ export default function PortalMinistroLoginPage() {
         return;
       }
       setNomeMinistro(json.nome || '');
-      setStage(json.hasPassword ? 'password' : 'first_access');
+      setStage(json.hasPassword ? 'password' : 'first_access_date');
     } catch {
       setErro('Erro de conexão com o servidor. Tente novamente.');
     } finally {
@@ -83,8 +85,8 @@ export default function PortalMinistroLoginPage() {
     }
   };
 
-  // Etapa 2: Criar Senha e Salvar E-mail no 1º Acesso
-  const handleFirstAccessCreate = async (e: React.FormEvent) => {
+  // Etapa 2A (1º Acesso - Passo 1): Validar Data de Nascimento
+  const handleValidateBirthdate = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro('');
 
@@ -92,6 +94,41 @@ export default function PortalMinistroLoginPage() {
       setErro('Informe sua data de nascimento para confirmação.');
       return;
     }
+
+    setLoading(true);
+    try {
+      const res = await fetch('/api/portal-ministro/auth/first-access/validate-birthdate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cpf: cpfLimpo,
+          data_nascimento: dataNascimento,
+        }),
+      });
+      const json = await res.json();
+
+      if (!res.ok) {
+        setErro(json.error || 'Data de nascimento incorreta.');
+        setLoading(false);
+        return;
+      }
+
+      if (json.emailSugerido && !emailRecuperacao) {
+        setEmailRecuperacao(json.emailSugerido);
+      }
+
+      setStage('first_access_create');
+    } catch {
+      setErro('Erro de conexão com o servidor. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Etapa 2B (1º Acesso - Passo 2): Criar Senha e Salvar E-mail
+  const handleFirstAccessCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErro('');
 
     const emailLimpo = emailRecuperacao.trim();
     if (!emailLimpo || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailLimpo)) {
@@ -247,7 +284,7 @@ export default function PortalMinistroLoginPage() {
         </div>
 
         {/* Card Principal */}
-        <div className="bg-white rounded-3xl shadow-2xl p-7 sm:p-8 border border-white/20 relative backdrop-blur-sm">
+        <div className="bg-white rounded-3xl shadow-2xl p-7 sm:p-8 border border-white/20 relative backdrop-blur-sm transition-all duration-300">
 
           {/* ── ETAPA 1: Identificação por CPF ── */}
           {stage === 'cpf' && (
@@ -308,9 +345,9 @@ export default function PortalMinistroLoginPage() {
             </div>
           )}
 
-          {/* ── ETAPA 2: 1º Acesso - Confirmação de Identidade e Criação de Senha ── */}
-          {stage === 'first_access' && (
-            <div>
+          {/* ── ETAPA 2A: 1º Acesso - Passo 1: Confirmação de Identidade (Apenas Data de Nascimento) ── */}
+          {stage === 'first_access_date' && (
+            <div className="transition-opacity duration-300">
               <div className="flex items-center justify-between mb-4">
                 <button
                   onClick={handleResetToCpf}
@@ -319,7 +356,7 @@ export default function PortalMinistroLoginPage() {
                   <ArrowLeft size={14} /> Trocar CPF
                 </button>
                 <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
-                  1º Acesso ao Portal
+                  1º Acesso · Passo 1 de 2
                 </span>
               </div>
 
@@ -339,22 +376,21 @@ export default function PortalMinistroLoginPage() {
                 </div>
               </div>
 
-              <div className="mb-4">
+              <div className="mb-5">
                 <h2 className="text-lg font-bold text-gray-900 leading-tight">
-                  Cadastre sua Senha de Acesso
+                  Confirme sua Identidade
                 </h2>
                 <p className="text-gray-500 text-xs mt-1">
-                  Confirme sua data de nascimento, informe seu e-mail de recuperação e defina sua senha.
+                  Para sua segurança, informe sua data de nascimento cadastrada na convenção.
                 </p>
               </div>
 
-              <form onSubmit={handleFirstAccessCreate} className="space-y-4">
-                {/* Data de Nascimento */}
+              <form onSubmit={handleValidateBirthdate} className="space-y-5">
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                    <span className="flex items-center gap-1">
-                      <Calendar size={13} className="text-[#0D2B4E]" />
-                      Data de Nascimento (Confirmação)
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                    <span className="flex items-center gap-1.5">
+                      <Calendar size={14} className="text-[#0D2B4E]" />
+                      Data de Nascimento
                     </span>
                   </label>
                   <input
@@ -362,11 +398,81 @@ export default function PortalMinistroLoginPage() {
                     value={dataNascimento}
                     onChange={(e) => setDataNascimento(e.target.value)}
                     autoFocus
-                    className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition-all bg-gray-50/50 hover:bg-white font-medium"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition-all bg-gray-50/50 hover:bg-white font-medium"
                     required
                   />
                 </div>
 
+                {erro && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-xs flex items-start gap-2">
+                    <AlertCircle size={16} className="text-red-600 flex-shrink-0 mt-0.5" />
+                    <span>{erro}</span>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-[#0D2B4E] hover:bg-[#163f6d] text-white font-bold py-3.5 rounded-xl shadow-lg shadow-[#0D2B4E]/20 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm tracking-wide"
+                >
+                  {loading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Validando dados...</span>
+                    </>
+                  ) : (
+                    'Confirmar Data de Nascimento'
+                  )}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* ── ETAPA 2B: 1º Acesso - Passo 2: Criação do Acesso (E-mail + Senha) ── */}
+          {stage === 'first_access_create' && (
+            <div className="animate-fadeIn transition-opacity duration-300">
+              <div className="flex items-center justify-between mb-4">
+                <button
+                  onClick={() => {
+                    setStage('first_access_date');
+                    setErro('');
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-[#0D2B4E] transition-colors"
+                >
+                  <ArrowLeft size={14} /> Voltar
+                </button>
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                  <CheckCircle2 size={12} className="text-emerald-600" />
+                  Identidade Confirmada · Passo 2 de 2
+                </span>
+              </div>
+
+              {/* Identificação do Ministro */}
+              <div className="bg-blue-50/80 border border-blue-100 rounded-2xl p-3.5 mb-5 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#0D2B4E] text-white font-bold flex items-center justify-center text-base flex-shrink-0 shadow-sm">
+                  {nomeMinistro ? nomeMinistro.charAt(0).toUpperCase() : <UserCheck size={18} />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-gray-500 font-medium leading-none">Ministro</p>
+                  <p className="text-sm font-bold text-[#0D2B4E] truncate mt-1">
+                    {nomeMinistro}
+                  </p>
+                  <p className="text-[11px] text-gray-400 font-mono mt-0.5">
+                    CPF: {maskCpf(cpf)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <h2 className="text-lg font-bold text-gray-900 leading-tight">
+                  Cadastre sua Senha de Acesso
+                </h2>
+                <p className="text-gray-500 text-xs mt-1">
+                  Defina seu e-mail de recuperação e crie sua senha de acesso ao portal.
+                </p>
+              </div>
+
+              <form onSubmit={handleFirstAccessCreate} className="space-y-4">
                 {/* E-mail de Recuperação */}
                 <div>
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
@@ -380,7 +486,8 @@ export default function PortalMinistroLoginPage() {
                     placeholder="seuemail@exemplo.com"
                     value={emailRecuperacao}
                     onChange={(e) => setEmailRecuperacao(e.target.value)}
-                    className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition-all bg-gray-50/50 hover:bg-white"
+                    autoFocus
+                    className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition-all bg-gray-50/50 hover:bg-white font-medium"
                     required
                   />
                   <p className="text-[10px] text-gray-400 mt-1">
@@ -401,7 +508,7 @@ export default function PortalMinistroLoginPage() {
                       type={showSenha ? 'text' : 'password'}
                       value={senha}
                       onChange={(e) => setSenha(e.target.value)}
-                      placeholder="Digite sua nova senha"
+                      placeholder="Digite sua senha"
                       className="w-full border border-gray-300 rounded-xl px-4 py-2.5 pr-11 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition-all bg-gray-50/50 hover:bg-white"
                       required
                     />
