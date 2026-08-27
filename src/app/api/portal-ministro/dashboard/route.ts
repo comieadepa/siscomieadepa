@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   // Dados do ministro para verificar pendências
   const { data: ministro } = await supabase
     .from('members')
-    .select('id, data_validade_credencial, status, pastor_presidente, telefone, email, custom_fields')
+    .select('id, cred_validade, status, pastor_presidente, telefone, email, custom_fields')
     .eq('id', session.ministroId)
     .maybeSingle();
 
@@ -47,9 +47,12 @@ export async function GET(request: NextRequest) {
   const pendencias: { tipo: string; mensagem: string; urgente: boolean }[] = [];
 
   if (ministro) {
-    const validade = ministro.data_validade_credencial
-      ? new Date(ministro.data_validade_credencial as string)
-      : null;
+    const cf = (ministro.custom_fields && typeof ministro.custom_fields === 'object')
+      ? (ministro.custom_fields as Record<string, any>)
+      : {};
+
+    const validadeStr = (ministro.cred_validade || cf.dataValidadeCredencial || cf.validade || null) as string | null;
+    const validade = validadeStr ? new Date(validadeStr) : null;
     const hoje30 = new Date(Date.now() + 30 * 24 * 3600 * 1000);
 
     if (!validade) {
@@ -76,9 +79,6 @@ export async function GET(request: NextRequest) {
     if (ministro.pastor_presidente) {
       const mesAtual = new Date().getMonth() + 1;
       const anoAtual = new Date().getFullYear();
-      const cf = (ministro.custom_fields && typeof ministro.custom_fields === 'object')
-        ? (ministro.custom_fields as Record<string, any>)
-        : {};
       const campNome = String(cf.campo || '').trim();
 
       let contribQuery = supabase
@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Dados cadastrais incompletos
-    if (!ministro.telefone && !ministro.email) {
+    if (!ministro.telefone && !ministro.email && !cf.email && !cf.telefone && !cf.celular) {
       pendencias.push({
         tipo: 'cadastro',
         mensagem: 'Dados de contato incompletos. Solicite atualização cadastral.',
