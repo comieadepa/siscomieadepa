@@ -41,9 +41,15 @@ export default function PortalMinistroLayout({ children }: { children: React.Rea
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  const isPublicAuthRoute =
+    pathname.startsWith('/portal-ministro/login') ||
+    pathname.startsWith('/portal-ministro/redefinir-senha');
+
   useEffect(() => {
-    const isLogin = pathname.startsWith('/portal-ministro/login');
-    if (isLogin) { setLoading(false); return; }
+    if (isPublicAuthRoute) {
+      setLoading(false);
+      return;
+    }
 
     fetch('/api/portal-ministro/auth/me')
       .then(async (res) => {
@@ -58,15 +64,14 @@ export default function PortalMinistroLayout({ children }: { children: React.Rea
       .catch(() => {
         router.replace('/portal-ministro/login');
       });
-  }, [pathname, router]);
+  }, [pathname, router, isPublicAuthRoute]);
 
   const handleLogout = async () => {
     await fetch('/api/portal-ministro/auth/logout', { method: 'POST' });
     router.push('/portal-ministro/login');
   };
 
-  const isLogin = pathname.startsWith('/portal-ministro/login');
-  if (isLogin) return <>{children}</>;
+  if (isPublicAuthRoute) return <>{children}</>;
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0D2B4E] to-[#1a4a7a]">
