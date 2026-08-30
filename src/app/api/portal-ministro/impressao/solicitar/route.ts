@@ -8,6 +8,7 @@ import { createServerClient } from '@/lib/supabase-server';
 import { getMinistroSession, unauthorizedResponse } from '@/lib/ministro-session';
 import { createAsaasPayment, createAsaasCustomer } from '@/lib/asaas';
 import { logDB } from '@/lib/audit';
+import { criarNotificacaoMinistro } from '@/lib/notificacoes-ministro';
 
 const VALOR_IMPRESSAO = 20.0; // R$ 20,00
 const VALOR_CENTAVOS = 2000;
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
     .from('credencial_impressoes_solicitacoes')
     .select('id, status')
     .eq('ministro_id', session.ministroId)
-    .in('status', ['aguardando_pagamento', 'pago_pendente_impressao'])
+    .in('status', ['aguardando_pagamento', 'pago_pendente_impressao', 'em_impressao', 'disponivel_retirada'])
     .maybeSingle();
 
   if (pendente) {
@@ -114,6 +115,20 @@ export async function POST(request: NextRequest) {
       status: 'sucesso',
       detalhes: { asaasPaymentId: payment.id, valor: VALOR_IMPRESSAO },
     });
+
+    // Dispara notificação automática (In-App e E-mail via Resend)
+    try {
+      await criarNotificacaoMinistro({
+        ministroId: session.ministroId,
+        tipo: 'credencial',
+        titulo: 'Solicitação de Credencial Recebida',
+        mensagem: 'Sua solicitação de impressão da credencial física foi registrada com sucesso. Você pode acompanhar o status de produção e entrega diretamente na Central de Credencial.',
+        linkAcao: '/portal-ministro/credencial',
+        canal: 'ambos',
+      });
+    } catch (notifErr: any) {
+      console.error('[impressao/solicitar] Erro ao disparar notificação:', notifErr?.message);
+    }
 
     return NextResponse.json({
       ok: true,

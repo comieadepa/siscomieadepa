@@ -67,6 +67,15 @@ export default function ConfiguracoesPage() {
               📝 Nomenclaturas
             </button>
             <button
+              onClick={() => setActiveTab('video-presidente')}
+              className={`px-6 py-3 font-semibold transition whitespace-nowrap text-sm border-b-3 ${activeTab === 'video-presidente'
+                ? 'text-teal-700 border-teal-600'
+                : 'text-gray-600 border-transparent hover:text-teal-600'
+                }`}
+            >
+              🎥 Palavra do Presidente
+            </button>
+            <button
               onClick={() => setActiveTab('armazenamento')}
               className={`px-6 py-3 font-semibold transition whitespace-nowrap text-sm border-b-3 ${activeTab === 'armazenamento'
                 ? 'text-teal-700 border-teal-600'
@@ -91,6 +100,10 @@ export default function ConfiguracoesPage() {
             {/* Aba: Nomenclaturas */}
             {activeTab === 'nomenclaturas' && (
               <NomenclaturaContent onNotification={(title, message, type) => setNotification({ isOpen: true, title, message, type })} />
+            )}
+            {/* Aba: Palavra do Presidente */}
+            {activeTab === 'video-presidente' && (
+              <VideoPresidenteContent onNotification={(title, message, type) => setNotification({ isOpen: true, title, message, type })} />
             )}
             {/* Aba: Armazenamento */}
             {activeTab === 'armazenamento' && (
@@ -919,6 +932,207 @@ function ArmazenamentoContent({ onNotification }: { onNotification: (title: stri
         >
           Salvar Configurações
         </button>
+      </div>
+    </div>
+  );
+}
+
+function getEmbedUrl(url: string | null): string | null {
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+
+  const ytMatch = trimmed.match(
+    /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?.*v=|shorts\/|live\/|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/i,
+  );
+  if (ytMatch && ytMatch[1]) {
+    return `https://www.youtube.com/embed/${ytMatch[1]}`;
+  }
+
+  const vmMatch = trimmed.match(/(?:https?:\/\/)?(?:www\.)?(?:player\.)?vimeo\.com\/(?:video\/)?(\d+)/i);
+  if (vmMatch && vmMatch[1]) {
+    return `https://player.vimeo.com/video/${vmMatch[1]}`;
+  }
+
+  return trimmed;
+}
+
+function VideoPresidenteContent({ onNotification }: { onNotification: (title: string, message: string, type: 'success' | 'error' | 'warning' | 'info') => void }) {
+  const [form, setForm] = useState({
+    titulo: 'Palavra do Presidente',
+    descricao: '',
+    url_video: '',
+    ativo: false,
+  });
+  const [loading, setLoading] = useState(true);
+  const [salvando, setSalvando] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/portal-ministro/video-admin')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.data) {
+          setForm({
+            titulo: d.data.titulo || 'Palavra do Presidente',
+            descricao: d.data.descricao || '',
+            url_video: d.data.url_video || '',
+            ativo: !!d.data.ativo,
+          });
+        }
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSalvando(true);
+    try {
+      const res = await fetch('/api/portal-ministro/video-admin', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        onNotification('Erro', json.error || 'Erro ao salvar vídeo.', 'error');
+      } else {
+        onNotification('Sucesso', 'Configuração do vídeo salva com sucesso!', 'success');
+      }
+    } catch {
+      onNotification('Erro', 'Erro de conexão com o servidor.', 'error');
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const embedUrl = getEmbedUrl(form.url_video);
+
+  if (loading) {
+    return <div className="text-center py-8 text-gray-500">Carregando configurações do vídeo...</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-gray-800">🎥 Palavra do Presidente (Vídeo Institucional)</h2>
+        <p className="text-sm text-gray-500 mt-1">
+          Configure o vídeo pastoral que é exibido em destaque no Dashboard do Portal do Ministro.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Formulário */}
+        <form onSubmit={handleSave} className="bg-gray-50 p-6 rounded-xl border border-gray-200 space-y-4">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Título do Vídeo *</label>
+            <input
+              type="text"
+              value={form.titulo}
+              onChange={(e) => setForm({ ...form, titulo: e.target.value })}
+              className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+              placeholder="Ex: Palavra do Presidente"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">
+              Subtítulo / Descrição <span className="text-gray-400 font-normal">(opcional)</span>
+            </label>
+            <input
+              type="text"
+              value={form.descricao}
+              onChange={(e) => setForm({ ...form, descricao: e.target.value })}
+              className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+              placeholder="Ex: Mensagem pastoral aos ministros da COMIEADEPA"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">URL do Vídeo (YouTube / Vimeo / MP4)</label>
+            <input
+              type="url"
+              value={form.url_video}
+              onChange={(e) => setForm({ ...form, url_video: e.target.value })}
+              className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+              placeholder="https://www.youtube.com/watch?v=... ou https://youtu.be/..."
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Cole o link do YouTube, Vimeo ou link direto do arquivo de vídeo.
+            </p>
+          </div>
+
+          <div className="pt-2">
+            <label className="flex items-center gap-3 cursor-pointer p-3 bg-white rounded-lg border border-gray-200">
+              <input
+                type="checkbox"
+                checked={form.ativo}
+                onChange={(e) => setForm({ ...form, ativo: e.target.checked })}
+                className="w-5 h-5 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+              />
+              <div>
+                <span className="font-semibold text-gray-800 text-sm block">Exibir vídeo no Portal do Ministro</span>
+                <span className="text-xs text-gray-500">Quando ativo, o card do vídeo fica visível aos ministros autenticados</span>
+              </div>
+            </label>
+          </div>
+
+          <div className="pt-3">
+            <button
+              type="submit"
+              disabled={salvando}
+              className="w-full py-2.5 bg-teal-700 hover:bg-teal-800 text-white font-semibold text-sm rounded-lg transition shadow-sm disabled:opacity-60"
+            >
+              {salvando ? 'Salvando...' : '✓ Salvar Configuração do Vídeo'}
+            </button>
+          </div>
+        </form>
+
+        {/* Prévia */}
+        <div className="space-y-4">
+          <h3 className="text-base font-bold text-gray-800 flex items-center gap-2">
+            <span>👁️</span> Prévia do Card no Portal do Ministro
+          </h3>
+
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="px-5 py-3.5 flex items-center gap-3 border-b border-gray-100 bg-[#0D2B4E] text-white">
+              <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center font-bold text-xs">
+                ▶
+              </div>
+              <div className="min-w-0">
+                <h4 className="font-bold text-sm truncate">{form.titulo || 'Palavra do Presidente'}</h4>
+                {form.descricao && <p className="text-xs text-blue-200 truncate">{form.descricao}</p>}
+              </div>
+            </div>
+
+            {embedUrl && form.ativo ? (
+              <div className="relative w-full aspect-video bg-black">
+                <iframe
+                  src={embedUrl}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  className="absolute inset-0 w-full h-full"
+                  title="Prévia do Vídeo"
+                />
+              </div>
+            ) : (
+              <div className="p-8 text-center bg-gray-50">
+                <div className="w-14 h-14 rounded-full bg-gray-200 flex items-center justify-center mx-auto mb-3 text-gray-400 text-xl">
+                  ▶
+                </div>
+                <p className="text-sm font-semibold text-gray-600">
+                  {!form.ativo ? 'Vídeo atualmente desativado' : 'Nenhum link de vídeo configurado'}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {!form.ativo
+                    ? 'Marque a opção "Exibir vídeo no Portal do Ministro" para ativá-lo.'
+                    : 'Insira uma URL do YouTube ou Vimeo ao lado para carregar o player.'}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

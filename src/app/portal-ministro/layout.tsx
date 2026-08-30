@@ -18,6 +18,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { MinistroContext, type MinistroData } from './ministro-context';
+import MinistroNotificationBell from '@/components/MinistroNotificationBell';
 
 const NAV_ITEMS = [
   { href: '/portal-ministro/dashboard', label: 'Início', icon: LayoutDashboard },
@@ -205,8 +206,43 @@ export default function PortalMinistroLayout({ children }: { children: React.Rea
 
         {/* Área de conteúdo */}
         <div className="md:ml-64 flex flex-col min-h-screen">
+          {/* Topbar desktop */}
+          <header className="hidden md:flex bg-white border-b border-gray-200 px-8 py-3.5 items-center justify-between sticky top-0 z-20 shadow-sm">
+            <div>
+              <h2 className="text-sm font-bold text-gray-800">
+                Paz do Senhor, <span className="text-[#0D2B4E]">{ministro.nome?.split(' ')[0] || 'Ministro'}</span>
+              </h2>
+              <p className="text-[11px] text-gray-400 font-medium">
+                {ministro.cargo || 'Ministro'} · {ministro.matricula ? `REG. ${ministro.matricula}` : 'COMIEADEPA'}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <MinistroNotificationBell isDark={false} />
+
+              <div className="h-6 w-px bg-gray-200" />
+
+              <div className="flex items-center gap-2.5">
+                {ministro.fotoUrl ? (
+                  <img
+                    src={ministro.fotoUrl}
+                    alt={ministro.nome}
+                    className="w-8 h-8 rounded-full object-cover ring-2 ring-gray-200"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-[#0D2B4E] text-white flex items-center justify-center font-bold text-xs">
+                    {ministro.nome?.charAt(0) ?? '?'}
+                  </div>
+                )}
+                <span className="text-xs font-bold text-gray-700 hidden lg:inline max-w-[140px] truncate">
+                  {ministro.nome}
+                </span>
+              </div>
+            </div>
+          </header>
+
           {/* Topbar mobile */}
-          <header className="md:hidden bg-[#0D2B4E] px-4 py-3.5 flex items-center justify-between sticky top-0 z-20 shadow-lg">
+          <header className="md:hidden bg-[#0D2B4E] px-4 py-3 flex items-center justify-between sticky top-0 z-20 shadow-lg">
             <button
               onClick={() => setSidebarOpen(true)}
               className="p-2 rounded-xl hover:bg-white/10 transition-colors text-white"
@@ -214,7 +250,7 @@ export default function PortalMinistroLayout({ children }: { children: React.Rea
             >
               <Menu size={22} />
             </button>
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2">
               <Image
                 src="/img/logo_comieadepa.png"
                 alt="COMIEADEPA"
@@ -224,7 +260,9 @@ export default function PortalMinistroLayout({ children }: { children: React.Rea
               />
               <span className="text-white font-bold text-sm tracking-tight">Portal do Ministro</span>
             </div>
-            <div className="w-10" />
+            <div className="flex items-center">
+              <MinistroNotificationBell isDark={true} />
+            </div>
           </header>
 
           {/* Conteúdo da página */}

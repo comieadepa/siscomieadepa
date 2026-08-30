@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { processPendingWebhookJobs } from '@/lib/jobs/webhook-jobs';
+import { processarAvisosValidadeCredenciais } from '@/lib/jobs/processar-avisos-validade-credenciais';
+import { processarConvocacoesAgo } from '@/lib/jobs/processar-convocacoes-ago';
+import { processarComunicados } from '@/lib/jobs/processar-comunicados';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,10 +38,30 @@ async function handle(request: NextRequest) {
 
   try {
     const supabase = createServerClient();
-    const processedCount = await processPendingWebhookJobs(supabase);
     
-    console.log(`[CRON JOBS] ⏹ Execução concluída. Jobs processados: ${processedCount} | Tempo total: ${Date.now() - start}ms`);
-    return NextResponse.json({ ok: true, processed: processedCount, durationMs: Date.now() - start });
+    // 1. Processa fila de webhook jobs (inscrições / pagamentos)
+    const processedWebhooks = await processPendingWebhookJobs(supabase);
+    
+    // 2. Processa avisos diários de validade da credencial ministerial
+    const resumoValidade = await processarAvisosValidadeCredenciais(supabase);
+
+    // 3. Processa convocações oficiais de AGO para ministros ativos
+    const resumoAgo = await processarConvocacoesAgo(supabase);
+
+    // 4. Processa comunicados oficiais da Convenção
+    const resumoComunicados = await processarComunicados(supabase);
+
+    const durationMs = Date.now() - start;
+    console.log(`[CRON JOBS] ⏹ Execução concluída. Webhooks: ${processedWebhooks} | Avisos Validade: ${resumoValidade.avisos30dEnviados + resumoValidade.avisosVencidosEnviados} | Convocações AGO: ${resumoAgo.notificacoesCriadas} | Comunicados: ${resumoComunicados.notificacoesCriadas} | Duração: ${durationMs}ms`);
+
+    return NextResponse.json({
+      ok: true,
+      webhooksProcessed: processedWebhooks,
+      validadeCredenciais: resumoValidade,
+      convocacoesAgo: resumoAgo,
+      comunicados: resumoComunicados,
+      durationMs,
+    });
   } catch (err: any) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[CRON JOBS] Erro na rota interna de processamento:', msg);

@@ -48,12 +48,23 @@ const fmtDateShort = (v: string | null) => {
 };
 
 function getEmbedUrl(url: string | null): string | null {
-  if (!url) return null;
-  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
-  if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}`;
-  const vmMatch = url.match(/vimeo\.com\/(\d+)/);
-  if (vmMatch) return `https://player.vimeo.com/video/${vmMatch[1]}`;
-  return url;
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+
+  const ytMatch = trimmed.match(
+    /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?.*v=|shorts\/|live\/|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/i,
+  );
+  if (ytMatch && ytMatch[1]) {
+    return `https://www.youtube.com/embed/${ytMatch[1]}`;
+  }
+
+  const vmMatch = trimmed.match(/(?:https?:\/\/)?(?:www\.)?(?:player\.)?vimeo\.com\/(?:video\/)?(\d+)/i);
+  if (vmMatch && vmMatch[1]) {
+    return `https://player.vimeo.com/video/${vmMatch[1]}`;
+  }
+
+  return trimmed;
 }
 
 const TIPO_COLOR: Record<string, string> = {

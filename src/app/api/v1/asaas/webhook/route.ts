@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { logDB } from '@/lib/audit';
 import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
+import { criarNotificacaoMinistro } from '@/lib/notificacoes-ministro';
 
 const ASAAS_WEBHOOK_TOKEN = process.env.ASAAS_WEBHOOK_TOKEN;
 
@@ -95,7 +96,7 @@ export async function POST(request: NextRequest) {
         solicitacaoId &&
         (event === 'PAYMENT_CONFIRMED' || event === 'PAYMENT_RECEIVED')
       ) {
-        const { error: impErr } = await supabase
+        const { data: updatedSolicitacao, error: impErr } = await supabase
           .from('credencial_impressoes_solicitacoes')
           .update({
             status: 'pago_pendente_impressao',
@@ -104,11 +105,13 @@ export async function POST(request: NextRequest) {
             updated_at: new Date().toISOString(),
           })
           .eq('id', solicitacaoId)
-          .eq('status', 'aguardando_pagamento'); // idempotente
+          .eq('status', 'aguardando_pagamento') // Idempotente: atualiza apenas se estava aguardando
+          .select('id, ministro_id')
+          .maybeSingle();
 
         if (impErr) {
           console.error('[ASAAS WEBHOOK] Erro ao atualizar impressão:', impErr.message);
-        } else {
+        } else if (updatedSolicitacao?.ministro_id) {
           void logDB({
             acao: 'editar',
             modulo: 'portal_ministro',
@@ -118,7 +121,22 @@ export async function POST(request: NextRequest) {
             status: 'sucesso',
             detalhes: { event, asaasPaymentId, externalRef },
           });
+
+          // Dispara notificação automática (In-App e E-mail via Resend)
+          try {
+            await criarNotificacaoMinistro({
+              ministroId: updatedSolicitacao.ministro_id,
+              tipo: 'credencial',
+              titulo: 'Pagamento da Credencial Confirmado',
+              mensagem: 'O pagamento da sua taxa de impressão foi confirmado com sucesso. Sua credencial física foi encaminhada para a fila de produção da Secretaria.',
+              linkAcao: '/portal-ministro/credencial',
+              canal: 'ambos',
+            });
+          } catch (notifErr: any) {
+            console.error('[ASAAS WEBHOOK] Erro ao disparar notificação de pagamento:', notifErr?.message);
+          }
         }
+
         return NextResponse.json({ received: true });
       }
       return NextResponse.json({ received: true });
