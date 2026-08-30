@@ -135,6 +135,44 @@ export async function POST(request: NextRequest) {
           } catch (notifErr: any) {
             console.error('[ASAAS WEBHOOK] Erro ao disparar notificação de pagamento:', notifErr?.message);
           }
+
+          // Notificação administrativa para a equipe da Secretaria
+          try {
+            const { data: notifExiste } = await supabase
+              .from('admin_notifications')
+              .select('id')
+              .eq('type', 'credencial_impressao')
+              .contains('data', { solicitacao_id: solicitacaoId })
+              .maybeSingle();
+
+            if (!notifExiste) {
+              const { data: membro } = await supabase
+                .from('members')
+                .select('name')
+                .eq('id', updatedSolicitacao.ministro_id)
+                .maybeSingle();
+
+              const ministroNome = membro?.name || 'Ministro';
+
+              await supabase
+                .from('admin_notifications')
+                .insert({
+                  type: 'credencial_impressao',
+                  title: 'Nova Credencial Pronta para Impressão',
+                  message: `O ministro ${ministroNome} efetuou o pagamento da taxa de impressão da credencial física.`,
+                  data: {
+                    solicitacao_id: solicitacaoId,
+                    ministro_id: updatedSolicitacao.ministro_id,
+                    ministro_nome: ministroNome,
+                    asaas_payment_id: asaasPaymentId,
+                    link: '/secretaria/impressoes-credenciais',
+                  },
+                  is_read: false,
+                });
+            }
+          } catch (adminNotifErr: any) {
+            console.error('[ASAAS WEBHOOK] Erro ao criar notificação administrativa:', adminNotifErr?.message);
+          }
         }
 
         return NextResponse.json({ received: true });
