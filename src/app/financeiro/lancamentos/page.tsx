@@ -88,6 +88,8 @@ export default function FinanceiroPage() {
     const aba = searchParams.get('aba');
     if (aba === 'credenciais') {
       setAbaAtiva('credenciais');
+    } else if (aba === 'contribuicao-estatutaria') {
+      setAbaAtiva('contribuicao-estatutaria');
     }
   }, [searchParams]);
 

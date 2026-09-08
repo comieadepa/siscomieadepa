@@ -285,7 +285,7 @@ export default function FinanceiroDashboard() {
             className="px-4 py-1.5 rounded-full text-xs font-semibold bg-[#123b63] text-white shadow-sm">
             Dashboard
           </Link>
-          <Link href="/financeiro/lancamentos"
+          <Link href="/financeiro/lancamentos?aba=contribuicao-estatutaria"
             className="px-4 py-1.5 rounded-full text-xs font-semibold border border-gray-300 text-gray-600 hover:bg-gray-50 transition">
             Contribuição Estatutária
           </Link>
