@@ -542,6 +542,94 @@ export default function FinanceiroPage() {
 
   if (loading) return <div className="p-8">Carregando...</div>;
 
+  // ─── Dados derivados aba Credenciais (fora do return para evitar bug JSX) ────────
+  const credFiltradas = credenciais.filter(cr => {
+    const txt = credBusca.toLowerCase();
+    return !txt ||
+      cr.ministro_nome.toLowerCase().includes(txt) ||
+      cr.matricula.toLowerCase().includes(txt) ||
+      cr.campo.toLowerCase().includes(txt) ||
+      cr.supervisao.toLowerCase().includes(txt);
+  });
+  const credTotalPages  = Math.max(1, Math.ceil(credFiltradas.length / CRED_PER_PAGE));
+  const credPaginadas   = credFiltradas.slice((credPage - 1) * CRED_PER_PAGE, credPage * CRED_PER_PAGE);
+  const totalArrecadado = credFiltradas.reduce((s, cr) => s + (cr.valor_centavos / 100), 0);
+
+  const getStatusLabel = (s: string) => ({
+    pago_pendente_impressao: { label: 'Pago — Aguardando Impressão', cls: 'bg-amber-100 text-amber-800' },
+    em_impressao:            { label: 'Em Impressão',                cls: 'bg-blue-100 text-blue-800' },
+    impresso:                { label: 'Impresso',                     cls: 'bg-cyan-100 text-cyan-800' },
+    disponivel_retirada:     { label: 'Disponível p/ Retirada',       cls: 'bg-indigo-100 text-indigo-800' },
+    entregue:                { label: 'Entregue',                     cls: 'bg-emerald-100 text-emerald-800' },
+  }[s] ?? { label: s, cls: 'bg-gray-100 text-gray-700' });
+
+  const imprimirComprovanteCredencial = (cr: CredencialPaga) => {
+    const win = window.open('', '_blank', 'width=720,height=780');
+    if (!win) return;
+    const reciboId    = 'CRED-' + cr.id.slice(0, 8).toUpperCase();
+    const dataEmissao = cr.pago_em ? new Date(cr.pago_em).toLocaleString('pt-BR') : '—';
+    const logoSrc     = configIgreja.logo || '/img/logo_comieadepa.png';
+    const nomeOrg     = configIgreja.nome || 'COMIEADEPA';
+    const endOrg      = configIgreja.endereco || 'Belém - PA';
+    const valorFmt    = (cr.valor_centavos / 100).toFixed(2).replace('.', ',');
+    const dataGer     = new Date().toLocaleString('pt-BR');
+    const anoAtualVal = new Date().getFullYear();
+    const parts = [
+      '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/>',
+      '<title>Comprovante ' + reciboId + '</title>',
+      '<style>',
+      '*{margin:0;padding:0;box-sizing:border-box}',
+      'body{font-family:Arial,sans-serif;font-size:11px;padding:20mm 16mm;color:#111}',
+      '.timbre{width:100%;border-collapse:collapse;border-top:4px solid #0D2B4E}',
+      '.timbre td{vertical-align:middle;padding:8px 0}',
+      '.timbre .logo-cell{width:72px;padding-right:12px}',
+      '.timbre img{width:68px;height:68px;object-fit:contain}',
+      '.timbre .info-cell{text-align:center}',
+      '.org-nome{font-size:15px;font-weight:bold;color:#0D2B4E;letter-spacing:1px}',
+      '.org-sub{font-size:9px;color:#555;margin-top:2px}',
+      '.org-end{font-size:8px;color:#777;margin-top:1px}',
+      '.faixa{background:#0D2B4E;color:#F39C12;font-weight:bold;font-size:13px;',
+      'text-align:center;padding:6px 10px;letter-spacing:2px;margin:12px 0;border-bottom:4px solid #F39C12}',
+      '.recibo-id{font-size:10px;font-weight:bold;color:#0D2B4E;text-align:right;margin:4px 0 8px}',
+      '.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;margin-bottom:16px}',
+      '.field label{font-size:9px;font-weight:bold;text-transform:uppercase;color:#666;display:block;margin-bottom:2px}',
+      '.field span{font-size:11px;font-weight:600;color:#111;display:block;border-bottom:1px solid #ddd;padding-bottom:3px}',
+      '.valor-box{background:#f0fdf4;border:2px solid #059669;border-radius:6px;padding:10px 16px;text-align:center;margin:12px 0}',
+      '.valor-box .vlabel{font-size:10px;color:#555;text-transform:uppercase}',
+      '.valor-box .vnum{font-size:22px;font-weight:bold;color:#059669}',
+      '.footer{font-size:9px;color:#888;text-align:center;margin-top:20px;border-top:1px solid #ddd;padding-top:8px}',
+      '@media print{@page{size:A4;margin:0}body{padding:12mm 14mm}}',
+      '</style></head><body>',
+      '<table class="timbre"><tbody><tr>',
+      '<td class="logo-cell"><img src="' + logoSrc + '" alt="Logo" onerror="this.style.display=&apos;none&apos;"/></td>',
+      '<td class="info-cell">',
+      '<div class="org-nome">' + nomeOrg + '</div>',
+      '<div class="org-sub">Conv\u00eanio das Igrejas Evang\u00e9licas Assembl\u00e9ia de Deus do Par\u00e1</div>',
+      '<div class="org-end">' + endOrg + '</div>',
+      '</td></tr></tbody></table>',
+      '<div class="faixa">COMPROVANTE DE IMPRESS\u00c3O DE CREDENCIAL</div>',
+      '<div class="recibo-id">' + reciboId + '</div>',
+      '<div class="grid">',
+      '<div class="field"><label>Ministro</label><span>' + cr.ministro_nome + '</span></div>',
+      '<div class="field"><label>Matr\u00edcula</label><span>' + (cr.matricula || '\u2014') + '</span></div>',
+      '<div class="field"><label>Campo</label><span>' + (cr.campo || '\u2014') + '</span></div>',
+      '<div class="field"><label>Supervis\u00e3o</label><span>' + (cr.supervisao || '\u2014') + '</span></div>',
+      '<div class="field"><label>ID ASAAS</label><span>' + (cr.asaas_payment_id || '\u2014') + '</span></div>',
+      '<div class="field"><label>Status</label><span>' + cr.status + '</span></div>',
+      '<div class="field"><label>Data da Solicita\u00e7\u00e3o</label><span>' + new Date(cr.solicitado_em).toLocaleString('pt-BR') + '</span></div>',
+      '<div class="field"><label>Data do Pagamento</label><span>' + dataEmissao + '</span></div>',
+      '</div>',
+      '<div class="valor-box"><div class="vlabel">Taxa de Impress\u00e3o Paga</div>',
+      '<div class="vnum">R$ ' + valorFmt + '</div></div>',
+      '<div class="footer">Documento gerado em ' + dataGer + ' \u2014 ' + nomeOrg + ' \u00a9 ' + anoAtualVal + '</div>',
+      '</body></html>',
+    ];
+    win.document.write(parts.join(''));
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 400);
+  };
+
   // Campos do formulário filtrados pela supervisão selecionada
   const camposForm = supId ? campos.filter(c => c.supervisao_id === supId) : campos;
 
@@ -884,238 +972,122 @@ export default function FinanceiroPage() {
         )}
 
         {/* ─── ABA: CREDENCIAIS ───────────────────────────────────────── */}
-        {abaAtiva === 'credenciais' && (() => {
-          const credFiltradas = credenciais.filter(c => {
-            const txt = credBusca.toLowerCase();
-            return !txt ||
-              c.ministro_nome.toLowerCase().includes(txt) ||
-              c.matricula.toLowerCase().includes(txt) ||
-              c.campo.toLowerCase().includes(txt) ||
-              c.supervisao.toLowerCase().includes(txt);
-          });
-          const credTotalPages = Math.max(1, Math.ceil(credFiltradas.length / CRED_PER_PAGE));
-          const credPaginadas  = credFiltradas.slice((credPage - 1) * CRED_PER_PAGE, credPage * CRED_PER_PAGE);
-          const totalArrecadado = credFiltradas.reduce((s, c) => s + (c.valor_centavos / 100), 0);
-
-          const imprimirComprovanteCredencial = (c: CredencialPaga) => {
-            const win = window.open('', '_blank', 'width=720,height=780');
-            if (!win) return;
-            const reciboId = `CRED-${c.id.slice(0, 8).toUpperCase()}`;
-            const dataEmissao = c.pago_em ? new Date(c.pago_em).toLocaleString('pt-BR') : '—';
-            const logoSrc = configIgreja.logo || '/img/logo_comieadepa.png';
-            const nomeOrg  = configIgreja.nome     || 'COMIEADEPA';
-            const endOrg   = configIgreja.endereco || 'Belém - PA';
-            win.document.write(`<!DOCTYPE html>
-<html lang="pt-BR">
-<head><meta charset="UTF-8"/><title>Comprovante ${reciboId}</title>
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:Arial,sans-serif;font-size:11px;padding:20mm 16mm;color:#111}
-  .timbre{width:100%;border-collapse:collapse;margin-bottom:0;border-top:4px solid #0D2B4E}
-  .timbre td{vertical-align:middle;padding:8px 0}
-  .timbre .logo-cell{width:72px;padding-right:12px}
-  .timbre img{width:68px;height:68px;object-fit:contain}
-  .timbre .info-cell{text-align:center}
-  .org-nome{font-size:15px;font-weight:bold;color:#0D2B4E;letter-spacing:1px}
-  .org-sub{font-size:9px;color:#555;margin-top:2px}
-  .org-end{font-size:8px;color:#777;margin-top:1px}
-  .faixa{background:#0D2B4E;color:#F39C12;font-weight:bold;font-size:13px;text-align:center;padding:6px 10px;letter-spacing:2px;margin:12px 0;border-bottom:4px solid #F39C12}
-  .recibo-id{font-size:10px;font-weight:bold;color:#0D2B4E;text-align:right;margin:4px 0 8px}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;margin-bottom:16px}
-  .field label{font-size:9px;font-weight:bold;text-transform:uppercase;color:#666;display:block;margin-bottom:2px}
-  .field span{font-size:11px;font-weight:600;color:#111;display:block;border-bottom:1px solid #ddd;padding-bottom:3px}
-  .valor-box{background:#f0fdf4;border:2px solid #059669;border-radius:6px;padding:10px 16px;text-align:center;margin:12px 0}
-  .valor-box .vlabel{font-size:10px;color:#555;text-transform:uppercase}
-  .valor-box .vnum{font-size:22px;font-weight:bold;color:#059669}
-  .footer{font-size:9px;color:#888;text-align:center;margin-top:20px;border-top:1px solid #ddd;padding-top:8px}
-  @media print{@page{size:A4;margin:0}body{padding:12mm 14mm}}
-</style></head>
-<body>
-<table class="timbre"><tbody><tr>
-  <td class="logo-cell"><img src="${logoSrc}" alt="Logo" onerror="this.style.display='none'"/></td>
-  <td class="info-cell">
-    <div class="org-nome">${nomeOrg}</div>
-    <div class="org-sub">Convênio das Igrejas Evangélicas Assembléia de Deus do Pará</div>
-    <div class="org-end">${endOrg}</div>
-  </td>
-</tr></tbody></table>
-<div class="faixa">COMPROVANTE DE IMPRESSÃO DE CREDENCIAL</div>
-<div class="recibo-id">${reciboId}</div>
-<div class="grid">
-  <div class="field"><label>Ministro</label><span>${c.ministro_nome}</span></div>
-  <div class="field"><label>Matrícula</label><span>${c.matricula || '—'}</span></div>
-  <div class="field"><label>Campo</label><span>${c.campo || '—'}</span></div>
-  <div class="field"><label>Supervisão</label><span>${c.supervisao || '—'}</span></div>
-  <div class="field"><label>ID ASAAS</label><span>${c.asaas_payment_id || '—'}</span></div>
-  <div class="field"><label>Status</label><span>${c.status}</span></div>
-  <div class="field"><label>Data da Solicitação</label><span>${new Date(c.solicitado_em).toLocaleString('pt-BR')}</span></div>
-  <div class="field"><label>Data do Pagamento</label><span>${dataEmissao}</span></div>
-</div>
-<div class="valor-box">
-  <div class="vlabel">Taxa de Impressão Paga</div>
-  <div class="vnum">R$ ${(c.valor_centavos / 100).toFixed(2).replace('.', ',')}</div>
-</div>
-<div class="footer">Documento gerado em ${new Date().toLocaleString('pt-BR')} — ${nomeOrg} © ${new Date().getFullYear()}</div>
-</body></html>`);
-            win.document.close();
-            win.focus();
-            setTimeout(() => win.print(), 400);
-          };
-
-          const statusLabel = (s: string) => ({
-            pago_pendente_impressao: { label: 'Pago — Aguardando Impressão', cls: 'bg-amber-100 text-amber-800' },
-            em_impressao:            { label: 'Em Impressão', cls: 'bg-blue-100 text-blue-800' },
-            impresso:                { label: 'Impresso', cls: 'bg-cyan-100 text-cyan-800' },
-            disponivel_retirada:     { label: 'Disponível p/ Retirada', cls: 'bg-indigo-100 text-indigo-800' },
-            entregue:                { label: 'Entregue', cls: 'bg-emerald-100 text-emerald-800' },
-          }[s] ?? { label: s, cls: 'bg-gray-100 text-gray-700' });
-
-          return (
-            <div className="space-y-4">
-              {/* Barra de filtros */}
-              <div className="bg-[#123b63] text-white px-4 py-2 flex flex-wrap items-center gap-2 text-xs font-bold rounded-t-lg">
-                <span className="uppercase tracking-widest mr-1 w-full sm:w-auto">Filtros</span>
-
-                <select
-                  value={credAno}
-                  onChange={e => { setCredAno(e.target.value); setCredPage(1); }}
-                  className="w-full sm:w-auto border border-white/40 bg-[#1a4f85] text-white rounded px-2 py-1 text-xs focus:outline-none"
-                >
-                  {Array.from({ length: 6 }, (_, i) => anoAtual - i).map(a => (
-                    <option key={a} value={a}>{a}</option>
-                  ))}
-                </select>
-
-                <input
-                  type="text"
-                  value={credBusca}
-                  onChange={e => { setCredBusca(e.target.value); setCredPage(1); }}
-                  placeholder="Nome, matrícula, campo..."
-                  className="w-full sm:flex-1 sm:min-w-[200px] border border-white/40 bg-[#1a4f85] text-white placeholder-white/60 rounded px-2 py-1 text-xs focus:outline-none"
-                />
-
-                <button
-                  onClick={() => { setCredBusca(''); setCredPage(1); }}
-                  className="w-full sm:w-auto px-3 py-1 bg-white text-[#123b63] rounded font-bold hover:bg-gray-100 transition"
-                >
-                  LIMPAR
-                </button>
-
-                <button
-                  onClick={loadCredenciais}
-                  disabled={credLoading}
-                  className="w-full sm:w-auto px-3 py-1 bg-emerald-500 text-white rounded font-bold hover:bg-emerald-600 transition disabled:opacity-60"
-                >
-                  {credLoading ? 'Carregando...' : 'ATUALIZAR'}
-                </button>
-
-                <span className="w-full sm:w-auto sm:ml-auto px-2 py-0.5 bg-white text-[#123b63] rounded font-bold text-xs min-w-[28px] text-center">
-                  {credPage}
-                </span>
-              </div>
-
-              {/* Resumo */}
-              {!credLoading && credenciais.length > 0 && (
-                <div className="flex flex-wrap gap-4">
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2 text-sm">
-                    <span className="text-gray-500 text-xs font-semibold uppercase">Total arrecadado ({credAno})</span>
-                    <p className="text-xl font-bold text-emerald-700 mt-0.5">
-                      R$ {totalArrecadado.toFixed(2).replace('.', ',')}
-                    </p>
-                  </div>
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-sm">
-                    <span className="text-gray-500 text-xs font-semibold uppercase">Registros encontrados</span>
-                    <p className="text-xl font-bold text-blue-700 mt-0.5">{credFiltradas.length}</p>
-                  </div>
-                </div>
-              )}
-
-              {credErro && (
-                <p className="text-sm text-red-600 font-semibold">{credErro}</p>
-              )}
-
-              {/* Tabela */}
-              <div className="bg-white rounded-lg shadow-md overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[800px] text-xs">
-                    <thead>
-                      <tr className="bg-[#123b63] text-white">
-                        <th className="px-3 py-2 text-left">MINISTRO</th>
-                        <th className="px-3 py-2 text-left">MATRÍCULA</th>
-                        <th className="px-3 py-2 text-left">CAMPO</th>
-                        <th className="px-3 py-2 text-left">SUPERVISÃO</th>
-                        <th className="px-3 py-2 text-right">VALOR</th>
-                        <th className="px-3 py-2 text-center">STATUS</th>
-                        <th className="px-3 py-2 text-center">PAGO EM</th>
-                        <th className="px-3 py-2 text-center">AÇÕES</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {credLoading && (
-                        <tr>
-                          <td colSpan={8} className="text-center text-gray-400 py-8 text-sm">
-                            Carregando...
-                          </td>
-                        </tr>
-                      )}
-                      {!credLoading && credPaginadas.length === 0 && (
-                        <tr>
-                          <td colSpan={8} className="text-center text-gray-400 py-8 text-sm">
-                            Nenhum registro encontrado para {credAno}.
-                          </td>
-                        </tr>
-                      )}
-                      {credPaginadas.map((c, idx) => {
-                        const st = statusLabel(c.status);
-                        return (
-                          <tr key={c.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                            <td className="px-3 py-2 font-semibold text-gray-800">{c.ministro_nome}</td>
-                            <td className="px-3 py-2 text-gray-600">{c.matricula || '—'}</td>
-                            <td className="px-3 py-2 text-gray-700">{c.campo || '—'}</td>
-                            <td className="px-3 py-2 text-gray-600">{c.supervisao || '—'}</td>
-                            <td className="px-3 py-2 text-right font-bold text-emerald-700">
-                              R$ {(c.valor_centavos / 100).toFixed(2).replace('.', ',')}
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${st.cls}`}>
-                                {st.label}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-center text-gray-600">
-                              {c.pago_em ? new Date(c.pago_em).toLocaleDateString('pt-BR') : '—'}
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <button
-                                onClick={() => imprimirComprovanteCredencial(c)}
-                                title="Imprimir comprovante"
-                                className="w-8 h-8 flex items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white transition border border-emerald-200 mx-auto"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z"/>
-                                </svg>
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Paginação */}
-                {credTotalPages > 1 && (
-                  <div className="flex items-center justify-center gap-2 py-3 border-t border-gray-100">
-                    <button onClick={() => setCredPage(p => Math.max(1, p - 1))} disabled={credPage === 1}
-                      className="px-3 py-1 text-xs border rounded disabled:opacity-40 hover:bg-gray-50">‹</button>
-                    <span className="text-xs text-gray-600">{credPage} / {credTotalPages}</span>
-                    <button onClick={() => setCredPage(p => Math.min(credTotalPages, p + 1))} disabled={credPage === credTotalPages}
-                      className="px-3 py-1 text-xs border rounded disabled:opacity-40 hover:bg-gray-50">›</button>
-                  </div>
-                )}
-              </div>
+        {abaAtiva === 'credenciais' && (
+          <div className="space-y-4">
+            {/* Filtros */}
+            <div className="bg-[#123b63] text-white px-4 py-2 flex flex-wrap items-center gap-2 text-xs font-bold rounded-t-lg">
+              <span className="uppercase tracking-widest mr-1 w-full sm:w-auto">Filtros</span>
+              <select
+                value={credAno}
+                onChange={e => { setCredAno(e.target.value); setCredPage(1); }}
+                className="w-full sm:w-auto border border-white/40 bg-[#1a4f85] text-white rounded px-2 py-1 text-xs focus:outline-none"
+              >
+                {Array.from({ length: 6 }, (_, i) => anoAtual - i).map(a => (
+                  <option key={a} value={a}>{a}</option>
+                ))}
+              </select>
+              <input
+                type="text"
+                value={credBusca}
+                onChange={e => { setCredBusca(e.target.value); setCredPage(1); }}
+                placeholder="Nome, matrícula, campo..."
+                className="w-full sm:flex-1 sm:min-w-[200px] border border-white/40 bg-[#1a4f85] text-white placeholder-white/60 rounded px-2 py-1 text-xs focus:outline-none"
+              />
+              <button onClick={() => { setCredBusca(''); setCredPage(1); }}
+                className="w-full sm:w-auto px-3 py-1 bg-white text-[#123b63] rounded font-bold hover:bg-gray-100 transition">LIMPAR</button>
+              <button onClick={loadCredenciais} disabled={credLoading}
+                className="w-full sm:w-auto px-3 py-1 bg-emerald-500 text-white rounded font-bold hover:bg-emerald-600 transition disabled:opacity-60">
+                {credLoading ? 'Carregando...' : 'ATUALIZAR'}
+              </button>
+              <span className="w-full sm:w-auto sm:ml-auto px-2 py-0.5 bg-white text-[#123b63] rounded font-bold text-xs min-w-[28px] text-center">{credPage}</span>
             </div>
-          );
-        })()}
+
+            {/* Resumo */}
+            {!credLoading && credenciais.length > 0 && (
+              <div className="flex flex-wrap gap-4">
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2">
+                  <span className="text-gray-500 text-xs font-semibold uppercase">Total arrecadado ({credAno})</span>
+                  <p className="text-xl font-bold text-emerald-700 mt-0.5">R$ {totalArrecadado.toFixed(2).replace('.', ',')}</p>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+                  <span className="text-gray-500 text-xs font-semibold uppercase">Registros encontrados</span>
+                  <p className="text-xl font-bold text-blue-700 mt-0.5">{credFiltradas.length}</p>
+                </div>
+              </div>
+            )}
+
+            {credErro && <p className="text-sm text-red-600 font-semibold">{credErro}</p>}
+
+            {/* Tabela */}
+            <div className="bg-white rounded-lg shadow-md overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[800px] text-xs">
+                  <thead>
+                    <tr className="bg-[#123b63] text-white">
+                      <th className="px-3 py-2 text-left">MINISTRO</th>
+                      <th className="px-3 py-2 text-left">MATRÍCULA</th>
+                      <th className="px-3 py-2 text-left">CAMPO</th>
+                      <th className="px-3 py-2 text-left">SUPERVISÃO</th>
+                      <th className="px-3 py-2 text-right">VALOR</th>
+                      <th className="px-3 py-2 text-center">STATUS</th>
+                      <th className="px-3 py-2 text-center">PAGO EM</th>
+                      <th className="px-3 py-2 text-center">AÇÕES</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {credLoading && (
+                      <tr><td colSpan={8} className="text-center text-gray-400 py-8">Carregando...</td></tr>
+                    )}
+                    {!credLoading && credPaginadas.length === 0 && (
+                      <tr><td colSpan={8} className="text-center text-gray-400 py-8">Nenhum registro encontrado para {credAno}.</td></tr>
+                    )}
+                    {credPaginadas.map((cr, idx) => {
+                      const st = getStatusLabel(cr.status);
+                      return (
+                        <tr key={cr.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="px-3 py-2 font-semibold text-gray-800">{cr.ministro_nome}</td>
+                          <td className="px-3 py-2 text-gray-600">{cr.matricula || '—'}</td>
+                          <td className="px-3 py-2 text-gray-700">{cr.campo || '—'}</td>
+                          <td className="px-3 py-2 text-gray-600">{cr.supervisao || '—'}</td>
+                          <td className="px-3 py-2 text-right font-bold text-emerald-700">
+                            R$ {(cr.valor_centavos / 100).toFixed(2).replace('.', ',')}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${st.cls}`}>{st.label}</span>
+                          </td>
+                          <td className="px-3 py-2 text-center text-gray-600">
+                            {cr.pago_em ? new Date(cr.pago_em).toLocaleDateString('pt-BR') : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <button
+                              onClick={() => imprimirComprovanteCredencial(cr)}
+                              title="Imprimir comprovante"
+                              className="w-8 h-8 flex items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white transition border border-emerald-200 mx-auto"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z"/>
+                              </svg>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {credTotalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 py-3 border-t border-gray-100">
+                  <button onClick={() => setCredPage(p => Math.max(1, p - 1))} disabled={credPage === 1}
+                    className="px-3 py-1 text-xs border rounded disabled:opacity-40 hover:bg-gray-50">‹</button>
+                  <span className="text-xs text-gray-600">{credPage} / {credTotalPages}</span>
+                  <button onClick={() => setCredPage(p => Math.min(credTotalPages, p + 1))} disabled={credPage === credTotalPages}
+                    className="px-3 py-1 text-xs border rounded disabled:opacity-40 hover:bg-gray-50">›</button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
 
       </div>
     </PageLayout>
