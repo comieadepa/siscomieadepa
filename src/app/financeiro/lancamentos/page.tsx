@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
 import PageLayout from '@/components/PageLayout';
 import AccessRestricted from '@/components/AccessRestricted';
 import { createClient } from '@/lib/supabase-client';
@@ -12,6 +11,7 @@ import { useUserRole } from '@/hooks/useUserRole';
 import { canAccessModule } from '@/lib/auth/roles';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { fetchConfiguracaoIgrejaFromSupabase, type ConfiguracaoIgreja } from '@/lib/igreja-config-utils';
+import DashboardView from '@/components/financeiro/DashboardView';
 
 // ─── Tipos ─────────────────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -80,8 +80,8 @@ export default function FinanceiroPage() {
   const podeAcessar = canAccessModule(role, 'financeiro');
 
   // Aba ativa
-  const [abaAtiva, setAbaAtiva] = useState<'contribuicao-estatutaria' | 'credenciais'>(
-    searchParams.get('aba') === 'credenciais' ? 'credenciais' : 'contribuicao-estatutaria'
+  const [abaAtiva, setAbaAtiva] = useState<'dashboard' | 'contribuicao-estatutaria' | 'credenciais'>(
+    searchParams.get('aba') === 'credenciais' ? 'credenciais' : searchParams.get('aba') === 'contribuicao-estatutaria' ? 'contribuicao-estatutaria' : 'dashboard'
   );
 
   useEffect(() => {
@@ -90,6 +90,8 @@ export default function FinanceiroPage() {
       setAbaAtiva('credenciais');
     } else if (aba === 'contribuicao-estatutaria') {
       setAbaAtiva('contribuicao-estatutaria');
+    } else if (aba === 'dashboard') {
+      setAbaAtiva('dashboard');
     }
   }, [searchParams]);
 
@@ -658,10 +660,16 @@ export default function FinanceiroPage() {
         {/* ─── Navegação ─────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-2 mb-6">
           <span className="text-xs font-bold uppercase tracking-widest text-gray-400 mr-2">Módulo Financeiro</span>
-          <Link href="/financeiro"
-            className="px-4 py-1.5 rounded-full text-xs font-semibold border border-gray-300 text-gray-600 hover:bg-gray-50 transition">
-            ← Dashboard
-          </Link>
+          <button
+            onClick={() => setAbaAtiva('dashboard')}
+            className={`px-4 py-1.5 rounded-full text-xs font-semibold transition ${
+              abaAtiva === 'dashboard'
+                ? 'bg-[#123b63] text-white shadow-sm'
+                : 'border border-gray-300 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            Dashboard
+          </button>
           <button
             onClick={() => setAbaAtiva('contribuicao-estatutaria')}
             className={`px-4 py-1.5 rounded-full text-xs font-semibold transition ${
@@ -683,6 +691,11 @@ export default function FinanceiroPage() {
             Credenciais
           </button>
         </div>
+
+        {/* ─── ABA: DASHBOARD ────────────────────────────────────────── */}
+        {abaAtiva === 'dashboard' && (
+          <DashboardView onMudarAba={setAbaAtiva} />
+        )}
 
         {/* ─── ABA: CONTRIBUIÇÃO ESTATUTÁRIA ────────────────────────── */}
         {abaAtiva === 'contribuicao-estatutaria' && (
