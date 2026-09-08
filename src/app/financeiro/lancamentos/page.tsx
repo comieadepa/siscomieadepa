@@ -6,6 +6,7 @@ import PageLayout from '@/components/PageLayout';
 import AccessRestricted from '@/components/AccessRestricted';
 import { createClient } from '@/lib/supabase-client';
 import { buildUrl, getAppBaseUrl } from '@/lib/urls';
+import { useSearchParams } from 'next/navigation';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useUserRole } from '@/hooks/useUserRole';
 import { canAccessModule } from '@/lib/auth/roles';
@@ -75,10 +76,20 @@ export default function FinanceiroPage() {
   const { registrarAcao } = useAuditLog();
   const anoAtual = new Date().getFullYear();
 
+  const searchParams = useSearchParams();
   const podeAcessar = canAccessModule(role, 'financeiro');
 
   // Aba ativa
-  const [abaAtiva, setAbaAtiva] = useState<'contribuicao-estatutaria' | 'credenciais'>('contribuicao-estatutaria');
+  const [abaAtiva, setAbaAtiva] = useState<'contribuicao-estatutaria' | 'credenciais'>(
+    searchParams.get('aba') === 'credenciais' ? 'credenciais' : 'contribuicao-estatutaria'
+  );
+
+  useEffect(() => {
+    const aba = searchParams.get('aba');
+    if (aba === 'credenciais') {
+      setAbaAtiva('credenciais');
+    }
+  }, [searchParams]);
 
   // ─── Estado da aba Credenciais ───────────────────────────────────────
   const [credenciais, setCredenciais] = useState<CredencialPaga[]>([]);
