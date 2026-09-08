@@ -555,42 +555,32 @@ export default function FinanceiroPage() {
       <div className="w-full max-w-7xl mx-auto">
 
         {/* ─── Navegação ─────────────────────────────────────────────── */}
-        <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="flex flex-wrap items-center gap-2 mb-6">
           <span className="text-xs font-bold uppercase tracking-widest text-gray-400 mr-2">Módulo Financeiro</span>
           <Link href="/financeiro"
             className="px-4 py-1.5 rounded-full text-xs font-semibold border border-gray-300 text-gray-600 hover:bg-gray-50 transition">
             ← Dashboard
           </Link>
-          <Link href="/financeiro/lancamentos"
-            className="px-4 py-1.5 rounded-full text-xs font-semibold bg-[#123b63] text-white shadow-sm">
+          <button
+            onClick={() => setAbaAtiva('contribuicao-estatutaria')}
+            className={`px-4 py-1.5 rounded-full text-xs font-semibold transition ${
+              abaAtiva === 'contribuicao-estatutaria'
+                ? 'bg-[#123b63] text-white shadow-sm'
+                : 'border border-gray-300 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
             Contribuição Estatutária
-          </Link>
-        </div>
-
-        {/* ─── Abas ─────────────────────────────────────────────────── */}
-        <div className="mb-6 border-b border-gray-300">
-          <div className="flex gap-4 overflow-x-auto pb-1">
-            <button
-              onClick={() => setAbaAtiva('contribuicao-estatutaria')}
-              className={`px-6 py-3 font-semibold border-b-2 transition whitespace-nowrap ${
-                abaAtiva === 'contribuicao-estatutaria'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-600 hover:text-gray-800'
-              }`}
-            >
-              💰 Contribuição Estatutária
-            </button>
-            <button
-              onClick={() => { setAbaAtiva('credenciais'); setCredPage(1); }}
-              className={`px-6 py-3 font-semibold border-b-2 transition whitespace-nowrap ${
-                abaAtiva === 'credenciais'
-                  ? 'border-emerald-600 text-emerald-600'
-                  : 'border-transparent text-gray-600 hover:text-gray-800'
-              }`}
-            >
-              🪪 Credenciais
-            </button>
-          </div>
+          </button>
+          <button
+            onClick={() => { setAbaAtiva('credenciais'); setCredPage(1); }}
+            className={`px-4 py-1.5 rounded-full text-xs font-semibold transition ${
+              abaAtiva === 'credenciais'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'border border-gray-300 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            Credenciais
+          </button>
         </div>
 
         {/* ─── ABA: CONTRIBUIÇÃO ESTATUTÁRIA ────────────────────────── */}
