@@ -122,6 +122,7 @@ export default function FinanceiroPage() {
   const [pastorCpf, setPastorCpf]     = useState('');
   const [contato, setContato]         = useState('');
   const [mes, setMes]                 = useState(new Date().getMonth() + 1);
+  const [formAno, setFormAno]         = useState(anoAtual);
   const [formaPag, setFormaPag]       = useState('A VISTA');
   const [valorStr, setValorStr]       = useState('0,00');
 
@@ -287,7 +288,7 @@ export default function FinanceiroPage() {
         campo_id: campoId, campo_nome: campoNome,
         supervisao_id: supId || null, supervisao_nome: sup?.nome || '',
         pastor_nome: pastorNome || null, pastor_member_id: null,
-        mes, ano: anoAtual,
+        mes, ano: formAno,
         valor: parseMoeda(valorStr),
         forma_pagamento: formaPag,
         contato: contato || null,
@@ -784,10 +785,15 @@ export default function FinanceiroPage() {
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1 tracking-wide">Ano</label>
-                  <input
-                    readOnly value={anoAtual}
-                    className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm bg-gray-50 text-center font-bold text-[#123b63]"
-                  />
+                  <select
+                    value={formAno}
+                    onChange={e => setFormAno(Number(e.target.value))}
+                    className="w-full border-2 border-teal-500 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 bg-white font-bold text-[#123b63]"
+                  >
+                    {Array.from({ length: 11 }, (_, i) => anoAtual - i).map(a => (
+                      <option key={a} value={a}>{a}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1 tracking-wide">Forma de Pagamento</label>
