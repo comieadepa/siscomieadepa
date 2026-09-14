@@ -167,13 +167,33 @@ function CertificadoContent() {
                    credenciamento.status_credenciamento !== 'ativo';
 
   // Datas Formatadas
-  const dataEmissaoFormatada = credenciamento?.data_emissao
-    ? new Date(credenciamento.data_emissao).toLocaleDateString('pt-BR')
-    : credenciamento?.data_inicio
-    ? new Date(credenciamento.data_inicio).toLocaleDateString('pt-BR')
+  const dataBaseCredenciamento = credenciamento?.data_emissao || credenciamento?.data_inicio;
+  const parseDataIso = (dataStr?: string) => {
+    if (!dataStr) return null;
+    const parts = dataStr.split('T')[0].split('-');
+    if (parts.length === 3) {
+      return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    }
+    const d = new Date(dataStr);
+    return isNaN(d.getTime()) ? null : d;
+  };
+
+  const dataCredenciamentoObj = parseDataIso(dataBaseCredenciamento);
+  const dataEmissaoFormatada = dataCredenciamentoObj
+    ? dataCredenciamentoObj.toLocaleDateString('pt-BR')
     : '';
 
-  const dataFimFormatada = credenciamento?.data_fim ? new Date(credenciamento.data_fim).toLocaleDateString('pt-BR') : '';
+  // Validade de 01 ano a partir da data de credenciamento/renovação
+  const calcularValidade = () => {
+    if (!dataCredenciamentoObj) {
+      return credenciamento?.data_fim ? (parseDataIso(credenciamento.data_fim)?.toLocaleDateString('pt-BR') || '') : '';
+    }
+    const dValidade = new Date(dataCredenciamentoObj);
+    dValidade.setFullYear(dValidade.getFullYear() + 1);
+    return dValidade.toLocaleDateString('pt-BR');
+  };
+
+  const dataFimFormatada = calcularValidade();
 
   const enderecoCompleto = [
     instituicao?.logradouro && `${instituicao.logradouro}, ${instituicao.numero || 'S/N'}${instituicao.complemento ? ` - ${instituicao.complemento}` : ''}`,
