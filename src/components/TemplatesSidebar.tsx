@@ -55,6 +55,7 @@ export function TemplatesSidebar({
 
     const TIPOS_CARTAO = [
         { valor: 'ministro', label: 'Credencial de Ministro', cor: '#d97706' },
+        { valor: 'aemadepa', label: 'Credencial AEMADEPA', cor: '#be123c' },
         { valor: 'funcionario', label: 'Cartão de Funcionário', cor: '#6b21a8' }
     ];
 

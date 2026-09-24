@@ -43,7 +43,7 @@ interface ElementoCartao {
 interface TemplateCartao {
   id: string;
   nome: string;
-  tipoCadastro: 'membro' | 'congregado' | 'ministro' | 'funcionario';
+  tipoCadastro: 'membro' | 'congregado' | 'ministro' | 'funcionario' | 'aemadepa';
   backgroundUrl?: string;
   backgroundFile?: File;
   elementos: ElementoCartao[];
@@ -119,6 +119,14 @@ const PLACEHOLDERS_DISPONIVEIS = [
   { campo: 'endereco', label: 'Endereço Completo', placeholder: '{endereco}' },
   { campo: 'uniqueId', label: 'ID Único (QR Code)', placeholder: '{uniqueId}' },
   { campo: 'funcaoDiretoria', label: 'Função da Diretoria', placeholder: '{funcao_diretoria}' },
+  // Placeholders AEMADEPA
+  { campo: 'numeroAemadepa', label: 'Nº AEMADEPA', placeholder: '{numeroAemadepa}' },
+  { campo: 'ministroNome', label: 'Nome do Ministro', placeholder: '{ministroNome}' },
+  { campo: 'ministroMatricula', label: 'Matrícula do Ministro', placeholder: '{ministroMatricula}' },
+  { campo: 'nomeEsposa', label: 'Nome da Esposa', placeholder: '{nomeEsposa}' },
+  { campo: 'nacionalidade', label: 'Nacionalidade', placeholder: '{nacionalidade}' },
+  { campo: 'tituloEleitor', label: 'Título de Eleitor', placeholder: '{tituloEleitor}' },
+  { campo: 'telefone', label: 'Telefone', placeholder: '{telefone}' },
   // Placeholders de divisões - atualizados dinamicamente com nomenclaturas
   { campo: 'divisao1', label: 'Rótulo da Primeira Divisão', placeholder: '{divisao1}' },
   { campo: 'divisao1_valor', label: 'Valor da Primeira Divisão', placeholder: '{divisao1_valor}' },
@@ -132,7 +140,7 @@ export default function ConfiguracaoCartoesPage() {
   const supabase = createClient();
 
   const [activeMenu, setActiveMenu] = useState('cartoes');
-  const [tipoCadastroAtivo, setTipoCadastroAtivo] = useState<'ministro' | 'funcionario'>('ministro');
+  const [tipoCadastroAtivo, setTipoCadastroAtivo] = useState<'ministro' | 'aemadepa' | 'funcionario'>('ministro');
   const [_nomenclaturas, setNomenclaturasState] = useState<any>(null);
   const [placeholdersDisponiveis, setPlaceholdersDisponiveis] = useState(PLACEHOLDERS_DISPONIVEIS);
 
@@ -766,7 +774,7 @@ export default function ConfiguracaoCartoesPage() {
     const indexExistente = novasTemplates.findIndex(t => t.id === templateCorrigido.id);
 
     // Se for um ID de template oficial/editável (podem ser salvos como branco), remover qualquer versão antiga antes de adicionar a nova
-    const TEMPLATES_EDITABLE = ['ministro-classico', 'funcionario-customizado', 'funcionario-branco'];
+    const TEMPLATES_EDITABLE = ['ministro-classico', 'aemadepa-classico', 'aemadepa-branco', 'funcionario-customizado', 'funcionario-branco'];
     if (TEMPLATES_EDITABLE.includes(templateCorrigido.id)) {
       if (indexExistente >= 0) {
         console.log('🧹 Removendo versão antiga do template para garantir integridade...');
@@ -910,6 +918,7 @@ export default function ConfiguracaoCartoesPage() {
     // Lista de IDs de templates nativos que NÃO podem ser deletados
     const TEMPLATES_NATIVOS = [
       'ministro-classico',
+      'aemadepa-classico', 'aemadepa-branco',
       'funcionario-customizado', 'funcionario-branco'
     ];
 
@@ -959,7 +968,7 @@ export default function ConfiguracaoCartoesPage() {
       const { getTemplatesPorTipo } = require('@/lib/card-templates');
       
       // Procurar apenas nos tipos suportados do projeto
-      const tipos = ['ministro', 'funcionario'];
+      const tipos = ['ministro', 'aemadepa', 'funcionario'];
       for (const tipo of tipos) {
         const nativosDoTipo = getTemplatesPorTipo(tipo);
         targetTemplate = nativosDoTipo.find((t: any) => t.id === templateId);

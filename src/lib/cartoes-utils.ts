@@ -29,7 +29,19 @@ export const PLACEHOLDERS_CONFIG = [
   { campo: 'endereco', placeholder: '{endereco}', label: 'Endereço Completo' },
   { campo: 'uniqueId', placeholder: '{uniqueId}', label: 'ID Único (QR Code)' },
   { campo: 'congregacao', placeholder: '{congregacao}', label: 'Congregação (Nome da Igreja Local)' },
-  { campo: 'funcaoDiretoria', placeholder: '{funcao_diretoria}', label: 'Função da Diretoria' }
+  { campo: 'campo', placeholder: '{campo}', label: 'Campo' },
+  { campo: 'supervisao', placeholder: '{supervisao}', label: 'Supervisão' },
+  { campo: 'funcaoDiretoria', placeholder: '{funcao_diretoria}', label: 'Função da Diretoria' },
+  // Placeholders AEMADEPA
+  { campo: 'numeroAemadepa', placeholder: '{numeroAemadepa}', label: 'Nº AEMADEPA' },
+  { campo: 'matriculaAemadepa', placeholder: '{matricula_aemadepa}', label: 'Nº AEMADEPA' },
+  { campo: 'ministroNome', placeholder: '{ministroNome}', label: 'Nome do Ministro' },
+  { campo: 'ministroVinculado', placeholder: '{ministro_vinculado}', label: 'Ministro Vinculado' },
+  { campo: 'ministroMatricula', placeholder: '{ministroMatricula}', label: 'Matrícula do Ministro' },
+  { campo: 'nomeEsposa', placeholder: '{nomeEsposa}', label: 'Nome da Esposa' },
+  { campo: 'nacionalidade', placeholder: '{nacionalidade}', label: 'Nacionalidade' },
+  { campo: 'tituloEleitor', placeholder: '{tituloEleitor}', label: 'Título de Eleitor' },
+  { campo: 'telefone', placeholder: '{telefone}', label: 'Telefone' }
   // Nota: Placeholders de divisões ({divisao1}, {divisao1_valor}, etc.) são tratados separadamente
   // com lógica dinâmica baseada em nomenclaturas
 ];
@@ -119,13 +131,65 @@ export function substituirPlaceholders(texto: string, membro: any, nomenclaturas
   resultado = resultado.replace(new RegExp(nomeComDivisao3.replace(/[{}]/g, '\\$&'), 'g'), valorCongregacao);
 
   // ============================================================
-  // SUBSTITUIÇÕES PADRÃO DE CAMPOS DO MEMBRO
+  // SUBSTITUIÇÕES PADRÃO DE CAMPOS DO MEMBRO / ASSOCIADA
   // ============================================================
-
 
   PLACEHOLDERS_CONFIG.forEach(ph => {
     const regex = new RegExp(ph.placeholder.replace(/[{}]/g, '\\$&'), 'g');
     let valor = membro[ph.campo] || '';
+
+    // Mapeamentos de Fallbacks / AEMADEPA
+    if (ph.campo === 'nome' && !valor) {
+      valor = membro.nomeEsposa || membro.nome_esposa || '';
+    }
+    if ((ph.campo === 'numeroAemadepa' || ph.campo === 'matriculaAemadepa') && !valor) {
+      valor = membro.numeroAemadepa || membro.numero_aemadepa || membro.matricula || '';
+    }
+    if ((ph.campo === 'ministroNome' || ph.campo === 'ministroVinculado') && !valor) {
+      valor = membro.ministroNome || membro.ministro_nome || membro.nomeMinistro || '';
+    }
+    if (ph.campo === 'ministroMatricula' && !valor) {
+      valor = membro.ministroMatricula || membro.ministro_matricula || '';
+    }
+    if (ph.campo === 'nomeEsposa' && !valor) {
+      valor = membro.nomeEsposa || membro.nome_esposa || membro.nome || '';
+    }
+    if (ph.campo === 'tituloEleitor' && !valor) {
+      valor = membro.tituloEleitoralEsposa || membro.titulo_eleitoral || membro.titulo_eleitor || '';
+    }
+    if (ph.campo === 'nacionalidade' && !valor) {
+      valor = membro.nacionalidadeEsposa || membro.nacionalidade || 'BRASILEIRA';
+    }
+    if (ph.campo === 'telefone' && !valor) {
+      valor = membro.foneEsposa || membro.telefoneEsposa || membro.celular || membro.fone || '';
+    }
+    if (ph.campo === 'cpf' && !valor) {
+      valor = membro.cpfEsposa || membro.cpf_conjuge || '';
+    }
+    if (ph.campo === 'rg' && !valor) {
+      valor = membro.rgEsposa || membro.conjuge_rg || '';
+    }
+    if (ph.campo === 'dataNascimento' && !valor) {
+      valor = membro.dataNascimentoEsposa || membro.data_nascimento_conjuge || '';
+    }
+    if (ph.campo === 'tipoSanguineo' && !valor) {
+      valor = membro.tipoSanguineoEsposa || membro.tipo_sanguineo || '';
+    }
+    if (ph.campo === 'naturalidade' && !valor) {
+      valor = membro.naturalidadeEsposa || membro.conjuge_naturalidade || '';
+    }
+    if (ph.campo === 'nomePai' && !valor) {
+      valor = membro.nomePaiEsposa || membro.conjuge_nome_pai || '';
+    }
+    if (ph.campo === 'nomeMae' && !valor) {
+      valor = membro.nomeMaeEsposa || membro.conjuge_nome_mae || '';
+    }
+    if (ph.campo === 'cargoMinisterial' && !valor) {
+      valor = membro.cargo_ministerial || membro.profissao || '';
+    }
+    if (ph.campo === 'uniqueId' && !valor) {
+      valor = membro.uniqueId || membro.unique_id || membro.id || '';
+    }
 
     // Tratamentos especiais
     if (ph.campo === 'filiacao') {

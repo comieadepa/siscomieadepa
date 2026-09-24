@@ -1,6 +1,6 @@
 // Utilitário para gerenciar templates de cartões
 
-export type TipoCartao = 'membro' | 'congregado' | 'ministro' | 'funcionario';
+export type TipoCartao = 'membro' | 'congregado' | 'ministro' | 'funcionario' | 'aemadepa';
 export type VariacaoTemplate = 'classico' | 'moderno' | 'branco';
 
 export interface CardTemplate {
@@ -322,10 +322,58 @@ export const TEMPLATE_FUNCIONARIO_CUSTOMIZADO: CardTemplate = {
 
 
 
+// ========== CREDENCIAL AEMADEPA ==========
+
+// Modelo 1: AEMADEPA Clássico (Horizontal)
+export const TEMPLATE_AEMADEPA_CLASSICO: CardTemplate = {
+    id: 'aemadepa-classico',
+    nome: 'Credencial AEMADEPA — Modelo 01',
+    tipo: 'aemadepa',
+    variacao: 'branco',
+    descricao: 'Layout institucional da Credencial da Esposa (AEMADEPA)',
+    corPrincipal: '#be123c',
+    corSecundaria: '#e11d48',
+    corTexto: '#ffffff',
+    backgroundUrl: '/img/card_branco.png',
+    layout: {
+        mostrarFoto: true,
+        mostrarQRCode: true,
+        mostrarMatricula: true,
+        mostrarCargo: true,
+        mostrarBadge: true,
+        textoBadge: 'AEMADEPA',
+        orientacao: 'horizontal'
+    }
+};
+
+// Modelo em Branco - AEMADEPA
+export const TEMPLATE_AEMADEPA_BRANCO: CardTemplate = {
+    id: 'aemadepa-branco',
+    nome: 'AEMADEPA em Branco',
+    tipo: 'aemadepa',
+    variacao: 'branco',
+    descricao: 'Layout 100% personalizável para AEMADEPA (Frente e Verso)',
+    corPrincipal: '#be123c',
+    corSecundaria: '#fda4af',
+    corTexto: '#ffffff',
+    backgroundUrl: '/img/card_branco.png',
+    layout: {
+        mostrarFoto: true,
+        mostrarQRCode: true,
+        mostrarMatricula: true,
+        mostrarCargo: true,
+        mostrarBadge: false,
+        orientacao: 'horizontal'
+    }
+};
+
 // Array com todos os templates disponíveis
 export const TEMPLATES_DISPONIVEIS: CardTemplate[] = [
     // Ministro (único modelo)
     TEMPLATE_MINISTRO_CLASSICO,
+    // AEMADEPA (Credencial da Esposa)
+    TEMPLATE_AEMADEPA_CLASSICO,
+    TEMPLATE_AEMADEPA_BRANCO,
     // Funcionário
     TEMPLATE_FUNCIONARIO_CUSTOMIZADO,
     TEMPLATE_FUNCIONARIO_BRANCO
@@ -363,12 +411,12 @@ export function converterParaTemplateEditavel(template: CardTemplate): any {
 
     // Modelo em Branco (Template Editável) - Agora inclui TODOS os de Ministro e TODOS de Membro
     if (template.id === 'membro-branco' || template.id === 'congregado-branco' ||
-        template.id === 'ministro-branco' || template.id === 'membro-01') {
+        template.id === 'ministro-branco' || template.id === 'aemadepa-branco' || template.id === 'membro-01') {
         return {
             id: template.id,
             nome: template.nome,
             tipoCadastro: template.tipo,
-            corTitulo: '#6b7280',
+            corTitulo: template.tipo === 'aemadepa' ? '#be123c' : '#6b7280',
             temVerso: true,
             criadoEm: new Date(),
             atualizadoEm: new Date(),
@@ -376,6 +424,23 @@ export function converterParaTemplateEditavel(template: CardTemplate): any {
             elementos: [],
             elementosVerso: [],
             backgroundUrlVerso: '/img/card_branco.png'
+        };
+    }
+
+    // Modelo: AEMADEPA Classico
+    if (template.id === 'aemadepa-classico') {
+        return {
+            id: template.id,
+            nome: template.nome,
+            tipoCadastro: 'aemadepa',
+            corTitulo: '#be123c',
+            temVerso: true,
+            criadoEm: new Date(),
+            atualizadoEm: new Date(),
+            backgroundUrl: '/img/card_branco.png',
+            backgroundUrlVerso: '/img/card_branco.png',
+            elementos: [],
+            elementosVerso: []
         };
     }
 

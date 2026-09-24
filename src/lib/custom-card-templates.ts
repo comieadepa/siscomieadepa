@@ -25,7 +25,7 @@ export interface ElementoCartao {
 export interface TemplateCartaoCustomizado {
     id: string;
     nome: string;
-    tipoCadastro: 'membro' | 'congregado' | 'ministro' | 'funcionario';
+    tipoCadastro: 'membro' | 'congregado' | 'ministro' | 'funcionario' | 'aemadepa';
     backgroundUrl?: string;
     elementos: ElementoCartao[];
     corTitulo: string;
@@ -949,10 +949,381 @@ export const TEMPLATE_FUNCIONARIO_CUSTOMIZADO: TemplateCartaoCustomizado = {
   backgroundUrl: "/img/card_funcionario.png"
 } as TemplateCartaoCustomizado;
 
+// Template AEMADEPA CLASSICO (Modelo 01) com frente e verso completos
+export const TEMPLATE_AEMADEPA_CLASSICO_CUSTOMIZADO: TemplateCartaoCustomizado = {
+  id: 'aemadepa-classico',
+  nome: 'Credencial AEMADEPA — Modelo 01',
+  tipoCadastro: 'aemadepa',
+  corTitulo: '#be123c',
+  temVerso: true,
+  descricao: 'Credencial da Esposa de Ministro AEMADEPA com frente e verso',
+  backgroundUrl: '/img/card_branco.png',
+  backgroundUrlVerso: '/img/card_branco.png',
+  elementos: [
+    {
+      id: 'aemadepa-logo-frente',
+      tipo: 'logo',
+      x: 10,
+      y: 10,
+      largura: 65,
+      altura: 65,
+      fontSize: 10,
+      cor: '#000',
+      fonte: 'Arial',
+      transparencia: 1,
+      alinhamento: 'left',
+      negrito: false,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    },
+    {
+      id: 'aemadepa-header-convencao',
+      tipo: 'texto',
+      x: 80,
+      y: 10,
+      largura: 375,
+      altura: 32,
+      fontSize: 11,
+      cor: '#881337',
+      fonte: 'Akshar Semibold',
+      texto: 'CONVENÇÃO INTERESTADUAL DE MINISTROS E IGREJAS EVANGÉLICAS ASSEMBLEIAS DE DEUS NO PARÁ',
+      alinhamento: 'center',
+      negrito: true,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    },
+    {
+      id: 'aemadepa-header-associacao',
+      tipo: 'texto',
+      x: 80,
+      y: 44,
+      largura: 375,
+      altura: 28,
+      fontSize: 14,
+      cor: '#be123c',
+      fonte: 'Akshar Semibold',
+      texto: 'AEMADEPA — ASSOCIAÇÃO DAS ESPOSAS DOS MINISTROS',
+      alinhamento: 'center',
+      negrito: true,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    },
+    {
+      id: 'aemadepa-foto-esposa',
+      tipo: 'foto-membro',
+      x: 335,
+      y: 80,
+      largura: 115,
+      altura: 145,
+      fontSize: 10,
+      cor: '#000',
+      fonte: 'Arial',
+      alinhamento: 'left',
+      negrito: false,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    },
+    {
+      id: 'aemadepa-num-reg',
+      tipo: 'texto',
+      x: 15,
+      y: 84,
+      largura: 310,
+      altura: 26,
+      fontSize: 13,
+      cor: '#000000',
+      fonte: 'Akshar Semibold',
+      texto: 'Nº AEMADEPA: <font color="#be123c">{numeroAemadepa}</font>',
+      alinhamento: 'left',
+      negrito: true,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    },
+    {
+      id: 'aemadepa-nome-esposa',
+      tipo: 'texto',
+      x: 15,
+      y: 114,
+      largura: 310,
+      altura: 28,
+      fontSize: 14,
+      cor: '#000000',
+      fonte: 'Akshar Semibold',
+      texto: 'ESPOSA: <font color="#be123c">{nome}</font>',
+      alinhamento: 'left',
+      negrito: true,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    },
+    {
+      id: 'aemadepa-ministro-vinculado',
+      tipo: 'texto',
+      x: 15,
+      y: 146,
+      largura: 310,
+      altura: 26,
+      fontSize: 13,
+      cor: '#000000',
+      fonte: 'Akshar Semibold',
+      texto: 'MINISTRO: <font color="#be123c">{ministroNome}</font>',
+      alinhamento: 'left',
+      negrito: true,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    },
+    {
+      id: 'aemadepa-cargo-campo',
+      tipo: 'texto',
+      x: 15,
+      y: 176,
+      largura: 310,
+      altura: 26,
+      fontSize: 12,
+      cor: '#000000',
+      fonte: 'Akshar Semibold',
+      texto: 'CARGO: <font color="#be123c">{cargo_ministerial}</font> | CAMPO: <font color="#be123c">{campo}</font>',
+      alinhamento: 'left',
+      negrito: true,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    },
+    {
+      id: 'aemadepa-supervisao',
+      tipo: 'texto',
+      x: 15,
+      y: 204,
+      largura: 310,
+      altura: 24,
+      fontSize: 12,
+      cor: '#000000',
+      fonte: 'Akshar Semibold',
+      texto: 'SUPERVISÃO: <font color="#be123c">{supervisao}</font>',
+      alinhamento: 'left',
+      negrito: true,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    },
+    {
+      id: 'aemadepa-rodape-frente',
+      tipo: 'texto',
+      x: 10,
+      y: 250,
+      largura: 445,
+      altura: 32,
+      fontSize: 9,
+      cor: '#64748b',
+      fonte: 'Akshar',
+      texto: 'A portadora desta credencial é esposa de ministro devidamente filiado à COMIEADEPA.',
+      alinhamento: 'center',
+      negrito: false,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    }
+  ],
+  elementosVerso: [
+    {
+      id: 'aemadepa-verso-header',
+      tipo: 'texto',
+      x: 15,
+      y: 8,
+      largura: 435,
+      altura: 24,
+      fontSize: 12,
+      cor: '#881337',
+      fonte: 'Akshar Semibold',
+      texto: 'AEMADEPA • COMIEADEPA — DADOS CADASTRAIS',
+      alinhamento: 'center',
+      negrito: true,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    },
+    {
+      id: 'aemadepa-verso-rg-cpf',
+      tipo: 'texto',
+      x: 20,
+      y: 38,
+      largura: 280,
+      altura: 20,
+      fontSize: 12,
+      cor: '#000',
+      fonte: 'Akshar Semibold',
+      texto: 'CPF: <font color="#be123c">{cpf}</font> &nbsp;&nbsp; RG: <font color="#be123c">{rg}</font>',
+      alinhamento: 'left',
+      negrito: true,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    },
+    {
+      id: 'aemadepa-verso-nasc-sangue',
+      tipo: 'texto',
+      x: 20,
+      y: 62,
+      largura: 280,
+      altura: 20,
+      fontSize: 12,
+      cor: '#000',
+      fonte: 'Akshar Semibold',
+      texto: 'NASCIMENTO: <font color="#be123c">{dataNascimento}</font> &nbsp;&nbsp; SANGUE: <font color="#be123c">{tipoSanguineo}</font>',
+      alinhamento: 'left',
+      negrito: true,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    },
+    {
+      id: 'aemadepa-verso-naturalidade',
+      tipo: 'texto',
+      x: 20,
+      y: 86,
+      largura: 280,
+      altura: 20,
+      fontSize: 12,
+      cor: '#000',
+      fonte: 'Akshar Semibold',
+      texto: 'NATURALIDADE: <font color="#be123c">{naturalidade}</font>',
+      alinhamento: 'left',
+      negrito: true,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    },
+    {
+      id: 'aemadepa-verso-filiacao',
+      tipo: 'texto',
+      x: 20,
+      y: 110,
+      largura: 280,
+      altura: 34,
+      fontSize: 11,
+      cor: '#000',
+      fonte: 'Akshar Semibold',
+      texto: 'PAI: <font color="#be123c">{nomePai}</font><br/>MÃE: <font color="#be123c">{nomeMae}</font>',
+      alinhamento: 'left',
+      negrito: true,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    },
+    {
+      id: 'aemadepa-verso-emissao-validade',
+      tipo: 'texto',
+      x: 20,
+      y: 150,
+      largura: 280,
+      altura: 20,
+      fontSize: 11,
+      cor: '#000',
+      fonte: 'Akshar Semibold',
+      texto: 'EMISSÃO: <font color="#be123c">{dataEmissao}</font> &nbsp;&nbsp; VALIDADE: <font color="#be123c">{validade}</font>',
+      alinhamento: 'left',
+      negrito: true,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    },
+    {
+      id: 'aemadepa-verso-qrcode',
+      tipo: 'qrcode',
+      x: 315,
+      y: 40,
+      largura: 125,
+      altura: 125,
+      fontSize: 10,
+      cor: '#000',
+      fonte: 'Arial',
+      alinhamento: 'left',
+      negrito: false,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    },
+    {
+      id: 'aemadepa-verso-ass-pres',
+      tipo: 'texto',
+      x: 15,
+      y: 185,
+      largura: 210,
+      altura: 32,
+      fontSize: 8,
+      cor: '#000',
+      fonte: 'Akshar',
+      texto: '____________________________<br/>PRESIDENTE AEMADEPA',
+      alinhamento: 'center',
+      negrito: true,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    },
+    {
+      id: 'aemadepa-verso-ass-sec',
+      tipo: 'texto',
+      x: 240,
+      y: 185,
+      largura: 210,
+      altura: 32,
+      fontSize: 8,
+      cor: '#000',
+      fonte: 'Akshar',
+      texto: '____________________________<br/>1ª SECRETÁRIA AEMADEPA',
+      alinhamento: 'center',
+      negrito: true,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    },
+    {
+      id: 'aemadepa-verso-contato',
+      tipo: 'texto',
+      x: 10,
+      y: 245,
+      largura: 445,
+      altura: 32,
+      fontSize: 9,
+      cor: '#64748b',
+      fonte: 'Akshar',
+      texto: 'COMIEADEPA — Rod. Mário Covas, 2500 - Ananindeua - PA | CNPJ: 04.760.047/0001-04<br/>www.comieadepa.org',
+      alinhamento: 'center',
+      negrito: false,
+      italico: false,
+      sublinhado: false,
+      visivel: true
+    }
+  ]
+} as TemplateCartaoCustomizado;
+
+// Template AEMADEPA em Branco
+export const TEMPLATE_AEMADEPA_BRANCO_CUSTOMIZADO: TemplateCartaoCustomizado = {
+  id: 'aemadepa-branco',
+  nome: 'AEMADEPA em Branco',
+  tipoCadastro: 'aemadepa',
+  corTitulo: '#be123c',
+  temVerso: true,
+  descricao: 'Layout 100% personalizável para AEMADEPA',
+  backgroundUrl: '/img/card_branco.png',
+  backgroundUrlVerso: '/img/card_branco.png',
+  elementos: [],
+  elementosVerso: []
+} as TemplateCartaoCustomizado;
+
 // Array com todos os templates customizados
 export const TEMPLATES_CUSTOMIZADOS: TemplateCartaoCustomizado[] = [
     // Ministro (único modelo)
     TEMPLATE_MINISTRO_CLASSICO_CUSTOMIZADO,
+    // AEMADEPA
+    TEMPLATE_AEMADEPA_CLASSICO_CUSTOMIZADO,
+    TEMPLATE_AEMADEPA_BRANCO_CUSTOMIZADO,
     // Funcionário
     TEMPLATE_FUNCIONARIO_BRANCO,
     TEMPLATE_FUNCIONARIO_CUSTOMIZADO
@@ -968,6 +1339,6 @@ export function getTemplateCustomizado(id: string): TemplateCartaoCustomizado | 
 /**
  * Obtém templates customizados por tipo
  */
-export function getTemplatesCustomizadosPorTipo(tipo: 'membro' | 'congregado' | 'ministro' | 'funcionario'): TemplateCartaoCustomizado[] {
+export function getTemplatesCustomizadosPorTipo(tipo: 'membro' | 'congregado' | 'ministro' | 'funcionario' | 'aemadepa'): TemplateCartaoCustomizado[] {
     return TEMPLATES_CUSTOMIZADOS.filter(t => t.tipoCadastro === tipo);
 }

@@ -1,8 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export type TipoCartao = 'membro' | 'congregado' | 'ministro' | 'funcionario';
+export type TipoCartao = 'membro' | 'congregado' | 'ministro' | 'funcionario' | 'aemadepa';
 
-const TIPOS_HABILITADOS: TipoCartao[] = ['ministro', 'funcionario'];
+const TIPOS_HABILITADOS: TipoCartao[] = ['ministro', 'aemadepa', 'funcionario'];
 
 function getSupabaseErrorText(error: any): string {
   if (!error) return '';
