@@ -2350,6 +2350,52 @@ export default function CongregacoesPage() {
     setTimeout(() => win.print(), 600);
   }
 
+  function handleExportCsvCampos(lista: typeof divisoes2) {
+    const colunas = ['SUPERVISÃO', 'UF', 'NOME DO CAMPO', 'PRESIDENTE', 'CONTATO', 'CNPJ', 'MISSIONÁRIO'];
+    const escapeCsv = (val: string | number | boolean | null | undefined) => {
+      const str = String(val ?? '').replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const rows = lista.map(c => {
+      const sup = divisoes1.find(s => s.id === c.supervisao_id);
+      const rawContato = (c as any).presidente_contato || c.telefone || '';
+      let telFmt = rawContato;
+      if (rawContato && !rawContato.includes('(')) {
+        const apenasDigitos = rawContato.replace(/\D/g, '');
+        const semDdi = apenasDigitos.startsWith('55') && apenasDigitos.length > 10
+          ? apenasDigitos.slice(2)
+          : apenasDigitos;
+        if (semDdi.length === 11) {
+          telFmt = semDdi.replace(/^(\d{2})(\d{5})(\d{4})$/, '($1) $2-$3');
+        } else if (semDdi.length === 10) {
+          telFmt = semDdi.replace(/^(\d{2})(\d{4})(\d{4})$/, '($1) $2-$3');
+        }
+      }
+
+      return [
+        sup ? sup.nome : '',
+        c.uf || '',
+        c.nome || '',
+        (c as any).presidente_nome || c.pastor_nome || '',
+        telFmt,
+        c.cnpj ? 'SIM' : 'NÃO',
+        (c as any).is_campo_missionario ? 'SIM' : 'NÃO',
+      ].map(escapeCsv).join(';');
+    });
+
+    const csvContent = '\uFEFF' + [colunas.map(escapeCsv).join(';'), ...rows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `lista_de_campos_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
   function handlePrintSupervisoes(lista: typeof divisoes1) {
     const titulo = 'LISTA DE SUPERVISÕES';
     const rows = lista.map(d => {
@@ -3312,8 +3358,41 @@ export default function CongregacoesPage() {
                     handlePrintCampos(lista);
                   }}
                   className="px-4 py-2 bg-gray-700 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 transition flex items-center gap-1"
+                  title="Imprimir lista"
                 >
-                  🖨️ Imprimir lista
+                  🖨️ Imprimir
+                </button>
+                <button
+                  onClick={() => {
+                    const q = searchCampos.toLowerCase();
+                    let lista = divisoes2.filter(c => {
+                      if (filterUfCampos && (c.uf || '') !== filterUfCampos) return false;
+                      if (filterSupCampos && c.supervisao_id !== filterSupCampos) return false;
+                      if (filterCnpjCampos === 'sim' && !c.cnpj) return false;
+                      if (filterCnpjCampos === 'nao' && c.cnpj) return false;
+                      if (filterMissionarioCampos && !c.is_campo_missionario) return false;
+                      if (q) { const s = divisoes1.find(s => s.id === c.supervisao_id); return c.nome.toLowerCase().includes(q) || (c.cidade||'').toLowerCase().includes(q) || (c.uf||'').toLowerCase().includes(q) || (c.pastor_nome||'').toLowerCase().includes(q) || ((c as any).presidente_nome||'').toLowerCase().includes(q) || (s ? s.nome.toLowerCase().includes(q) : false); }
+                      return true;
+                    });
+                    if (sortPresidente) {
+                      lista = [...lista].sort((a, b) => {
+                        const nameA = ((a as any).presidente_nome || a.pastor_nome || '').trim();
+                        const nameB = ((b as any).presidente_nome || b.pastor_nome || '').trim();
+                        if (sortPresidente === 'asc') {
+                          return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
+                        } else {
+                          return nameB.localeCompare(nameA, 'pt-BR', { sensitivity: 'base' });
+                        }
+                      });
+                    }
+                    handleExportCsvCampos(lista);
+                  }}
+                  className="px-2.5 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition flex items-center justify-center shadow-sm"
+                  title="Exportar CSV (Excel)"
+                >
+                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zM6 4h7v5h5v11H6V4zm2.8 8.2l1.7 2.8-1.7 2.8h1.6l1-1.8 1 1.8h1.6l-1.8-2.8 1.8-2.8h-1.6l-1 1.7-1-1.7H8.8z"/>
+                  </svg>
                 </button>
               </div>
  
