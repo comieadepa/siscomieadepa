@@ -17,6 +17,7 @@ import {
   Clock,
   CreditCard,
   FileText,
+  HeartHandshake,
   LogOut,
   Settings,
   ShieldCheck,
@@ -134,7 +135,7 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
   // Abre automaticamente o menu pai quando um submenu está ativo
   useEffect(() => {
     const menusComSubmenu: Record<string, string[]> = {
-      secretaria: ['estrutura-hierarquica', 'membros', 'funcionarios', 'consagracao', 'cartas', 'permutas', 'impressoes-credenciais'],
+      secretaria: ['estrutura-hierarquica', 'membros', 'aemadepa', 'funcionarios', 'consagracao', 'cartas', 'permutas', 'impressoes-credenciais'],
       cgadb: ['cgadb-dashboard', 'cgadb-debitos', 'cgadb-relatorios', 'cgadb-historico'],
       conec: ['conec-dashboard', 'conec-editor'],
       configuracoes: ['config-geral', 'importar-membros', 'config-certificados', 'config-cartoes', 'config-video-presidente'],
@@ -162,6 +163,7 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
           submenu: [
             { id: 'estrutura-hierarquica', label: 'Supervisões e Campos', icon: Building2, path: '/secretaria/estrutura-hierarquica' },
             { id: 'membros', label: 'Ministros', icon: Users, path: '/secretaria/membros' },
+            { id: 'aemadepa', label: 'AEMADEPA', icon: HeartHandshake, path: '/secretaria/aemadepa' },
             { id: 'funcionarios', label: 'Funcionários', icon: Users, path: '/secretaria/funcionarios' },
             { id: 'consagracao', label: 'Consagração (obreiros)', icon: FileText, path: '/secretaria/consagracao' },
             { id: 'cartas', label: 'Cartas ministeriais', icon: FileText, path: '/secretaria/cartas' },
