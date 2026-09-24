@@ -1303,27 +1303,12 @@ export const TEMPLATE_AEMADEPA_CLASSICO_CUSTOMIZADO: TemplateCartaoCustomizado =
   ]
 } as TemplateCartaoCustomizado;
 
-// Template AEMADEPA em Branco
-export const TEMPLATE_AEMADEPA_BRANCO_CUSTOMIZADO: TemplateCartaoCustomizado = {
-  id: 'aemadepa-branco',
-  nome: 'AEMADEPA em Branco',
-  tipoCadastro: 'aemadepa',
-  corTitulo: '#be123c',
-  temVerso: true,
-  descricao: 'Layout 100% personalizável para AEMADEPA',
-  backgroundUrl: '/img/card_branco.png',
-  backgroundUrlVerso: '/img/card_branco.png',
-  elementos: [],
-  elementosVerso: []
-} as TemplateCartaoCustomizado;
-
 // Array com todos os templates customizados
 export const TEMPLATES_CUSTOMIZADOS: TemplateCartaoCustomizado[] = [
     // Ministro (único modelo)
     TEMPLATE_MINISTRO_CLASSICO_CUSTOMIZADO,
-    // AEMADEPA
+    // AEMADEPA (único modelo institucional)
     TEMPLATE_AEMADEPA_CLASSICO_CUSTOMIZADO,
-    TEMPLATE_AEMADEPA_BRANCO_CUSTOMIZADO,
     // Funcionário
     TEMPLATE_FUNCIONARIO_BRANCO,
     TEMPLATE_FUNCIONARIO_CUSTOMIZADO

@@ -93,7 +93,8 @@ const ELEMENTOS_DISPONIVEIS = [
   { tipo: 'chapa', label: 'Chapa', icone: '🔴' }
 ];
 
-const PLACEHOLDERS_DISPONIVEIS = [
+// Placeholders para Credencial de Ministro e Funcionário
+const PLACEHOLDERS_MINISTRO = [
   { campo: 'nome', label: 'Nome', placeholder: '{nome}' },
   { campo: 'matricula', label: 'Matrícula', placeholder: '{matricula}' },
   { campo: 'cpf', label: 'CPF', placeholder: '{cpf}' },
@@ -119,14 +120,6 @@ const PLACEHOLDERS_DISPONIVEIS = [
   { campo: 'endereco', label: 'Endereço Completo', placeholder: '{endereco}' },
   { campo: 'uniqueId', label: 'ID Único (QR Code)', placeholder: '{uniqueId}' },
   { campo: 'funcaoDiretoria', label: 'Função da Diretoria', placeholder: '{funcao_diretoria}' },
-  // Placeholders AEMADEPA
-  { campo: 'numeroAemadepa', label: 'Nº AEMADEPA', placeholder: '{numeroAemadepa}' },
-  { campo: 'ministroNome', label: 'Nome do Ministro', placeholder: '{ministroNome}' },
-  { campo: 'ministroMatricula', label: 'Matrícula do Ministro', placeholder: '{ministroMatricula}' },
-  { campo: 'nomeEsposa', label: 'Nome da Esposa', placeholder: '{nomeEsposa}' },
-  { campo: 'nacionalidade', label: 'Nacionalidade', placeholder: '{nacionalidade}' },
-  { campo: 'tituloEleitor', label: 'Título de Eleitor', placeholder: '{tituloEleitor}' },
-  { campo: 'telefone', label: 'Telefone', placeholder: '{telefone}' },
   // Placeholders de divisões - atualizados dinamicamente com nomenclaturas
   { campo: 'divisao1', label: 'Rótulo da Primeira Divisão', placeholder: '{divisao1}' },
   { campo: 'divisao1_valor', label: 'Valor da Primeira Divisão', placeholder: '{divisao1_valor}' },
@@ -136,13 +129,42 @@ const PLACEHOLDERS_DISPONIVEIS = [
   { campo: 'divisao3_valor', label: 'Valor da Terceira Divisão', placeholder: '{divisao3_valor}' }
 ];
 
+// Placeholders dedicados exclusivamente para Credencial AEMADEPA
+const PLACEHOLDERS_AEMADEPA = [
+  // Dados da Associada / Esposa
+  { campo: 'nome', label: 'Nome da Associada', placeholder: '{nome}' },
+  { campo: 'numeroAemadepa', label: 'Nº / Matrícula AEMADEPA', placeholder: '{numeroAemadepa}' },
+  { campo: 'cpf', label: 'CPF da Associada', placeholder: '{cpf}' },
+  { campo: 'rg', label: 'RG da Associada', placeholder: '{rg}' },
+  { campo: 'orgaoEmissor', label: 'Órgão Emissor do RG', placeholder: '{orgaoEmissor}' },
+  { campo: 'dataNascimento', label: 'Data de Nascimento', placeholder: '{dataNascimento}' },
+  { campo: 'tipoSanguineo', label: 'Tipo Sanguíneo', placeholder: '{tipoSanguineo}' },
+  { campo: 'nacionalidade', label: 'Nacionalidade', placeholder: '{nacionalidade}' },
+  { campo: 'naturalidade', label: 'Naturalidade', placeholder: '{naturalidade}' },
+  { campo: 'tituloEleitor', label: 'Título de Eleitor', placeholder: '{tituloEleitor}' },
+  { campo: 'nomePai', label: 'Nome do Pai', placeholder: '{nomePai}' },
+  { campo: 'nomeMae', label: 'Nome da Mãe', placeholder: '{nomeMae}' },
+  { campo: 'telefone', label: 'Telefone', placeholder: '{telefone}' },
+  { campo: 'whatsapp', label: 'WhatsApp', placeholder: '{whatsapp}' },
+  { campo: 'email', label: 'E-mail', placeholder: '{email}' },
+  { campo: 'dataEmissao', label: 'Data de Emissão', placeholder: '{dataEmissao}' },
+  { campo: 'validade', label: 'Validade da Credencial', placeholder: '{validade}' },
+  { campo: 'uniqueId', label: 'ID Único (Validação QR Code)', placeholder: '{uniqueId}' },
+  // Dados do Ministro Vinculado
+  { campo: 'ministroNome', label: 'Nome do Ministro Vinculado', placeholder: '{ministroNome}' },
+  { campo: 'ministroMatricula', label: 'Matrícula do Ministro', placeholder: '{ministroMatricula}' },
+  { campo: 'cargoMinisterial', label: 'Cargo do Ministro', placeholder: '{cargo_ministerial}' },
+  { campo: 'campo', label: 'Campo', placeholder: '{campo}' },
+  { campo: 'supervisao', label: 'Supervisão', placeholder: '{supervisao}' },
+];
+
 export default function ConfiguracaoCartoesPage() {
   const supabase = createClient();
 
   const [activeMenu, setActiveMenu] = useState('cartoes');
   const [tipoCadastroAtivo, setTipoCadastroAtivo] = useState<'ministro' | 'aemadepa' | 'funcionario'>('ministro');
   const [_nomenclaturas, setNomenclaturasState] = useState<any>(null);
-  const [placeholdersDisponiveis, setPlaceholdersDisponiveis] = useState(PLACEHOLDERS_DISPONIVEIS);
+  const [placeholdersDisponiveis, setPlaceholdersDisponiveis] = useState(PLACEHOLDERS_MINISTRO);
 
   const [ministryId, setMinistryId] = useState<string | null>(null);
 
@@ -492,7 +514,7 @@ export default function ConfiguracaoCartoesPage() {
     const label2 = parsed?.divisaoSecundaria?.opcao1 || 'CAMPO';
     const label3 = parsed?.divisaoTerciaria?.opcao1 || 'NENHUMA';
 
-    const updated = PLACEHOLDERS_DISPONIVEIS.map(ph => {
+    const updated = PLACEHOLDERS_MINISTRO.map(ph => {
       if (ph.placeholder === '{divisao1}') return { ...ph, label: `Rótulo: ${label1}` };
       if (ph.placeholder === '{divisao1_valor}') return { ...ph, label: `Valor: ${label1}` };
       if (ph.placeholder === '{divisao2}') return { ...ph, label: `Rótulo: ${label2}` };
@@ -774,7 +796,7 @@ export default function ConfiguracaoCartoesPage() {
     const indexExistente = novasTemplates.findIndex(t => t.id === templateCorrigido.id);
 
     // Se for um ID de template oficial/editável (podem ser salvos como branco), remover qualquer versão antiga antes de adicionar a nova
-    const TEMPLATES_EDITABLE = ['ministro-classico', 'aemadepa-classico', 'aemadepa-branco', 'funcionario-customizado', 'funcionario-branco'];
+    const TEMPLATES_EDITABLE = ['ministro-classico', 'aemadepa-classico', 'funcionario-customizado', 'funcionario-branco'];
     if (TEMPLATES_EDITABLE.includes(templateCorrigido.id)) {
       if (indexExistente >= 0) {
         console.log('🧹 Removendo versão antiga do template para garantir integridade...');
@@ -918,7 +940,7 @@ export default function ConfiguracaoCartoesPage() {
     // Lista de IDs de templates nativos que NÃO podem ser deletados
     const TEMPLATES_NATIVOS = [
       'ministro-classico',
-      'aemadepa-classico', 'aemadepa-branco',
+      'aemadepa-classico',
       'funcionario-customizado', 'funcionario-branco'
     ];
 
@@ -1588,25 +1610,39 @@ export default function ConfiguracaoCartoesPage() {
                   </div>
 
                   {/* Placeholders Disponíveis */}
-                  <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    <p className="text-xs font-semibold text-blue-900 mb-2">📌 Placeholders Disponíveis:</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {placeholdersDisponiveis.map((ph) => (
-                        <button
-                          key={ph.campo}
-                          onClick={() => {
-                            const novoTexto = (elementoSelecionado.texto || '') + ph.placeholder;
-                            atualizarElemento(elementoSelecionado.id, { texto: novoTexto });
-                          }}
-                          className="text-left text-xs px-2 py-1 bg-white border border-blue-200 rounded hover:bg-blue-100 transition cursor-pointer"
-                          title={`Clique para adicionar ${ph.placeholder}`}
-                        >
-                          <span className="font-semibold text-blue-600">{ph.placeholder}</span>
-                          <span className="text-gray-600 text-[10px] block">{ph.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  {(() => {
+                    const isAemadepa = tipoCadastroAtivo === 'aemadepa';
+                    const listaPlaceholders = isAemadepa ? PLACEHOLDERS_AEMADEPA : placeholdersDisponiveis;
+                    return (
+                      <div className={`mt-3 p-3 rounded-lg border ${isAemadepa ? 'bg-rose-50 border-rose-200' : 'bg-blue-50 border-blue-200'}`}>
+                        <p className={`text-xs font-semibold mb-2 ${isAemadepa ? 'text-rose-900' : 'text-blue-900'}`}>
+                          📌 Placeholders Disponíveis {isAemadepa ? '(AEMADEPA)' : ''}:
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {listaPlaceholders.map((ph) => (
+                            <button
+                              key={ph.campo}
+                              onClick={() => {
+                                const novoTexto = (elementoSelecionado.texto || '') + ph.placeholder;
+                                atualizarElemento(elementoSelecionado.id, { texto: novoTexto });
+                              }}
+                              className={`text-left text-xs px-2 py-1 bg-white border rounded transition cursor-pointer ${
+                                isAemadepa 
+                                  ? 'border-rose-200 hover:bg-rose-100' 
+                                  : 'border-blue-200 hover:bg-blue-100'
+                              }`}
+                              title={`Clique para adicionar ${ph.placeholder}`}
+                            >
+                              <span className={`font-semibold ${isAemadepa ? 'text-rose-600' : 'text-blue-600'}`}>
+                                {ph.placeholder}
+                              </span>
+                              <span className="text-gray-600 text-[10px] block">{ph.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

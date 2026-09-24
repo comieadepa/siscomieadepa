@@ -41,6 +41,8 @@ export const PLACEHOLDERS_CONFIG = [
   { campo: 'nomeEsposa', placeholder: '{nomeEsposa}', label: 'Nome da Esposa' },
   { campo: 'nacionalidade', placeholder: '{nacionalidade}', label: 'Nacionalidade' },
   { campo: 'tituloEleitor', placeholder: '{tituloEleitor}', label: 'Título de Eleitor' },
+  { campo: 'orgaoEmissor', placeholder: '{orgaoEmissor}', label: 'Órgão Emissor' },
+  { campo: 'orgao_emissor', placeholder: '{orgao_emissor}', label: 'Órgão Emissor' },
   { campo: 'telefone', placeholder: '{telefone}', label: 'Telefone' }
   // Nota: Placeholders de divisões ({divisao1}, {divisao1_valor}, etc.) são tratados separadamente
   // com lógica dinâmica baseada em nomenclaturas
@@ -168,6 +170,15 @@ export function substituirPlaceholders(texto: string, membro: any, nomenclaturas
     }
     if (ph.campo === 'rg' && !valor) {
       valor = membro.rgEsposa || membro.conjuge_rg || '';
+    }
+    if ((ph.campo === 'orgaoEmissor' || ph.campo === 'orgao_emissor') && !valor) {
+      valor = membro.orgaoEmissorEsposa || membro.orgao_emissor || membro.conjuge_orgao_emissor || membro.orgaoEmissor || '';
+    }
+    if (ph.campo === 'whatsapp' && !valor) {
+      valor = membro.whatsappEsposa || membro.foneEsposa || membro.whatsapp || membro.telefone || '';
+    }
+    if (ph.campo === 'email' && !valor) {
+      valor = membro.emailEsposa || membro.email || '';
     }
     if (ph.campo === 'dataNascimento' && !valor) {
       valor = membro.dataNascimentoEsposa || membro.data_nascimento_conjuge || '';

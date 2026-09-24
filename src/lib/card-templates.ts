@@ -1,4 +1,4 @@
-// Utilitário para gerenciar templates de cartões
+import { getTemplateCustomizado } from './custom-card-templates';
 
 export type TipoCartao = 'membro' | 'congregado' | 'ministro' | 'funcionario' | 'aemadepa';
 export type VariacaoTemplate = 'classico' | 'moderno' | 'branco';
@@ -346,34 +346,12 @@ export const TEMPLATE_AEMADEPA_CLASSICO: CardTemplate = {
     }
 };
 
-// Modelo em Branco - AEMADEPA
-export const TEMPLATE_AEMADEPA_BRANCO: CardTemplate = {
-    id: 'aemadepa-branco',
-    nome: 'AEMADEPA em Branco',
-    tipo: 'aemadepa',
-    variacao: 'branco',
-    descricao: 'Layout 100% personalizável para AEMADEPA (Frente e Verso)',
-    corPrincipal: '#be123c',
-    corSecundaria: '#fda4af',
-    corTexto: '#ffffff',
-    backgroundUrl: '/img/card_branco.png',
-    layout: {
-        mostrarFoto: true,
-        mostrarQRCode: true,
-        mostrarMatricula: true,
-        mostrarCargo: true,
-        mostrarBadge: false,
-        orientacao: 'horizontal'
-    }
-};
-
 // Array com todos os templates disponíveis
 export const TEMPLATES_DISPONIVEIS: CardTemplate[] = [
     // Ministro (único modelo)
     TEMPLATE_MINISTRO_CLASSICO,
-    // AEMADEPA (Credencial da Esposa)
+    // AEMADEPA (Credencial da Esposa - Modelo Único Oficial)
     TEMPLATE_AEMADEPA_CLASSICO,
-    TEMPLATE_AEMADEPA_BRANCO,
     // Funcionário
     TEMPLATE_FUNCIONARIO_CUSTOMIZADO,
     TEMPLATE_FUNCIONARIO_BRANCO
@@ -397,7 +375,6 @@ export function converterParaTemplateEditavel(template: CardTemplate): any {
     }
 
     // Verificar se existe template customizado para este ID
-    const { getTemplateCustomizado } = require('@/lib/custom-card-templates');
     const customizado = getTemplateCustomizado(template.id);
     
     if (customizado) {
@@ -411,12 +388,12 @@ export function converterParaTemplateEditavel(template: CardTemplate): any {
 
     // Modelo em Branco (Template Editável) - Agora inclui TODOS os de Ministro e TODOS de Membro
     if (template.id === 'membro-branco' || template.id === 'congregado-branco' ||
-        template.id === 'ministro-branco' || template.id === 'aemadepa-branco' || template.id === 'membro-01') {
+        template.id === 'ministro-branco' || template.id === 'membro-01') {
         return {
             id: template.id,
             nome: template.nome,
             tipoCadastro: template.tipo,
-            corTitulo: template.tipo === 'aemadepa' ? '#be123c' : '#6b7280',
+            corTitulo: '#6b7280',
             temVerso: true,
             criadoEm: new Date(),
             atualizadoEm: new Date(),
