@@ -53,55 +53,381 @@ export default function FichaAemadepa({ associada, onClose }: FichaAemadepaProps
       window.print();
       return;
     }
-    const printWin = window.open('', '', 'height=1100,width=850');
+    const printWin = window.open('', '_blank', 'height=1100,width=850');
     if (!printWin) {
       window.print();
       return;
     }
+    
+    // Pega todo o CSS computado e estilos necessários em CSS puro inline para independência total de CDN/Tailwind assíncrono
     printWin.document.write(`<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
   <title>Ficha Cadastral AEMADEPA — ${associada.nomeEsposa}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
   <style>
     @page {
       size: A4 portrait;
-      margin: 8mm 10mm;
+      margin: 10mm 12mm;
     }
-    body {
-      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      background-color: #ffffff;
+    * {
+      box-sizing: border-box;
       margin: 0;
       padding: 0;
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
       color-adjust: exact !important;
     }
-    .print-document {
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background-color: #ffffff;
+      color: #1f2937;
+      font-size: 11px;
+      line-height: 1.35;
+      padding: 0;
+      margin: 0 auto;
+    }
+    .print-sheet {
       width: 100%;
       max-width: 100%;
-      margin: 0;
-      padding: 0 !important;
-      box-shadow: none !important;
-      border: none !important;
+      background: #ffffff;
     }
-    * {
-      box-sizing: border-box;
+    .header-box {
+      border-bottom: 2px solid #9f1239;
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+    }
+    .header-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-icon {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #be123c, #6b21a8);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      font-weight: 900;
+      font-size: 18px;
+    }
+    .brand-title {
+      font-size: 18px;
+      font-weight: 900;
+      color: #881337;
+      line-height: 1.1;
+      letter-spacing: 0.5px;
+    }
+    .brand-sub {
+      font-size: 9.5px;
+      font-weight: bold;
+      color: #374151;
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+    .brand-affil {
+      font-size: 8.5px;
+      color: #6b7280;
+      text-transform: uppercase;
+    }
+    .matricula-badge {
+      text-align: right;
+      border: 1px solid #fecdd3;
+      background: #fff1f2;
+      padding: 6px 10px;
+      border-radius: 8px;
+    }
+    .matricula-lbl {
+      font-size: 7.5px;
+      text-transform: uppercase;
+      font-weight: bold;
+      color: #9f1239;
+      display: block;
+    }
+    .matricula-val {
+      font-family: monospace;
+      font-size: 13px;
+      font-weight: 900;
+      color: #581c87;
+    }
+    .doc-banner {
+      margin-top: 8px;
+      text-align: center;
+      padding: 4px;
+      background-color: #be123c;
+      color: #ffffff;
+      font-weight: bold;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      border-radius: 4px;
+    }
+    .section-block {
+      margin-bottom: 12px;
+      page-break-inside: avoid;
+    }
+    .section-title {
+      background-color: #9f1239;
+      color: #ffffff;
+      padding: 4px 8px;
+      font-size: 10px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-top-left-radius: 4px;
+      border-top-right-radius: 4px;
+    }
+    .section-body {
+      border: 1px solid #d1d5db;
+      border-top: none;
+      padding: 10px;
+      border-bottom-left-radius: 4px;
+      border-bottom-right-radius: 4px;
+    }
+    .ident-wrapper {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+    }
+    .photo-box {
+      width: 90px;
+      height: 120px;
+      background-color: #f9fafb;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .photo-box img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .photo-placeholder {
+      color: #9ca3af;
+      font-size: 8px;
+      font-weight: bold;
+      text-align: center;
+    }
+    .grid-fields {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px 12px;
+      flex: 1;
+    }
+    .col-span-2 {
+      grid-column: span 2;
+    }
+    .col-span-3 {
+      grid-column: span 3;
+    }
+    .f-label {
+      font-size: 8px;
+      color: #6b7280;
+      font-weight: bold;
+      text-transform: uppercase;
+      display: block;
+      margin-bottom: 1px;
+    }
+    .f-val {
+      font-size: 10.5px;
+      color: #111827;
+      font-weight: 600;
+    }
+    .f-val-bold {
+      font-size: 11.5px;
+      font-weight: 800;
+      color: #111827;
+      text-transform: uppercase;
+    }
+    .f-val-rose {
+      color: #be123c;
+      font-weight: 800;
+    }
+    .f-val-mono {
+      font-family: monospace;
+      font-weight: bold;
+    }
+    .grid-2col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 12px;
+    }
+    .footer-proto {
+      border-top: 1.5px solid #9f1239;
+      padding-top: 8px;
+      margin-top: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: monospace;
+      font-size: 8.5px;
+      color: #4b5563;
+    }
+    .proto-bold {
+      font-weight: bold;
+      color: #111827;
     }
   </style>
 </head>
 <body>
-  <div class="print-document">
-    ${printRef.current.innerHTML}
+  <div class="print-sheet">
+    <!-- CABEÇALHO -->
+    <div class="header-box">
+      <div class="header-top">
+        <div class="brand-group">
+          <div class="brand-icon">AD</div>
+          <div>
+            <div class="brand-title">AEMADEPA</div>
+            <div class="brand-sub">Associação das Esposas dos Ministros da Assembleia de Deus no Estado do Pará</div>
+            <div class="brand-affil">COMIEADEPA • Convenção Interestadual de Ministros da Assembleia de Deus</div>
+          </div>
+        </div>
+        ${associada.numeroAemadepa ? `
+          <div class="matricula-badge">
+            <span class="matricula-lbl">No AEMADEPA</span>
+            <span class="matricula-val">${associada.numeroAemadepa}</span>
+          </div>
+        ` : ''}
+      </div>
+      <div class="doc-banner">FICHA CADASTRAL DE ESPOSA DE MINISTRO</div>
+    </div>
+
+    <!-- SEÇÃO 1: DADOS DA ESPOSA + FOTO -->
+    <div class="section-block">
+      <div class="section-title">1. IDENTIFICAÇÃO DA ESPOSA</div>
+      <div class="section-body">
+        <div class="ident-wrapper">
+          <div class="photo-box">
+            ${associada.fotoEsposaUrl 
+              ? `<img src="${associada.fotoEsposaUrl}" alt="Foto da Esposa" />` 
+              : `<div class="photo-placeholder">SEM FOTO</div>`
+            }
+          </div>
+          <div class="grid-fields">
+            <div class="col-span-2">
+              <span class="f-label">Nome Completo:</span>
+              <span class="f-val-bold">${fmt(associada.nomeEsposa)}</span>
+            </div>
+            <div>
+              <span class="f-label">Data de Nascimento:</span>
+              <span class="f-val">${fmtDate(associada.dataNascimentoEsposa)}</span>
+            </div>
+            <div>
+              <span class="f-label">CPF:</span>
+              <span class="f-val f-val-mono">${fmt(associada.cpfEsposa)}</span>
+            </div>
+            <div>
+              <span class="f-label">RG / Órgão Emissor:</span>
+              <span class="f-val">${fmt(associada.rgEsposa)} ${associada.orgaoEmissorEsposa ? `(${associada.orgaoEmissorEsposa})` : ''}</span>
+            </div>
+            <div>
+              <span class="f-label">Tipo Sanguíneo:</span>
+              <span class="f-val f-val-rose">${fmt(associada.tipoSanguineoEsposa)}</span>
+            </div>
+            <div>
+              <span class="f-label">Nacionalidade:</span>
+              <span class="f-val">${fmt(associada.nacionalidadeEsposa)}</span>
+            </div>
+            <div>
+              <span class="f-label">Naturalidade:</span>
+              <span class="f-val">${fmt(associada.naturalidadeEsposa)}</span>
+            </div>
+            <div>
+              <span class="f-label">Título de Eleitor:</span>
+              <span class="f-val">${fmt(associada.tituloEleitoralEsposa)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEÇÃO 2: FILIAÇÃO E CONTATOS -->
+    <div class="section-block">
+      <div class="section-title">2. FILIAÇÃO E CONTATOS</div>
+      <div class="section-body">
+        <div class="grid-2col">
+          <div>
+            <span class="f-label">Nome do Pai:</span>
+            <span class="f-val f-val-bold">${fmt(associada.nomePaiEsposa)}</span>
+          </div>
+          <div>
+            <span class="f-label">Nome da Mãe:</span>
+            <span class="f-val f-val-bold">${fmt(associada.nomeMaeEsposa)}</span>
+          </div>
+          <div>
+            <span class="f-label">Telefone / WhatsApp:</span>
+            <span class="f-val">${fmt(associada.foneEsposa)}</span>
+          </div>
+          <div>
+            <span class="f-label">E-mail:</span>
+            <span class="f-val">${fmt(associada.emailEsposa)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEÇÃO 3: VÍNCULO MINISTERIAL -->
+    <div class="section-block">
+      <div class="section-title">3. DADOS DO MINISTRO VINCULADO (ESPOSO) E JURISDIÇÃO</div>
+      <div class="section-body">
+        <div class="grid-fields">
+          <div class="col-span-2">
+            <span class="f-label">Nome do Ministro:</span>
+            <span class="f-val-bold">${fmt(associada.ministroNome)}</span>
+          </div>
+          <div>
+            <span class="f-label">Matrícula COMIEADEPA:</span>
+            <span class="f-val f-val-mono">${fmt(associada.ministroMatricula)}</span>
+          </div>
+          <div>
+            <span class="f-label">Cargo Ministerial:</span>
+            <span class="f-val">${fmt(associada.cargoMinisterial)}</span>
+          </div>
+          <div>
+            <span class="f-label">Campo / Cidade:</span>
+            <span class="f-val">${fmt(associada.campo)}</span>
+          </div>
+          <div>
+            <span class="f-label">Supervisão:</span>
+            <span class="f-val">${fmt(associada.supervisao)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RODAPÉ COM PROTOCOLO -->
+    <div class="footer-proto">
+      <span>Secretaria Geral da COMIEADEPA • AEMADEPA</span>
+      <span class="proto-bold">
+        PROTOCOLO: AEMADEPA-${(associada.uniqueId || associada.id || 'DOC00000').toString().replace(/[^a-zA-Z0-9]/g, '').slice(-8).padStart(8, '0').toUpperCase()}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}
+      </span>
+      <span>
+        Emitido em: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}
+      </span>
+    </div>
   </div>
 </body>
 </html>`);
     printWin.document.close();
+    
+    // Dispara a impressão após fechamento e renderização do DOM da nova janela
     setTimeout(() => {
       printWin.focus();
       printWin.print();
-    }, 450);
+    }, 250);
   };
 
   return (
@@ -123,13 +449,6 @@ export default function FichaAemadepa({ associada, onClose }: FichaAemadepaProps
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={handlePrint}
-              className="px-4 py-2 bg-white text-rose-800 hover:bg-rose-50 font-bold text-xs uppercase tracking-wider rounded-lg shadow transition flex items-center gap-1.5 cursor-pointer"
-            >
-              <Printer className="w-4 h-4" />
-              Imprimir Ficha
-            </button>
             <button
               onClick={onClose}
               className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
