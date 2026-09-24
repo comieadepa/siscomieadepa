@@ -49,7 +49,59 @@ export default function FichaAemadepa({ associada, onClose }: FichaAemadepaProps
   };
 
   const handlePrint = () => {
-    window.print();
+    if (!printRef.current) {
+      window.print();
+      return;
+    }
+    const printWin = window.open('', '', 'height=1100,width=850');
+    if (!printWin) {
+      window.print();
+      return;
+    }
+    printWin.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Ficha Cadastral AEMADEPA — ${associada.nomeEsposa}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 8mm 10mm;
+    }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: #ffffff;
+      margin: 0;
+      padding: 0;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color-adjust: exact !important;
+    }
+    .print-document {
+      width: 100%;
+      max-width: 100%;
+      margin: 0;
+      padding: 0 !important;
+      box-shadow: none !important;
+      border: none !important;
+    }
+    * {
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <div class="print-document">
+    ${printRef.current.innerHTML}
+  </div>
+</body>
+</html>`);
+    printWin.document.close();
+    setTimeout(() => {
+      printWin.focus();
+      printWin.print();
+    }, 450);
   };
 
   return (
@@ -63,7 +115,7 @@ export default function FichaAemadepa({ associada, onClose }: FichaAemadepaProps
             </div>
             <div>
               <h2 className="text-lg sm:text-xl font-extrabold tracking-tight">
-                Ficha Cadastral da Associada AEMADEPA
+                Ficha Cadastral da Esposa — AEMADEPA
               </h2>
               <p className="text-xs text-rose-100">
                 Visualização formatada para impressão A4
@@ -115,26 +167,28 @@ export default function FichaAemadepa({ associada, onClose }: FichaAemadepaProps
                   </div>
                 </div>
 
-                {/* Caixa Número AEMADEPA */}
-                <div className="text-right border border-rose-200 bg-rose-50/60 p-2.5 rounded-xl shrink-0">
-                  <span className="text-[8.5px] uppercase tracking-wider text-rose-800 font-bold block">
-                    No AEMADEPA
-                  </span>
-                  <span className="font-mono text-base font-extrabold text-purple-900">
-                    {associada.numeroAemadepa || 'PENDENTE'}
-                  </span>
-                </div>
+                {/* Caixa Número AEMADEPA (apenas quando preenchida) */}
+                {associada.numeroAemadepa ? (
+                  <div className="text-right border border-rose-200 bg-rose-50/60 p-2.5 rounded-xl shrink-0">
+                    <span className="text-[8.5px] uppercase tracking-wider text-rose-800 font-bold block">
+                      No AEMADEPA
+                    </span>
+                    <span className="font-mono text-base font-extrabold text-purple-900">
+                      {associada.numeroAemadepa}
+                    </span>
+                  </div>
+                ) : null}
               </div>
 
               <div className="mt-3 text-center py-1 bg-rose-700 text-white font-bold text-xs uppercase tracking-widest rounded-md">
-                FICHA CADASTRAL DE ASSOCIADA
+                FICHA CADASTRAL DE ESPOSA DE MINISTRO
               </div>
             </div>
 
-            {/* ── SEÇÃO 1: DADOS DA ASSOCIADA + FOTO ── */}
+            {/* ── SEÇÃO 1: DADOS DA ESPOSA + FOTO ── */}
             <div className="mb-6">
               <div className="bg-rose-800 text-white px-3 py-1 text-xs font-bold uppercase tracking-wider rounded-t-md flex items-center justify-between">
-                <span>1. IDENTIFICAÇÃO DA ASSOCIADA</span>
+                <span>1. IDENTIFICAÇÃO DA ESPOSA</span>
               </div>
 
               <div className="border border-gray-300 border-t-0 p-4 rounded-b-md flex flex-col sm:flex-row gap-5 items-start">
@@ -254,30 +308,16 @@ export default function FichaAemadepa({ associada, onClose }: FichaAemadepaProps
               </div>
             </div>
 
-            {/* ── SEÇÃO DE ASSINATURAS E DECLARAÇÃO ── */}
-            <div className="pt-6 border-t-2 border-gray-300 text-xs">
-              <p className="text-center text-[10px] text-gray-500 mb-10 italic">
-                Declaro para os devidos fins estatutários que as informações acima prestadas são verdadeiras e autênticas.
-              </p>
-
-              <div className="grid grid-cols-2 gap-12 text-center text-xs">
-                <div>
-                  <div className="border-t border-gray-600 pt-1 font-bold uppercase">
-                    {associada.nomeEsposa || 'Assinatura da Associada'}
-                  </div>
-                  <span className="text-[9.5px] text-gray-500 block">Associada AEMADEPA</span>
-                </div>
-
-                <div>
-                  <div className="border-t border-gray-600 pt-1 font-bold uppercase">
-                    Secretaria / Diretoria AEMADEPA
-                  </div>
-                  <span className="text-[9.5px] text-gray-500 block">Visto / Homologação</span>
-                </div>
-              </div>
-
-              <div className="mt-8 text-center text-[8.5px] text-gray-400 font-mono">
-                Documento emitido pelo Sistema Integrado SISCOMIEADEPA em {new Date().toLocaleDateString('pt-BR')} às {new Date().toLocaleTimeString('pt-BR')}.
+            {/* ── RODAPÉ COM PROTOCOLO DE IMPRESSÃO ── */}
+            <div className="pt-4 border-t-2 border-rose-800 text-xs mt-10">
+              <div className="flex flex-col sm:flex-row justify-between items-center text-[9.5px] text-gray-600 gap-1 font-mono">
+                <span>Secretaria Geral da COMIEADEPA • AEMADEPA</span>
+                <span className="font-bold text-gray-800">
+                  PROTOCOLO: AEMADEPA-{(associada.uniqueId || associada.id || 'DOC00000').toString().replace(/[^a-zA-Z0-9]/g, '').slice(-8).padStart(8, '0').toUpperCase()}-{new Date().toISOString().slice(0, 10).replace(/-/g, '')}
+                </span>
+                <span>
+                  Emitido em: {new Date().toLocaleDateString('pt-BR')} às {new Date().toLocaleTimeString('pt-BR')}
+                </span>
               </div>
             </div>
           </div>

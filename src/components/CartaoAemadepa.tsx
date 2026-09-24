@@ -174,7 +174,7 @@ export default function CartaoAemadepa({ associada, onClose }: CartaoAemadepaPro
             </div>
             <div>
               <h2 className="text-lg sm:text-xl font-extrabold tracking-tight">
-                Carteirinha da Associada AEMADEPA
+                Carteirinha da Esposa — AEMADEPA
               </h2>
               <p className="text-xs text-rose-100">
                 Visualização e Emissão Oficial (Padrão 85.6mm x 54mm)
@@ -204,7 +204,7 @@ export default function CartaoAemadepa({ associada, onClose }: CartaoAemadepaPro
           {!associada.fotoEsposaUrl && (
             <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-rose-800 text-xs">
               <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-              <span>Esta associada ainda não possui foto cadastrada. A carteirinha será emitida sem fotografia.</span>
+              <span>Esta esposa ainda não possui foto cadastrada. A carteirinha será emitida sem fotografia.</span>
             </div>
           )}
 
@@ -252,14 +252,14 @@ export default function CartaoAemadepa({ associada, onClose }: CartaoAemadepaPro
                   </div>
                 </div>
 
-                {/* Meio: Foto + Dados da Associada */}
+                {/* Meio: Foto + Dados da Esposa */}
                 <div className="relative z-10 flex items-center gap-3.5 my-auto">
                   {/* Foto 3:4 */}
                   <div className="w-20 h-26 rounded-xl bg-white/20 border-2 border-white/40 overflow-hidden shrink-0 shadow-md flex items-center justify-center">
                     {associada.fotoEsposaUrl ? (
                       <img
                         src={associada.fotoEsposaUrl}
-                        alt="Foto da Associada"
+                        alt="Foto da Esposa"
                         className="w-full h-full object-cover"
                       />
                     ) : (
@@ -271,7 +271,7 @@ export default function CartaoAemadepa({ associada, onClose }: CartaoAemadepaPro
                   <div className="space-y-1.5 flex-1 min-w-0">
                     <div>
                       <p className="text-[8px] uppercase tracking-wider text-rose-200 font-semibold">
-                        Associada
+                        Esposa de Ministro
                       </p>
                       <p className="text-xs font-black uppercase text-white truncate leading-tight drop-shadow-xs">
                         {associada.nomeEsposa}

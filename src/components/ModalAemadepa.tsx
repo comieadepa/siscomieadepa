@@ -350,7 +350,7 @@ export default function ModalAemadepa({
             </div>
             <div>
               <h2 className="text-lg sm:text-xl font-extrabold tracking-tight">
-                {dadosIniciais?.nome ? 'Editar Associada AEMADEPA' : 'Cadastrar Associada AEMADEPA'}
+                {dadosIniciais?.nome ? 'Editar Esposa — AEMADEPA' : 'Cadastrar Esposa — AEMADEPA'}
               </h2>
               <p className="text-xs text-rose-100">
                 Gestão cadastral da esposa do ministro vinculada à COMIEADEPA
@@ -469,7 +469,7 @@ export default function ModalAemadepa({
             {/* Foto 3:4 */}
             <div className="md:col-span-4 flex flex-col items-center p-4 bg-rose-50/40 rounded-xl border border-rose-100 space-y-3">
               <span className="text-xs font-bold text-rose-900 uppercase tracking-wider">
-                Foto da Associada
+                Foto da Esposa
               </span>
 
               <div className="w-28 h-36 bg-white rounded-lg shadow-sm border-2 border-dashed border-rose-300 overflow-hidden flex items-center justify-center relative group">
@@ -533,7 +533,7 @@ export default function ModalAemadepa({
               {/* Nome Completo */}
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-1">
-                  Nome Completo da Esposa / Associada *
+                  Nome Completo da Esposa *
                 </label>
                 <input
                   type="text"
@@ -719,7 +719,7 @@ export default function ModalAemadepa({
                   type="text"
                   value={formData.nome_pai}
                   onChange={e => setFormData(prev => ({ ...prev, nome_pai: e.target.value.toUpperCase() }))}
-                  placeholder="Nome do pai da associada"
+                  placeholder="Nome do pai da esposa"
                   className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
                 />
               </div>
@@ -732,7 +732,7 @@ export default function ModalAemadepa({
                   type="text"
                   value={formData.nome_mae}
                   onChange={e => setFormData(prev => ({ ...prev, nome_mae: e.target.value.toUpperCase() }))}
-                  placeholder="Nome da mãe da associada"
+                  placeholder="Nome da mãe da esposa"
                   className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
                 />
               </div>
@@ -755,7 +755,7 @@ export default function ModalAemadepa({
               className="px-6 py-2.5 bg-gradient-to-r from-rose-700 to-purple-800 hover:from-rose-800 hover:to-purple-900 text-white font-bold text-sm rounded-xl shadow-md hover:shadow-lg transition flex items-center gap-2 disabled:opacity-60"
             >
               <Save className="w-4 h-4" />
-              {salvando ? 'Salvando...' : 'Salvar Associada'}
+              {salvando ? 'Salvando...' : 'Salvar Esposa'}
             </button>
           </div>
         </form>

@@ -29,6 +29,7 @@ import {
 interface AssociadaAemadepa {
   id: string; // member_id do ministro
   ministroId: string;
+  uniqueId?: string;
   ministroNome: string;
   ministroMatricula: string;
   ministroCpf: string;
@@ -98,6 +99,7 @@ export default function AemadepaPage() {
         return {
           id: m.id,
           ministroId: m.id,
+          uniqueId: m.unique_id || cf.unique_id || cf.uniqueId || undefined,
           ministroNome: String(m.name || m.nome || cf.nome || '').trim(),
           ministroMatricula: String(m.matricula || cf.matricula || '').trim(),
           ministroCpf: String(m.cpf || cf.cpf || '').trim(),
@@ -267,7 +269,7 @@ export default function AemadepaPage() {
             <div className="space-y-2">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-xs font-semibold uppercase tracking-wider">
                 <Sparkles className="w-3.5 h-3.5 text-pink-200" />
-                Gestão de Associadas
+                Gestão de Esposas
               </div>
               <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
                 AEMADEPA
@@ -283,7 +285,7 @@ export default function AemadepaPage() {
                 className="px-5 py-2.5 bg-white text-rose-800 hover:bg-rose-50 font-bold text-sm rounded-xl shadow-md hover:shadow-lg transition flex items-center gap-2 cursor-pointer"
               >
                 <UserPlus className="w-4 h-4" />
-                Nova Associada
+                Nova Esposa
               </button>
               <button
                 onClick={() => void carregarDados()}
@@ -378,6 +380,7 @@ export default function AemadepaPage() {
           <FichaAemadepa
             associada={{
               id: associadaFicha.ministroId,
+              uniqueId: associadaFicha.uniqueId,
               nomeEsposa: associadaFicha.nomeEsposa,
               cpfEsposa: associadaFicha.cpfEsposa,
               rgEsposa: associadaFicha.rgEsposa,
@@ -490,13 +493,13 @@ export default function AemadepaPage() {
           </div>
         </div>
 
-        {/* Tabela de Associadas */}
+        {/* Tabela de Esposas */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <HeartHandshake className="w-5 h-5 text-rose-600" />
               <h3 className="font-bold text-gray-800 text-base">
-                Relação de Associadas AEMADEPA
+                Relação de Esposas AEMADEPA
               </h3>
             </div>
             <span className="text-xs font-semibold px-2.5 py-1 bg-rose-50 text-rose-700 rounded-full">
@@ -509,7 +512,7 @@ export default function AemadepaPage() {
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase font-semibold text-gray-600">
                   <th className="px-4 py-3 text-center w-14">Foto</th>
-                  <th className="px-4 py-3">Esposa / Associada</th>
+                  <th className="px-4 py-3">Nome da Esposa</th>
                   <th className="px-4 py-3">No AEMADEPA</th>
                   <th className="px-4 py-3">Ministro Vinculado</th>
                   <th className="px-4 py-3">Campo / Região</th>
@@ -522,13 +525,13 @@ export default function AemadepaPage() {
                   <tr>
                     <td colSpan={7} className="text-center py-12 text-gray-400">
                       <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-rose-600" />
-                      Carregando associadas da AEMADEPA...
+                      Carregando esposas da AEMADEPA...
                     </td>
                   </tr>
                 ) : associadasPaginadas.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="text-center py-12 text-gray-400">
-                      Nenhuma associada encontrada com os filtros aplicados.
+                      Nenhuma esposa encontrada com os filtros aplicados.
                     </td>
                   </tr>
                 ) : (
@@ -628,7 +631,7 @@ export default function AemadepaPage() {
                           <button
                             onClick={() => abrirModalEdicao(item)}
                             className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                            title={item.temEsposaCadastrada ? "Editar dados da associada" : "Cadastrar esposa"}
+                            title={item.temEsposaCadastrada ? "Editar dados da esposa" : "Cadastrar esposa"}
                           >
                             <Edit className="w-4 h-4" />
                           </button>
