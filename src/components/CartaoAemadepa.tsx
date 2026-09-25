@@ -52,9 +52,19 @@ export default function CartaoAemadepa({ associada, onClose }: CartaoAemadepaPro
   const [loading, setLoading] = useState(true);
   const [orgNomenclaturas, setOrgNomenclaturas] = useState<any>(null);
 
+  const printRef = useRef<HTMLDivElement>(null);
   const frenteRef = useRef<HTMLDivElement>(null);
   const versoRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
+
+  const getDimensoesCSSCartao = (orientacao?: string) => {
+    if (orientacao === 'portrait') {
+      return { width: '291px', height: '465px' };
+    }
+    return { width: '465px', height: '291px' };
+  };
+
+  const resolvePrintBackgroundColor = (bgUrl?: string) => (bgUrl ? 'transparent' : 'white');
 
   // Carregar Template Ativo da AEMADEPA
   useEffect(() => {
@@ -167,75 +177,142 @@ export default function CartaoAemadepa({ associada, onClose }: CartaoAemadepaPro
       const img = new Image();
       if (!bgUrl.startsWith('data:')) img.crossOrigin = 'anonymous';
       img.onload = () => {
-        ctx.drawImage(img, 0, 0, out.width, out.height);
-        ctx.drawImage(foreground, 0, 0);
-        resolve(out);
+        try {
+          ctx.drawImage(img, 0, 0, out.width, out.height);
+          ctx.drawImage(foreground, 0, 0);
+          resolve(out);
+        } catch (e) {
+          console.warn('Falha ao desenhar composição de background AEMADEPA:', e);
+          resolve(foreground);
+        }
       };
-      img.onerror = () => resolve(foreground);
+      img.onerror = (e) => {
+        console.warn('Falha ao carregar imagem de background AEMADEPA para composição:', e);
+        resolve(foreground);
+      };
       img.src = bgUrl;
     });
   };
 
-  // Geração de PDF de Alta Resolução
+  // Geração de PDF de Alta Resolução isolada de Taint
   const handleGerarPDF = async () => {
-    if (!frenteRef.current || gerandoPDF) return;
+    if (!printRef.current || !template || gerandoPDF) return;
     setGerandoPDF(true);
 
     try {
-      // 1. Renderiza Frente
-      const captFrente = await html2canvas(frenteRef.current, {
+      const frenteEl = printRef.current.querySelector('#print-frente-aemadepa') as HTMLElement;
+      if (!frenteEl) throw new Error('Elemento da frente não encontrado na área de impressão');
+
+      // 1. Capturar elementos sem backgroundImage CSS (evita desfoque e taint no html2canvas)
+      const bgFrente = frenteEl.style.backgroundImage;
+      const bgColorFrente = frenteEl.style.backgroundColor;
+      frenteEl.style.backgroundImage = 'none';
+      frenteEl.style.backgroundColor = 'transparent';
+      const captFrente = await html2canvas(frenteEl, {
         scale: 4,
         useCORS: true,
-        allowTaint: true,
         backgroundColor: null,
         logging: false,
       });
-      const canvasFrente = await compositeWithBackground(captFrente, template?.backgroundUrl);
+      frenteEl.style.backgroundImage = bgFrente;
+      frenteEl.style.backgroundColor = bgColorFrente;
+
+      // 2. Compor background em alta resolução
+      const canvasFrente = await compositeWithBackground(captFrente, template.backgroundUrl);
 
       // Dimensões do cartão
-      const orientacao = template?.orientacao || 'landscape';
+      const tipoImpressao = template.tipoImpressao || 'pvc';
+      const orientacao = template.orientacao || 'landscape';
       const isPortrait = orientacao === 'portrait';
-      const largMM = isPortrait ? 54 : 85.6;
-      const altMM = isPortrait ? 85.6 : 54;
+      const largCartaoMM = isPortrait ? 53.98 : 85.6;
+      const altCartaoMM = isPortrait ? 85.6 : 53.98;
 
-      const pdf = new jsPDF({
-        orientation: isPortrait ? 'portrait' : 'landscape',
-        unit: 'mm',
-        format: [largMM, altMM],
-      });
+      let pdf: jsPDF;
 
-      const imgFrente = canvasFrente.toDataURL('image/jpeg', 0.98);
-      pdf.addImage(imgFrente, 'JPEG', 0, 0, largMM, altMM);
-
-      // 2. Renderiza Verso se existir
-      if (template?.temVerso && versoRef.current) {
-        const captVerso = await html2canvas(versoRef.current, {
-          scale: 4,
-          useCORS: true,
-          allowTaint: true,
-          backgroundColor: null,
-          logging: false,
+      if (tipoImpressao === 'a4') {
+        pdf = new jsPDF({
+          orientation: 'portrait',
+          unit: 'mm',
+          format: 'a4',
         });
-        const canvasVerso = await compositeWithBackground(captVerso, template?.backgroundUrlVerso);
 
-        pdf.addPage([largMM, altMM], isPortrait ? 'portrait' : 'landscape');
-        const imgVerso = canvasVerso.toDataURL('image/jpeg', 0.98);
-        pdf.addImage(imgVerso, 'JPEG', 0, 0, largMM, altMM);
+        const margemSuperior = 12;
+        const margemEsquerda = 18.5;
+        const espacamentoH = 2;
+
+        pdf.addImage(canvasFrente.toDataURL('image/png'), 'PNG', margemEsquerda, margemSuperior, largCartaoMM, altCartaoMM);
+
+        if (template.temVerso) {
+          const versoEl = printRef.current.querySelector('#print-verso-aemadepa') as HTMLElement;
+          if (versoEl) {
+            const bgVerso = versoEl.style.backgroundImage;
+            const bgColorVerso = versoEl.style.backgroundColor;
+            versoEl.style.backgroundImage = 'none';
+            versoEl.style.backgroundColor = 'transparent';
+            const captVerso = await html2canvas(versoEl, {
+              scale: 4,
+              useCORS: true,
+              backgroundColor: null,
+              logging: false,
+            });
+            versoEl.style.backgroundImage = bgVerso;
+            versoEl.style.backgroundColor = bgColorVerso;
+
+            const canvasVerso = await compositeWithBackground(captVerso, template.backgroundUrlVerso);
+            pdf.addPage();
+            const xVerso = margemEsquerda + largCartaoMM + espacamentoH;
+            pdf.addImage(canvasVerso.toDataURL('image/png'), 'PNG', xVerso, margemSuperior, largCartaoMM, altCartaoMM);
+          }
+        }
+      } else {
+        pdf = new jsPDF({
+          orientation: isPortrait ? 'portrait' : 'landscape',
+          unit: 'mm',
+          format: [largCartaoMM, altCartaoMM],
+        });
+
+        pdf.addImage(canvasFrente.toDataURL('image/png'), 'PNG', 0, 0, largCartaoMM, altCartaoMM);
+
+        if (template.temVerso) {
+          const versoEl = printRef.current.querySelector('#print-verso-aemadepa') as HTMLElement;
+          if (versoEl) {
+            const bgVerso = versoEl.style.backgroundImage;
+            const bgColorVerso = versoEl.style.backgroundColor;
+            versoEl.style.backgroundImage = 'none';
+            versoEl.style.backgroundColor = 'transparent';
+            const captVerso = await html2canvas(versoEl, {
+              scale: 4,
+              useCORS: true,
+              backgroundColor: null,
+              logging: false,
+            });
+            versoEl.style.backgroundImage = bgVerso;
+            versoEl.style.backgroundColor = bgColorVerso;
+
+            const canvasVerso = await compositeWithBackground(captVerso, template.backgroundUrlVerso);
+            pdf.addPage([largCartaoMM, altCartaoMM], isPortrait ? 'portrait' : 'landscape');
+            pdf.addImage(canvasVerso.toDataURL('image/png'), 'PNG', 0, 0, largCartaoMM, altCartaoMM);
+          }
+        }
       }
 
-      const nomeArquivo = `credencial_aemadepa_${associada.nomeEsposa.replace(/\s+/g, '_').toLowerCase()}.pdf`;
+      const nomeArquivo = `credencial_aemadepa_${associada.nomeEsposa.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
       pdf.save(nomeArquivo);
     } catch (err) {
       console.error('Erro ao gerar PDF da carteirinha AEMADEPA:', err);
-      alert('Erro ao gerar PDF da carteirinha. Tente novamente.');
+      alert('Erro ao gerar PDF da carteirinha. Consulte o console para mais detalhes.');
     } finally {
       setGerandoPDF(false);
     }
   };
 
-  // Renderizador de Elementos do Canvas Customizado
-  const renderizarElemento = (el: any) => {
+  // Renderizador de Elementos com suporte à compensação de lift no PDF
+  const renderizarElemento = (el: any, isPdf = false) => {
     if (!el || el.visivel === false) return null;
+
+    const fontSize = el.fontSize || 10;
+    const lift = isPdf ? (fontSize > 16 ? '-15px' : '-8px') : '0px';
+    const lineHeight = '1.2';
 
     const estilo: React.CSSProperties = {
       position: 'absolute',
@@ -291,11 +368,13 @@ export default function CartaoAemadepa({ associada, onClose }: CartaoAemadepaPro
           >
             <div
               style={{
+                position: 'relative',
+                top: lift,
                 width: '100%',
                 paddingLeft: el.backgroundColor ? '10px' : '0',
                 paddingRight: el.backgroundColor ? '5px' : '0',
                 boxSizing: 'border-box',
-                lineHeight: '1.2',
+                lineHeight: lineHeight,
                 textAlign: (el.alinhamento || 'left') as any,
                 display: 'block',
               }}
@@ -506,7 +585,7 @@ export default function CartaoAemadepa({ associada, onClose }: CartaoAemadepaPro
                   }}
                   className="relative rounded-2xl overflow-hidden shadow-2xl bg-white border border-gray-300 select-none box-border"
                 >
-                  {(template?.elementos || []).map((el: any) => renderizarElemento(el))}
+                  {(template?.elementos || []).map((el: any) => renderizarElemento(el, false))}
                 </div>
               </div>
 
@@ -528,7 +607,7 @@ export default function CartaoAemadepa({ associada, onClose }: CartaoAemadepaPro
                     }}
                     className="relative rounded-2xl overflow-hidden shadow-2xl bg-white border border-gray-300 select-none box-border"
                   >
-                    {(template?.elementosVerso || []).map((el: any) => renderizarElemento(el))}
+                    {(template?.elementosVerso || []).map((el: any) => renderizarElemento(el, false))}
                   </div>
                 </div>
               )}
@@ -558,6 +637,47 @@ export default function CartaoAemadepa({ associada, onClose }: CartaoAemadepaPro
           </div>
         </div>
       </div>
+
+      {/* ÁREA DE IMPRESSÃO OCULTA PARA PDF (Fora da tela visual com precisão de renderização) */}
+      {template && (
+        <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }} ref={printRef}>
+          {/* FRENTE PARA PDF */}
+          <div
+            id="print-frente-aemadepa"
+            style={{
+              ...getDimensoesCSSCartao(template.orientacao),
+              position: 'relative',
+              fontFamily: 'Arial, sans-serif',
+              backgroundImage: template.backgroundUrl ? `url(${template.backgroundUrl})` : 'none',
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundColor: resolvePrintBackgroundColor(template.backgroundUrl),
+              overflow: 'hidden',
+            }}
+          >
+            {(template.elementos || []).map((el: any) => renderizarElemento(el, true))}
+          </div>
+
+          {/* VERSO PARA PDF */}
+          {template.temVerso && (
+            <div
+              id="print-verso-aemadepa"
+              style={{
+                ...getDimensoesCSSCartao(template.orientacao),
+                position: 'relative',
+                fontFamily: 'Arial, sans-serif',
+                backgroundImage: template.backgroundUrlVerso ? `url(${template.backgroundUrlVerso})` : 'none',
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                backgroundColor: resolvePrintBackgroundColor(template.backgroundUrlVerso),
+                overflow: 'hidden',
+              }}
+            >
+              {(template.elementosVerso || []).map((el: any) => renderizarElemento(el, true))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
