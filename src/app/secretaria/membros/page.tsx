@@ -3260,99 +3260,161 @@ useEffect(() => {
                         }
                       </td>
                       <td className="border border-gray-300 px-4 py-3">
-                        <div className="flex justify-center gap-0">
-                          <button
-                            onClick={() => setMembroSelecionandoImpressao(membro)}
-                            className="p-1.5 text-gray-600 hover:bg-gray-200 rounded-lg transition"
-                            title="Imprimir Ficha"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={async () => {
-                              const templatesBase = await ensureTemplatesSnapshot();
-                              if (!hasActiveTemplate(membro.tipoCadastro, templatesBase)) {
-                                setNotification({
-                                  isOpen: true,
-                                  title: 'Template Ausente',
-                                  message: getMensagemSemTemplate(membro.tipoCadastro),
-                                  type: 'warning'
-                                });
-                                return;
-                              }
-                              setMembroImprimindoCartao(membro);
-                            }}
-                            className="p-1.5 text-purple-600 hover:bg-purple-100 rounded-lg transition"
-                            title="Imprimir Credencial"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => {
-                              setMembroSelecionandoCertificado(membro);
-                            }}
-                            className="p-1.5 text-teal-600 hover:bg-teal-100 rounded-lg transition"
-                            title="Imprimir Certificado"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => abrirEdicao(membro)}
-                            className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition"
-                            title="Editar"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => {
-                              setMembroAlterandoStatus(membro);
-                              setNovoStatus(membro.status || 'ativo');
-                              setIsJubilado(false);
-                              setMotivoStatus('');
-                            }}
-                            className="p-1.5 text-amber-600 hover:bg-amber-100 rounded-lg transition"
-                            title="Alterar Status"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => setMembroSelecionandoCarta(membro)}
-                            className="p-1.5 text-green-700 hover:bg-green-100 rounded-lg transition"
-                            title="Cartas Convencionais"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => setMembroDocumentos(membro)}
-                            className="p-1.5 text-indigo-600 hover:bg-indigo-100 rounded-lg transition"
-                            title="Documentos"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => setMembroHistorico(membro)}
-                            className="p-1.5 text-slate-600 hover:bg-slate-100 rounded-lg transition"
-                            title="Histórico"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </button>
+                        <div className="flex justify-center items-center gap-1">
+                          {/* Imprimir Ficha */}
+                          <div className="relative group inline-flex">
+                            <button
+                              onClick={() => setMembroSelecionandoImpressao(membro)}
+                              className="p-1.5 text-gray-600 hover:bg-gray-200 rounded-lg transition"
+                              title="Imprimir Ficha"
+                              aria-label="Imprimir Ficha"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                              </svg>
+                            </button>
+                            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-900/90 px-2 py-1 text-[11px] font-medium text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-30">
+                              Imprimir Ficha
+                            </span>
+                          </div>
 
+                          {/* Imprimir Credencial */}
+                          <div className="relative group inline-flex">
+                            <button
+                              onClick={async () => {
+                                const templatesBase = await ensureTemplatesSnapshot();
+                                if (!hasActiveTemplate(membro.tipoCadastro, templatesBase)) {
+                                  setNotification({
+                                    isOpen: true,
+                                    title: 'Template Ausente',
+                                    message: getMensagemSemTemplate(membro.tipoCadastro),
+                                    type: 'warning'
+                                  });
+                                  return;
+                                }
+                                setMembroImprimindoCartao(membro);
+                              }}
+                              className="p-1.5 text-purple-600 hover:bg-purple-100 rounded-lg transition"
+                              title="Imprimir Credencial"
+                              aria-label="Imprimir Credencial"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+                              </svg>
+                            </button>
+                            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-900/90 px-2 py-1 text-[11px] font-medium text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-30">
+                              Imprimir Credencial
+                            </span>
+                          </div>
+
+                          {/* Imprimir Certificado */}
+                          <div className="relative group inline-flex">
+                            <button
+                              onClick={() => {
+                                setMembroSelecionandoCertificado(membro);
+                              }}
+                              className="p-1.5 text-teal-600 hover:bg-teal-100 rounded-lg transition"
+                              title="Imprimir Certificado"
+                              aria-label="Imprimir Certificado"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />
+                              </svg>
+                            </button>
+                            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-900/90 px-2 py-1 text-[11px] font-medium text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-30">
+                              Imprimir Certificado
+                            </span>
+                          </div>
+
+                          {/* Editar */}
+                          <div className="relative group inline-flex">
+                            <button
+                              onClick={() => abrirEdicao(membro)}
+                              className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition"
+                              title="Editar"
+                              aria-label="Editar"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
+                            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-900/90 px-2 py-1 text-[11px] font-medium text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-30">
+                              Editar
+                            </span>
+                          </div>
+
+                          {/* Alterar Status */}
+                          <div className="relative group inline-flex">
+                            <button
+                              onClick={() => {
+                                setMembroAlterandoStatus(membro);
+                                setNovoStatus(membro.status || 'ativo');
+                                setIsJubilado(false);
+                                setMotivoStatus('');
+                              }}
+                              className="p-1.5 text-amber-600 hover:bg-amber-100 rounded-lg transition"
+                              title="Alterar Status"
+                              aria-label="Alterar Status"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </button>
+                            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-900/90 px-2 py-1 text-[11px] font-medium text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-30">
+                              Alterar Status
+                            </span>
+                          </div>
+
+                          {/* Cartas Convencionais */}
+                          <div className="relative group inline-flex">
+                            <button
+                              onClick={() => setMembroSelecionandoCarta(membro)}
+                              className="p-1.5 text-green-700 hover:bg-green-100 rounded-lg transition"
+                              title="Cartas Convencionais"
+                              aria-label="Cartas Convencionais"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                              </svg>
+                            </button>
+                            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-900/90 px-2 py-1 text-[11px] font-medium text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-30">
+                              Cartas Convencionais
+                            </span>
+                          </div>
+
+                          {/* Documentos */}
+                          <div className="relative group inline-flex">
+                            <button
+                              onClick={() => setMembroDocumentos(membro)}
+                              className="p-1.5 text-indigo-600 hover:bg-indigo-100 rounded-lg transition"
+                              title="Documentos"
+                              aria-label="Documentos"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+                              </svg>
+                            </button>
+                            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-900/90 px-2 py-1 text-[11px] font-medium text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-30">
+                              Documentos
+                            </span>
+                          </div>
+
+                          {/* Histórico */}
+                          <div className="relative group inline-flex">
+                            <button
+                              onClick={() => setMembroHistorico(membro)}
+                              className="p-1.5 text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                              title="Histórico"
+                              aria-label="Histórico"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </button>
+                            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-900/90 px-2 py-1 text-[11px] font-medium text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-30">
+                              Histórico
+                            </span>
+                          </div>
                         </div>
                       </td>
                     </tr>
