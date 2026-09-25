@@ -253,7 +253,7 @@ export default function CredencialDigitalPage({ params }: { params: Promise<{ ui
                 {/* Nome */}
                 <div style={{ marginBottom: '8px' }}>
                   <div style={{ fontSize: '9px', fontWeight: 700, color: '#9f1239', textTransform: 'uppercase' }}>
-                    Associada
+                    Esposa
                   </div>
                   <div style={{
                     fontSize: '14px',
