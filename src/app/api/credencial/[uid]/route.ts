@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const SELECT_COLS = 'id, unique_id, name, matricula, cargo_ministerial, tipo_sanguineo, data_nascimento, foto_url, custom_fields, status, cred_validade, orden_pastor_data, ev_consagrado_data, cons_missionario_data, ev_autorizado_data, rg, cpf, naturalidade, numero_cgadb, nome_pai, nome_mae, nome_conjuge, cpf_conjuge, data_nascimento_conjuge, conjuge_rg, conjuge_orgao_emissor, conjuge_nacionalidade, conjuge_naturalidade, conjuge_nome_pai, conjuge_nome_mae, conjuge_titulo_eleitoral, conjuge_fone, conjuge_email, conjuge_tipo_sanguineo, conjuge_foto_url, numero_aemadepa';
+const SELECT_COLS = '*';
 
 export async function GET(
   req: NextRequest,
@@ -22,7 +22,7 @@ export async function GET(
   const uid = uidRaw?.trim();
   const isDebug = req.nextUrl.searchParams.get('debug') === '1';
 
-  if (!uid || uid.length < 8) {
+  if (!uid || uid.length < 1) {
     return NextResponse.json({ error: 'ID inválido' }, { status: 400 });
   }
 
@@ -42,10 +42,10 @@ export async function GET(
     if (r.data) data = r.data;
   }
 
-  // ─── Estratégia 2: UUID completo por id ──────────────────────────────────
-  if (!data && isUuid) {
+  // ─── Estratégia 2: UUID ou id completo ──────────────────────────────────
+  if (!data) {
     const r = await supabaseAdmin.from('members').select(SELECT_COLS).eq('id', uid).maybeSingle();
-    log.push({ estrategia: 'id = uid (UUID)', encontrado: !!r.data, erro: r.error?.message });
+    log.push({ estrategia: 'id = uid', encontrado: !!r.data, erro: r.error?.message });
     if (r.data) data = r.data;
   }
 
@@ -54,6 +54,13 @@ export async function GET(
     const uuidPrefix = `${uid.slice(0,8)}-${uid.slice(8,12)}-${uid.slice(12,16)}`;
     const r = await supabaseAdmin.from('members').select(SELECT_COLS).ilike('id', `${uuidPrefix}%`).maybeSingle();
     log.push({ estrategia: `id ilike '${uuidPrefix}%' (hex16)`, encontrado: !!r.data, erro: r.error?.message });
+    if (r.data) data = r.data;
+  }
+
+  // ─── Estratégia 4: busca por matrícula ──────────────────────────────────
+  if (!data) {
+    const r = await supabaseAdmin.from('members').select(SELECT_COLS).eq('matricula', uid).maybeSingle();
+    log.push({ estrategia: 'matricula = uid', encontrado: !!r.data, erro: r.error?.message });
     if (r.data) data = r.data;
   }
 
@@ -108,8 +115,11 @@ export async function GET(
     });
   }
 
+  const tipoParam = req.nextUrl.searchParams.get('tipo')?.toLowerCase();
+  const isAemadepa = tipoParam === 'aemadepa';
+
   if (!data) {
-    return NextResponse.json({ error: 'Ministro não encontrado' }, { status: 404 });
+    return NextResponse.json({ error: isAemadepa ? 'Associada não encontrada' : 'Ministro não encontrado' }, { status: 404 });
   }
 
   if (data.status === 'inactive' || data.status === 'deceased') {
@@ -137,10 +147,8 @@ export async function GET(
     ? [cf.nomePai, cf.nomeMae].filter(Boolean).join(' / ') || cf.filiacao || ''
     : '';
 
-  const tipoParam = req.nextUrl.searchParams.get('tipo')?.toLowerCase();
   const nomeEsposa = String(data.nome_conjuge || cf.nomeConjuge || '').trim();
   const temEsposa = Boolean(nomeEsposa && nomeEsposa.length > 0);
-  const isAemadepa = tipoParam === 'aemadepa';
 
   return NextResponse.json({
     id: data.id,
