@@ -4,6 +4,14 @@ import { useEffect, useState, useRef } from 'react';
 import { QRCodeSVG as QRCode } from 'qrcode.react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import {
+  Printer,
+  Download,
+  X,
+  AlertTriangle,
+  CreditCard,
+  Layers,
+} from 'lucide-react';
 import { substituirPlaceholders, processarElementosComReflow } from '@/lib/cartoes-utils';
 import { createClient } from '@/lib/supabase-client';
 import { loadOrgNomenclaturasFromSupabaseOrMigrate } from '@/lib/org-nomenclaturas';
@@ -87,6 +95,9 @@ interface TemplateCartao {
   elementosVerso?: ElementoCartao[];
   backgroundUrlVerso?: string;
   orientacao?: 'landscape' | 'portrait';
+  validadeAnos?: number;
+  dataEmissao?: string;
+  tipoImpressao?: string;
   [key: string]: any;
 }
 
@@ -98,16 +109,14 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
   const [orgNomenclaturas, setOrgNomenclaturas] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [gerandoPDF, setGerandoPDF] = useState(false);
-  const [mostraVerso, setMostraVerso] = useState(false);
-  const printRef = useRef<HTMLDivElement>(null);
 
-  // Função auxiliar para obter dimensões CSS baseado na orientação
-  const getDimensoesCSSCartao = (orientacao?: string) => {
-    if (orientacao === 'portrait') {
-      return { width: '291px', height: '465px' };  // Portrait: 210x297mm convertido
-    }
-    return { width: '465px', height: '291px' };     // Landscape: 297x210mm convertido (padrão)
-  };
+  const frenteRef = useRef<HTMLDivElement>(null);
+  const versoRef = useRef<HTMLDivElement>(null);
+
+  // Dimensões do canvas baseadas na orientação do template
+  const isPortrait = template?.orientacao === 'portrait';
+  const canvasWidth = isPortrait ? 291 : 465;
+  const canvasHeight = isPortrait ? 465 : 291;
 
   useEffect(() => {
     loadOrgNomenclaturasFromSupabaseOrMigrate(supabase, { syncLocalStorage: false })
@@ -118,88 +127,268 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
 
   useEffect(() => {
     (async () => {
-      const { templates: templatesSalvos } = await loadTemplatesWithLocalCache(supabase, { allowLocalMigration: true });
-
-      // Carregar config da igreja
+      setLoading(true);
       try {
-        const config = await fetchConfiguracaoIgrejaFromSupabase(supabase);
-        setConfigIgreja(config);
-      } catch (e) {
-        console.error('Erro ao carregar config igreja', e);
+        const { templates: templatesSalvos } = await loadTemplatesWithLocalCache(supabase, { allowLocalMigration: true });
+
+        // Carregar config da igreja
+        try {
+          const config = await fetchConfiguracaoIgrejaFromSupabase(supabase);
+          setConfigIgreja(config);
+        } catch (e) {
+          console.error('Erro ao carregar config igreja', e);
+        }
+
+        let templateCarregado: TemplateCartao | null = null;
+        const tipoMapeado = membro.tipoCadastro === 'crianca' ? 'membro' : (membro.tipoCadastro as any);
+
+        // Primeiro: buscar template ATIVO do tipo
+        const templateAtivo = templatesSalvos.find((t: any) =>
+          t.tipoCadastro === tipoMapeado && t.ativo === true
+        );
+
+        // Segundo: buscar qualquer template do tipo
+        const templateSalvo = templatesSalvos.find((t: any) => t.tipoCadastro === tipoMapeado);
+
+        if (templateAtivo) {
+          templateCarregado = templateAtivo;
+        } else if (templateSalvo) {
+          templateCarregado = templateSalvo;
+        } else {
+          // Fallback: usar template padrão
+          const { getTemplatesPorTipo, converterParaTemplateEditavel } = require('@/lib/card-templates');
+          const padroes = getTemplatesPorTipo(tipoMapeado);
+          const fallback = padroes.length > 0 ? padroes[0] : null;
+          templateCarregado = fallback ? converterParaTemplateEditavel(fallback) : null;
+        }
+
+        // Garantir orientação portrait para funcionário
+        if (tipoMapeado === 'funcionario' && templateCarregado) {
+          templateCarregado = {
+            ...templateCarregado,
+            orientacao: 'portrait',
+          };
+        }
+
+        setTemplate(templateCarregado);
+      } catch (err) {
+        console.error('Erro ao carregar template:', err);
+      } finally {
+        setLoading(false);
       }
-
-    console.log('📋 Templates salvos:', templatesSalvos);
-
-    let templateCarregado: TemplateCartao | null = null;
-
-    // Buscar template do tipo de cadastro atual
-    const tipoMapeado = membro.tipoCadastro === 'crianca' ? 'membro' : (membro.tipoCadastro as any);
-
-    // Primeiro: buscar template ATIVO do tipo
-    const templateAtivo = templatesSalvos.find((t: any) =>
-      t.tipoCadastro === tipoMapeado && t.ativo === true
-    );
-
-    // Segundo: buscar qualquer template do tipo
-    const templateSalvo = templatesSalvos.find((t: any) => t.tipoCadastro === tipoMapeado);
-
-    if (templateAtivo) {
-      console.log('✅ Usando template ATIVO:', templateAtivo.nome);
-      templateCarregado = templateAtivo;
-    } else if (templateSalvo) {
-      console.log('⚠️ Usando template salvo (não ativo):', templateSalvo.nome);
-      templateCarregado = templateSalvo;
-    } else {
-      console.log('❌ Nenhum template encontrado, usando padrão');
-      // Fallback: usar template padrão
-      const { getTemplatesPorTipo, converterParaTemplateEditavel } = require('@/lib/card-templates');
-      const padroes = getTemplatesPorTipo(tipoMapeado);
-      const fallback = padroes.length > 0 ? padroes[0] : null;
-      templateCarregado = fallback ? converterParaTemplateEditavel(fallback) : null;
-    }
-
-    // ✅ GARANTIR ORIENTAÇÃO PORTRAIT PARA FUNCIONÁRIO
-    if (tipoMapeado === 'funcionario' && templateCarregado) {
-      templateCarregado = {
-        ...templateCarregado,
-        orientacao: 'portrait'  // Forçar portrait para funcionário
-      };
-      console.log('🎨 Orientação ajustada para PORTRAIT (Funcionário)');
-    }
-
-    if (templateCarregado) {
-      console.log('🎴 Template carregado:', {
-        nome: templateCarregado.nome,
-        backgroundUrl: templateCarregado.backgroundUrl,
-        elementos: templateCarregado.elementos.length,
-        orientacao: templateCarregado.orientacao || 'landscape'
-      });
-    }
-
-      setTemplate(templateCarregado);
-      setLoading(false);
     })();
   }, [membro.tipoCadastro]);
 
-  if (loading || !template) {
-    return (
-      <div className="flex justify-center items-center min-h-screen bg-gray-100 p-4">
-        <div className="bg-white p-6 rounded-lg shadow-lg">
-          <p className="text-gray-600">Carregando template do cartão...</p>
-        </div>
-      </div>
-    );
-  }
+  // Compõe background em alta resolução com os elementos
+  const compositeWithBackground = (
+    foreground: HTMLCanvasElement,
+    bgUrl: string | undefined
+  ): Promise<HTMLCanvasElement> => {
+    if (!bgUrl) return Promise.resolve(foreground);
+    return new Promise((resolve) => {
+      const out = document.createElement('canvas');
+      out.width = foreground.width;
+      out.height = foreground.height;
+      const ctx = out.getContext('2d', { alpha: true });
+      if (!ctx) {
+        resolve(foreground);
+        return;
+      }
+      ctx.clearRect(0, 0, out.width, out.height);
+      const img = new Image();
+      if (!bgUrl.startsWith('data:')) img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, out.width, out.height);
+        ctx.drawImage(foreground, 0, 0);
+        resolve(out);
+      };
+      img.onerror = () => resolve(foreground);
+      img.src = bgUrl;
+    });
+  };
 
+  // Geração de PDF de Alta Resolução
+  const gerarPDF = async () => {
+    if (!frenteRef.current || !template || gerandoPDF) return;
+    setGerandoPDF(true);
 
+    try {
+      // 1. Captura Frente
+      const captFrente = await html2canvas(frenteRef.current, {
+        scale: 4,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: null,
+        logging: false,
+      });
+      const canvasFrente = await compositeWithBackground(captFrente, template.backgroundUrl);
 
-  const renderizarElemento = (elemento: ElementoCartao, isPdf = false) => {
-    if (!elemento.visivel) return null;
+      const tipoImpressao = template.tipoImpressao || 'pvc';
+      const orientacao = template.orientacao || 'landscape';
+      const largCartaoMM = orientacao === 'portrait' ? 53.98 : 85.6;
+      const altCartaoMM = orientacao === 'portrait' ? 85.6 : 53.98;
 
-    const fontSize = elemento.fontSize || 10;
-    // Compensação apenas para o PDF, preview fica centralizado
-    const lift = isPdf ? (fontSize > 16 ? '-15px' : '-8px') : '0px';
-    const lineHeight = '1.2';
+      let pdf: jsPDF;
+
+      if (tipoImpressao === 'a4') {
+        pdf = new jsPDF({
+          orientation: 'portrait',
+          unit: 'mm',
+          format: 'a4',
+        });
+
+        const margemSuperior = 12;
+        const margemEsquerda = 18.5;
+        const espacamentoH = 2;
+
+        pdf.addImage(canvasFrente.toDataURL('image/png'), 'PNG', margemEsquerda, margemSuperior, largCartaoMM, altCartaoMM);
+
+        if (temVerso && versoRef.current) {
+          const captVerso = await html2canvas(versoRef.current, {
+            scale: 4,
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: null,
+            logging: false,
+          });
+          const canvasVerso = await compositeWithBackground(captVerso, template.backgroundUrlVerso);
+
+          pdf.addPage();
+          const xVerso = margemEsquerda + largCartaoMM + espacamentoH;
+          pdf.addImage(canvasVerso.toDataURL('image/png'), 'PNG', xVerso, margemSuperior, largCartaoMM, altCartaoMM);
+        }
+      } else {
+        pdf = new jsPDF({
+          orientation: orientacao === 'portrait' ? 'portrait' : 'landscape',
+          unit: 'mm',
+          format: [largCartaoMM, altCartaoMM],
+        });
+
+        pdf.addImage(canvasFrente.toDataURL('image/png'), 'PNG', 0, 0, largCartaoMM, altCartaoMM);
+
+        if (temVerso && versoRef.current) {
+          const captVerso = await html2canvas(versoRef.current, {
+            scale: 4,
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: null,
+            logging: false,
+          });
+          const canvasVerso = await compositeWithBackground(captVerso, template.backgroundUrlVerso);
+
+          pdf.addPage([largCartaoMM, altCartaoMM], orientacao === 'portrait' ? 'portrait' : 'landscape');
+          pdf.addImage(canvasVerso.toDataURL('image/png'), 'PNG', 0, 0, largCartaoMM, altCartaoMM);
+        }
+      }
+
+      const nomeLimpo = (membro.nome || 'credencial').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      pdf.save(`credencial_${nomeLimpo}.pdf`);
+
+      // Registrar emissão/reimpressão
+      try {
+        const qrCodeData = buildUrl(
+          getAppBaseUrl(),
+          `/autentica_qrcode-05985642/${membro.uniqueId || membro.id}`
+        );
+
+        await authenticatedFetch('/api/credenciais/emitidas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: registroAction,
+            items: [{
+              memberId: membro.id,
+              templateId: template?.id ?? null,
+              qrCodeData,
+            }],
+          }),
+        });
+      } catch (err) {
+        console.warn('Falha ao registrar credencial emitida:', err);
+      }
+    } catch (error) {
+      console.error('Erro ao gerar PDF:', error);
+      alert('Ocorreu um erro ao gerar o PDF. Consulte o console para mais detalhes.');
+    } finally {
+      setGerandoPDF(false);
+    }
+  };
+
+  // Impressão direta via janela dedicada
+  const handleImprimir = async () => {
+    if (!frenteRef.current || !template || gerandoPDF) return;
+    setGerandoPDF(true);
+
+    try {
+      const captFrente = await html2canvas(frenteRef.current, {
+        scale: 3,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: null,
+      });
+      const canvasFrente = await compositeWithBackground(captFrente, template.backgroundUrl);
+
+      let canvasVerso: HTMLCanvasElement | null = null;
+      if (temVerso && versoRef.current) {
+        const captVerso = await html2canvas(versoRef.current, {
+          scale: 3,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: null,
+        });
+        canvasVerso = await compositeWithBackground(captVerso, template.backgroundUrlVerso);
+      }
+
+      const win = window.open('', '_blank', 'width=900,height=650');
+      if (!win) {
+        setGerandoPDF(false);
+        return;
+      }
+
+      const orientacao = template.orientacao || 'landscape';
+      const isPort = orientacao === 'portrait';
+      const largMM = isPort ? '54mm' : '85.6mm';
+      const altMM = isPort ? '85.6mm' : '54mm';
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8"/>
+          <title>Credencial — ${membro.nome}</title>
+          <style>
+            @page { size: auto; margin: 10mm; }
+            body { margin: 0; padding: 20px; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; }
+            .card-print { width: ${largMM}; height: ${altMM}; border: 1px dashed #ccc; box-sizing: border-box; page-break-inside: avoid; }
+            .card-print img { width: 100%; height: 100%; object-fit: contain; }
+          </style>
+        </head>
+        <body>
+          <div class="card-print">
+            <img src="${canvasFrente.toDataURL('image/png')}" />
+          </div>
+          ${canvasVerso ? `
+          <div class="card-print">
+            <img src="${canvasVerso.toDataURL('image/png')}" />
+          </div>` : ''}
+        </body>
+        </html>
+      `;
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      setTimeout(() => {
+        win.print();
+        setGerandoPDF(false);
+      }, 500);
+    } catch (err) {
+      console.error('Erro ao imprimir credencial:', err);
+      setGerandoPDF(false);
+    }
+  };
+
+  const renderizarElemento = (elemento: ElementoCartao) => {
+    if (!elemento || !elemento.visivel) return null;
 
     const estilo: React.CSSProperties = {
       position: 'absolute',
@@ -210,11 +399,16 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
       overflow: 'hidden',
       display: 'flex',
       alignItems: 'center',
-      justifyContent: elemento.alinhamento === 'right' ? 'flex-end' : elemento.alinhamento === 'center' ? 'center' : 'flex-start',
+      justifyContent:
+        elemento.alinhamento === 'right'
+          ? 'flex-end'
+          : elemento.alinhamento === 'center'
+          ? 'center'
+          : 'flex-start',
       fontFamily: (elemento.fonte || 'Arial').replace(' Semibold', ''),
       fontSize: elemento.fontSize ? `${elemento.fontSize}px` : 'inherit',
       color: elemento.cor || '#000',
-      fontWeight: (elemento.fonte || '').endsWith(' Semibold') ? 600 : (elemento.negrito ? 'bold' : 'normal'),
+      fontWeight: (elemento.fonte || '').endsWith(' Semibold') ? 600 : elemento.negrito ? 'bold' : 'normal',
       fontStyle: elemento.italico ? 'italic' : 'normal',
       textDecoration: elemento.sublinhado ? 'underline' : 'none',
       textAlign: (elemento.alinhamento || 'left') as any,
@@ -224,12 +418,11 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
 
     switch (elemento.tipo) {
       case 'texto': {
-        // Injetar validadeAnos do template e dados da igreja no membro
         const membroComConfig = {
           ...membro,
-          validadeAnos: template.validadeAnos || 1,
+          validadeAnos: template?.validadeAnos || 1,
           nomeIgreja: configIgreja?.nome || 'Igreja',
-          dataEmissao: template.dataEmissao || membro.dataEmissao
+          dataEmissao: template?.dataEmissao || membro.dataEmissao,
         };
         const textoSubstituido = substituirPlaceholders(elemento.texto || '', membroComConfig, orgNomenclaturas);
 
@@ -245,20 +438,20 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
               flexDirection: 'column',
               justifyContent: 'center',
               alignItems: 'stretch',
-              overflow: 'visible' // Permitir pequeno transbordo para evitar cortes de renderização
+              overflow: 'visible',
             }}
           >
-            <div style={{
-              position: 'relative',
-              top: lift,
-              width: '100%',
-              paddingLeft: elemento.backgroundColor ? '10px' : '0',
-              paddingRight: elemento.backgroundColor ? '5px' : '0',
-              boxSizing: 'border-box',
-              lineHeight: lineHeight,
-              textAlign: (elemento.alinhamento || 'left') as any,
-              display: 'block'
-            }}
+            <div
+              style={{
+                position: 'relative',
+                width: '100%',
+                paddingLeft: elemento.backgroundColor ? '10px' : '0',
+                paddingRight: elemento.backgroundColor ? '5px' : '0',
+                boxSizing: 'border-box',
+                lineHeight: '1.2',
+                textAlign: (elemento.alinhamento || 'left') as any,
+                display: 'block',
+              }}
               dangerouslySetInnerHTML={{ __html: textoSubstituido }}
             />
           </div>
@@ -282,7 +475,7 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
           overflow: 'hidden',
           borderRadius: `${elemento.borderRadius || 0}px`,
           opacity: elemento.transparencia ?? 1,
-          backgroundColor: elemento.imagemUrl ? (elemento.backgroundColor || 'transparent') : '#f3f4f6',
+          backgroundColor: elemento.imagemUrl ? elemento.backgroundColor || 'transparent' : '#f3f4f6',
           border: elemento.imagemUrl ? undefined : '1px dashed #d1d5db',
           alignItems: 'center',
           justifyContent: 'center',
@@ -329,7 +522,7 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
               style={{
                 width: '100%',
                 height: '100%',
-                objectFit: 'contain'
+                objectFit: 'contain',
               }}
             />
           </div>
@@ -346,7 +539,7 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
               alignItems: 'center',
               justifyContent: 'center',
               overflow: 'hidden',
-              border: membro.fotoUrl ? 'none' : '1px solid #d1d5db'
+              border: membro.fotoUrl ? 'none' : '1px solid #d1d5db',
             }}
           >
             {membro.fotoUrl ? (
@@ -356,7 +549,7 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
                 style={{
                   width: '100%',
                   height: '100%',
-                  objectFit: 'cover'
+                  objectFit: 'cover',
                 }}
               />
             ) : (
@@ -381,323 +574,155 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
     }
   };
 
-  const temVerso = template.temVerso && template.elementosVerso && template.elementosVerso.length > 0;
-  const resolvePrintBackgroundColor = (bgUrl?: string) => (bgUrl ? 'transparent' : 'white');
+  const temVerso = Boolean(template?.temVerso && template?.elementosVerso && template.elementosVerso.length > 0);
 
-  // Compõe background em alta resolução (carregado diretamente como Image) com os elementos
-  const compositeWithBackground = (
-    foreground: HTMLCanvasElement,
-    bgUrl: string | undefined
-  ): Promise<HTMLCanvasElement> => {
-    if (!bgUrl) return Promise.resolve(foreground);
-    return new Promise((resolve) => {
-      const out = document.createElement('canvas');
-      out.width = foreground.width;
-      out.height = foreground.height;
-      const ctx = out.getContext('2d', { alpha: true });
-      if (!ctx) {
-        resolve(foreground);
-        return;
-      }
-      ctx.clearRect(0, 0, out.width, out.height);
-      const img = new Image();
-      // crossOrigin só em URLs externas; data: URLs não suportam crossOrigin
-      if (!bgUrl.startsWith('data:')) img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        ctx.drawImage(img, 0, 0, out.width, out.height);
-        ctx.drawImage(foreground, 0, 0);
-        resolve(out);
-      };
-      img.onerror = () => resolve(foreground);
-      img.src = bgUrl;
-    });
-  };
-
-  const gerarPDF = async () => {
-    if (!printRef.current || gerandoPDF) return;
-
-    setGerandoPDF(true);
-
-    try {
-      const frenteEl = printRef.current.querySelector('#print-frente') as HTMLElement;
-      if (!frenteEl) throw new Error('Elemento da frente não encontrado');
-
-      // Capturar elementos sem backgroundImage CSS (evita desfoque do html2canvas)
-      const bgFrente = frenteEl.style.backgroundImage;
-      const bgColorFrente = frenteEl.style.backgroundColor;
-      frenteEl.style.backgroundImage = 'none';
-      frenteEl.style.backgroundColor = 'transparent';
-      const captFrente = await html2canvas(frenteEl, {
-        scale: 4,
-        useCORS: true,
-        backgroundColor: null,
-        logging: false
-      });
-      frenteEl.style.backgroundImage = bgFrente;
-      frenteEl.style.backgroundColor = bgColorFrente;
-      // Compor background em alta resolução por cima dos elementos
-      const canvasFrente = await compositeWithBackground(captFrente, template.backgroundUrl);
-
-      // Determinar tipo de impressão
-      const tipoImpressao = template.tipoImpressao || 'pvc';
-      
-      // Suportar orientação portrait (funcionário) e landscape (demais)
-      const orientacao = template.orientacao || 'landscape';
-      const largCartaoMM = orientacao === 'portrait' ? 53.98 : 85.6;  // Portrait: 210mm ÷ escala / Landscape: 297mm ÷ escala
-      const altCartaoMM = orientacao === 'portrait' ? 85.6 : 53.98;   // Portrait: 297mm ÷ escala / Landscape: 210mm ÷ escala
-
-      let pdf: jsPDF;
-
-      if (tipoImpressao === 'a4') {
-        // A4 Portrait
-        pdf = new jsPDF({
-          orientation: 'portrait',
-          unit: 'mm',
-          format: 'a4'
-        });
-
-        const margemSuperior = 12;
-        const margemEsquerda = 18.5; // Centralizado para 2 colunas
-        const espacamentoH = 2;
-
-        // Página 1: Frente (Posição Esquerda/Coluna 0)
-        pdf.addImage(canvasFrente.toDataURL('image/png'), 'PNG', margemEsquerda, margemSuperior, largCartaoMM, altCartaoMM);
-
-        if (temVerso) {
-          const versoEl = printRef.current.querySelector('#print-verso') as HTMLElement;
-          if (versoEl) {
-            const bgVerso = versoEl.style.backgroundImage;
-            const bgColorVerso = versoEl.style.backgroundColor;
-            versoEl.style.backgroundImage = 'none';
-            versoEl.style.backgroundColor = 'transparent';
-            const captVerso = await html2canvas(versoEl, {
-              scale: 4,
-              useCORS: true,
-              backgroundColor: null,
-              logging: false
-            });
-            versoEl.style.backgroundImage = bgVerso;
-            versoEl.style.backgroundColor = bgColorVerso;
-            const canvasVerso = await compositeWithBackground(captVerso, template.backgroundUrlVerso);
-
-            // Página 2: Verso (ESPELHADO -> Posição Direita/Coluna 1)
-            pdf.addPage();
-
-            // Posição espelhada: Margem + Largura + Espaço
-            const xVerso = margemEsquerda + largCartaoMM + espacamentoH;
-
-            pdf.addImage(canvasVerso.toDataURL('image/png'), 'PNG', xVerso, margemSuperior, largCartaoMM, altCartaoMM);
-          }
-        }
-
-      } else {
-        // PVC Standard (CR80)
-        pdf = new jsPDF({
-          orientation: 'landscape',
-          unit: 'mm',
-          format: [largCartaoMM, altCartaoMM]
-        });
-
-        pdf.addImage(canvasFrente.toDataURL('image/png'), 'PNG', 0, 0, largCartaoMM, altCartaoMM);
-
-        if (temVerso) {
-          const versoEl = printRef.current.querySelector('#print-verso') as HTMLElement;
-          if (versoEl) {
-            const bgVerso = versoEl.style.backgroundImage;
-            const bgColorVerso = versoEl.style.backgroundColor;
-            versoEl.style.backgroundImage = 'none';
-            versoEl.style.backgroundColor = 'transparent';
-            const captVerso = await html2canvas(versoEl, {
-              scale: 4,
-              useCORS: true,
-              backgroundColor: null,
-              logging: false
-            });
-            versoEl.style.backgroundImage = bgVerso;
-            versoEl.style.backgroundColor = bgColorVerso;
-            const canvasVerso = await compositeWithBackground(captVerso, template.backgroundUrlVerso);
-            pdf.addPage();
-            pdf.addImage(canvasVerso.toDataURL('image/png'), 'PNG', 0, 0, largCartaoMM, altCartaoMM);
-          }
-        }
-      }
-
-      // Filename
-      const nomeLimpo = membro.nome.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-      pdf.save(`cartao_${nomeLimpo}.pdf`);
-
-      try {
-        const qrCodeData = buildUrl(
-          getAppBaseUrl(),
-          `/autentica_qrcode-05985642/${membro.uniqueId || membro.id}`
-        );
-
-        const regRes = await authenticatedFetch('/api/credenciais/emitidas', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: registroAction,
-            items: [{
-              memberId: membro.id,
-              templateId: template?.id ?? null,
-              qrCodeData,
-            }],
-          }),
-        });
-        if (!regRes.ok) {
-          const errBody = await regRes.json().catch(() => null);
-          console.warn('Falha ao registrar credencial emitida:', regRes.status, errBody);
-        }
-      } catch (err) {
-        console.warn('Falha ao registrar credencial emitida:', err);
-      }
-
-    } catch (error) {
-      console.error('Erro ao gerar PDF:', error);
-      alert('Ocorreu um erro ao gerar o PDF. Consulte o console para mais detalhes.');
-    } finally {
-      setGerandoPDF(false);
+  // Título dinâmico
+  const getTituloModal = () => {
+    switch (membro.tipoCadastro) {
+      case 'ministro':
+        return 'Credencial de Ministro — COMIEADEPA';
+      case 'funcionario':
+        return 'Credencial de Funcionário — COMIEADEPA';
+      case 'congregado':
+        return 'Cartão de Congregado — COMIEADEPA';
+      case 'crianca':
+        return 'Cartão de Criança — COMIEADEPA';
+      default:
+        return 'Credencial de Membro — COMIEADEPA';
     }
   };
 
   return (
-    <div className="flex flex-col justify-center items-center min-h-screen bg-gray-100 p-4 gap-8">
-      {/* Seletor de Frente/Verso */}
-      <div className="flex gap-4 mt-4">
-        <button
-          onClick={() => setMostraVerso(false)}
-          className={`px-6 py-2 rounded-lg font-semibold transition ${!mostraVerso
-            ? 'bg-blue-600 text-white'
-            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
-        >
-          📄 Frente
-        </button>
-        {/* Botão Verso sempre visível */}
-        <button
-          onClick={() => setMostraVerso(true)}
-          className={`px-6 py-2 rounded-lg font-semibold transition ${mostraVerso
-            ? 'bg-blue-600 text-white'
-            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
-        >
-          📄 Verso
-        </button>
-      </div>
-
-      {/* Frente do cartão */}
-      {!mostraVerso && (
-        <div>
-          <h3 className="text-center text-sm font-semibold text-gray-700 mb-2">Frente</h3>
-          <div
-            id={`cartao-${membro.id}`}
-            className="bg-white shadow-2xl"
-            style={{
-              ...getDimensoesCSSCartao(template?.orientacao),
-              padding: '0',
-              fontFamily: 'Arial, sans-serif',
-              position: 'relative',
-              pageBreakAfter: 'always',
-              backgroundImage: template.backgroundUrl ? `url(${template.backgroundUrl})` : 'none',
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              borderRadius: '16px',
-              boxShadow: '0 8px 16px rgba(100, 116, 139, 0.15)',
-              border: '1px solid rgba(0, 0, 0, 0.08)',
-            }}
-          >
-            {/* Renderizar elementos da frente */}
-            {processarElementosComReflow(template.elementos, membro, orgNomenclaturas).map((elemento) => renderizarElemento(elemento, false))}
+    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full my-6 flex flex-col max-h-[94vh] border border-emerald-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        {/* Header com gradiente em tons de verde */}
+        <div className="flex justify-between items-center px-6 py-4 bg-gradient-to-r from-emerald-800 via-teal-700 to-green-800 text-white flex-shrink-0 shadow-md">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center shadow-inner">
+              <CreditCard className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h2 className="text-lg sm:text-xl font-extrabold tracking-tight">
+                {getTituloModal()}
+              </h2>
+              <p className="text-xs text-emerald-100 flex items-center gap-1.5 mt-0.5">
+                <Layers className="w-3.5 h-3.5 text-emerald-300" />
+                <span>Modelo Ativo: <strong>{template?.nome || 'Carregando...'}</strong></span>
+              </p>
+            </div>
           </div>
-        </div>
-      )}
-
-      {/* Verso do cartão (se houver) */}
-      {mostraVerso && temVerso && (
-        <div>
-          <h3 className="text-center text-sm font-semibold text-gray-700 mb-2">Verso</h3>
-          <div
-            id={`cartao-verso-${membro.id}`}
-            className="bg-white shadow-2xl"
-            style={{
-              ...getDimensoesCSSCartao(template?.orientacao),
-              padding: '0',
-              fontFamily: 'Arial, sans-serif',
-              position: 'relative',
-              pageBreakAfter: 'always',
-              backgroundImage: template.backgroundUrlVerso ? `url(${template.backgroundUrlVerso})` : 'none',
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              borderRadius: '16px',
-              boxShadow: '0 8px 16px rgba(100, 116, 139, 0.15)',
-              border: '1px solid rgba(0, 0, 0, 0.08)',
-            }}
-          >
-            {/* Renderizar elementos do verso */}
-            {processarElementosComReflow(template.elementosVerso || [], membro, orgNomenclaturas).map((elemento) => renderizarElemento(elemento, false))}
-          </div>
-        </div>
-      )}
-
-      {/* Informações adicionais */}
-      <div className="text-xs text-gray-500 max-w-xs text-center mt-4">
-        <p>Gestão Eklésia - Sistema de Gerenciamento Eclesiástico</p>
-        <p>Este cartão é documento de identificação junto à instituição</p>
-      </div>
-
-      {/* Botões de ação */}
-      <div style={{ position: 'fixed', top: '20px', right: '20px', zIndex: 1000, display: 'flex', gap: '10px' }}>
-        <button
-          onClick={gerarPDF}
-          disabled={gerandoPDF}
-          className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded shadow flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {gerandoPDF ? '⏳ Gerando...' : '📥 Baixar PDF'}
-        </button>
-
-
-
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded shadow cursor-pointer"
-          >
-            ✖️ Fechar
-          </button>
-        )}
-      </div>
-
-      {/* ÁREA DE IMPRESSÃO OCULTA PARA PDF (Fora da tela visual) */}
-      <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }} ref={printRef}>
-        {/* FRENTE PARA PDF */}
-        <div id="print-frente" style={{
-          ...getDimensoesCSSCartao(template?.orientacao),
-          position: 'relative',
-          fontFamily: 'Arial, sans-serif',
-          backgroundImage: template.backgroundUrl ? `url(${template.backgroundUrl})` : 'none',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundColor: resolvePrintBackgroundColor(template.backgroundUrl),
-          overflow: 'hidden' // Garante que nada saia do card
-        }}>
-          {template.elementos.map((elemento) => renderizarElemento(elemento, true))}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
+              title="Fechar"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
-        {/* VERSO PARA PDF */}
-        {temVerso && (
-          <div id="print-verso" style={{
-            ...getDimensoesCSSCartao(template?.orientacao),
-            position: 'relative',
-            fontFamily: 'Arial, sans-serif',
-            backgroundImage: template.backgroundUrlVerso ? `url(${template.backgroundUrlVerso})` : 'none',
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            backgroundColor: resolvePrintBackgroundColor(template.backgroundUrlVerso),
-            overflow: 'hidden'
-          }}>
-            {template.elementosVerso?.map((elemento) => renderizarElemento(elemento, true))}
+        {/* Conteúdo com Scroll */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-100">
+          {/* Avisos Informativos */}
+          {!membro.fotoUrl && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2 text-amber-800 text-xs">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>Este membro ainda não possui foto cadastrada. A credencial será emitida sem fotografia.</span>
+            </div>
+          )}
+
+          {loading || !template ? (
+            <div className="flex items-center justify-center py-20">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-600" />
+              <span className="ml-3 text-sm text-gray-600 font-medium">Carregando credencial personalizada...</span>
+            </div>
+          ) : (
+            /* Área de Visualização dos Cartões (Frente e Verso lado a lado) */
+            <div className="flex flex-col xl:flex-row items-center justify-center gap-8 py-2">
+              {/* ── CARTÃO FRENTE ── */}
+              <div className="flex flex-col items-center gap-2">
+                <span className="text-xs font-bold text-gray-600 uppercase tracking-wider">
+                  Frente da Credencial
+                </span>
+                <div
+                  ref={frenteRef}
+                  style={{
+                    width: `${canvasWidth}px`,
+                    height: `${canvasHeight}px`,
+                    backgroundImage: template.backgroundUrl ? `url(${template.backgroundUrl})` : undefined,
+                    backgroundSize: '100% 100%',
+                    backgroundPosition: 'center',
+                    backgroundRepeat: 'no-repeat',
+                  }}
+                  className="relative rounded-2xl overflow-hidden shadow-2xl bg-white border border-gray-300 select-none box-border"
+                >
+                  {processarElementosComReflow(template.elementos, membro, orgNomenclaturas).map((elemento) =>
+                    renderizarElemento(elemento)
+                  )}
+                </div>
+              </div>
+
+              {/* ── CARTÃO VERSO (se houver) ── */}
+              {temVerso && (
+                <div className="flex flex-col items-center gap-2">
+                  <span className="text-xs font-bold text-gray-600 uppercase tracking-wider">
+                    Verso da Credencial
+                  </span>
+                  <div
+                    ref={versoRef}
+                    style={{
+                      width: `${canvasWidth}px`,
+                      height: `${canvasHeight}px`,
+                      backgroundImage: template.backgroundUrlVerso ? `url(${template.backgroundUrlVerso})` : undefined,
+                      backgroundSize: '100% 100%',
+                      backgroundPosition: 'center',
+                      backgroundRepeat: 'no-repeat',
+                    }}
+                    className="relative rounded-2xl overflow-hidden shadow-2xl bg-white border border-gray-300 select-none box-border"
+                  >
+                    {processarElementosComReflow(template.elementosVerso || [], membro, orgNomenclaturas).map((elemento) =>
+                      renderizarElemento(elemento)
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer com Ações */}
+        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-white flex-shrink-0">
+          {onClose ? (
+            <button
+              onClick={onClose}
+              disabled={gerandoPDF}
+              className="px-5 py-2.5 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-100 font-semibold text-sm transition cursor-pointer disabled:opacity-50"
+            >
+              Fechar
+            </button>
+          ) : <div />}
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleImprimir}
+              disabled={gerandoPDF || loading || !template}
+              className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-sm rounded-xl shadow transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              <Printer className="w-4 h-4" />
+              {gerandoPDF ? 'Processando...' : 'Imprimir Direto'}
+            </button>
+
+            <button
+              onClick={gerarPDF}
+              disabled={gerandoPDF || loading || !template}
+              className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white font-bold text-sm rounded-xl shadow-md hover:shadow-lg transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              <Download className="w-4 h-4" />
+              {gerandoPDF ? 'Gerando...' : 'Baixar PDF'}
+            </button>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
