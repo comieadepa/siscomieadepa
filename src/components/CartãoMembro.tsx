@@ -5,7 +5,6 @@ import { QRCodeSVG as QRCode } from 'qrcode.react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import {
-  Printer,
   Download,
   X,
   AlertTriangle,
@@ -559,96 +558,6 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
     }
   };
 
-  // Impressão direta via janela dedicada
-  const handleImprimir = async () => {
-    if (!printRef.current || !template || gerandoPDF) return;
-    setGerandoPDF(true);
-
-    try {
-      const frenteEl = printRef.current.querySelector('#print-frente') as HTMLElement;
-      if (!frenteEl) throw new Error('Elemento da frente não encontrado na área de impressão');
-
-      const bgFrente = frenteEl.style.backgroundImage;
-      const bgColorFrente = frenteEl.style.backgroundColor;
-      frenteEl.style.backgroundImage = 'none';
-      frenteEl.style.backgroundColor = 'transparent';
-      const captFrente = await html2canvas(frenteEl, {
-        scale: 3,
-        useCORS: true,
-        backgroundColor: null,
-      });
-      frenteEl.style.backgroundImage = bgFrente;
-      frenteEl.style.backgroundColor = bgColorFrente;
-
-      const canvasFrente = await compositeWithBackground(captFrente, template.backgroundUrl);
-
-      let canvasVerso: HTMLCanvasElement | null = null;
-      if (temVerso) {
-        const versoEl = printRef.current.querySelector('#print-verso') as HTMLElement;
-        if (versoEl) {
-          const bgVerso = versoEl.style.backgroundImage;
-          const bgColorVerso = versoEl.style.backgroundColor;
-          versoEl.style.backgroundImage = 'none';
-          versoEl.style.backgroundColor = 'transparent';
-          const captVerso = await html2canvas(versoEl, {
-            scale: 3,
-            useCORS: true,
-            backgroundColor: null,
-          });
-          versoEl.style.backgroundImage = bgVerso;
-          versoEl.style.backgroundColor = bgColorVerso;
-          canvasVerso = await compositeWithBackground(captVerso, template.backgroundUrlVerso);
-        }
-      }
-
-      const win = window.open('', '_blank', 'width=900,height=650');
-      if (!win) {
-        setGerandoPDF(false);
-        return;
-      }
-
-      const orientacao = template.orientacao || 'landscape';
-      const isPort = orientacao === 'portrait';
-      const largMM = isPort ? '54mm' : '85.6mm';
-      const altMM = isPort ? '85.6mm' : '54mm';
-
-      const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8"/>
-          <title>Credencial — ${membro.nome}</title>
-          <style>
-            @page { size: auto; margin: 10mm; }
-            body { margin: 0; padding: 20px; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; }
-            .card-print { width: ${largMM}; height: ${altMM}; border: 1px dashed #ccc; box-sizing: border-box; page-break-inside: avoid; }
-            .card-print img { width: 100%; height: 100%; object-fit: contain; }
-          </style>
-        </head>
-        <body>
-          <div class="card-print">
-            <img src="${canvasFrente.toDataURL('image/png')}" />
-          </div>
-          ${canvasVerso ? `
-          <div class="card-print">
-            <img src="${canvasVerso.toDataURL('image/png')}" />
-          </div>` : ''}
-        </body>
-        </html>
-      `;
-      win.document.write(html);
-      win.document.close();
-      win.focus();
-      setTimeout(() => {
-        win.print();
-        setGerandoPDF(false);
-      }, 500);
-    } catch (err) {
-      console.error('Erro ao imprimir credencial:', err);
-      setGerandoPDF(false);
-    }
-  };
-
   // Título dinâmico
   const getTituloModal = () => {
     switch (membro.tipoCadastro) {
@@ -777,15 +686,6 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
           ) : <div />}
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={handleImprimir}
-              disabled={gerandoPDF || loading || !template}
-              className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-sm rounded-xl shadow transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
-            >
-              <Printer className="w-4 h-4" />
-              {gerandoPDF ? 'Processando...' : 'Imprimir Direto'}
-            </button>
-
             <button
               onClick={gerarPDF}
               disabled={gerandoPDF || loading || !template}
