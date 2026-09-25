@@ -110,8 +110,19 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
   const [loading, setLoading] = useState(true);
   const [gerandoPDF, setGerandoPDF] = useState(false);
 
+  const printRef = useRef<HTMLDivElement>(null);
   const frenteRef = useRef<HTMLDivElement>(null);
   const versoRef = useRef<HTMLDivElement>(null);
+
+  // Função auxiliar para dimensões CSS baseado na orientação
+  const getDimensoesCSSCartao = (orientacao?: string) => {
+    if (orientacao === 'portrait') {
+      return { width: '291px', height: '465px' };
+    }
+    return { width: '465px', height: '291px' };
+  };
+
+  const resolvePrintBackgroundColor = (bgUrl?: string) => (bgUrl ? 'transparent' : 'white');
 
   // Dimensões do canvas baseadas na orientação do template
   const isPortrait = template?.orientacao === 'portrait';
@@ -198,197 +209,31 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
       const img = new Image();
       if (!bgUrl.startsWith('data:')) img.crossOrigin = 'anonymous';
       img.onload = () => {
-        ctx.drawImage(img, 0, 0, out.width, out.height);
-        ctx.drawImage(foreground, 0, 0);
-        resolve(out);
+        try {
+          ctx.drawImage(img, 0, 0, out.width, out.height);
+          ctx.drawImage(foreground, 0, 0);
+          resolve(out);
+        } catch (e) {
+          console.warn('Falha ao desenhar composição de background:', e);
+          resolve(foreground);
+        }
       };
-      img.onerror = () => resolve(foreground);
+      img.onerror = (e) => {
+        console.warn('Falha ao carregar background para composição:', e);
+        resolve(foreground);
+      };
       img.src = bgUrl;
     });
   };
 
-  // Geração de PDF de Alta Resolução
-  const gerarPDF = async () => {
-    if (!frenteRef.current || !template || gerandoPDF) return;
-    setGerandoPDF(true);
-
-    try {
-      // 1. Captura Frente
-      const captFrente = await html2canvas(frenteRef.current, {
-        scale: 4,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: null,
-        logging: false,
-      });
-      const canvasFrente = await compositeWithBackground(captFrente, template.backgroundUrl);
-
-      const tipoImpressao = template.tipoImpressao || 'pvc';
-      const orientacao = template.orientacao || 'landscape';
-      const largCartaoMM = orientacao === 'portrait' ? 53.98 : 85.6;
-      const altCartaoMM = orientacao === 'portrait' ? 85.6 : 53.98;
-
-      let pdf: jsPDF;
-
-      if (tipoImpressao === 'a4') {
-        pdf = new jsPDF({
-          orientation: 'portrait',
-          unit: 'mm',
-          format: 'a4',
-        });
-
-        const margemSuperior = 12;
-        const margemEsquerda = 18.5;
-        const espacamentoH = 2;
-
-        pdf.addImage(canvasFrente.toDataURL('image/png'), 'PNG', margemEsquerda, margemSuperior, largCartaoMM, altCartaoMM);
-
-        if (temVerso && versoRef.current) {
-          const captVerso = await html2canvas(versoRef.current, {
-            scale: 4,
-            useCORS: true,
-            allowTaint: true,
-            backgroundColor: null,
-            logging: false,
-          });
-          const canvasVerso = await compositeWithBackground(captVerso, template.backgroundUrlVerso);
-
-          pdf.addPage();
-          const xVerso = margemEsquerda + largCartaoMM + espacamentoH;
-          pdf.addImage(canvasVerso.toDataURL('image/png'), 'PNG', xVerso, margemSuperior, largCartaoMM, altCartaoMM);
-        }
-      } else {
-        pdf = new jsPDF({
-          orientation: orientacao === 'portrait' ? 'portrait' : 'landscape',
-          unit: 'mm',
-          format: [largCartaoMM, altCartaoMM],
-        });
-
-        pdf.addImage(canvasFrente.toDataURL('image/png'), 'PNG', 0, 0, largCartaoMM, altCartaoMM);
-
-        if (temVerso && versoRef.current) {
-          const captVerso = await html2canvas(versoRef.current, {
-            scale: 4,
-            useCORS: true,
-            allowTaint: true,
-            backgroundColor: null,
-            logging: false,
-          });
-          const canvasVerso = await compositeWithBackground(captVerso, template.backgroundUrlVerso);
-
-          pdf.addPage([largCartaoMM, altCartaoMM], orientacao === 'portrait' ? 'portrait' : 'landscape');
-          pdf.addImage(canvasVerso.toDataURL('image/png'), 'PNG', 0, 0, largCartaoMM, altCartaoMM);
-        }
-      }
-
-      const nomeLimpo = (membro.nome || 'credencial').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-      pdf.save(`credencial_${nomeLimpo}.pdf`);
-
-      // Registrar emissão/reimpressão
-      try {
-        const qrCodeData = buildUrl(
-          getAppBaseUrl(),
-          `/autentica_qrcode-05985642/${membro.uniqueId || membro.id}`
-        );
-
-        await authenticatedFetch('/api/credenciais/emitidas', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: registroAction,
-            items: [{
-              memberId: membro.id,
-              templateId: template?.id ?? null,
-              qrCodeData,
-            }],
-          }),
-        });
-      } catch (err) {
-        console.warn('Falha ao registrar credencial emitida:', err);
-      }
-    } catch (error) {
-      console.error('Erro ao gerar PDF:', error);
-      alert('Ocorreu um erro ao gerar o PDF. Consulte o console para mais detalhes.');
-    } finally {
-      setGerandoPDF(false);
-    }
-  };
-
-  // Impressão direta via janela dedicada
-  const handleImprimir = async () => {
-    if (!frenteRef.current || !template || gerandoPDF) return;
-    setGerandoPDF(true);
-
-    try {
-      const captFrente = await html2canvas(frenteRef.current, {
-        scale: 3,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: null,
-      });
-      const canvasFrente = await compositeWithBackground(captFrente, template.backgroundUrl);
-
-      let canvasVerso: HTMLCanvasElement | null = null;
-      if (temVerso && versoRef.current) {
-        const captVerso = await html2canvas(versoRef.current, {
-          scale: 3,
-          useCORS: true,
-          allowTaint: true,
-          backgroundColor: null,
-        });
-        canvasVerso = await compositeWithBackground(captVerso, template.backgroundUrlVerso);
-      }
-
-      const win = window.open('', '_blank', 'width=900,height=650');
-      if (!win) {
-        setGerandoPDF(false);
-        return;
-      }
-
-      const orientacao = template.orientacao || 'landscape';
-      const isPort = orientacao === 'portrait';
-      const largMM = isPort ? '54mm' : '85.6mm';
-      const altMM = isPort ? '85.6mm' : '54mm';
-
-      const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8"/>
-          <title>Credencial — ${membro.nome}</title>
-          <style>
-            @page { size: auto; margin: 10mm; }
-            body { margin: 0; padding: 20px; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; }
-            .card-print { width: ${largMM}; height: ${altMM}; border: 1px dashed #ccc; box-sizing: border-box; page-break-inside: avoid; }
-            .card-print img { width: 100%; height: 100%; object-fit: contain; }
-          </style>
-        </head>
-        <body>
-          <div class="card-print">
-            <img src="${canvasFrente.toDataURL('image/png')}" />
-          </div>
-          ${canvasVerso ? `
-          <div class="card-print">
-            <img src="${canvasVerso.toDataURL('image/png')}" />
-          </div>` : ''}
-        </body>
-        </html>
-      `;
-      win.document.write(html);
-      win.document.close();
-      win.focus();
-      setTimeout(() => {
-        win.print();
-        setGerandoPDF(false);
-      }, 500);
-    } catch (err) {
-      console.error('Erro ao imprimir credencial:', err);
-      setGerandoPDF(false);
-    }
-  };
-
-  const renderizarElemento = (elemento: ElementoCartao) => {
+  // Renderizar Elementos com suporte à compensação de lift no PDF
+  const renderizarElemento = (elemento: ElementoCartao, isPdf = false) => {
     if (!elemento || !elemento.visivel) return null;
+
+    const fontSize = elemento.fontSize || 10;
+    // Compensação apenas para o PDF, preview fica centralizado
+    const lift = isPdf ? (fontSize > 16 ? '-15px' : '-8px') : '0px';
+    const lineHeight = '1.2';
 
     const estilo: React.CSSProperties = {
       position: 'absolute',
@@ -444,11 +289,12 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
             <div
               style={{
                 position: 'relative',
+                top: lift,
                 width: '100%',
                 paddingLeft: elemento.backgroundColor ? '10px' : '0',
                 paddingRight: elemento.backgroundColor ? '5px' : '0',
                 boxSizing: 'border-box',
-                lineHeight: '1.2',
+                lineHeight: lineHeight,
                 textAlign: (elemento.alinhamento || 'left') as any,
                 display: 'block',
               }}
@@ -576,6 +422,233 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
 
   const temVerso = Boolean(template?.temVerso && template?.elementosVerso && template.elementosVerso.length > 0);
 
+  // Geração de PDF de Alta Resolução restaurada com precisão
+  const gerarPDF = async () => {
+    if (!printRef.current || !template || gerandoPDF) return;
+    setGerandoPDF(true);
+
+    try {
+      const frenteEl = printRef.current.querySelector('#print-frente') as HTMLElement;
+      if (!frenteEl) throw new Error('Elemento da frente não encontrado na área de impressão');
+
+      // 1. Capturar elementos sem backgroundImage CSS (evita desfoque e taint no html2canvas)
+      const bgFrente = frenteEl.style.backgroundImage;
+      const bgColorFrente = frenteEl.style.backgroundColor;
+      frenteEl.style.backgroundImage = 'none';
+      frenteEl.style.backgroundColor = 'transparent';
+      const captFrente = await html2canvas(frenteEl, {
+        scale: 4,
+        useCORS: true,
+        backgroundColor: null,
+        logging: false,
+      });
+      frenteEl.style.backgroundImage = bgFrente;
+      frenteEl.style.backgroundColor = bgColorFrente;
+
+      // 2. Compor background em alta resolução
+      const canvasFrente = await compositeWithBackground(captFrente, template.backgroundUrl);
+
+      const tipoImpressao = template.tipoImpressao || 'pvc';
+      const orientacao = template.orientacao || 'landscape';
+      const largCartaoMM = orientacao === 'portrait' ? 53.98 : 85.6;
+      const altCartaoMM = orientacao === 'portrait' ? 85.6 : 53.98;
+
+      let pdf: jsPDF;
+
+      if (tipoImpressao === 'a4') {
+        pdf = new jsPDF({
+          orientation: 'portrait',
+          unit: 'mm',
+          format: 'a4',
+        });
+
+        const margemSuperior = 12;
+        const margemEsquerda = 18.5;
+        const espacamentoH = 2;
+
+        pdf.addImage(canvasFrente.toDataURL('image/png'), 'PNG', margemEsquerda, margemSuperior, largCartaoMM, altCartaoMM);
+
+        if (temVerso) {
+          const versoEl = printRef.current.querySelector('#print-verso') as HTMLElement;
+          if (versoEl) {
+            const bgVerso = versoEl.style.backgroundImage;
+            const bgColorVerso = versoEl.style.backgroundColor;
+            versoEl.style.backgroundImage = 'none';
+            versoEl.style.backgroundColor = 'transparent';
+            const captVerso = await html2canvas(versoEl, {
+              scale: 4,
+              useCORS: true,
+              backgroundColor: null,
+              logging: false,
+            });
+            versoEl.style.backgroundImage = bgVerso;
+            versoEl.style.backgroundColor = bgColorVerso;
+
+            const canvasVerso = await compositeWithBackground(captVerso, template.backgroundUrlVerso);
+            pdf.addPage();
+            const xVerso = margemEsquerda + largCartaoMM + espacamentoH;
+            pdf.addImage(canvasVerso.toDataURL('image/png'), 'PNG', xVerso, margemSuperior, largCartaoMM, altCartaoMM);
+          }
+        }
+      } else {
+        pdf = new jsPDF({
+          orientation: orientacao === 'portrait' ? 'portrait' : 'landscape',
+          unit: 'mm',
+          format: [largCartaoMM, altCartaoMM],
+        });
+
+        pdf.addImage(canvasFrente.toDataURL('image/png'), 'PNG', 0, 0, largCartaoMM, altCartaoMM);
+
+        if (temVerso) {
+          const versoEl = printRef.current.querySelector('#print-verso') as HTMLElement;
+          if (versoEl) {
+            const bgVerso = versoEl.style.backgroundImage;
+            const bgColorVerso = versoEl.style.backgroundColor;
+            versoEl.style.backgroundImage = 'none';
+            versoEl.style.backgroundColor = 'transparent';
+            const captVerso = await html2canvas(versoEl, {
+              scale: 4,
+              useCORS: true,
+              backgroundColor: null,
+              logging: false,
+            });
+            versoEl.style.backgroundImage = bgVerso;
+            versoEl.style.backgroundColor = bgColorVerso;
+
+            const canvasVerso = await compositeWithBackground(captVerso, template.backgroundUrlVerso);
+            pdf.addPage([largCartaoMM, altCartaoMM], orientacao === 'portrait' ? 'portrait' : 'landscape');
+            pdf.addImage(canvasVerso.toDataURL('image/png'), 'PNG', 0, 0, largCartaoMM, altCartaoMM);
+          }
+        }
+      }
+
+      const nomeLimpo = (membro.nome || 'credencial').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      pdf.save(`credencial_${nomeLimpo}.pdf`);
+
+      // Registrar emissão/reimpressão
+      try {
+        const qrCodeData = buildUrl(
+          getAppBaseUrl(),
+          `/autentica_qrcode-05985642/${membro.uniqueId || membro.id}`
+        );
+
+        const regRes = await authenticatedFetch('/api/credenciais/emitidas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: registroAction,
+            items: [{
+              memberId: membro.id,
+              templateId: template?.id ?? null,
+              qrCodeData,
+            }],
+          }),
+        });
+        if (!regRes.ok) {
+          const errBody = await regRes.json().catch(() => null);
+          console.warn('Falha ao registrar credencial emitida:', regRes.status, errBody);
+        }
+      } catch (err) {
+        console.warn('Falha ao registrar credencial emitida:', err);
+      }
+    } catch (error) {
+      console.error('Erro ao gerar PDF:', error);
+      alert('Ocorreu um erro ao gerar o PDF. Consulte o console para mais detalhes.');
+    } finally {
+      setGerandoPDF(false);
+    }
+  };
+
+  // Impressão direta via janela dedicada
+  const handleImprimir = async () => {
+    if (!printRef.current || !template || gerandoPDF) return;
+    setGerandoPDF(true);
+
+    try {
+      const frenteEl = printRef.current.querySelector('#print-frente') as HTMLElement;
+      if (!frenteEl) throw new Error('Elemento da frente não encontrado na área de impressão');
+
+      const bgFrente = frenteEl.style.backgroundImage;
+      const bgColorFrente = frenteEl.style.backgroundColor;
+      frenteEl.style.backgroundImage = 'none';
+      frenteEl.style.backgroundColor = 'transparent';
+      const captFrente = await html2canvas(frenteEl, {
+        scale: 3,
+        useCORS: true,
+        backgroundColor: null,
+      });
+      frenteEl.style.backgroundImage = bgFrente;
+      frenteEl.style.backgroundColor = bgColorFrente;
+
+      const canvasFrente = await compositeWithBackground(captFrente, template.backgroundUrl);
+
+      let canvasVerso: HTMLCanvasElement | null = null;
+      if (temVerso) {
+        const versoEl = printRef.current.querySelector('#print-verso') as HTMLElement;
+        if (versoEl) {
+          const bgVerso = versoEl.style.backgroundImage;
+          const bgColorVerso = versoEl.style.backgroundColor;
+          versoEl.style.backgroundImage = 'none';
+          versoEl.style.backgroundColor = 'transparent';
+          const captVerso = await html2canvas(versoEl, {
+            scale: 3,
+            useCORS: true,
+            backgroundColor: null,
+          });
+          versoEl.style.backgroundImage = bgVerso;
+          versoEl.style.backgroundColor = bgColorVerso;
+          canvasVerso = await compositeWithBackground(captVerso, template.backgroundUrlVerso);
+        }
+      }
+
+      const win = window.open('', '_blank', 'width=900,height=650');
+      if (!win) {
+        setGerandoPDF(false);
+        return;
+      }
+
+      const orientacao = template.orientacao || 'landscape';
+      const isPort = orientacao === 'portrait';
+      const largMM = isPort ? '54mm' : '85.6mm';
+      const altMM = isPort ? '85.6mm' : '54mm';
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8"/>
+          <title>Credencial — ${membro.nome}</title>
+          <style>
+            @page { size: auto; margin: 10mm; }
+            body { margin: 0; padding: 20px; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; }
+            .card-print { width: ${largMM}; height: ${altMM}; border: 1px dashed #ccc; box-sizing: border-box; page-break-inside: avoid; }
+            .card-print img { width: 100%; height: 100%; object-fit: contain; }
+          </style>
+        </head>
+        <body>
+          <div class="card-print">
+            <img src="${canvasFrente.toDataURL('image/png')}" />
+          </div>
+          ${canvasVerso ? `
+          <div class="card-print">
+            <img src="${canvasVerso.toDataURL('image/png')}" />
+          </div>` : ''}
+        </body>
+        </html>
+      `;
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      setTimeout(() => {
+        win.print();
+        setGerandoPDF(false);
+      }, 500);
+    } catch (err) {
+      console.error('Erro ao imprimir credencial:', err);
+      setGerandoPDF(false);
+    }
+  };
+
   // Título dinâmico
   const getTituloModal = () => {
     switch (membro.tipoCadastro) {
@@ -658,7 +731,7 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
                   className="relative rounded-2xl overflow-hidden shadow-2xl bg-white border border-gray-300 select-none box-border"
                 >
                   {processarElementosComReflow(template.elementos, membro, orgNomenclaturas).map((elemento) =>
-                    renderizarElemento(elemento)
+                    renderizarElemento(elemento, false)
                   )}
                 </div>
               </div>
@@ -682,7 +755,7 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
                     className="relative rounded-2xl overflow-hidden shadow-2xl bg-white border border-gray-300 select-none box-border"
                   >
                     {processarElementosComReflow(template.elementosVerso || [], membro, orgNomenclaturas).map((elemento) =>
-                      renderizarElemento(elemento)
+                      renderizarElemento(elemento, false)
                     )}
                   </div>
                 </div>
@@ -724,6 +797,51 @@ export default function CartãoMembro({ membro, onClose, registroAction = 'emiti
           </div>
         </div>
       </div>
+
+      {/* ÁREA DE IMPRESSÃO OCULTA PARA PDF (Fora da tela visual com precisão de renderização) */}
+      {template && (
+        <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }} ref={printRef}>
+          {/* FRENTE PARA PDF */}
+          <div
+            id="print-frente"
+            style={{
+              ...getDimensoesCSSCartao(template.orientacao),
+              position: 'relative',
+              fontFamily: 'Arial, sans-serif',
+              backgroundImage: template.backgroundUrl ? `url(${template.backgroundUrl})` : 'none',
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundColor: resolvePrintBackgroundColor(template.backgroundUrl),
+              overflow: 'hidden',
+            }}
+          >
+            {processarElementosComReflow(template.elementos, membro, orgNomenclaturas).map((elemento) =>
+              renderizarElemento(elemento, true)
+            )}
+          </div>
+
+          {/* VERSO PARA PDF */}
+          {temVerso && (
+            <div
+              id="print-verso"
+              style={{
+                ...getDimensoesCSSCartao(template.orientacao),
+                position: 'relative',
+                fontFamily: 'Arial, sans-serif',
+                backgroundImage: template.backgroundUrlVerso ? `url(${template.backgroundUrlVerso})` : 'none',
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                backgroundColor: resolvePrintBackgroundColor(template.backgroundUrlVerso),
+                overflow: 'hidden',
+              }}
+            >
+              {processarElementosComReflow(template.elementosVerso || [], membro, orgNomenclaturas).map((elemento) =>
+                renderizarElemento(elemento, true)
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
