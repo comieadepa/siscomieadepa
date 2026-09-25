@@ -662,13 +662,20 @@ export default function AemadepaPage() {
                           {/* Emissão de Carteirinha */}
                           <button
                             onClick={() => setAssociadaCartao(item)}
-                            disabled={!item.temEsposaCadastrada}
+                            disabled={!item.temEsposaCadastrada || !item.fotoEsposaUrl}
                             className={`p-1.5 rounded-lg transition ${
-                              item.temEsposaCadastrada
+                              item.temEsposaCadastrada && item.fotoEsposaUrl
                                 ? 'text-purple-600 hover:bg-purple-50 cursor-pointer'
-                                : 'text-gray-300 cursor-not-allowed'
+                                : 'text-gray-300 opacity-40 cursor-not-allowed'
                             }`}
-                            title={item.temEsposaCadastrada ? "Emitir Carteirinha AEMADEPA" : "Cadastre a esposa antes de emitir a carteirinha"}
+                            title={
+                              !item.temEsposaCadastrada
+                                ? "Cadastre a esposa antes de emitir a carteirinha"
+                                : !item.fotoEsposaUrl
+                                ? "Credencial indisponível (sem foto cadastrada)"
+                                : "Emitir Carteirinha AEMADEPA"
+                            }
+                            aria-label="Emitir Carteirinha AEMADEPA"
                           >
                             <CreditCard className="w-4 h-4" />
                           </button>
