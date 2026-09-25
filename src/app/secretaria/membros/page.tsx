@@ -3187,19 +3187,31 @@ useEffect(() => {
                     <th className="border-2 border-gray-300 px-4 py-3 text-center font-semibold text-gray-700 w-12">
                       <input
                         type="checkbox"
-                        checked={membrosSelecionados.size === membrosPaginados.length && membrosPaginados.length > 0}
+                        checked={
+                          membrosPaginados.filter((m) => Boolean(m.fotoUrl)).length > 0 &&
+                          membrosPaginados.filter((m) => Boolean(m.fotoUrl)).every((m) => membrosSelecionados.has(m.id))
+                        }
                         onChange={(e) => {
+                          const membrosComFoto = membrosPaginados.filter((m) => Boolean(m.fotoUrl));
+                          const novoSet = new Set(membrosSelecionados);
                           if (e.target.checked) {
-                            const novoSet = new Set(membrosSelecionados);
-                            membrosPaginados.forEach(m => novoSet.add(m.id));
-                            setMembrosSelecionados(novoSet);
+                            membrosComFoto.forEach((m) => novoSet.add(m.id));
                           } else {
-                            const novoSet = new Set(membrosSelecionados);
-                            membrosPaginados.forEach(m => novoSet.delete(m.id));
-                            setMembrosSelecionados(novoSet);
+                            membrosPaginados.forEach((m) => novoSet.delete(m.id));
                           }
+                          setMembrosSelecionados(novoSet);
                         }}
-                        className="w-4 h-4 cursor-pointer"
+                        disabled={membrosPaginados.filter((m) => Boolean(m.fotoUrl)).length === 0}
+                        className={`w-4 h-4 ${
+                          membrosPaginados.filter((m) => Boolean(m.fotoUrl)).length === 0
+                            ? 'cursor-not-allowed opacity-40'
+                            : 'cursor-pointer'
+                        }`}
+                        title={
+                          membrosPaginados.filter((m) => Boolean(m.fotoUrl)).length === 0
+                            ? 'Nenhum membro nesta página possui foto'
+                            : 'Selecionar todos com foto'
+                        }
                       />
                     </th>
                     <th className="border-2 border-gray-300 px-4 py-3 text-left font-semibold text-gray-700 w-20">Matrícula</th>
@@ -3213,13 +3225,17 @@ useEffect(() => {
                   </tr>
                 </thead>
                 <tbody>
-                  {membrosPaginados.map((membro) => (
+                  {membrosPaginados.map((membro) => {
+                    const temFoto = Boolean(membro.fotoUrl);
+                    return (
                     <tr key={membro.id} className="hover:bg-gray-50">
                       <td className="border border-gray-300 px-4 py-3 text-center">
                         <input
                           type="checkbox"
+                          disabled={!temFoto}
                           checked={membrosSelecionados.has(membro.id)}
                           onChange={(e) => {
+                            if (!temFoto) return;
                             const novoSet = new Set(membrosSelecionados);
                             if (e.target.checked) {
                               novoSet.add(membro.id);
@@ -3228,7 +3244,8 @@ useEffect(() => {
                             }
                             setMembrosSelecionados(novoSet);
                           }}
-                          className="w-4 h-4 cursor-pointer"
+                          className={`w-4 h-4 ${!temFoto ? 'cursor-not-allowed opacity-30 accent-gray-400' : 'cursor-pointer'}`}
+                          title={!temFoto ? 'Não é possível selecionar membro sem foto' : 'Selecionar membro'}
                         />
                       </td>
                       <td className="border border-gray-300 px-4 py-3 font-semibold text-gray-700">{membro.matricula}</td>
@@ -3281,7 +3298,9 @@ useEffect(() => {
                           {/* Imprimir Credencial */}
                           <div className="relative group inline-flex">
                             <button
+                              disabled={!temFoto}
                               onClick={async () => {
+                                if (!temFoto) return;
                                 const templatesBase = await ensureTemplatesSnapshot();
                                 if (!hasActiveTemplate(membro.tipoCadastro, templatesBase)) {
                                   setNotification({
@@ -3294,8 +3313,12 @@ useEffect(() => {
                                 }
                                 setMembroImprimindoCartao(membro);
                               }}
-                              className="p-1.5 text-purple-600 hover:bg-purple-100 rounded-lg transition"
-                              title="Imprimir Credencial"
+                              className={`p-1.5 rounded-lg transition ${
+                                !temFoto
+                                  ? 'text-gray-300 cursor-not-allowed opacity-30 hover:bg-transparent'
+                                  : 'text-purple-600 hover:bg-purple-100 cursor-pointer'
+                              }`}
+                              title={!temFoto ? 'Credencial indisponível (sem foto)' : 'Imprimir Credencial'}
                               aria-label="Imprimir Credencial"
                             >
                               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3303,7 +3326,7 @@ useEffect(() => {
                               </svg>
                             </button>
                             <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-900/90 px-2 py-1 text-[11px] font-medium text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-30">
-                              Imprimir Credencial
+                              {!temFoto ? 'Sem foto' : 'Imprimir Credencial'}
                             </span>
                           </div>
 
@@ -3418,7 +3441,8 @@ useEffect(() => {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  );
+                })}
                 </tbody>
                 </table>
               </div>
