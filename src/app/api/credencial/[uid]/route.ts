@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const SELECT_COLS = 'id, unique_id, name, matricula, cargo_ministerial, tipo_sanguineo, data_nascimento, foto_url, custom_fields, status, cred_validade, orden_pastor_data, ev_consagrado_data, cons_missionario_data, ev_autorizado_data, rg, cpf, naturalidade, numero_cgadb, nome_pai, nome_mae';
+const SELECT_COLS = 'id, unique_id, name, matricula, cargo_ministerial, tipo_sanguineo, data_nascimento, foto_url, custom_fields, status, cred_validade, orden_pastor_data, ev_consagrado_data, cons_missionario_data, ev_autorizado_data, rg, cpf, naturalidade, numero_cgadb, nome_pai, nome_mae, nome_conjuge, cpf_conjuge, data_nascimento_conjuge, conjuge_rg, conjuge_orgao_emissor, conjuge_nacionalidade, conjuge_naturalidade, conjuge_nome_pai, conjuge_nome_mae, conjuge_titulo_eleitoral, conjuge_fone, conjuge_email, conjuge_tipo_sanguineo, conjuge_foto_url, numero_aemadepa';
 
 export async function GET(
   req: NextRequest,
@@ -137,9 +137,15 @@ export async function GET(
     ? [cf.nomePai, cf.nomeMae].filter(Boolean).join(' / ') || cf.filiacao || ''
     : '';
 
+  const tipoParam = req.nextUrl.searchParams.get('tipo')?.toLowerCase();
+  const nomeEsposa = String(data.nome_conjuge || cf.nomeConjuge || '').trim();
+  const temEsposa = Boolean(nomeEsposa && nomeEsposa.length > 0);
+  const isAemadepa = tipoParam === 'aemadepa';
+
   return NextResponse.json({
     id: data.id,
     uniqueId: data.unique_id,
+    tipo: isAemadepa ? 'aemadepa' : 'ministro',
     nome: String(data.name || ''),
     matricula: String(data.matricula || cf.matricula || ''),
     cargo: String(cargo),
@@ -158,5 +164,30 @@ export async function GET(
     naturalidade: String(data.naturalidade || cf.naturalidade || cf.cidadeNascimento || ''),
     registroCgadb: String(data.numero_cgadb || cf.registroCgadb || cf.cgadb || cf.numeroCgadb || ''),
     filiacao: String(filiacao),
+
+    // Dados específicos da Esposa / AEMADEPA
+    esposa: {
+      cadastrada: temEsposa,
+      nome: nomeEsposa,
+      numeroAemadepa: String(data.numero_aemadepa || cf.numero_aemadepa || cf.numeroAemadepa || ''),
+      cpf: String(data.cpf_conjuge || cf.cpfConjuge || ''),
+      rg: String(data.conjuge_rg || cf.conjugeRg || ''),
+      orgaoEmissor: String(data.conjuge_orgao_emissor || cf.conjugeOrgaoEmissor || ''),
+      dataNascimento: String(data.data_nascimento_conjuge || cf.dataNascimentoConjuge || ''),
+      nacionalidade: String(data.conjuge_nacionalidade || cf.conjugeNacionalidade || 'BRASILEIRA'),
+      naturalidade: String(data.conjuge_naturalidade || cf.conjugeNaturalidade || ''),
+      nomePai: String(data.conjuge_nome_pai || cf.conjugeNomePai || ''),
+      nomeMae: String(data.conjuge_nome_mae || cf.conjugeNomeMae || ''),
+      tituloEleitoral: String(data.conjuge_titulo_eleitoral || cf.conjugeTituloEleitoral || ''),
+      fone: String(data.conjuge_fone || cf.conjugeFone || ''),
+      email: String(data.conjuge_email || cf.conjugeEmail || ''),
+      tipoSanguineo: String(data.conjuge_tipo_sanguineo || cf.conjugeTipoSanguineo || ''),
+      fotoUrl: data.conjuge_foto_url || cf.conjugeFotoUrl || null,
+      ministroNome: String(data.name || ''),
+      ministroMatricula: String(data.matricula || cf.matricula || ''),
+      cargoMinisterial: String(cargo),
+      campo: String(cf.campo || ''),
+      supervisao: String(cf.supervisao || ''),
+    }
   });
 }

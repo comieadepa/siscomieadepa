@@ -108,7 +108,7 @@ export default function CartaoAemadepa({ associada, onClose }: CartaoAemadepaPro
   // QR Code URL seguro para autenticação pública de associada
   const qrCodeUrl = buildUrl(
     getAppBaseUrl(),
-    `/autentica_qrcode-05985642/${associada.uniqueId || associada.id}`
+    `/autentica_qrcode-05985642/${associada.uniqueId || associada.id}?tipo=aemadepa`
   );
 
   // Mapeamento dos dados da esposa/ministro para preenchimento dos placeholders
