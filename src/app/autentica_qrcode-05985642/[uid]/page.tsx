@@ -112,9 +112,9 @@ export default function CredencialDigitalPage({ params }: { params: Promise<{ ui
       {/* CABEÇALHO */}
       <div style={{ textAlign: 'center', marginBottom: '20px' }}>
         <img
-          src={isAemadepa ? '/img/logo_cgadb.png' : '/img/logo_cgadb.png'}
-          alt="CGADB COMIEADEPA"
-          style={{ height: '60px', marginBottom: '8px' }}
+          src="/img/logo_comieadepa.png"
+          alt="COMIEADEPA"
+          style={{ height: '70px', marginBottom: '8px', objectFit: 'contain' }}
         />
         <div style={{
           fontSize: '13px',
