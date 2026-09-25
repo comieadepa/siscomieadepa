@@ -110,18 +110,36 @@ export default function CredencialDigitalPage({ params }: { params: Promise<{ ui
       fontFamily: 'Arial, sans-serif',
     }}>
       {/* CABEÇALHO */}
-      <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+      <div style={{
+        textAlign: 'center',
+        marginBottom: '24px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%',
+        maxWidth: '500px',
+      }}>
         <img
           src="/img/logo_comieadepa.png"
           alt="COMIEADEPA"
-          style={{ height: '70px', marginBottom: '8px', objectFit: 'contain' }}
+          style={{
+            height: '92px',
+            width: 'auto',
+            marginBottom: '10px',
+            objectFit: 'contain',
+            display: 'block',
+            margin: '0 auto 10px auto',
+            filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.08))',
+          }}
         />
         <div style={{
           fontSize: '13px',
-          color: isAemadepa ? '#9f1239' : '#555',
-          fontWeight: 700,
-          letterSpacing: '0.8px',
-          textTransform: 'uppercase'
+          color: isAemadepa ? '#9f1239' : '#1e3a8a',
+          fontWeight: 800,
+          letterSpacing: '1px',
+          textTransform: 'uppercase',
+          textAlign: 'center',
         }}>
           {isAemadepa ? 'CREDENCIAL DIGITAL AEMADEPA' : 'CREDENCIAL DIGITAL DE MINISTRO'}
         </div>
