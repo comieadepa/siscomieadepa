@@ -9,6 +9,7 @@ import CartaoAemadepa from '@/components/CartaoAemadepa';
 import FichaAemadepa from '@/components/FichaAemadepa';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { authenticatedFetch } from '@/lib/api-client';
+import { QRCodeSVG } from 'qrcode.react';
 import {
   HeartHandshake,
   Search,
@@ -24,6 +25,12 @@ import {
   Sparkles,
   Phone,
   MapPin,
+  Link as LinkIcon,
+  Copy,
+  ExternalLink,
+  Share2,
+  Check,
+  X,
 } from 'lucide-react';
 
 interface AssociadaAemadepa {
@@ -76,6 +83,10 @@ export default function AemadepaPage() {
   // Estados para Carteirinha e Ficha Cadastral AEMADEPA
   const [associadaCartao, setAssociadaCartao] = useState<AssociadaAemadepa | null>(null);
   const [associadaFicha, setAssociadaFicha] = useState<AssociadaAemadepa | null>(null);
+
+  // Estado para Modal do Link Público de Cadastro
+  const [modalLinkPublicoAberto, setModalLinkPublicoAberto] = useState(false);
+  const [linkCopiado, setLinkCopiado] = useState(false);
 
   // Carrega ministros e mapeia para a visão AEMADEPA
   const carregarDados = useCallback(async () => {
@@ -279,7 +290,17 @@ export default function AemadepaPage() {
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-2.5 items-center">
+              <button
+                type="button"
+                onClick={() => setModalLinkPublicoAberto(true)}
+                className="px-4 py-2.5 bg-white/20 hover:bg-white/30 text-white font-bold text-sm rounded-xl border border-white/30 backdrop-blur-md transition flex items-center gap-2 cursor-pointer shadow-sm"
+                title="Gerar e compartilhar link público de cadastro para as esposas"
+              >
+                <LinkIcon className="w-4 h-4" />
+                <span>Link de Cadastro</span>
+              </button>
+
               <button
                 onClick={abrirModalNova}
                 className="px-5 py-2.5 bg-white text-rose-800 hover:bg-rose-50 font-bold text-sm rounded-xl shadow-md hover:shadow-lg transition flex items-center gap-2 cursor-pointer"
@@ -290,7 +311,7 @@ export default function AemadepaPage() {
               <button
                 onClick={() => void carregarDados()}
                 disabled={loading}
-                className="px-4 py-2.5 bg-rose-800/60 hover:bg-rose-800/80 text-white font-semibold text-sm rounded-xl border border-white/20 transition flex items-center gap-2 cursor-pointer"
+                className="px-4 py-2.5 bg-rose-800/60 hover:bg-rose-800/80 text-white font-semibold text-sm rounded-xl border border-white/20 transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 title="Atualizar lista"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -342,6 +363,134 @@ export default function AemadepaPage() {
             </div>
           </div>
         </div>
+
+        {/* Modal do Link Público de Cadastro */}
+        {modalLinkPublicoAberto && (
+          <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-rose-100 my-6 animate-in fade-in zoom-in-95 duration-200 text-gray-800 flex flex-col">
+              {/* Header */}
+              <div className="bg-gradient-to-r from-rose-700 via-pink-700 to-purple-800 text-white px-6 py-4 flex items-center justify-between shadow-md">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center shadow-inner">
+                    <LinkIcon className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-extrabold tracking-tight">Link Público de Cadastro</h3>
+                    <p className="text-xs text-rose-100 mt-0.5">AEMADEPA — COMIEADEPA</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModalLinkPublicoAberto(false)}
+                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
+                  title="Fechar"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-5 bg-slate-50/50">
+                <p className="text-sm text-gray-600 leading-relaxed">
+                  Compartilhe este link com as esposas dos ministros para que elas mesmas possam preencher o cadastro oficial da AEMADEPA pelo celular ou computador.
+                </p>
+
+                {/* Card do Link com Botão Copiar */}
+                <div className="bg-white border border-rose-200 rounded-2xl p-4 shadow-xs space-y-2.5">
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide">
+                    Endereço da Página Pública
+                  </label>
+                  <div className="flex items-center gap-2 bg-slate-50 border border-gray-200 rounded-xl p-2.5">
+                    <span className="text-xs font-mono text-gray-700 truncate select-all flex-1">
+                      {typeof window !== 'undefined' ? `${window.location.origin}/aemadepa/cadastro` : 'https://www.siscomieadepa.org/aemadepa/cadastro'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = typeof window !== 'undefined' ? `${window.location.origin}/aemadepa/cadastro` : 'https://www.siscomieadepa.org/aemadepa/cadastro';
+                        navigator.clipboard.writeText(url);
+                        setLinkCopiado(true);
+                        setTimeout(() => setLinkCopiado(false), 2500);
+                      }}
+                      className={`px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                        linkCopiado
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-rose-600 hover:bg-rose-700 text-white shadow-xs'
+                      }`}
+                    >
+                      {linkCopiado ? (
+                        <>
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Copiado!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copiar</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* QR Code para projeção / leitura rápida */}
+                <div className="bg-white border border-gray-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
+                  <div className="p-2 bg-white rounded-xl border border-gray-200 shrink-0 shadow-xs">
+                    <QRCodeSVG
+                      value={typeof window !== 'undefined' ? `${window.location.origin}/aemadepa/cadastro` : 'https://www.siscomieadepa.org/aemadepa/cadastro'}
+                      size={100}
+                      level="H"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-bold text-gray-800 uppercase">QR Code para Divulgação</p>
+                    <p className="text-xs text-gray-500">
+                      As irmãs podem apontar a câmera do celular diretamente para este QR Code para abrir o formulário.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Ações de Compartilhamento */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <a
+                    href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
+                      `A paz do Senhor, irmã! Segue o link para preenchimento do cadastro oficial da AEMADEPA / COMIEADEPA: ${
+                        typeof window !== 'undefined' ? `${window.location.origin}/aemadepa/cadastro` : 'https://www.siscomieadepa.org/aemadepa/cadastro'
+                      }`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    <span>Enviar no WhatsApp</span>
+                  </a>
+
+                  <a
+                    href="/aemadepa/cadastro"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>Abrir Página</span>
+                  </a>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="bg-white px-6 py-4 flex justify-end border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setModalLinkPublicoAberto(false)}
+                  className="px-5 py-2 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-100 font-semibold text-xs transition cursor-pointer"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Modal de Cadastro / Edição da Associada AEMADEPA */}
         <ModalAemadepa
