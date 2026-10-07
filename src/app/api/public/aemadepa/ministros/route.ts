@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         ministro: {
           id: membro.id,
-          nome: String(membro.name || membro.nome || cf.nome || '').trim(),
+          nome: String(membro.name || cf.nome || '').trim(),
           matricula: String(membro.matricula || cf.matricula || '').trim(),
           cpf: String(membro.cpf || cf.cpf || '').trim(),
           cargo: String(membro.cargo_ministerial || cf.cargoMinisterial || membro.profissao || 'PASTOR').trim(),
@@ -62,22 +62,26 @@ export async function GET(request: NextRequest) {
     // Busca geral ou por termo q
     let query = supabase
       .from('members')
-      .select('id, name, nome, matricula, cpf, cargo_ministerial, status, jubilado, custom_fields, nome_conjuge, cpf_conjuge, conjuge_foto_url')
-      .is('deleted_at', null)
+      .select('id, name, matricula, cpf, cargo_ministerial, status, jubilado, custom_fields, nome_conjuge, cpf_conjuge, conjuge_foto_url')
       .limit(30);
 
     const qDigits = onlyDigits(q);
     if (q) {
+      const orClauses: string[] = [
+        `name.ilike.%${q}%`,
+        `matricula.ilike.%${q}%`,
+      ];
       if (qDigits && qDigits.length >= 3) {
-        query = query.or(`name.ilike.%${q}%,nome.ilike.%${q}%,matricula.ilike.%${q}%,cpf.ilike.%${qDigits}%`);
-      } else {
-        query = query.or(`name.ilike.%${q}%,nome.ilike.%${q}%,matricula.ilike.%${q}%`);
+        orClauses.push(`cpf.ilike.%${qDigits}%`);
+        orClauses.push(`matricula.ilike.%${qDigits}%`);
       }
+      query = query.or(orClauses.join(','));
     }
 
     const { data: rows, error } = await query;
 
     if (error) {
+      console.error('Erro na query de ministros AEMADEPA:', error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
@@ -87,7 +91,7 @@ export async function GET(request: NextRequest) {
 
       return {
         id: m.id,
-        nome: String(m.name || m.nome || cf.nome || '').trim(),
+        nome: String(m.name || cf.nome || '').trim(),
         matricula: String(m.matricula || cf.matricula || '').trim(),
         cpf: String(m.cpf || cf.cpf || '').trim(),
         cargo: String(m.cargo_ministerial || cf.cargoMinisterial || 'PASTOR').trim(),
