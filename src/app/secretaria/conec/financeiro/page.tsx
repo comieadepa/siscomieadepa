@@ -9,11 +9,17 @@ import {
   Building2,
   Search,
   CheckCircle,
+  CheckCircle2,
   Download,
   Printer,
   ArrowLeft,
   X,
-  ExternalLink
+  ExternalLink,
+  Calendar,
+  CreditCard,
+  FileText,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 
 interface Credenciamento {
@@ -63,6 +69,12 @@ export default function ConecFinanceiroPage() {
   } | null>(null);
 
   const [baixaLoading, setBaixaLoading] = useState(false);
+  const [notificacao, setNotificacao] = useState<{
+    isOpen: boolean;
+    tipo: 'success' | 'error';
+    titulo: string;
+    mensagem: string;
+  } | null>(null);
 
   const fetchFinanceiro = async () => {
     setLoading(true);
@@ -182,11 +194,25 @@ export default function ConecFinanceiroPage() {
         throw new Error(resData.error || 'Erro ao processar pagamento.');
       }
 
-      alert('Pagamento confirmado com sucesso!');
+      const instSalva = baixaModal.instName;
+      const anoSalvo = baixaModal.ano;
+      const valorSalvo = baixaModal.valor;
+
       setBaixaModal(null);
+      setNotificacao({
+        isOpen: true,
+        tipo: 'success',
+        titulo: 'Pagamento Confirmado',
+        mensagem: `A anuidade ${anoSalvo} de "${instSalva}" no valor de ${formatCurrency(valorSalvo)} foi confirmada com sucesso!`,
+      });
       fetchFinanceiro();
     } catch (err: any) {
-      alert(err.message || 'Falha ao confirmar pagamento.');
+      setNotificacao({
+        isOpen: true,
+        tipo: 'error',
+        titulo: 'Falha na Baixa',
+        mensagem: err.message || 'Falha ao confirmar pagamento manual.',
+      });
     } finally {
       setBaixaLoading(false);
     }
@@ -472,57 +498,80 @@ export default function ConecFinanceiroPage() {
 
       {/* Modal de Confirmação de Pagamento */}
       {baixaModal && baixaModal.isOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-2xl max-w-md w-full overflow-hidden border border-gray-200 animate-in fade-in zoom-in-95 duration-200 text-gray-800">
-            {/* Header */}
-            <div className="bg-green-700 text-white p-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="w-5 h-5" />
-                <h3 className="font-bold text-lg">Confirmar Pagamento</h3>
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-emerald-100 my-6 animate-in fade-in zoom-in-95 duration-200 text-gray-800 flex flex-col">
+            {/* Header com gradiente verde/teal moderno */}
+            <div className="bg-gradient-to-r from-emerald-800 via-teal-700 to-green-800 text-white px-6 py-4 flex items-center justify-between shadow-md">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center shadow-inner">
+                  <CheckCircle2 className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-extrabold tracking-tight">Confirmar Pagamento</h3>
+                  <p className="text-xs text-emerald-100 mt-0.5">Baixa manual de anuidade CONEC</p>
+                </div>
               </div>
               <button
+                type="button"
                 onClick={() => setBaixaModal(null)}
-                className="text-white hover:text-green-200 transition"
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
+                title="Fechar"
               >
-                <X className="w-6 h-6" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Body */}
-            <div className="p-6 space-y-4">
-              <div>
-                <p className="text-xs text-gray-400 uppercase font-semibold">Instituição</p>
-                <p className="text-sm font-bold text-gray-900">{baixaModal.instName}</p>
-                <p className="text-xs text-teal-600 font-semibold mt-0.5">Referência: {baixaModal.ano}</p>
-              </div>
+            <div className="p-6 space-y-4 bg-slate-50/50 overflow-y-auto">
+              {/* Card de Resumo (Instituição + Valor) */}
+              <div className="bg-white rounded-2xl p-4.5 border border-emerald-100 shadow-xs space-y-3">
+                <div>
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                    <Building2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Instituição</span>
+                  </div>
+                  <p className="text-sm sm:text-base font-bold text-gray-900 leading-snug mt-1">
+                    {baixaModal.instName}
+                  </p>
+                  <div className="mt-1.5">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-teal-50 text-teal-800 border border-teal-200">
+                      Referência: <strong>{baixaModal.ano}</strong>
+                    </span>
+                  </div>
+                </div>
 
-              <div>
-                <p className="text-xs text-gray-400 uppercase font-semibold">Valor</p>
-                <p className="text-lg font-extrabold text-green-700">{formatCurrency(baixaModal.valor)}</p>
+                <div className="border-t border-gray-100 pt-3 flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-500 uppercase">Valor a Confirmar</span>
+                  <span className="text-2xl font-black text-emerald-700 tracking-tight">
+                    {formatCurrency(baixaModal.valor)}
+                  </span>
+                </div>
               </div>
 
               {/* Data de pagamento */}
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                  Data de Pagamento *
+                <label className="flex items-center gap-1.5 text-xs font-bold text-gray-700 uppercase mb-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Data do Pagamento *</span>
                 </label>
                 <input
                   type="date"
                   value={baixaModal.dataPagamento}
                   onChange={(e) => setBaixaModal({ ...baixaModal, dataPagamento: e.target.value })}
-                  className="w-full border-2 border-teal-500 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-sm font-medium text-gray-800 shadow-xs focus:border-emerald-500 focus:outline-none focus:ring-3 focus:ring-emerald-500/20 transition"
                 />
               </div>
 
               {/* Forma de pagamento */}
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                  Forma de Pagamento *
+                <label className="flex items-center gap-1.5 text-xs font-bold text-gray-700 uppercase mb-1.5">
+                  <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Forma de Pagamento *</span>
                 </label>
                 <select
                   value={baixaModal.formaPagamento}
                   onChange={(e) => setBaixaModal({ ...baixaModal, formaPagamento: e.target.value })}
-                  className="w-full border-2 border-teal-500 rounded-lg p-2 text-sm focus:outline-none bg-white font-semibold"
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-sm font-semibold text-gray-800 shadow-xs focus:border-emerald-500 focus:outline-none focus:ring-3 focus:ring-emerald-500/20 transition cursor-pointer"
                 >
                   <option value="pix">Pix</option>
                   <option value="boleto">Boleto Bancário</option>
@@ -535,34 +584,77 @@ export default function ConecFinanceiroPage() {
 
               {/* Observações */}
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                  Observações Financeiras
+                <label className="flex items-center gap-1.5 text-xs font-bold text-gray-700 uppercase mb-1.5">
+                  <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Observações Financeiras</span>
                 </label>
                 <textarea
                   value={baixaModal.observacoes}
-                  placeholder="Ex: Pagamento recebido offline em mãos..."
+                  placeholder="Ex: Pagamento recebido offline em mãos ou comprovante conferido..."
                   onChange={(e) => setBaixaModal({ ...baixaModal, observacoes: e.target.value })}
-                  className="w-full border-2 border-teal-500 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 h-20"
+                  className="w-full rounded-xl border border-gray-300 bg-white p-3 text-sm text-gray-800 shadow-xs focus:border-emerald-500 focus:outline-none focus:ring-3 focus:ring-emerald-500/20 transition h-20 resize-none"
                 />
               </div>
             </div>
 
             {/* Footer */}
-            <div className="bg-gray-50 px-6 py-4 flex justify-end gap-2 border-t border-gray-100">
+            <div className="bg-white px-6 py-4 flex items-center justify-between border-t border-gray-200">
               <button
+                type="button"
                 onClick={() => setBaixaModal(null)}
-                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold rounded-lg text-xs transition"
+                disabled={baixaLoading}
+                className="px-5 py-2.5 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-100 font-semibold text-sm transition cursor-pointer disabled:opacity-50"
               >
                 Cancelar
               </button>
               <button
+                type="button"
                 onClick={handleConfirmarPagamento}
                 disabled={baixaLoading}
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg text-xs transition flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white font-bold text-sm rounded-xl shadow-md hover:shadow-lg transition flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {baixaLoading ? 'Confirmando...' : 'Confirmar Pagamento'}
+                {baixaLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Confirmando...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Confirmar Pagamento</span>
+                  </>
+                )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal / Toast de Notificação */}
+      {notificacao && notificacao.isOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center border border-gray-200 animate-in fade-in zoom-in-95 duration-200">
+            <div className={`w-14 h-14 mx-auto rounded-full flex items-center justify-center mb-4 ${
+              notificacao.tipo === 'success' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'
+            }`}>
+              {notificacao.tipo === 'success' ? (
+                <CheckCircle2 className="w-8 h-8" />
+              ) : (
+                <AlertCircle className="w-8 h-8" />
+              )}
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">{notificacao.titulo}</h3>
+            <p className="text-sm text-gray-600 mb-6">{notificacao.mensagem}</p>
+            <button
+              onClick={() => setNotificacao(null)}
+              className={`w-full py-2.5 px-4 rounded-xl font-bold text-sm text-white shadow-md transition cursor-pointer ${
+                notificacao.tipo === 'success'
+                  ? 'bg-emerald-600 hover:bg-emerald-700'
+                  : 'bg-red-600 hover:bg-red-700'
+              }`}
+            >
+              OK
+            </button>
           </div>
         </div>
       )}
