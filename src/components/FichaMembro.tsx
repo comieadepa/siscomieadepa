@@ -233,7 +233,16 @@ export default function FichaMembro({ membro, dadosIgreja, fotoUrl, isCandidato 
                 </div>
               </td>
               <td style={{ verticalAlign: 'middle', paddingLeft: '6px', textAlign: 'right' }}>
-                <QRCode value={membro.uniqueId || membro.id} size={52} level="L" fgColor="#003d7a" bgColor="#ffffff" />
+                <QRCode
+                  value={`https://www.siscomieadepa.org/autentica_qrcode-05985642/${membro.uniqueId || membro.id}`}
+                  size={56}
+                  level="M"
+                  fgColor="#003d7a"
+                  bgColor="#ffffff"
+                />
+                <div style={{ fontSize: '6px', color: '#555', textAlign: 'center', marginTop: '1px', letterSpacing: '0.3px' }}>
+                  Verifique em siscomieadepa.org
+                </div>
               </td>
             </tr>
           </tbody>
