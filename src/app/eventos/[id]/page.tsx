@@ -6397,6 +6397,9 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
   const [salvandoCup,   setSalvandoCup]   = useState(false);
   const [modoEdicaoCup, setModoEdicaoCup] = useState(false);
 
+  const isAGO = evento.departamento === 'AGO';
+  const confAgo = (evento as any)?.configuracoes_ago as Record<string, any> | null;
+
   const [usarTipos,     setUsarTipos]     = useState(evento?.usar_tipos_inscricao ?? false);
   const [salvandoFlag,  setSalvandoFlag]  = useState(false);
   const [tipos,         setTipos]         = useState<Array<{
@@ -6405,12 +6408,18 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
     valor: string;
     inclui_alimentacao: boolean;
     inclui_hospedagem: boolean;
+    cortesia?: boolean;
+    limite_vagas?: number | null;
+    quantidade_refeicoes?: number;
+    administrativo?: boolean;
     ativo: boolean;
     ordem: number;
     desconto_codigo?: string;
     desconto_valor?: string;
     desconto_ativo?: boolean;
   }>>([]);
+  const [loadingTipos,  setLoadingTipos]  = useState(true);
+  const [erroTipos,     setErroTipos]     = useState<string | null>(null);
   const [salvandoTipos, setSalvandoTipos] = useState(false);
   const [tiposMsg,      setTiposMsg]      = useState('');
 
@@ -6431,11 +6440,27 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
       .then(j => setCupons(j.cupons ?? []))
       .catch(() => {});
 
+    setLoadingTipos(true);
+    setErroTipos(null);
     fetch(`/api/eventos/${evento.id}/tipos-inscricao`)
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then(j => {
-        const t = (j.tipos ?? []) as Array<{id?:string;nome:string;valor:number;inclui_alimentacao:boolean;inclui_hospedagem:boolean;ativo:boolean;ordem:number}>;
-        const confAgo = (evento as any)?.configuracoes_ago as Record<string, any> | null;
+        const t = (j.tipos ?? []) as Array<{
+          id?: string;
+          nome: string;
+          valor: number;
+          inclui_alimentacao: boolean;
+          inclui_hospedagem: boolean;
+          cortesia?: boolean;
+          limite_vagas?: number | null;
+          quantidade_refeicoes?: number;
+          administrativo?: boolean;
+          ativo: boolean;
+          ordem: number;
+        }>;
         const descontosTipos = confAgo?.descontos_tipos || {};
 
         if (t.length > 0) {
@@ -6447,6 +6472,10 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
               ativo: x.ativo ?? true,
               inclui_alimentacao: !!x.inclui_alimentacao,
               inclui_hospedagem: !!x.inclui_hospedagem,
+              cortesia: !!x.cortesia,
+              limite_vagas: x.limite_vagas,
+              quantidade_refeicoes: x.quantidade_refeicoes,
+              administrativo: !!x.administrativo,
               ordem: x.ordem ?? (i + 1),
               desconto_codigo: descInfo.desconto_codigo || '',
               desconto_valor: descInfo.desconto_valor !== undefined ? String(descInfo.desconto_valor) : '',
@@ -6454,13 +6483,23 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
             };
           }));
         } else {
-          setTipos([
-            { nome: 'Plenárias',                              valor: '', inclui_alimentacao: false, inclui_hospedagem: false, ativo: true, ordem: 1, desconto_codigo: '', desconto_valor: '', desconto_ativo: true },
-            { nome: 'Plenárias + Alimentação',                valor: '', inclui_alimentacao: true,  inclui_hospedagem: false, ativo: true, ordem: 2, desconto_codigo: '', desconto_valor: '', desconto_ativo: true },
-            { nome: 'Plenárias + Alimentação + Hospedagem',   valor: '', inclui_alimentacao: true,  inclui_hospedagem: true,  ativo: true, ordem: 3, desconto_codigo: '', desconto_valor: '', desconto_ativo: true },
-          ]);
+          if (evento.departamento === 'AGO') {
+            setTipos([]);
+          } else {
+            setTipos([
+              { nome: 'Plenárias',                              valor: '', inclui_alimentacao: false, inclui_hospedagem: false, ativo: true, ordem: 1, desconto_codigo: '', desconto_valor: '', desconto_ativo: true },
+              { nome: 'Plenárias + Alimentação',                valor: '', inclui_alimentacao: true,  inclui_hospedagem: false, ativo: true, ordem: 2, desconto_codigo: '', desconto_valor: '', desconto_ativo: true },
+              { nome: 'Plenárias + Alimentação + Hospedagem',   valor: '', inclui_alimentacao: true,  inclui_hospedagem: true,  ativo: true, ordem: 3, desconto_codigo: '', desconto_valor: '', desconto_ativo: true },
+            ]);
+          }
         }
-      }).catch(() => {});
+      })
+      .catch(err => {
+        setErroTipos(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        setLoadingTipos(false);
+      });
 
     if (evento.departamento === 'AGO' && evento.permite_hospedagem) {
       fetch(`/api/eventos/${evento.id}/alojamentos`)
@@ -6684,16 +6723,130 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
       {/* ══ 2. INSCRIÇÕES E VALORES ═════════════════════════════════ */}
       <div className={card}>
         <div className={hd}>
-          <h3 className={hdT}>🎟️ Inscrições e Valores</h3>
+          <div className="flex items-center gap-2">
+            <h3 className={hdT}>🎟️ Inscrições e Valores {isAGO ? '— Categorias Oficiais AGO' : ''}</h3>
+            {isAGO && (
+              <span className="text-[11px] font-semibold bg-blue-100 text-[#123b63] px-2 py-0.5 rounded-full">
+                {tipos.length} categoria(s)
+              </span>
+            )}
+          </div>
           {podeEditar && (
             <button type="button" onClick={handleEditar}
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition">
-              ✏️ Editar limites
+              ✏️ {isAGO ? 'Editar Categorias na AGO' : 'Editar limites'}
             </button>
           )}
         </div>
-        <div className="p-6 space-y-5">
-
+        {isAGO ? (
+          <div className="p-6 space-y-4">
+            {loadingTipos ? (
+              <div className="py-8 text-center text-sm text-gray-500 animate-pulse">
+                Carregando categorias oficiais da AGO...
+              </div>
+            ) : erroTipos ? (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                <p className="font-semibold">⚠️ Não foi possível carregar as categorias no momento:</p>
+                <p className="text-xs mt-1 text-amber-700">{erroTipos}</p>
+              </div>
+            ) : tipos.length === 0 ? (
+              <div className="p-6 text-center border-2 border-dashed border-gray-200 rounded-xl space-y-3">
+                <p className="text-sm font-medium text-gray-600">Nenhuma categoria configurada para esta AGO no banco de dados.</p>
+                {podeEditar && (
+                  <button type="button" onClick={handleEditar}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#123b63] text-white text-xs font-semibold rounded-lg hover:bg-[#0f2a45] transition">
+                    ✏️ Configurar Categorias Oficiais
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="overflow-x-auto border border-gray-100 rounded-xl shadow-xs">
+                <table className="w-full text-xs text-left">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100 text-gray-600 font-semibold uppercase tracking-wider text-[10px]">
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Categoria</th>
+                      <th className="px-4 py-3 text-right">Valor</th>
+                      <th className="px-4 py-3 text-center">Alimentação</th>
+                      <th className="px-4 py-3 text-center">Hospedagem</th>
+                      <th className="px-4 py-3 text-right">Limite de Vagas</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {tipos.map((cat, idx) => {
+                      const valorNum = parseFloat(cat.valor) || 0;
+                      return (
+                        <tr key={cat.id || idx} className={`hover:bg-gray-50/80 transition ${!cat.ativo ? "opacity-50 bg-gray-50/50" : ""}`}>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${cat.ativo ? "bg-emerald-100 text-emerald-800" : "bg-gray-200 text-gray-600"}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${cat.ativo ? "bg-emerald-600" : "bg-gray-500"}`} />
+                              {cat.ativo ? "Ativo" : "Inativo"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <span>{cat.nome}</span>
+                              {cat.administrativo && (
+                                <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono font-normal" title="Categoria administrativa gerenciada automaticamente">
+                                  🔒 Automática
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-right whitespace-nowrap">
+                            {cat.cortesia ? (
+                              <span className="font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[11px]">
+                                🎁 Cortesia
+                              </span>
+                            ) : valorNum === 0 && (cat.nome.toUpperCase().includes("CAMPO MISSION") || cat.nome.toUpperCase().includes("MISSIONÁRIO")) ? (
+                              <span className="font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 text-[11px]" title="Valor especial definido nas regras de Campo Missionário">
+                                🌐 Regra CM
+                              </span>
+                            ) : (
+                              <span className="font-mono font-bold text-gray-900 text-xs">
+                                R$ {valorNum.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-center whitespace-nowrap">
+                            {cat.inclui_alimentacao ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 font-medium">
+                                🍽️ {cat.quantidade_refeicoes ? `${cat.quantidade_refeicoes} ref.` : "Sim"}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-center whitespace-nowrap">
+                            {cat.inclui_hospedagem ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] text-sky-700 font-semibold bg-sky-50 px-2 py-0.5 rounded border border-sky-100">
+                                🏨 Sim
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right whitespace-nowrap font-mono text-gray-700">
+                            {cat.limite_vagas ? `${cat.limite_vagas} vagas` : <span className="text-gray-400 font-sans">Sem limite</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1">
+              <span>* Categorias oficiais e valores consultados diretamente de <code>evento_tipos_inscricao</code>.</span>
+              {podeEditar && (
+                <button type="button" onClick={handleEditar} className="text-[#123b63] font-semibold hover:underline">
+                  Alterar valores ou categorias na edição do evento →
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="p-6 space-y-5">
           {/* Toggle: valor único ou tipos de inscrição */}
           <div className="flex items-center justify-between gap-4 bg-gray-50 rounded-xl px-4 py-3">
             <div>
@@ -6851,7 +7004,8 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
               )}
             </div>
           )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* ══ 4. CUPONS DE DESCONTO ════════════════════════════════════ */}
@@ -7102,51 +7256,177 @@ function TabConfiguracoes({ evento, nomeSup, nomeCampo, podeEditar }: {
 
 
 
-      {/* ══ 5. HOSPEDAGEM AGO (condicional) ════════════════════════ */}
-      {evento.departamento === 'AGO' && evento.permite_hospedagem && (
+      {/* ══ 5. CONFIGURAÇÕES ESPECÍFICAS AGO (condicional) ═════════ */}
+      {isAGO && (
         <div className={card}>
           <div className={hd}>
-            <h3 className={hdT}>🏨 Hospedagem AGO — Alojamentos</h3>
-            <span className="text-xs text-gray-400">{alojamentos.filter(a => a.ativo).length} ativo(s)</span>
+            <div className="flex items-center gap-2">
+              <h3 className={hdT}>🏛️ Configurações Especializadas da AGO</h3>
+              <span className="text-[11px] font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                Ativo
+              </span>
+            </div>
+            {podeEditar && (
+              <button type="button" onClick={handleEditar}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition">
+                ✏️ Editar Configurações AGO
+              </button>
+            )}
           </div>
-          {alojamentos.length === 0 ? (
-            <div className="p-6">
-              <p className="text-sm text-gray-400">Nenhum alojamento cadastrado. Use a aba <span className="font-semibold">🏨 Hospedagem</span> para criar.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-100">
-                    <th className="text-left px-5 py-2.5 font-semibold text-gray-500">Alojamento</th>
-                    <th className="text-left px-4 py-2.5 font-semibold text-gray-500">Público</th>
-                    <th className="text-right px-4 py-2.5 font-semibold text-gray-500">Vagas</th>
-                    <th className="text-right px-4 py-2.5 font-semibold text-gray-500">⬇ Inf.</th>
-                    <th className="text-right px-4 py-2.5 font-semibold text-gray-500">⬆ Sup.</th>
-                    <th className="text-right px-4 py-2.5 font-semibold text-gray-500">Livres</th>
-                    <th className="text-center px-4 py-2.5 font-semibold text-gray-500">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {alojamentos.map(a => (
-                    <tr key={a.id} className={`hover:bg-gray-50 transition ${!a.ativo ? 'opacity-50' : ''}`}>
-                      <td className="px-5 py-2.5 font-medium text-gray-900">{a.nome}</td>
-                      <td className="px-4 py-2.5 text-gray-600">{PUBLICO_LABEL[a.publico] ?? a.publico}</td>
-                      <td className="px-4 py-2.5 text-right font-mono">{a.total_vagas}</td>
-                      <td className="px-4 py-2.5 text-right font-mono text-sky-700">{a.camas_inferiores}</td>
-                      <td className="px-4 py-2.5 text-right font-mono text-gray-600">{a.camas_superiores}</td>
-                      <td className="px-4 py-2.5 text-right font-mono text-emerald-700">{a.vagas_livres ?? '—'}</td>
-                      <td className="px-4 py-2.5 text-center">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${a.ativo ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
-                          {a.ativo ? 'Ativo' : 'Inativo'}
+
+          <div className="p-6 space-y-6">
+            {/* 1. Hospedagem & Setores */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                  🏨 Hospedagem e Setores Cadastrados
+                </h4>
+                <span className="text-[11px] text-gray-500">
+                  {confAgo?.setores?.length || 0} setor(es) configurado(s)
+                </span>
+              </div>
+
+              {/* Badges de Grupos */}
+              {confAgo?.grupos && (
+                <div className="bg-gray-50 rounded-xl p-3 mb-4 border border-gray-100">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Grupos de Hospedagem Ativos</p>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(confAgo.grupos).map(([grpKey, grpVal]: [string, any]) => {
+                      const isGrpAtivo = grpVal?.ativo !== false;
+                      return (
+                        <span key={grpKey} className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg font-medium border ${isGrpAtivo ? "bg-white border-gray-200 text-gray-800 shadow-2xs" : "bg-gray-100 border-transparent text-gray-400"}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${isGrpAtivo ? "bg-sky-500" : "bg-gray-300"}`} />
+                          {grpVal?.nome || grpKey}
                         </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Tabela de Setores */}
+              {Array.isArray(confAgo?.setores) && confAgo.setores.length > 0 ? (
+                <div className="overflow-x-auto border border-gray-100 rounded-xl shadow-xs">
+                  <table className="w-full text-xs text-left">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-100 text-gray-600 font-semibold uppercase tracking-wider text-[10px]">
+                        <th className="px-4 py-2.5">Setor</th>
+                        <th className="px-4 py-2.5">Grupo</th>
+                        <th className="px-4 py-2.5">Tipo Leito</th>
+                        <th className="px-4 py-2.5 text-right">Capacidade</th>
+                        <th className="px-4 py-2.5 text-right">Leitos Inf.</th>
+                        <th className="px-4 py-2.5 text-right">Vagas</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {confAgo.setores.map((setor: any, sIdx: number) => (
+                        <tr key={setor.id || sIdx} className="hover:bg-gray-50 transition">
+                          <td className="px-4 py-2.5 font-semibold text-gray-900">{setor.nome || `Setor ${sIdx + 1}`}</td>
+                          <td className="px-4 py-2.5 text-gray-600">{setor.grupo || "—"}</td>
+                          <td className="px-4 py-2.5 text-gray-600 capitalize">{setor.tipos_leito?.join(", ") || setor.tipo || "—"}</td>
+                          <td className="px-4 py-2.5 text-right font-mono text-gray-800">{setor.leitos ?? setor.capacidade ?? "—"}</td>
+                          <td className="px-4 py-2.5 text-right font-mono text-sky-700">{setor.leitos_inferiores ?? "—"}</td>
+                          <td className="px-4 py-2.5 text-right font-mono font-semibold text-[#123b63]">{setor.leitos ?? setor.vagas ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 bg-gray-50 p-3 rounded-lg border border-gray-100">Nenhum setor de hospedagem registrado em configuracoes_ago.</p>
+              )}
             </div>
-          )}
+
+            {/* 2. Plenárias */}
+            <div className="pt-4 border-t border-gray-100">
+              <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                📜 Controle de Frequência em Plenárias
+              </h4>
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                {confAgo?.plenarias_datas && Array.isArray(confAgo.plenarias_datas) && confAgo.plenarias_datas.length > 0 ? (
+                  <div>
+                    <p className="text-xs text-gray-600 mb-2 font-medium">Dias de Plenária com registro de presença obrigatório:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {confAgo.plenarias_datas.map((dataStr: string, pIdx: number) => (
+                        <span key={pIdx} className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-800 font-mono shadow-2xs">
+                          📅 {fmtData(dataStr)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500">Nenhuma data de plenária cadastrada.</p>
+                )}
+              </div>
+            </div>
+
+            {/* 3. Regras de Campo Missionário */}
+            <div className="pt-4 border-t border-gray-100">
+              <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                🌐 Desconto / Regras para Campo Missionário
+              </h4>
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                {confAgo?.campo_missionario?.ativo ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-2xs">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Pastor Presidente (CM)</span>
+                      <span className="text-sm font-bold font-mono text-[#123b63] mt-1 block">
+                        R$ {Number(confAgo.campo_missionario.valor_pastor_presidente_campo_missionario || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-2xs">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Esposa de Pastor Presidente (CM)</span>
+                      <span className="text-sm font-bold font-mono text-[#123b63] mt-1 block">
+                        R$ {Number(confAgo.campo_missionario.valor_esposa_campo_missionario || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-500 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-gray-400" />
+                    Regra de valor diferenciado para Campo Missionário desativada.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 4. Alojamentos físicos (se houver) */}
+            {evento.permite_hospedagem && alojamentos.length > 0 && (
+              <div className="pt-4 border-t border-gray-100">
+                <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  🛏️ Alojamentos Físicos Vinculados
+                </h4>
+                <div className="overflow-x-auto border border-gray-100 rounded-xl shadow-xs">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-100">
+                        <th className="text-left px-4 py-2 font-semibold text-gray-500">Alojamento</th>
+                        <th className="text-left px-4 py-2 font-semibold text-gray-500">Público</th>
+                        <th className="text-right px-4 py-2 font-semibold text-gray-500">Vagas</th>
+                        <th className="text-right px-4 py-2 font-semibold text-gray-500">Livres</th>
+                        <th className="text-center px-4 py-2 font-semibold text-gray-500">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {alojamentos.map(a => (
+                        <tr key={a.id} className={`hover:bg-gray-50 transition ${!a.ativo ? "opacity-50" : ""}`}>
+                          <td className="px-4 py-2 font-medium text-gray-900">{a.nome}</td>
+                          <td className="px-4 py-2 text-gray-600">{PUBLICO_LABEL[a.publico] ?? a.publico}</td>
+                          <td className="px-4 py-2 text-right font-mono">{a.total_vagas}</td>
+                          <td className="px-4 py-2 text-right font-mono text-emerald-700">{a.vagas_livres ?? "—"}</td>
+                          <td className="px-4 py-2 text-center">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${a.ativo ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
+                              {a.ativo ? "Ativo" : "Inativo"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
