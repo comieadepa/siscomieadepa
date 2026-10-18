@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
     vagasHospedagem = Math.max(0, evento.limite_hospedagem - usadas);
   }
 
+  let capacidadePorGrupo: Record<string, number> = {};
   let vagasPorGrupo: Record<string, number> = {};
   let filaEsperaPorGrupo: Record<string, number> = {};
 
@@ -79,7 +80,7 @@ export async function GET(request: NextRequest) {
       misto:           'Misto',
     };
 
-    const capacidadePorGrupo: Record<string, number> = {
+    capacidadePorGrupo = {
       'Mulheres': 0,
       'Pastor Presidente / Pastor Jubilado': 0,
       'Pastor Auxiliar / Juventude': 0,
@@ -135,6 +136,7 @@ export async function GET(request: NextRequest) {
     tipos: tipos ?? [],
     totalInscritos,
     vagasHospedagem,
+    capacidadePorGrupo,
     vagasPorGrupo,
     filaEsperaPorGrupo,
   });

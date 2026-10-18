@@ -321,6 +321,7 @@ export default function InscricaoPublicaPage() {
   const [campos,      setCampos]      = useState<Campo[]>([]);
   const [tipos,       setTipos]       = useState<TipoInscricao[]>([]);
   const [vagasHospedagem, setVagasHospedagem] = useState<number | null>(null);
+  const [capacidadePorGrupo, setCapacidadePorGrupo] = useState<Record<string, number>>({});
   const [vagasPorGrupo, setVagasPorGrupo] = useState<Record<string, number>>({});
   const [loading,     setLoading]     = useState(true);
   const [estadoErro,  setEstadoErro]  = useState<'nao_encontrado' | 'fechado' | 'encerrado' | 'esgotado' | null>(null);
@@ -450,6 +451,7 @@ export default function InscricaoPublicaPage() {
     if (ev.limite_hospedagem && vagasHosp !== null) {
       setVagasHospedagem(vagasHosp);
     }
+    setCapacidadePorGrupo(evJson?.capacidadePorGrupo || {});
     setVagasPorGrupo(evJson?.vagasPorGrupo || {});
 
     // Busca tipos de inscrição
@@ -830,8 +832,82 @@ export default function InscricaoPublicaPage() {
     hosp_necessidade_especial: !!form.hosp_necessidade_especial,
     hosp_possui_comorbidade: !!form.hosp_possui_comorbidade,
   }) : '';
-  const mainVagasGrupo = mainGroup ? (vagasPorGrupo[mainGroup] ?? 0) : 0;
-  const mainGrupoEsgotado = evento?.departamento === 'AGO' && mainGroup && mainVagasGrupo <= 0;
+
+  function getStatusHospedagem(grupo: string | null | undefined, pode: boolean) {
+    if (!pode || !evento?.permite_hospedagem) {
+      return {
+        disponivel: false,
+        motivo: 'inelegivel' as const,
+        mensagem: 'Esta inscrição/categoria não possui direito a hospedagem.',
+        vagas: 0,
+        capacidade: 0,
+      };
+    }
+
+    if (evento.departamento === 'AGO') {
+      if (!grupo || grupo === 'Misto') {
+        return {
+          disponivel: false,
+          motivo: 'aguardando_dados' as const,
+          mensagem: 'Informe sexo, data de nascimento e perfil para verificar a disponibilidade de hospedagem.',
+          vagas: 0,
+          capacidade: 0,
+        };
+      }
+
+      const capacidade = capacidadePorGrupo[grupo] ?? 0;
+      const vagas = vagasPorGrupo[grupo] ?? 0;
+
+      if (capacidade <= 0) {
+        return {
+          disponivel: false,
+          motivo: 'nao_configurada' as const,
+          mensagem: `Hospedagem não configurada para o grupo ${grupo} neste evento.`,
+          vagas: 0,
+          capacidade: 0,
+        };
+      }
+
+      if (vagas <= 0) {
+        return {
+          disponivel: false,
+          motivo: 'lotada' as const,
+          mensagem: `Não há mais vagas de hospedagem disponíveis para o grupo ${grupo} (vagas esgotadas).`,
+          vagas: 0,
+          capacidade,
+        };
+      }
+
+      return {
+        disponivel: true,
+        motivo: 'disponivel' as const,
+        mensagem: `Grupo: ${grupo} (${vagas} vagas restantes)`,
+        vagas,
+        capacidade,
+      };
+    }
+
+    // Eventos comuns não-AGO
+    if (vagasHospedagem !== null && vagasHospedagem <= 0) {
+      return {
+        disponivel: false,
+        motivo: 'lotada' as const,
+        mensagem: 'Vagas de hospedagem esgotadas para este evento.',
+        vagas: 0,
+        capacidade: evento.limite_hospedagem ?? 0,
+      };
+    }
+
+    return {
+      disponivel: true,
+      motivo: 'disponivel' as const,
+      mensagem: vagasHospedagem !== null ? `(${vagasHospedagem} vagas restantes)` : 'Hospedagem disponível',
+      vagas: vagasHospedagem ?? 9999,
+      capacidade: evento.limite_hospedagem ?? 9999,
+    };
+  }
+
+  const statusHospTitular = getStatusHospedagem(mainGroup, podeHospedagem);
 
 
   const cupomTipo = cupomMeta?.tipo ?? null;
@@ -1152,13 +1228,17 @@ export default function InscricaoPublicaPage() {
   ]);
 
   useEffect(() => {
+    if (!podeHospedagem || !statusHospTitular.disponivel) {
+      setSolicitaHospedagem(false);
+      return;
+    }
     if (tipoSelecionado) {
       const checkboxInvisivel = !!(tipoSelecionado.inclui_hospedagem && evento?.departamento !== 'AGO');
       setSolicitaHospedagem(checkboxInvisivel);
     } else {
       setSolicitaHospedagem(false);
     }
-  }, [tipoSelecionado, evento?.departamento]);
+  }, [tipoSelecionado, evento?.departamento, podeHospedagem, statusHospTitular.disponivel]);
 
   const erroNomeTitular = erroForm === 'Nome completo é obrigatório.';
   const erroCpfTitular = erroForm === 'CPF é obrigatório.';
@@ -1339,7 +1419,7 @@ export default function InscricaoPublicaPage() {
         supervisao_id:   form.visitante ? null : (form.supervisao_id || null),
         campo_id:        form.visitante ? null : (form.campo_id || null),
         // Regra 8: Hospedagem é opt-in quando o evento/tipo permitir
-        hospedagem:      evento.usar_tipos_inscricao ? solicitaHospedagem : form.hospedagem,
+        hospedagem:      (podeHospedagem && statusHospTitular.disponivel) ? (evento.usar_tipos_inscricao ? solicitaHospedagem : form.hospedagem) : false,
         alimentacao:     !!tipoSelecionado?.inclui_alimentacao,
         brinde:          form.brinde,
         qr_code:         qr,
@@ -1347,11 +1427,11 @@ export default function InscricaoPublicaPage() {
         cupom_codigo:    cupomStatus === 'ok' && cupomCodigo ? cupomCodigo.toUpperCase() : null,
         opcao_pagamento: opcaoPagamento,
         // Campos hospedagem AGO
-        hosp_necessidade_especial:  form.hosp_necessidade_especial,
-        hosp_descricao_necessidade: form.hosp_descricao_necessidade.trim() || null,
-        hosp_observacoes:           form.hosp_observacoes.trim() || null,
-        hosp_possui_comorbidade:    form.hosp_possui_comorbidade,
-        hosp_descricao_comorbidade: form.hosp_descricao_comorbidade.trim() || null,
+        hosp_necessidade_especial:  (podeHospedagem && statusHospTitular.disponivel) ? form.hosp_necessidade_especial : false,
+        hosp_descricao_necessidade: (podeHospedagem && statusHospTitular.disponivel) ? (form.hosp_descricao_necessidade.trim() || null) : null,
+        hosp_observacoes:           (podeHospedagem && statusHospTitular.disponivel) ? (form.hosp_observacoes.trim() || null) : null,
+        hosp_possui_comorbidade:    (podeHospedagem && statusHospTitular.disponivel) ? form.hosp_possui_comorbidade : false,
+        hosp_descricao_comorbidade: (podeHospedagem && statusHospTitular.disponivel) ? (form.hosp_descricao_comorbidade.trim() || null) : null,
         lgpd_aceito:                true,
       });
 
@@ -1363,26 +1443,47 @@ export default function InscricaoPublicaPage() {
       body.visitante = !!form.visitante;
 
       if (!fluxoCampoMissionarioEspecial && modoLote && participantesExtra.length > 0) {
-        body.participantes = participantesExtra.map(p => normalizePayloadUppercase({
-          ...p,
-          cpf:           p.cpf.replace(/\D/g, ''),
-          data_nascimento: formatDmaToYmd(p.data_nascimento) || null,
-          tipo_inscricao: p.tipo_inscricao || null,
-          hospedagem:    !!p.hospedagem,
-          hosp_necessidade_especial:  !!p.hospedagem && !!p.hosp_necessidade_especial,
-          hosp_descricao_necessidade: !!p.hospedagem ? (p.hosp_descricao_necessidade.trim() || null) : null,
-          hosp_observacoes:           !!p.hospedagem ? (p.hosp_observacoes.trim() || null) : null,
-          hosp_possui_comorbidade:    !!p.hospedagem && !!p.hosp_possui_comorbidade,
-          hosp_descricao_comorbidade: !!p.hospedagem ? (p.hosp_descricao_comorbidade.trim() || null) : null,
-          brinde:        false,
-          qr_code:       generateQRCodeToken(),
-          lgpd_aceito:   true,
-        }));
+        body.participantes = participantesExtra.map(p => {
+          const tipoExtra = tipos.find(t => t.nome === p.tipo_inscricao);
+          const podeHospExtra = !!evento.permite_hospedagem && (
+            evento.departamento === 'AGO'
+              ? true
+              : (tipoExtra ? !!tipoExtra.inclui_hospedagem : !evento.usar_tipos_inscricao)
+          );
+          const grpExtra = resolveGrupoHospedagemAGO({
+            sexo: p.sexo || null,
+            data_nascimento: formatDmaToYmd(p.data_nascimento) || null,
+            tipo_inscricao: p.tipo_inscricao || null,
+            hosp_necessidade_especial: !!p.hosp_necessidade_especial,
+            hosp_possui_comorbidade: !!p.hosp_possui_comorbidade,
+          });
+          const statusExtra = getStatusHospedagem(grpExtra, podeHospExtra);
+          const hospExtraEfetiva = !!p.hospedagem && statusExtra.disponivel;
+
+          return normalizePayloadUppercase({
+            ...p,
+            cpf:           p.cpf.replace(/\D/g, ''),
+            data_nascimento: formatDmaToYmd(p.data_nascimento) || null,
+            tipo_inscricao: p.tipo_inscricao || null,
+            hospedagem:    hospExtraEfetiva,
+            hosp_necessidade_especial:  hospExtraEfetiva && !!p.hosp_necessidade_especial,
+            hosp_descricao_necessidade: hospExtraEfetiva ? (p.hosp_descricao_necessidade.trim() || null) : null,
+            hosp_observacoes:           hospExtraEfetiva ? (p.hosp_observacoes.trim() || null) : null,
+            hosp_possui_comorbidade:    hospExtraEfetiva && !!p.hosp_possui_comorbidade,
+            hosp_descricao_comorbidade: hospExtraEfetiva ? (p.hosp_descricao_comorbidade.trim() || null) : null,
+            brinde:        false,
+            qr_code:       generateQRCodeToken(),
+            lgpd_aceito:   true,
+          });
+        });
       }
 
       // AGO Campo Missionário — inscrição da esposa junto
       if (fluxoCampoMissionarioEspecial && incluirEsposa && formEsposa.nome.trim() && evento.departamento === 'AGO') {
         body.incluir_esposa = true;
+        const statusEsposa = getStatusHospedagem(grupoHospedagemEsposaPrevisto, true);
+        const hospEsposaEfetiva = hospEsposa.solicitar && statusEsposa.disponivel;
+
         body.esposa = normalizePayloadUppercase({
           nome_inscrito:   formEsposa.nome.trim(),
           cpf:             formEsposa.cpf,
@@ -1390,14 +1491,14 @@ export default function InscricaoPublicaPage() {
           whatsapp:        formEsposa.whatsapp.trim() || null,
           sexo:            'F',
           tipo_inscricao:  'Esposa de Pastor Presidente Campo Missionário',
-          hospedagem:      hospEsposa.solicitar,
+          hospedagem:      hospEsposaEfetiva,
           qr_code:         generateQRCodeToken(),
           // Campos hospedagem da esposa
-          hosp_necessidade_especial:  hospEsposa.hosp_necessidade_especial,
-          hosp_descricao_necessidade: hospEsposa.hosp_descricao_necessidade.trim() || null,
-          hosp_observacoes:           hospEsposa.hosp_observacoes.trim() || null,
-          hosp_possui_comorbidade:    hospEsposa.hosp_possui_comorbidade,
-          hosp_descricao_comorbidade: hospEsposa.hosp_descricao_comorbidade.trim() || null,
+          hosp_necessidade_especial:  hospEsposaEfetiva && hospEsposa.hosp_necessidade_especial,
+          hosp_descricao_necessidade: hospEsposaEfetiva ? (hospEsposa.hosp_descricao_necessidade.trim() || null) : null,
+          hosp_observacoes:           hospEsposaEfetiva ? (hospEsposa.hosp_observacoes.trim() || null) : null,
+          hosp_possui_comorbidade:    hospEsposaEfetiva && hospEsposa.hosp_possui_comorbidade,
+          hosp_descricao_comorbidade: hospEsposaEfetiva ? (hospEsposa.hosp_descricao_comorbidade.trim() || null) : null,
           lgpd_aceito:                true,
         });
       }
@@ -2155,11 +2256,7 @@ export default function InscricaoPublicaPage() {
             {/* Informação sobre Alimentação */}
             {evento.usar_tipos_inscricao && tipoSelecionado && (
               <div className="mb-5 p-3.5 bg-gray-50 rounded-xl border border-gray-200 text-xs">
-                {evento.departamento === 'AGO' ? (
-                  <p className="text-emerald-700 font-bold flex items-center gap-1.5">
-                    🍽️ Alimentação inclusa automaticamente para todos os inscritos da AGO — 12 refeições.
-                  </p>
-                ) : tipoSelecionado.inclui_alimentacao ? (
+                {tipoSelecionado.inclui_alimentacao ? (
                   <p className="text-emerald-700 font-bold flex items-center gap-1.5">
                     🍽️ Alimentação inclusa: {tipoSelecionado.quantidade_refeicoes && tipoSelecionado.quantidade_refeicoes > 0 ? `${tipoSelecionado.quantidade_refeicoes} refeições.` : 'Alimentação inclusa nesta inscrição.'}
                   </p>
@@ -2174,7 +2271,7 @@ export default function InscricaoPublicaPage() {
             {/* Campos de hospedagem (opt-in ou inclusa) */}
             {(() => {
               const hospedagemInclusa = (!evento.usar_tipos_inscricao && !!evento.permite_hospedagem) || (!!tipoSelecionado && !!tipoSelecionado.inclui_hospedagem && evento.departamento !== 'AGO');
-              const alimentacaoInclusa = (evento.departamento === 'AGO') || (!evento.usar_tipos_inscricao && !!evento.permite_alimentacao) || (!!tipoSelecionado && !!tipoSelecionado.inclui_alimentacao);
+              const alimentacaoInclusa = (!evento.usar_tipos_inscricao && !!evento.permite_alimentacao) || (!!tipoSelecionado && !!tipoSelecionado.inclui_alimentacao);
 
               const textoInclusos = hospedagemInclusa && alimentacaoInclusa
                 ? '🛏️ Hospedagem e Alimentação inclusas neste evento.'
@@ -2197,21 +2294,35 @@ export default function InscricaoPublicaPage() {
                   )}
 
                   {!hospedagemInclusa && podeHospedagem && (
-                    <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
-                      <label className="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" id="solicita_hospedagem"
-                          checked={solicitaHospedagem}
-                          onChange={e => setSolicitaHospedagem(e.target.checked)}
-                          className="accent-[#123b63]" />
+                    <div className={`mb-3 p-3 rounded-xl border ${!statusHospTitular.disponivel ? 'bg-gray-100/80 border-gray-300' : 'bg-gray-50 border-gray-200'}`}>
+                      <label className={`flex items-start gap-3 select-none ${!statusHospTitular.disponivel ? 'cursor-not-allowed opacity-85' : 'cursor-pointer'}`}>
+                        <input
+                          type="checkbox"
+                          id="solicita_hospedagem"
+                          disabled={!statusHospTitular.disponivel}
+                          checked={statusHospTitular.disponivel && solicitaHospedagem}
+                          onChange={e => {
+                            if (statusHospTitular.disponivel) {
+                              setSolicitaHospedagem(e.target.checked);
+                            }
+                          }}
+                          className="mt-0.5 accent-[#123b63] disabled:cursor-not-allowed"
+                        />
                         <div>
-                          <span className="text-sm font-semibold text-gray-700">🛏️ Desejo solicitar hospedagem</span>
+                          <span className={`text-sm font-semibold ${!statusHospTitular.disponivel ? 'text-gray-500' : 'text-gray-700'}`}>
+                            🛏️ Desejo solicitar hospedagem
+                          </span>
                           <p className="text-xs text-gray-500 mt-0.5">
                             A solicitação não garante alocação. A organização fará a distribuição conforme disponibilidade.
-                            {evento.departamento === 'AGO' && mainGroup ? (mainGroup === 'Misto' ? ' (Informe sexo/data/perfil para verificar vagas de hospedagem.)' : ` (Grupo: ${mainGroup} - ${mainVagasGrupo} vagas restantes)`) : (vagasHospedagem !== null && ` (${vagasHospedagem} vagas restantes)`)}
+                            {statusHospTitular.disponivel && (
+                              <span className="font-medium text-emerald-700 ml-1">
+                                {statusHospTitular.mensagem}
+                              </span>
+                            )}
                           </p>
-                          {mainGrupoEsgotado && mainGroup !== 'Misto' && (
-                            <p className="text-xs text-red-600 font-bold mt-1.5">
-                              ⚠️ Não há mais vagas de hospedagem disponíveis para o grupo {mainGroup}. Você ainda pode concluir a inscrição sem hospedagem.
+                          {!statusHospTitular.disponivel && (
+                            <p className="text-xs text-amber-700 font-semibold mt-1.5 flex items-center gap-1.5">
+                              ⚠️ {statusHospTitular.mensagem}
                             </p>
                           )}
                         </div>
@@ -2373,23 +2484,36 @@ export default function InscricaoPublicaPage() {
 
                     {/* Hospedagem da esposa */}
                     {evento.permite_hospedagem && (() => {
-                      const esposaVagasGrupo = grupoHospedagemEsposaPrevisto ? (vagasPorGrupo[grupoHospedagemEsposaPrevisto] ?? 0) : 0;
-                      const esposaGrupoEsgotado = evento.departamento === 'AGO' && grupoHospedagemEsposaPrevisto && esposaVagasGrupo <= 0;
+                      const statusEsposa = getStatusHospedagem(grupoHospedagemEsposaPrevisto, true);
                       return (
-                        <div className="mt-3 p-3 bg-white border border-purple-200 rounded-lg">
-                          <label className="flex items-start gap-3 cursor-pointer select-none">
-                            <input type="checkbox" checked={hospEsposa.solicitar}
-                              onChange={e => setHospEsposa(h => ({ ...h, solicitar: e.target.checked }))}
-                              className="mt-0.5 accent-purple-700" />
+                        <div className={`mt-3 p-3 rounded-lg border ${!statusEsposa.disponivel ? 'bg-gray-100/80 border-gray-300' : 'bg-white border-purple-200'}`}>
+                          <label className={`flex items-start gap-3 select-none ${!statusEsposa.disponivel ? 'cursor-not-allowed opacity-85' : 'cursor-pointer'}`}>
+                            <input
+                              type="checkbox"
+                              disabled={!statusEsposa.disponivel}
+                              checked={statusEsposa.disponivel && hospEsposa.solicitar}
+                              onChange={e => {
+                                if (statusEsposa.disponivel) {
+                                  setHospEsposa(h => ({ ...h, solicitar: e.target.checked }));
+                                }
+                              }}
+                              className="mt-0.5 accent-purple-700 disabled:cursor-not-allowed"
+                            />
                             <div>
-                              <span className="text-sm font-semibold text-gray-700">🛏️ Desejo solicitar hospedagem para a esposa</span>
+                              <span className={`text-sm font-semibold ${!statusEsposa.disponivel ? 'text-gray-500' : 'text-gray-700'}`}>
+                                🛏️ Desejo solicitar hospedagem para a esposa
+                              </span>
                               <p className="text-xs text-gray-500 mt-0.5">
                                 A hospedagem é independente — cada inscrição decide individualmente.
-                                {evento.departamento === 'AGO' && grupoHospedagemEsposaPrevisto && ` (Grupo: ${grupoHospedagemEsposaPrevisto} - ${esposaVagasGrupo} vagas restantes)`}
+                                {statusEsposa.disponivel && (
+                                  <span className="font-medium text-purple-800 ml-1">
+                                    {statusEsposa.mensagem}
+                                  </span>
+                                )}
                               </p>
-                              {esposaGrupoEsgotado && (
-                                <p className="text-xs text-red-600 font-bold mt-1.5">
-                                  ⚠️ Não há mais vagas de hospedagem disponíveis para o grupo {grupoHospedagemEsposaPrevisto}. Você ainda pode concluir a inscrição sem hospedagem.
+                              {!statusEsposa.disponivel && (
+                                <p className="text-xs text-amber-700 font-semibold mt-1.5 flex items-center gap-1.5">
+                                  ⚠️ {statusEsposa.mensagem}
                                 </p>
                               )}
                             </div>
@@ -2654,11 +2778,7 @@ export default function InscricaoPublicaPage() {
                         if (!tipoExtra) return null;
                         return (
                           <div className="sm:col-span-2 mt-1.5 p-3.5 bg-white rounded-xl border border-gray-200 text-xs">
-                            {evento.departamento === 'AGO' ? (
-                              <p className="text-emerald-700 font-bold flex items-center gap-1.5">
-                                🍽️ Alimentação inclusa automaticamente para todos os inscritos da AGO — 12 refeições.
-                              </p>
-                            ) : tipoExtra.inclui_alimentacao ? (
+                            {tipoExtra.inclui_alimentacao ? (
                               <p className="text-emerald-700 font-bold flex items-center gap-1.5">
                                 🍽️ Alimentação inclusa: {tipoExtra.quantidade_refeicoes && tipoExtra.quantidade_refeicoes > 0 ? `${tipoExtra.quantidade_refeicoes} refeições.` : 'Alimentação inclusa nesta inscrição.'}
                               </p>
@@ -2674,7 +2794,7 @@ export default function InscricaoPublicaPage() {
                       {(() => {
                         const tipoExtra = tipos.find(t => t.nome === p.tipo_inscricao);
                         const extraHospInclusa = (!evento.usar_tipos_inscricao && !!evento.permite_hospedagem) || (!!tipoExtra && !!tipoExtra.inclui_hospedagem && evento.departamento !== 'AGO');
-                        const extraAlimInclusa = (evento.departamento === 'AGO') || (!evento.usar_tipos_inscricao && !!evento.permite_alimentacao) || (!!tipoExtra && !!tipoExtra.inclui_alimentacao);
+                        const extraAlimInclusa = (!evento.usar_tipos_inscricao && !!evento.permite_alimentacao) || (!!tipoExtra && !!tipoExtra.inclui_alimentacao);
 
                         const podeHospedagemExtra = !!evento.permite_hospedagem && (
                           evento.departamento === 'AGO'
@@ -2699,11 +2819,10 @@ export default function InscricaoPublicaPage() {
                           hosp_necessidade_especial: !!p.hosp_necessidade_especial,
                           hosp_possui_comorbidade: !!p.hosp_possui_comorbidade,
                         });
-                        const extraVagasGrupo = extraGroup ? (vagasPorGrupo[extraGroup] ?? 0) : 0;
-                        const extraGrupoEsgotado = evento.departamento === 'AGO' && extraGroup && extraVagasGrupo <= 0;
+                        const statusExtra = getStatusHospedagem(extraGroup, podeHospedagemExtra);
 
                         return (
-                          <div className="sm:col-span-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                          <div className={`sm:col-span-2 rounded-lg border p-3 ${!statusExtra.disponivel ? 'bg-gray-100/80 border-gray-300' : 'bg-amber-50 border-amber-200'}`}>
                             {textoInclusosExtra && (
                               <div className="mb-2 text-xs font-bold text-emerald-800 flex items-center gap-1.5">
                                 {textoInclusosExtra}
@@ -2711,22 +2830,33 @@ export default function InscricaoPublicaPage() {
                             )}
 
                             {!extraHospInclusa && podeHospedagemExtra && (
-                              <label className="flex items-start gap-3 cursor-pointer select-none">
+                              <label className={`flex items-start gap-3 select-none ${!statusExtra.disponivel ? 'cursor-not-allowed opacity-85' : 'cursor-pointer'}`}>
                                 <input
                                   type="checkbox"
-                                  checked={!!p.hospedagem}
-                                  onChange={e => atualizarParticipante(idx, 'hospedagem', e.target.checked)}
-                                  className="mt-0.5 accent-[#123b63]"
+                                  disabled={!statusExtra.disponivel}
+                                  checked={statusExtra.disponivel && !!p.hospedagem}
+                                  onChange={e => {
+                                    if (statusExtra.disponivel) {
+                                      atualizarParticipante(idx, 'hospedagem', e.target.checked);
+                                    }
+                                  }}
+                                  className="mt-0.5 accent-[#123b63] disabled:cursor-not-allowed"
                                 />
                                 <div>
-                                  <span className="text-sm font-semibold text-gray-700">🛏️ Desejo solicitar hospedagem</span>
+                                  <span className={`text-sm font-semibold ${!statusExtra.disponivel ? 'text-gray-500' : 'text-gray-700'}`}>
+                                    🛏️ Desejo solicitar hospedagem
+                                  </span>
                                   <p className="text-xs text-gray-500 mt-0.5">
                                     A solicitação não garante alocação. A organização fará a distribuição conforme disponibilidade.
-                                    {evento.departamento === 'AGO' && extraGroup ? (extraGroup === 'Misto' ? ' (Informe sexo/data/perfil para verificar vagas de hospedagem.)' : ` (Grupo: ${extraGroup} - ${extraVagasGrupo} vagas restantes)`) : (vagasHospedagem !== null && ` (${vagasHospedagem} vagas restantes)`)}
+                                    {statusExtra.disponivel && (
+                                      <span className="font-medium text-emerald-700 ml-1">
+                                        {statusExtra.mensagem}
+                                      </span>
+                                    )}
                                   </p>
-                                  {extraGrupoEsgotado && extraGroup !== 'Misto' && (
-                                    <p className="text-xs text-red-600 font-bold mt-1.5">
-                                      ⚠️ Não há mais vagas de hospedagem disponíveis para o grupo {extraGroup}. Você ainda pode concluir a inscrição sem hospedagem.
+                                  {!statusExtra.disponivel && (
+                                    <p className="text-xs text-amber-700 font-semibold mt-1.5 flex items-center gap-1.5">
+                                      ⚠️ {statusExtra.mensagem}
                                     </p>
                                   )}
                                 </div>

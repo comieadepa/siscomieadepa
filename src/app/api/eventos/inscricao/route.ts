@@ -841,6 +841,133 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Validação de capacidade e vagas por grupo para eventos AGO
+    if (evento.departamento === 'AGO' && qtdComHospedagem > 0) {
+      if (!evento.permite_hospedagem) {
+        return buildErrorResponse(400, {
+          error: 'Hospedagem não permitida para este evento.',
+          stage: 'validacao_hospedagem_ago_nao_permitida',
+          payloadResumo: { ...payloadResumo, evento_id: evento.id },
+        });
+      }
+
+      // Consulta alojamentos ativos para apurar capacidade configurada por grupo
+      const { data: alojamentosAtivos } = await supabase
+        .from('evento_alojamentos')
+        .select('id, publico, total_vagas, ativo')
+        .eq('evento_id', evento.id)
+        .eq('ativo', true);
+
+      const PUBLICO_GRUPO_AGO: Record<string, string> = {
+        presidentes:     'Pastor Presidente / Pastor Jubilado',
+        jubilados:       'Pastor Presidente / Pastor Jubilado',
+        masculino_geral: 'Pastor Auxiliar / Juventude',
+        feminino:        'Mulheres',
+        misto:           'Misto',
+      };
+
+      const capacidadePorGrupoAgo: Record<string, number> = {
+        'Mulheres': 0,
+        'Pastor Presidente / Pastor Jubilado': 0,
+        'Pastor Auxiliar / Juventude': 0,
+        'Misto': 0,
+      };
+
+      for (const aloj of alojamentosAtivos ?? []) {
+        const gp = PUBLICO_GRUPO_AGO[aloj.publico] ?? 'Misto';
+        capacidadePorGrupoAgo[gp] = (capacidadePorGrupoAgo[gp] ?? 0) + (aloj.total_vagas ?? 0);
+      }
+
+      // Consulta ocupação atual por grupo
+      const { data: hospOcupadas } = await supabase
+        .from('evento_hospedagens')
+        .select('id, status, alojamento_id, grupo_hospedagem')
+        .eq('evento_id', evento.id)
+        .in('status', ['solicitada', 'confirmada', 'alocada', 'checkin_realizado', 'checkout_realizado']);
+
+      const alojMap = new Map<string, string>();
+      for (const al of alojamentosAtivos ?? []) {
+        const gp = PUBLICO_GRUPO_AGO[al.publico] ?? 'Misto';
+        alojMap.set(al.id, gp);
+      }
+
+      const ocupadasPorGrupoAgo: Record<string, number> = {
+        'Mulheres': 0,
+        'Pastor Presidente / Pastor Jubilado': 0,
+        'Pastor Auxiliar / Juventude': 0,
+        'Misto': 0,
+      };
+
+      for (const h of hospOcupadas ?? []) {
+        const gp = (h.alojamento_id ? alojMap.get(h.alojamento_id) : null) ?? h.grupo_hospedagem ?? 'Misto';
+        ocupadasPorGrupoAgo[gp] = (ocupadasPorGrupoAgo[gp] ?? 0) + 1;
+      }
+
+      // Agrupa solicitações deste pedido por grupo para validar capacidade e disponibilidade
+      const solicitadosPorGrupo: Record<string, number> = {};
+
+      if (querHospedagem && grupoHospedagemAuto) {
+        solicitadosPorGrupo[grupoHospedagemAuto] = (solicitadosPorGrupo[grupoHospedagemAuto] ?? 0) + 1;
+      }
+
+      if (incluir_esposa && esposa) {
+        const espObj = esposa as Record<string, unknown> | undefined;
+        if (espObj?.hospedagem) {
+          const espGrp = resolveGrupoHospedagemAGO({
+            sexo: 'F',
+            data_nascimento: espObj.data_nascimento as string | null,
+            tipo_inscricao: 'Esposa de Pastor Presidente Campo Missionário',
+            hosp_necessidade_especial: !!espObj.hosp_necessidade_especial,
+            hosp_possui_comorbidade: !!espObj.hosp_possui_comorbidade,
+          });
+          if (espGrp) {
+            solicitadosPorGrupo[espGrp] = (solicitadosPorGrupo[espGrp] ?? 0) + 1;
+          }
+        }
+      }
+
+      if (Array.isArray(participantes)) {
+        for (const p of participantes as Record<string, unknown>[]) {
+          if (p.hospedagem) {
+            const grpExtra = resolveGrupoHospedagemAGO({
+              sexo: (p.sexo as string) || null,
+              data_nascimento: (p.data_nascimento as string) || null,
+              tipo_inscricao: (p.tipo_inscricao as string) || null,
+              hosp_necessidade_especial: !!p.hosp_necessidade_especial,
+              hosp_possui_comorbidade: !!p.hosp_possui_comorbidade,
+            });
+            if (grpExtra) {
+              solicitadosPorGrupo[grpExtra] = (solicitadosPorGrupo[grpExtra] ?? 0) + 1;
+            }
+          }
+        }
+      }
+
+      for (const [grp, qtdDesejada] of Object.entries(solicitadosPorGrupo)) {
+        const cap = capacidadePorGrupoAgo[grp] ?? 0;
+        if (cap <= 0) {
+          return buildErrorResponse(400, {
+            error: `Hospedagem não configurada para o grupo ${grp} neste evento.`,
+            stage: 'validacao_hospedagem_ago_sem_capacidade',
+            code: 'HOSPEDAGEM_NAO_CONFIGURADA_GRUPO',
+            details: `Grupo: ${grp}`,
+            payloadResumo: { ...payloadResumo, evento_id: evento.id, grupo: grp },
+          });
+        }
+        const ocup = ocupadasPorGrupoAgo[grp] ?? 0;
+        const disponivel = Math.max(0, cap - ocup);
+        if (qtdDesejada > disponivel) {
+          return buildErrorResponse(409, {
+            error: `Não há mais vagas de hospedagem disponíveis para o grupo ${grp} (vagas esgotadas).`,
+            stage: 'validacao_hospedagem_ago_lotada',
+            code: 'HOSPEDAGEM_GRUPO_ESGOTADA',
+            details: `Grupo: ${grp}, Solicitadas: ${qtdDesejada}, Disponíveis: ${disponivel}`,
+            payloadResumo: { ...payloadResumo, evento_id: evento.id, grupo: grp },
+          });
+        }
+      }
+    }
+
     const isGratuito = valorFinal <= 0;
 
     if (!isGratuito && !isValidCpf(cpf)) {
@@ -1039,10 +1166,10 @@ export async function POST(request: NextRequest) {
         .eq('ativo', true)
         .maybeSingle();
 
-      const refeicoesPastor = evento.departamento === 'AGO' ? 12 : (tipoInclui.alimentacao ? tipoRefeicoes : 0);
-      const refeicoesEsposa = evento.departamento === 'AGO' ? 12 : (tipoEsposa?.inclui_alimentacao
+      const refeicoesPastor = tipoInclui.alimentacao ? tipoRefeicoes : 0;
+      const refeicoesEsposa = tipoEsposa?.inclui_alimentacao
         ? Math.max(0, Number(tipoEsposa?.quantidade_refeicoes ?? 0))
-        : 0);
+        : 0;
 
       const valorTotal2 = valorFinal + valorEsposaBase;
       const codigoLote2 = gerarCodigoLote();
@@ -1506,10 +1633,8 @@ export async function POST(request: NextRequest) {
         const descontoParticipante = 0;
 
         const valorFinalParticipante = Math.max(0, valorBaseParticipante - descontoParticipante);
-        const alimentacaoParticipante = evento.departamento === 'AGO' ? true : !!(tipoEvento?.inclui_alimentacao ?? false);
-        const refeicoesParticipante = evento.departamento === 'AGO'
-          ? 12
-          : (alimentacaoParticipante ? Math.max(0, Number(tipoEvento?.quantidade_refeicoes ?? 0)) : 0);
+        const alimentacaoParticipante = !!(tipoEvento?.inclui_alimentacao ?? false);
+        const refeicoesParticipante = alimentacaoParticipante ? Math.max(0, Number(tipoEvento?.quantidade_refeicoes ?? 0)) : 0;
         const hospedagemParticipante = evento.departamento === 'AGO'
           ? !!p.hospedagem
           : (!!(tipoEvento?.inclui_hospedagem ?? false) || !!p.hospedagem);
@@ -1718,7 +1843,7 @@ export async function POST(request: NextRequest) {
       supervisao_id:    supervisao_id || null,
       campo_id:         campo_id || null,
       hospedagem:       querHospedagem,
-      alimentacao:      evento.departamento === 'AGO' ? true : tipoInclui.alimentacao,
+      alimentacao:      tipoInclui.alimentacao,
       brinde:           !!brinde,
       tipo_inscricao:   tipoNome,
       valor_original:   valorBase,
@@ -1730,11 +1855,11 @@ export async function POST(request: NextRequest) {
       status_pagamento: isGratuito ? 'isento' : 'pendente',
       forma_pagamento:  isGratuito ? null : 'pix',
       qr_code:          qr_code || null,
-      refeicoes_total:  evento.departamento === 'AGO' ? 12 : (tipoInclui.alimentacao ? tipoRefeicoes : 0),
+      refeicoes_total:  tipoInclui.alimentacao ? tipoRefeicoes : 0,
       refeicoes_utilizadas: 0,
-      quantidade_refeicoes_total: evento.departamento === 'AGO' ? 12 : (tipoInclui.alimentacao ? tipoRefeicoes : 0),
+      quantidade_refeicoes_total: tipoInclui.alimentacao ? tipoRefeicoes : 0,
       quantidade_refeicoes_usadas: 0,
-      quantidade_refeicoes_saldo: evento.departamento === 'AGO' ? 12 : (tipoInclui.alimentacao ? tipoRefeicoes : 0),
+      quantidade_refeicoes_saldo: tipoInclui.alimentacao ? tipoRefeicoes : 0,
       ministro_snapshot: ministroSnapshot,
       // Campos hospedagem AGO
       hosp_necessidade_especial:  !!hosp_necessidade_especial,
