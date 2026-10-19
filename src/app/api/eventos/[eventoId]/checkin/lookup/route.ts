@@ -5,6 +5,7 @@ import { requireEventoPermission } from '@/lib/evento-guard';
 type InscricaoRow = {
   id: string;
   evento_id: string;
+  ministro_id: string | null;
   nome_inscrito: string;
   cpf: string | null;
   supervisao_id: string | null;
@@ -23,16 +24,21 @@ type InscricaoRow = {
   quantidade_refeicoes_total: number | null;
   quantidade_refeicoes_usadas: number | null;
   quantidade_refeicoes_saldo: number | null;
+  ministro_snapshot?: any;
+  foto_url?: string | null;
+  matricula?: string | null;
+  cargo_ministerial?: string | null;
 };
 
 const SELECT_INSC = [
-  'id', 'evento_id', 'nome_inscrito', 'cpf',
+  'id', 'evento_id', 'ministro_id', 'nome_inscrito', 'cpf',
   'supervisao_id', 'campo_id', 'status_pagamento',
   'checkin_realizado', 'checkin_at', 'qr_code',
   'tipo_inscricao', 'alimentacao', 'hospedagem',
   'valor_final', 'valor_pago',
   'refeicoes_total', 'refeicoes_utilizadas',
   'quantidade_refeicoes_total', 'quantidade_refeicoes_usadas', 'quantidade_refeicoes_saldo',
+  'ministro_snapshot',
 ].join(',');
 
 export async function GET(
@@ -243,10 +249,54 @@ export async function GET(
   const usadas = ins.quantidade_refeicoes_usadas ?? ins.refeicoes_utilizadas ?? 0;
   const saldo  = ins.quantidade_refeicoes_saldo ?? Math.max(0, total - usadas);
 
+  // ── Enriquecimento de foto, matrícula e cargo se vinculado a ministro ──
+  const snapshot = ins.ministro_snapshot;
+  let fotoUrl: string | null = null;
+  let matricula: string | null = snapshot?.matricula ? String(snapshot.matricula) : null;
+  let cargoMinisterial: string | null = snapshot?.cargo ? String(snapshot.cargo) : null;
+
+  const targetMemberId = ins.ministro_id || snapshot?.ministro_id;
+  if (targetMemberId) {
+    const { data: memberData } = await supabase
+      .from('members')
+      .select('foto_url, matricula, cargo_ministerial, custom_fields')
+      .eq('id', targetMemberId)
+      .maybeSingle() as any;
+
+    if (memberData) {
+      fotoUrl = memberData.foto_url || memberData.custom_fields?.fotoUrl || null;
+      if (!matricula && memberData.matricula) matricula = String(memberData.matricula);
+      if (!cargoMinisterial && memberData.cargo_ministerial) cargoMinisterial = String(memberData.cargo_ministerial);
+    }
+  } else if (ins.cpf) {
+    const cpfLimpo = String(ins.cpf).replace(/\D/g, '');
+    if (cpfLimpo) {
+      const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+      const { data: memberData } = await supabase
+        .from('members')
+        .select('foto_url, matricula, cargo_ministerial, custom_fields')
+        .or(`cpf.eq.${cpfLimpo},cpf.eq.${cpfFormatado}`)
+        .maybeSingle() as any;
+
+      if (memberData) {
+        fotoUrl = memberData.foto_url || memberData.custom_fields?.fotoUrl || null;
+        if (!matricula && memberData.matricula) matricula = String(memberData.matricula);
+        if (!cargoMinisterial && memberData.cargo_ministerial) cargoMinisterial = String(memberData.cargo_ministerial);
+      }
+    }
+  }
+
+  const insEnriquecida: InscricaoRow = {
+    ...ins,
+    foto_url: fotoUrl,
+    matricula,
+    cargo_ministerial: cargoMinisterial,
+  };
+
   // ── Responde sem registrar nada ───────────────────────────
   return NextResponse.json({
     status: 'found',
-    inscricao: ins,
+    inscricao: insEnriquecida,
     contexto: {
       modo,
 
