@@ -114,13 +114,21 @@ function detectarIntent(pergunta: string): Intent {
 
   const isInscricao = [
     'minha inscricao',
-    'inscricao',
-    'status',
+    'status da inscricao',
+    'minha vaga',
+    'meu status',
     'confirmado',
     'confirmada',
     'estou inscrito',
+    'estou inscrita',
     'consultar inscricao',
-  ].some(termo => p.includes(termo));
+    'ver minha inscricao',
+    'consultar minha inscricao',
+  ].some(termo => p.includes(termo))
+    || /\b(minha|meu)\s+inscri[cç][aã]o\b/.test(p)
+    || /\bestou\s+inscrit[oa]\b/.test(p)
+    || /\bconsultar\s+(minha\s+)?inscri[cç][aã]o\b/.test(p)
+    || /\b(minha\s+inscri[cç][aã]o\s+est[aá]\s+confirmad[oa])\b/.test(p);
   if (isInscricao) return 'consulta_inscricao';
 
   if (['hospedagem', 'alojamento', 'dormir', 'pernoite', 'cama', 'leito'].some(termo => p.includes(termo))) {

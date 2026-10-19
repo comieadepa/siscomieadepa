@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
+import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
 
 // ── Helpers ────────────────────────────────────────────────────
 const fmtData = (d: string | null) => {
@@ -113,7 +114,6 @@ function inferIntent(pergunta: string): Intent {
     'pix',
     'link de pagamento',
     'link do pagamento',
-    'pagamento',
     'pagar inscricao',
     'perdi o pagamento',
     'gerar cobranca',
@@ -127,13 +127,22 @@ function inferIntent(pergunta: string): Intent {
 
   const isInscricao = hasAny(p, [
     'minha inscricao',
-    'inscricao',
-    'status',
+    'status da inscricao',
+    'minha vaga',
+    'meu status',
     'confirmado',
     'confirmada',
     'estou inscrito',
+    'estou inscrita',
     'consultar inscricao',
-  ]);
+    'ver minha inscricao',
+    'consultar minha inscricao',
+  ])
+    || /\b(minha|meu)\s+inscri[cç][aã]o\b/.test(p)
+    || /\bestou\s+inscrit[oa]\b/.test(p)
+    || /\bconsultar\s+(minha\s+)?inscri[cç][aã]o\b/.test(p)
+    || /\b(minha\s+inscri[cç][aã]o\s+est[aá]\s+confirmad[oa])\b/.test(p);
+
   if (isInscricao) return 'consulta_inscricao';
 
   const isHospedagem = hasAny(p, ['hospedagem', 'alojamento', 'dormir', 'cama', 'leito']);
@@ -227,12 +236,21 @@ Status: Aguardando alocação`;
 
 function formatarAlimentacaoMsg(
   inscricao: Record<string, unknown>,
-  evento: Record<string, unknown>
+  evento: Record<string, unknown>,
+  tiposInscricao?: Record<string, unknown>[]
 ): string {
   const ativa = !!(inscricao.alimentacao || evento.departamento === 'AGO');
   const statusText = ativa ? 'Ativa' : 'Inativa';
 
-  const totalRef = Number(inscricao.quantidade_refeicoes_total ?? inscricao.refeicoes_total ?? (evento.departamento === 'AGO' ? 12 : 0));
+  const defaultTotal = (() => {
+    if (tiposInscricao && tiposInscricao.length > 0) {
+      const maxRef = Math.max(...tiposInscricao.map(t => Number(t.quantidade_refeicoes ?? 0)));
+      if (maxRef > 0) return maxRef;
+    }
+    return evento.departamento === 'AGO' ? 15 : 0;
+  })();
+
+  const totalRef = Number(inscricao.quantidade_refeicoes_total ?? inscricao.refeicoes_total ?? (ativa ? defaultTotal : 0));
   const usadasRef = Number(inscricao.quantidade_refeicoes_usadas ?? inscricao.refeicoes_utilizadas ?? 0);
   const saldoRef = Number(inscricao.quantidade_refeicoes_saldo ?? Math.max(0, totalRef - usadasRef));
 
@@ -253,7 +271,8 @@ function respostaCpfConsulta(
   cpfDigits: string,
   inscricao: Record<string, unknown> | null,
   evento: Record<string, unknown>,
-  hospedagemInfo: Record<string, unknown> | null = null
+  hospedagemInfo: Record<string, unknown> | null = null,
+  tiposInscricao?: Record<string, unknown>[]
 ): string {
   const cpfFormatado = formatarCpf(cpfDigits);
   if (!inscricao) {
@@ -275,7 +294,7 @@ function respostaCpfConsulta(
   msg += `\n\n${formatarHospedagemMsg(inscricao, hospedagemInfo)}`;
 
   if (inscricao.alimentacao || evento.departamento === 'AGO') {
-    msg += `\n\n${formatarAlimentacaoMsg(inscricao, evento)}`;
+    msg += `\n\n${formatarAlimentacaoMsg(inscricao, evento, tiposInscricao)}`;
   } else {
     msg += `\n\n🍽 **Alimentação**\nStatus: Inativa`;
   }
@@ -290,7 +309,8 @@ function respostaFallback(
   evento: Record<string, unknown>,
   programacao: Record<string, unknown>[],
   inscricao: Record<string, unknown> | null,
-  hospedagemInfo: Record<string, unknown> | null = null
+  hospedagemInfo: Record<string, unknown> | null = null,
+  tiposInscricao?: Record<string, unknown>[]
 ): string {
   const p = normalizeTexto(pergunta);
   const pNoSpace = p.replace(/\s+/g, '');
@@ -358,24 +378,74 @@ function respostaFallback(
     return respostaSegundaVia(inscricao, evento);
   }
 
-  // ── Status de inscrição ──────────────────────────────────────
-  if (hasAny(p, ['minha inscricao', 'inscricao', 'status', 'confirmado', 'confirmada', 'estou inscrito', 'consultar inscricao'])) {
-    if (!inscricao) {
-      return 'Para consultar sua inscrição, informe seu CPF na caixa de texto (ex: "CPF: 000.000.000-00"). Assim posso verificar sua situação no evento.';
+  // ── Data ─────────────────────────────────────────────────────
+  if (hasAny(p, ['data', 'quando', 'dia', 'mes', 'periodo', 'acontece'])) {
+    const inicio = fmtData(evento.data_inicio as string | null);
+    const fim    = fmtData(evento.data_fim as string | null);
+    if (!evento.data_inicio && !evento.data_fim) {
+      return 'A data do evento ainda não foi cadastrada no sistema.';
     }
-    return respostaCpfConsulta(evento.nome as string, String(inscricao.cpf || '').replace(/\D/g, ''), inscricao, evento, hospedagemInfo);
+    return `📅 O evento acontece de ${inicio} a ${fim}.`;
   }
 
-  // ── Pagamento ────────────────────────────────────────────────
-  if (hasAny(p, ['pagamento', 'pago', 'pix', 'valor'])) {
+  // ── Local ────────────────────────────────────────────────────
+  if (hasAny(p, ['local', 'onde', 'lugar', 'endereco', 'cidade', 'realizado'])) {
+    const local  = evento.local as string | null;
+    const cidade = evento.cidade as string | null;
+    if (!local && !cidade) return 'O local do evento ainda não foi informado no sistema.';
+    return `📍 O evento será realizado em: ${[local, cidade].filter(Boolean).join(' — ')}`;
+  }
+
+  // ── Valor / Pagamento ────────────────────────────────────────
+  if (hasAny(p, ['quanto custa', 'qual o valor', 'qual valor', 'valor da inscricao', 'preco', 'valores', 'quanto e', 'valor', 'campo missionario'])) {
+    const isAgo = evento.departamento === 'AGO';
+    const cmConfig = parseCampoMissionarioConfig(evento.configuracoes_ago as any);
+    const cmEnabled = isAgo && !!cmConfig?.enabled;
+    const vCmPastor = cmConfig
+      ? (typeof cmConfig.valor_pastor_presidente === 'number' ? cmConfig.valor_pastor_presidente : parseFloat(String(cmConfig.valor_pastor_presidente)) || 0)
+      : 0;
+    const vCmEsposa = cmConfig
+      ? (typeof cmConfig.valor_esposa === 'number' ? cmConfig.valor_esposa : parseFloat(String(cmConfig.valor_esposa)) || 0)
+      : 0;
+
+    if (tiposInscricao && tiposInscricao.length > 0) {
+      // Filtra categorias técnicas internas (ex: ESPOSA DE PASTOR PRESIDENTE CAMPO MISSIONÁRIO) que possuem valor 0 no banco
+      const ativas = tiposInscricao.filter(t => {
+        if (t.ativo === false) return false;
+        const nomeNorm = String(t.nome || '').toLowerCase();
+        if (isAgo && nomeNorm.includes('campo mission')) {
+          return false;
+        }
+        return true;
+      });
+
+      const lista = ativas.map(t => {
+        const valStr = t.cortesia || Number(t.valor) === 0 ? 'Gratuito' : fmtMoeda(Number(t.valor));
+        return `• ${t.nome}: ${valStr}`;
+      }).join('\n');
+
+      let cmBloco = '';
+      if (cmEnabled && (vCmPastor > 0 || vCmEsposa > 0)) {
+        cmBloco = `\n\n📌 *Condição Especial — Campo Missionário:*\n` +
+          `• Pastor Presidente (Campo Missionário): ${fmtMoeda(vCmPastor)}\n` +
+          `• Esposa de Pastor Presidente (Campo Missionário): ${fmtMoeda(vCmEsposa)}\n` +
+          `• Total do Casal: ${fmtMoeda(vCmPastor + vCmEsposa)}`;
+      }
+
+      return `💳 *Valores de Inscrição — ${evento.nome}:*\n\n${lista}${cmBloco}\n\nVocê pode escolher sua modalidade na página de inscrição.`;
+    }
+    const valor = Number(evento.valor_inscricao ?? 0);
+    if (valor === 0) return '🎁 A inscrição neste evento é gratuita!';
+    return `💳 O valor da inscrição é ${fmtMoeda(valor)}.`;
+  }
+
+  if (hasAny(p, ['pagamento', 'pago', 'pix'])) {
     if (inscricao) {
       const status = inscricao.status_pagamento as string;
       if (status === 'pago' || status === 'isento') return '✅ Seu pagamento já está confirmado!';
       return respostaSegundaVia(inscricao, evento);
     }
-    const valor = evento.valor_inscricao as number;
-    if (valor === 0) return '🎁 A inscrição neste evento é gratuita!';
-    return `💳 O valor da inscrição é ${fmtMoeda(valor)}. Informe seu CPF para verificar o status do seu pagamento.`;
+    return 'Para verificar o status do seu pagamento ou gerar 2ª via/PIX, informe seu CPF.';
   }
 
   // ── Hospedagem ───────────────────────────────────────────────
@@ -383,49 +453,54 @@ function respostaFallback(
     if (inscricao) {
       return formatarHospedagemMsg(inscricao, hospedagemInfo);
     }
-    const permiteHosp = evento.permite_hospedagem as boolean;
-    return permiteHosp
-      ? '🛏️ Este evento oferece hospedagem. Ao se inscrever, você pode solicitar hospedagem conforme disponibilidade.'
-      : '❌ Este evento não oferece hospedagem.';
+    const permiteHosp = Boolean(evento.permite_hospedagem);
+    if (!permiteHosp) {
+      return '❌ Este evento não oferece hospedagem.';
+    }
+    const cfgAgo = (evento.configuracoes_ago as Record<string, unknown> | null) || {};
+    const setores = Array.isArray(cfgAgo.setores) ? cfgAgo.setores : [];
+    if (evento.departamento === 'AGO' && setores.length > 0) {
+      return '🛏️ Este evento oferece hospedagem em alojamentos oficiais (sujeito à disponibilidade por grupo e categoria de inscrição). Ao preencher sua inscrição, você poderá solicitar sua vaga.';
+    }
+    return '🛏️ Este evento oferece hospedagem. Ao se inscrever, você pode solicitar hospedagem conforme disponibilidade.';
   }
 
   // ── Alimentação ──────────────────────────────────────────────
   if (hasAny(p, ['alimentacao', 'refeicao', 'refeicoes', 'almoco', 'jantar', 'saldo', 'saldo de refeicoes'])) {
     if (inscricao) {
-      return formatarAlimentacaoMsg(inscricao, evento);
+      return formatarAlimentacaoMsg(inscricao, evento, tiposInscricao);
     }
-    const permiteAlim = (evento.permite_alimentacao || evento.departamento === 'AGO') as boolean;
-    return permiteAlim
-      ? '🍽️ Este evento oferece alimentação. Nos eventos AGO, todos os inscritos possuem alimentação incluída (12 refeições).'
-      : '❌ Este evento não oferece alimentação.';
-  }
-
-  // ── Brinde ───────────────────────────────────────────────────
-  if (hasAny(p, ['brinde', 'kit', 'presente'])) {
-    if (inscricao) {
-      return inscricao.brinde
-        ? '🎁 Sua inscrição inclui brinde!'
-        : '❌ Sua inscrição não inclui brinde.';
+    const permiteAlim = Boolean(evento.permite_alimentacao || evento.departamento === 'AGO');
+    if (!permiteAlim) {
+      return '❌ Este evento não oferece alimentação.';
     }
-    const permiteBrinde = evento.permite_brinde as boolean;
-    return permiteBrinde
-      ? '🎁 Este evento oferece brinde para inscrições que incluem essa opção.'
-      : '❌ Este evento não oferece brinde.';
+    const maxRef = tiposInscricao && tiposInscricao.length > 0
+      ? Math.max(...tiposInscricao.map(t => Number(t.quantidade_refeicoes ?? 0)))
+      : 0;
+    if (maxRef > 0) {
+      return `🍽️ Este evento oferece alimentação incluída (até ${maxRef} refeições, conforme a categoria de inscrição).`;
+    }
+    return '🍽️ Este evento oferece alimentação incluída para os participantes inscritos.';
   }
 
-  // ── Local ────────────────────────────────────────────────────
-  if (hasAny(p, ['local', 'onde', 'lugar', 'endereco', 'cidade'])) {
-    const local  = evento.local as string | null;
-    const cidade = evento.cidade as string | null;
-    if (!local && !cidade) return 'O local do evento ainda não foi informado no sistema.';
-    return `📍 O evento será realizado em: ${[local, cidade].filter(Boolean).join(' — ')}`;
-  }
-
-  // ── Data ─────────────────────────────────────────────────────
-  if (hasAny(p, ['data', 'quando', 'dia', 'mes'])) {
-    const inicio = fmtData(evento.data_inicio as string | null);
-    const fim    = fmtData(evento.data_fim as string | null);
-    return `📅 O evento acontece de ${inicio} a ${fim}.`;
+  // ── Status de inscrição ──────────────────────────────────────
+  if (hasAny(p, [
+    'minha inscricao',
+    'status da inscricao',
+    'minha vaga',
+    'meu status',
+    'confirmado',
+    'confirmada',
+    'estou inscrito',
+    'estou inscrita',
+    'consultar inscricao',
+    'ver minha inscricao',
+    'consultar minha inscricao',
+  ]) || /\b(minha|meu)\s+inscri[cç][aã]o\b/.test(p) || /\bestou\s+inscrit[oa]\b/.test(p)) {
+    if (!inscricao) {
+      return 'Para consultar sua inscrição, informe seu CPF na caixa de texto (ex: "CPF: 000.000.000-00"). Assim posso verificar sua situação no evento.';
+    }
+    return respostaCpfConsulta(evento.nome as string, String(inscricao.cpf || '').replace(/\D/g, ''), inscricao, evento, hospedagemInfo, tiposInscricao);
   }
 
   // ── Programação ──────────────────────────────────────────────
@@ -509,11 +584,11 @@ export async function POST(
 
     const supabase = createServerClient();
 
-    // ── Busca dados do evento ──────────────────────────────────
-    const [evRes, progRes] = await Promise.all([
+    // ── Busca dados do evento e tipos de inscrição ───────────
+    const [evRes, progRes, tiposRes] = await Promise.all([
       supabase
         .from('eventos')
-        .select('id,nome,slug,descricao,departamento,data_inicio,data_fim,local,cidade,valor_inscricao,permite_hospedagem,permite_alimentacao,permite_brinde,link_whatsapp,mensagem_confirmacao,publico_alvo,status,suporte_nome,suporte_whatsapp')
+        .select('id,nome,slug,descricao,departamento,data_inicio,data_fim,local,cidade,valor_inscricao,permite_hospedagem,permite_alimentacao,permite_brinde,link_whatsapp,mensagem_confirmacao,publico_alvo,status,suporte_nome,suporte_whatsapp,configuracoes_ago,usar_tipos_inscricao')
         .eq('id', eventoId)
         .single(),
       supabase
@@ -523,6 +598,11 @@ export async function POST(
         .order('data')
         .order('horario', { ascending: true, nullsFirst: true })
         .order('ordem'),
+      supabase
+        .from('evento_tipos_inscricao')
+        .select('id,nome,valor,inclui_alimentacao,inclui_hospedagem,cortesia,quantidade_refeicoes,limite_vagas,ativo,ordem')
+        .eq('evento_id', eventoId)
+        .order('ordem', { ascending: true }),
     ]);
 
     if (evRes.error || !evRes.data) {
@@ -531,6 +611,7 @@ export async function POST(
 
     const evento = evRes.data as Record<string, unknown>;
     const programacao = (progRes.data ?? []) as Record<string, unknown>[];
+    const tiposInscricao = (tiposRes.data ?? []) as Record<string, unknown>[];
     const intentFinal = intentFromContext ?? inferIntent(pergunta);
 
     // ── Busca inscrição pelo CPF ou Nome (se informado) ────────
@@ -542,10 +623,15 @@ export async function POST(
 
     if (!isCpf) {
       const cleanPergunta = normalizeTexto(pergunta);
-      const isCmd = hasAny(cleanPergunta, ['ola', 'oi', 'ajuda', 'programacao', 'agenda', 'local', 'onde', 'quando', 'valor', 'preco', 'contato', 'suporte']);
+      const isCmdOrGeneralInfo = hasAny(cleanPergunta, [
+        'ola', 'oi', 'ajuda', 'programacao', 'agenda', 'local', 'onde', 'quando',
+        'data', 'dia', 'mes', 'periodo', 'valor', 'valores', 'preco', 'quanto',
+        'alimentacao', 'refeicao', 'refeicoes', 'hospedagem', 'alojamento', 'leito',
+        'cama', 'dormir', 'brinde', 'kit', 'contato', 'suporte', 'whatsapp', 'zap'
+      ]);
       if (cpfRaw && cpfRaw.replace(/\D/g, '').length !== 11 && cpfRaw.trim().length > 3) {
         nomeBusca = cpfRaw.trim();
-      } else if (!isCmd && pergunta.trim().length > 3 && pergunta.trim().split(/\s+/).length >= 2) {
+      } else if (!isCmdOrGeneralInfo && (intentFinal === 'consulta_inscricao' || intentFinal === 'segunda_via') && pergunta.trim().length > 3 && pergunta.trim().split(/\s+/).length >= 2) {
         nomeBusca = pergunta.trim();
       }
     }
@@ -657,7 +743,7 @@ export async function POST(
 
     if (intentFinal === 'consulta_inscricao' && hasSearchAttempt) {
       const respostaDireta = inscricao
-        ? respostaCpfConsulta(evento.nome as string, isCpf || String(inscricao.cpf || ''), inscricao, evento, hospedagemInfo)
+        ? respostaCpfConsulta(evento.nome as string, isCpf || String(inscricao.cpf || ''), inscricao, evento, hospedagemInfo, tiposInscricao)
         : `Não localizei nenhuma inscrição com o ${isCpf ? 'CPF' : 'nome'} informado. Verifique os dados ou entre em contato com o suporte.`;
       supabase
         .from('evento_assistente_logs')
@@ -668,7 +754,7 @@ export async function POST(
     }
     if ((cpfEncontradoNaPergunta || perguntaIsCpf || nomeBusca) && hasSearchAttempt && !intentFinal) {
       const respostaDireta = inscricao
-        ? respostaCpfConsulta(evento.nome as string, isCpf || String(inscricao.cpf || ''), inscricao, evento, hospedagemInfo)
+        ? respostaCpfConsulta(evento.nome as string, isCpf || String(inscricao.cpf || ''), inscricao, evento, hospedagemInfo, tiposInscricao)
         : `Não localizei nenhuma inscrição com o ${isCpf ? 'CPF' : 'nome'} informado. Verifique os dados ou entre em contato com o suporte.`;
       supabase
         .from('evento_assistente_logs')
@@ -688,7 +774,31 @@ export async function POST(
     // Quando a pergunta é apenas um CPF, retorna direto sem IA nem fallback
     if (openaiKey) {
       try {
-        // Monta contexto seguro
+        const isAgo = evento.departamento === 'AGO';
+        const cmConfig = parseCampoMissionarioConfig(evento.configuracoes_ago as any);
+        const cmEnabled = isAgo && !!cmConfig?.enabled;
+        const vCmPastor = cmConfig
+          ? (typeof cmConfig.valor_pastor_presidente === 'number' ? cmConfig.valor_pastor_presidente : parseFloat(String(cmConfig.valor_pastor_presidente)) || 0)
+          : 0;
+        const vCmEsposa = cmConfig
+          ? (typeof cmConfig.valor_esposa === 'number' ? cmConfig.valor_esposa : parseFloat(String(cmConfig.valor_esposa)) || 0)
+          : 0;
+
+        const tiposVisiveis = tiposInscricao.filter(t => {
+          if (t.ativo === false) return false;
+          const nomeNorm = String(t.nome || '').toLowerCase();
+          if (isAgo && nomeNorm.includes('campo mission')) return false;
+          return true;
+        });
+
+        const listaModalidades = tiposVisiveis.length > 0
+          ? `Modalidades de inscrição disponíveis:\n${tiposVisiveis.map(t => `- ${t.nome}: ${t.cortesia || Number(t.valor) === 0 ? 'Gratuito' : fmtMoeda(Number(t.valor))}`).join('\n')}`
+          : `Valor da inscrição: ${fmtMoeda(evento.valor_inscricao as number)}`;
+
+        const cmInfoContexto = (cmEnabled && (vCmPastor > 0 || vCmEsposa > 0))
+          ? `Condição especial de Campo Missionário (habilitada):\n- Pastor Presidente de Campo Missionário: ${fmtMoeda(vCmPastor)}\n- Esposa de Pastor Presidente de Campo Missionário: ${fmtMoeda(vCmEsposa)}\n- Total Casal (Pastor Presidente + Esposa de Campo Missionário): ${fmtMoeda(vCmPastor + vCmEsposa)}\n(Atenção: Esposa de Pastor Presidente de Campo Missionário NÃO é gratuita; o valor dela é ${fmtMoeda(vCmEsposa)})`
+          : null;
+
         const contexto = [
           `Evento: ${evento.nome}`,
           `Descrição: ${evento.descricao || 'não informada'}`,
@@ -696,10 +806,11 @@ export async function POST(
           `Local: ${[evento.local, evento.cidade].filter(Boolean).join(' — ') || 'não informado'}`,
           `Departamento: ${evento.departamento}`,
           `Público-alvo: ${evento.publico_alvo || 'geral'}`,
-          `Valor da inscrição: ${fmtMoeda(evento.valor_inscricao as number)}`,
+          listaModalidades,
+          cmInfoContexto,
           `Hospedagem disponível: ${evento.permite_hospedagem ? 'sim' : 'não'}`,
           `Brinde disponível: ${evento.permite_brinde ? 'sim' : 'não'}`,
-          `Alimentação disponível: ${evento.permite_alimentacao ? 'sim' : 'não'}`,
+          `Alimentação disponível: ${evento.permite_alimentacao || evento.departamento === 'AGO' ? 'sim' : 'não'}`,
           `Link WhatsApp: ${evento.link_whatsapp || 'não disponível'}`,
           evento.suporte_whatsapp
             ? `Suporte: ${evento.suporte_nome ? evento.suporte_nome + ' — ' : ''}https://wa.me/55${String(evento.suporte_whatsapp).replace(/\D/g, '')}`
@@ -725,9 +836,9 @@ ${hospedagemInfo ? `\nDados de Hospedagem:
 - Grupo de hospedagem: ${hospedagemInfo.grupo_hospedagem || 'não definido'}` : ''}
 ${inscricao.alimentacao || evento.departamento === 'AGO' ? `\nDados de Alimentação:
 - Disponível: sim
-- Total refeições: ${Number(inscricao.quantidade_refeicoes_total ?? inscricao.refeicoes_total ?? (evento.departamento === 'AGO' ? 12 : 0))}
+- Total refeições: ${Number(inscricao.quantidade_refeicoes_total ?? inscricao.refeicoes_total ?? (evento.departamento === 'AGO' ? 15 : 0))}
 - Utilizadas: ${Number(inscricao.quantidade_refeicoes_usadas ?? inscricao.refeicoes_utilizadas ?? 0)}
-- Saldo disponível: ${Number(inscricao.quantidade_refeicoes_saldo ?? Math.max(0, Number(inscricao.quantidade_refeicoes_total ?? inscricao.refeicoes_total ?? (evento.departamento === 'AGO' ? 12 : 0)) - Number(inscricao.quantidade_refeicoes_usadas ?? inscricao.refeicoes_utilizadas ?? 0)))}` : ''}`
+- Saldo disponível: ${Number(inscricao.quantidade_refeicoes_saldo ?? Math.max(0, Number(inscricao.quantidade_refeicoes_total ?? inscricao.refeicoes_total ?? (evento.departamento === 'AGO' ? 15 : 0)) - Number(inscricao.quantidade_refeicoes_usadas ?? inscricao.refeicoes_utilizadas ?? 0)))}` : ''}`
             : cpf.length === 11
               ? `\nO CPF informado (${cpfRaw || cpf}) não possui inscrição neste evento.`
               : 'CPF não informado — não consulte dados de inscrição.',
@@ -784,9 +895,12 @@ REGRAS OBRIGATÓRIAS:
     Total de refeições: {total}
     Utilizadas: {utilizadas}
     Saldo disponível: {saldo}
-    *ATENÇÃO:* Considere 12 refeições por padrão para eventos AGO se o sistema não indicar outro valor.
+    *ATENÇÃO:* Verifique a quantidade de refeições da categoria do evento.
 15. TOM DAS RESPOSTAS: responder em linguagem natural, utilizar poucas informações por bloco, poucos emojis (👋🏨🛏🍽✅), ser acolhedora, objetiva e facilitar a leitura no WhatsApp.
 16. RESTRIÇÕES: Nunca informe ocupantes de um alojamento, dados pessoais de terceiros, prometa troca de leito/alojamento, prometa prioridade, reserve vagas ou altere hospedagem ou saldo de refeições.
+17. CAMPO MISSIONÁRIO: Quando perguntarem sobre valores de Campo Missionário ou sobre a esposa de Pastor Presidente de Campo Missionário:
+    - NUNCA diga que a esposa de Campo Missionário é gratuita.
+    - Se a condição de Campo Missionário estiver habilitada no evento, informe claramente os valores especiais configurados: Pastor Presidente (Campo Missionário), Esposa (Campo Missionário) e o valor total do casal quando ambos forem incluídos.
 
 CONTEXTO DO EVENTO:
 ${contexto}`;
@@ -825,7 +939,7 @@ ${contexto}`;
 
     // ── Fallback local ─────────────────────────────────────────
     if (!resposta!) {
-      resposta = respostaFallback(pergunta, evento, programacao, inscricao, hospedagemInfo);
+      resposta = respostaFallback(pergunta, evento, programacao, inscricao, hospedagemInfo, tiposInscricao);
       modo = 'fallback';
     }
 
