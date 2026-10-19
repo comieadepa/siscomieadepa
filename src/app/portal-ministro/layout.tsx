@@ -182,7 +182,10 @@ export default function PortalMinistroLayout({ children }: { children: React.Rea
     <MinistroContext.Provider value={{ ministro, loading: false }}>
       <div className="min-h-screen bg-gray-50">
         {/* Sidebar desktop — fixed */}
-        <aside className="hidden md:block fixed inset-y-0 left-0 w-64 bg-[#0D2B4E] z-30 overflow-y-auto">
+        <aside
+          className="hidden md:block fixed inset-y-0 left-0 w-64 bg-[#0D2B4E] bg-cover bg-center bg-no-repeat z-30 overflow-y-auto"
+          style={{ backgroundImage: "url('/img/bg_menu002.png')" }}
+        >
           {renderSidebar()}
         </aside>
 
@@ -196,8 +199,11 @@ export default function PortalMinistroLayout({ children }: { children: React.Rea
 
         {/* Drawer mobile */}
         <aside
-          className="fixed top-0 left-0 h-full w-72 bg-[#0D2B4E] z-50 md:hidden transition-transform duration-300 ease-in-out"
-          style={{ transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)' }}
+          className="fixed top-0 left-0 h-full w-72 bg-[#0D2B4E] bg-cover bg-center bg-no-repeat z-50 md:hidden transition-transform duration-300 ease-in-out"
+          style={{
+            backgroundImage: "url('/img/bg_menu002.png')",
+            transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
+          }}
         >
           {renderSidebar(() => setSidebarOpen(false))}
         </aside>
