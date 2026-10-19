@@ -515,50 +515,65 @@ export default function GerenciarEventoPage() {
   }, [id, supabase]);
 
   useEffect(() => {
-    setEquipeSessao(getEquipeSession());
+    const sess = getEquipeSession();
+    if (sess && sess.eventoId === id) {
+      setEquipeSessao(sess);
+    } else {
+      setEquipeSessao(null);
+    }
   }, [id]);
 
   useEffect(() => {
     if (authLoading || perfil.loading) return;
 
-    // Bloqueio simples se detectar sessão ou permissão de equipe operacional
-    const sessCheck = getEquipeSession();
-    const roleCheck = sessCheck?.tipo || permissaoNesseEvento;
-    if (roleCheck) {
-      if (roleCheck === 'operador') {
-        router.replace(`/eventos/${id}/balcao`);
-        return;
-      }
-      if (roleCheck.startsWith('checkin') && roleCheck !== 'checkin_hospedagem') {
-        router.replace(`/eventos/${id}/checkin`);
-        return;
-      }
-      if (roleCheck === 'hospedagem') {
-        const tabParam = searchParams?.get('tab');
-        if (tabParam !== 'hospedagem') {
-          router.replace(`/eventos/${id}?tab=hospedagem`);
+    // Usuários com perfil administrativo (global, departamento ou admin deste evento)
+    // NUNCA devem ser redirecionados para balcão ou check-in. Devem gerenciar o evento.
+    const isAdministrador =
+      perfil.isGlobal ||
+      perfil.isDeptAdmin ||
+      permissaoNesseEvento === 'admin_evento' ||
+      perfil.podeEditarEvento;
+
+    if (!isAdministrador) {
+      // Bloqueio / redirecionamento exclusivo para operadores operacionais não-administradores vinculados a este evento
+      const sessCheck = getEquipeSession();
+      const isSessaoDesseEvento = sessCheck && sessCheck.eventoId === id;
+      const roleOperacional = (isSessaoDesseEvento ? sessCheck.tipo : null) || permissaoNesseEvento;
+
+      if (roleOperacional) {
+        if (roleOperacional === 'operador') {
+          router.replace(`/eventos/${id}/balcao`);
           return;
         }
+        if (roleOperacional.startsWith('checkin') && roleOperacional !== 'checkin_hospedagem') {
+          router.replace(`/eventos/${id}/checkin`);
+          return;
+        }
+        if (roleOperacional === 'hospedagem') {
+          const tabParam = searchParams?.get('tab');
+          if (tabParam !== 'hospedagem') {
+            router.replace(`/eventos/${id}?tab=hospedagem`);
+            return;
+          }
+        }
       }
-    }
 
-    // Gate de acesso: bloqueia acesso direto por URL
-    if (!perfil.isGlobal && id && !perfil.podeAcessarEvento(id)) {
-      // Fallback: lê sessão de equipe diretamente do localStorage para cobrir edge cases
-      // de timing onde permissoesPorEvento ainda não foi populado quando este effect dispara
-      const sessCheck = getEquipeSession();
-      if (!sessCheck || sessCheck.eventoId !== id) {
+      // Gate de acesso: bloqueia acesso direto por URL para usuários sem permissão
+      if (id && !perfil.podeAcessarEvento(id) && !isSessaoDesseEvento) {
         setAcessoNegado(true);
         setLoadingEvento(false);
         return;
       }
-      // Sessão de equipe válida — permite continuar
-    }
 
-    if (!perfil.isGlobal && (permissaoNesseEvento === 'checkin' || permissaoNesseEvento === 'checkin_refeitorio' || permissaoNesseEvento === 'checkin_hospedagem')) {
-      setAcessoNegado(true);
-      setLoadingEvento(false);
-      return;
+      if (
+        permissaoNesseEvento === 'checkin' ||
+        permissaoNesseEvento === 'checkin_refeitorio' ||
+        permissaoNesseEvento === 'checkin_hospedagem'
+      ) {
+        setAcessoNegado(true);
+        setLoadingEvento(false);
+        return;
+      }
     }
 
     const tabParam = searchParams?.get('tab') as TabId | null;
@@ -587,7 +602,7 @@ export default function GerenciarEventoPage() {
         setCampos((estrutura?.campos as Campo[]) || []);
       }),
     ]);
-  }, [authLoading, perfil.loading, perfil.isGlobal, id, permissaoNesseEvento, equipeSessao, fetchEvento, fetchInscricoes, fetchEquipe, supabase, router, searchParams]);
+  }, [authLoading, perfil.loading, perfil.isGlobal, perfil.isDeptAdmin, perfil.podeEditarEvento, id, permissaoNesseEvento, equipeSessao, fetchEvento, fetchInscricoes, fetchEquipe, supabase, router, searchParams]);
 
   // ── Toggle inscrições abertas/pausadas ───────────────────────
   async function toggleInscricoes() {

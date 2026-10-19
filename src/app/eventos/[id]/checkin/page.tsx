@@ -1758,14 +1758,6 @@ export default function CheckinMobilePage() {
               <FileText className="w-4 h-4" />
               <span>Relatórios</span>
             </button>
-
-            <button
-              onClick={() => { setHistoricoOpen(true); setMenuOpen(false); }}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-semibold text-slate-300 hover:bg-white/5 transition"
-            >
-              <Clock className="w-4 h-4" />
-              <span>Histórico de Check-ins</span>
-            </button>
           </div>
 
           {/* Rodapé com Logo COMIEADEPA */}
