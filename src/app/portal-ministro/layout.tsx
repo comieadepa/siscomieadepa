@@ -11,7 +11,6 @@ import {
   Award,
   History,
   DollarSign,
-  Printer,
   LogOut,
   Menu,
   X,
@@ -26,7 +25,6 @@ const NAV_ITEMS = [
   { href: '/portal-ministro/eventos', label: 'Meus Eventos', icon: Calendar },
   { href: '/portal-ministro/certificados', label: 'Meus Certificados', icon: Award },
   { href: '/portal-ministro/historico', label: 'Histórico', icon: History },
-  { href: '/portal-ministro/impressao', label: 'Solicitar Impressão', icon: Printer },
 ];
 
 const NAV_PASTOR = {

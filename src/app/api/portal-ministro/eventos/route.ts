@@ -80,7 +80,8 @@ export async function GET(request: NextRequest) {
         cidade,
         banner_url,
         status,
-        inscricoes_abertas
+        inscricoes_abertas,
+        valor_inscricao
       )
     `)
     .order('created_at', { ascending: false });
@@ -199,11 +200,20 @@ export async function GET(request: NextRequest) {
       },
 
       // 3. Crachá & Presença
-      cracha: {
-        qrCode: insc.qr_code ?? null,
-        checkinRealizado: !!insc.checkin_realizado,
-        checkinAt: insc.checkin_at ?? null,
-      },
+      cracha: (() => {
+        const statusPag = String(insc.status_pagamento || '').toLowerCase();
+        const valorFinal = Number(insc.valor_final ?? insc.valor_pago ?? 0);
+        const valorEvento = Number(ev.valor_inscricao ?? 0);
+        const exigePagamento = valorFinal > 0 || valorEvento > 0;
+        const apto = !exigePagamento || ['pago', 'isento'].includes(statusPag);
+
+        return {
+          qrCode: apto ? (insc.qr_code ?? null) : null,
+          aptoParaCredenciamento: apto,
+          checkinRealizado: !!insc.checkin_realizado,
+          checkinAt: insc.checkin_at ?? null,
+        };
+      })(),
 
       // 4. Hospedagem & Leito
       hospedagem: {

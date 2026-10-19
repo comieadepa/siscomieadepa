@@ -19,6 +19,7 @@ import {
   ExternalLink,
   Sparkles,
   Ticket,
+  Lock,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -47,6 +48,7 @@ interface PagamentoData {
 
 interface CrachaData {
   qrCode: string | null;
+  aptoParaCredenciamento?: boolean;
   checkinRealizado: boolean;
   checkinAt: string | null;
 }
@@ -370,53 +372,78 @@ export default function MeusEventosPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               
               {/* 1. CRACHÁ VIRTUAL */}
-              <div className="bg-gradient-to-br from-blue-50/70 to-indigo-50/40 rounded-2xl p-5 border border-blue-100 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0D2B4E]">
-                      <QrCode size={16} /> Crachá Virtual
-                    </span>
-                    {eventoDestaque.cracha.checkinRealizado ? (
-                      <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <CheckCircle2 size={11} /> Check-in OK
-                      </span>
-                    ) : (
-                      <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                        Portaria
-                      </span>
+              {(() => {
+                const statusPag = String(eventoDestaque.statusPagamento || '').toLowerCase();
+                const valorFinal = Number(eventoDestaque.valorFinal || 0);
+                const exigePagamento = valorFinal > 0;
+                const isApto = eventoDestaque.cracha.aptoParaCredenciamento ?? (!exigePagamento || ['pago', 'isento'].includes(statusPag));
+
+                return (
+                  <div className="bg-gradient-to-br from-blue-50/70 to-indigo-50/40 rounded-2xl p-5 border border-blue-100 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0D2B4E]">
+                          <QrCode size={16} /> Crachá Virtual
+                        </span>
+                        {eventoDestaque.cracha.checkinRealizado ? (
+                          <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <CheckCircle2 size={11} /> Check-in OK
+                          </span>
+                        ) : !isApto ? (
+                          <span className="bg-amber-100 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <Lock size={10} /> Bloqueado
+                          </span>
+                        ) : (
+                          <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                            Portaria
+                          </span>
+                        )}
+                      </div>
+
+                      {!isApto ? (
+                        <div className="py-5 px-3 flex flex-col items-center text-center bg-white/60 rounded-xl border border-amber-200/80 my-2">
+                          <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mb-2.5">
+                            <Lock size={20} />
+                          </div>
+                          <p className="text-xs font-extrabold text-amber-900 leading-tight">
+                            Credenciamento bloqueado
+                          </p>
+                          <p className="text-[11px] text-amber-800/90 mt-1 leading-snug">
+                            Aguardando confirmação do pagamento
+                          </p>
+                        </div>
+                      ) : eventoDestaque.cracha.qrCode ? (
+                        <div className="flex flex-col items-center py-2">
+                          <div className="bg-white p-3 rounded-xl shadow-sm border border-blue-100/80">
+                            <QRCodeSVG
+                              value={eventoDestaque.cracha.qrCode}
+                              size={110}
+                              level="M"
+                            />
+                          </div>
+                          <p className="text-[10px] font-mono text-gray-500 mt-2 font-medium truncate max-w-[150px]">
+                            {eventoDestaque.cracha.qrCode}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="py-6 text-center text-xs text-gray-400">
+                          Crachá em processamento
+                        </div>
+                      )}
+                    </div>
+
+                    {isApto && eventoDestaque.cracha.qrCode && (
+                      <button
+                        onClick={() => setFullscreenCracha(eventoDestaque)}
+                        className="w-full mt-3 inline-flex items-center justify-center gap-1.5 py-2.5 bg-white hover:bg-blue-50 text-[#0D2B4E] border border-blue-200 text-xs font-bold rounded-xl transition-all shadow-sm"
+                      >
+                        <Maximize2 size={13} />
+                        Ver em Tela Cheia
+                      </button>
                     )}
                   </div>
-
-                  {eventoDestaque.cracha.qrCode ? (
-                    <div className="flex flex-col items-center py-2">
-                      <div className="bg-white p-3 rounded-xl shadow-sm border border-blue-100/80">
-                        <QRCodeSVG
-                          value={eventoDestaque.cracha.qrCode}
-                          size={110}
-                          level="M"
-                        />
-                      </div>
-                      <p className="text-[10px] font-mono text-gray-500 mt-2 font-medium truncate max-w-[150px]">
-                        {eventoDestaque.cracha.qrCode}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="py-6 text-center text-xs text-gray-400">
-                      Crachá em processamento
-                    </div>
-                  )}
-                </div>
-
-                {eventoDestaque.cracha.qrCode && (
-                  <button
-                    onClick={() => setFullscreenCracha(eventoDestaque)}
-                    className="w-full mt-3 inline-flex items-center justify-center gap-1.5 py-2.5 bg-white hover:bg-blue-50 text-[#0D2B4E] border border-blue-200 text-xs font-bold rounded-xl transition-all shadow-sm"
-                  >
-                    <Maximize2 size={13} />
-                    Ver em Tela Cheia
-                  </button>
-                )}
-              </div>
+                );
+              })()}
 
               {/* 2. HOSPEDAGEM & LEITO */}
               <div className="bg-gray-50/80 rounded-2xl p-5 border border-gray-100 flex flex-col justify-between">
@@ -648,15 +675,35 @@ export default function MeusEventosPage() {
                         </div>
                       </div>
 
-                      {item.cracha.qrCode && (
-                        <button
-                          onClick={() => setFullscreenCracha(item)}
-                          className="inline-flex items-center gap-2 px-4 py-2 bg-white text-[#0D2B4E] border border-blue-200 rounded-xl font-bold hover:bg-blue-50 transition-colors shadow-sm"
-                        >
-                          <QrCode size={14} />
-                          Visualizar Crachá Virtual
-                        </button>
-                      )}
+                      {(() => {
+                        const statusPag = String(item.statusPagamento || '').toLowerCase();
+                        const valorFinal = Number(item.valorFinal || 0);
+                        const exigePagamento = valorFinal > 0;
+                        const isApto = item.cracha.aptoParaCredenciamento ?? (!exigePagamento || ['pago', 'isento'].includes(statusPag));
+
+                        if (!isApto) {
+                          return (
+                            <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-800 rounded-xl text-xs font-semibold border border-amber-200">
+                              <Lock size={14} className="text-amber-600 flex-shrink-0" />
+                              <span>Credenciamento bloqueado — aguardando confirmação do pagamento</span>
+                            </div>
+                          );
+                        }
+
+                        if (item.cracha.qrCode) {
+                          return (
+                            <button
+                              onClick={() => setFullscreenCracha(item)}
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-white text-[#0D2B4E] border border-blue-200 rounded-xl font-bold hover:bg-blue-50 transition-colors shadow-sm"
+                            >
+                              <QrCode size={14} />
+                              Visualizar Crachá Virtual
+                            </button>
+                          );
+                        }
+
+                        return null;
+                      })()}
                     </div>
                   )}
                 </div>
@@ -784,19 +831,44 @@ export default function MeusEventosPage() {
 
             {/* Conteúdo Central com QR Code Grande */}
             <div className="p-6 text-center space-y-4">
-              <div className="bg-gray-50 p-4 rounded-2xl border-2 border-dashed border-gray-200 inline-block shadow-inner">
-                {fullscreenCracha.cracha.qrCode ? (
-                  <QRCodeSVG
-                    value={fullscreenCracha.cracha.qrCode}
-                    size={200}
-                    level="H"
-                  />
-                ) : (
-                  <div className="w-[200px] h-[200px] flex items-center justify-center text-xs text-gray-400">
-                    QR Code não disponível
+              {(() => {
+                const statusPag = String(fullscreenCracha.statusPagamento || '').toLowerCase();
+                const valorFinal = Number(fullscreenCracha.valorFinal || 0);
+                const exigePagamento = valorFinal > 0;
+                const isApto = fullscreenCracha.cracha.aptoParaCredenciamento ?? (!exigePagamento || ['pago', 'isento'].includes(statusPag));
+
+                if (!isApto) {
+                  return (
+                    <div className="py-6 px-4 flex flex-col items-center text-center bg-amber-50 rounded-2xl border border-amber-200">
+                      <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mb-3">
+                        <Lock size={24} />
+                      </div>
+                      <p className="text-sm font-extrabold text-amber-950">
+                        Credenciamento bloqueado
+                      </p>
+                      <p className="text-xs text-amber-800/90 mt-1 max-w-[220px]">
+                        Aguardando confirmação do pagamento para liberação do crachá.
+                      </p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="bg-gray-50 p-4 rounded-2xl border-2 border-dashed border-gray-200 inline-block shadow-inner">
+                    {fullscreenCracha.cracha.qrCode ? (
+                      <QRCodeSVG
+                        value={fullscreenCracha.cracha.qrCode}
+                        size={200}
+                        level="H"
+                      />
+                    ) : (
+                      <div className="w-[200px] h-[200px] flex items-center justify-center text-xs text-gray-400">
+                        QR Code não disponível
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              })()}
 
               <div>
                 <p className="text-xs text-gray-400 font-bold uppercase">Ministro / Participante</p>

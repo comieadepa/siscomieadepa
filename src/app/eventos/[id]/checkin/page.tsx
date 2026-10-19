@@ -76,6 +76,8 @@ interface PendingConfirm {
     plenaria_ultimo_data: string | null;
     // retrocompatibilidade
     ja_presente_plenaria: boolean;
+    // Elegibilidade
+    apto_checkin?: boolean;
     // Refeitório
     pagamento_pendente: boolean;
     sem_alimentacao: boolean;
@@ -948,7 +950,7 @@ export default function CheckinMobilePage() {
             )}
             {ctx.pagamento_pendente && (
               <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-red-800 text-xs font-semibold text-center">
-                💳 Pagamento pendente — refeição bloqueada
+                💳 Pagamento pendente — credenciamento e acesso bloqueados
               </div>
             )}
             {ctx.sem_alimentacao && isRefeitorio && (
@@ -962,22 +964,24 @@ export default function CheckinMobilePage() {
           <div className="px-5 pb-5 flex flex-col gap-3">
             <button
               onClick={() => void confirmarCheckin()}
-              disabled={confirmando || (isPlenaria && ctx.plenaria_hoje)}
+              disabled={confirmando || (isPlenaria && ctx.plenaria_hoje) || ctx.pagamento_pendente}
               className={`w-full active:scale-95 disabled:opacity-50 text-white font-black text-lg py-4 rounded-2xl shadow-lg transition ${
-                isPlenaria && ctx.plenaria_hoje
+                ctx.pagamento_pendente || (isPlenaria && ctx.plenaria_hoje)
                   ? 'bg-gray-400 cursor-not-allowed'
                   : 'bg-emerald-500 hover:bg-emerald-400'
               }`}
             >
               {confirmando
                 ? '⏳ Registrando...'
-                : isPlenaria && ctx.plenaria_hoje
-                  ? '🚫 Já registrado nesta plenária'
-                  : isRefeitorio
-                    ? '✅ Confirmar Refeição'
-                    : isPlenaria && ctx.plenaria_ultimo_at
-                      ? '✅ Registrar nova presença (novo dia)'
-                      : '✅ Confirmar Check-in'}
+                : ctx.pagamento_pendente
+                  ? '🚫 Pagamento pendente'
+                  : isPlenaria && ctx.plenaria_hoje
+                    ? '🚫 Já registrado nesta plenária'
+                    : isRefeitorio
+                      ? '✅ Confirmar Refeição'
+                      : isPlenaria && ctx.plenaria_ultimo_at
+                        ? '✅ Registrar nova presença (novo dia)'
+                        : '✅ Confirmar Check-in'}
             </button>
             <button
               onClick={cancelarConfirmacao}

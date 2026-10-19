@@ -7,10 +7,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
-  ExternalLink,
-  QrCode,
   Printer,
-  ShieldCheck,
   UserCheck,
   Package,
   Check,
@@ -18,8 +15,9 @@ import {
   Calendar,
   AlertTriangle,
   ArrowRight,
+  X,
+  Loader2,
 } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
 
 interface MinistroInfo {
   id: string;
@@ -75,7 +73,28 @@ export default function CentralCredencialPage() {
   const [data, setData] = useState<CredencialData | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
-  const [qrToken, setQrToken] = useState<string | null>(null);
+  const [modalCredencialAberto, setModalCredencialAberto] = useState(false);
+  const [iframeLoading, setIframeLoading] = useState(true);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && modalCredencialAberto) {
+        setModalCredencialAberto(false);
+      }
+    };
+
+    if (modalCredencialAberto) {
+      document.body.style.overflow = 'hidden';
+      window.addEventListener('keydown', handleKeyDown);
+    } else {
+      document.body.style.overflow = '';
+    }
+
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [modalCredencialAberto]);
 
   useEffect(() => {
     fetch('/api/portal-ministro/credencial')
@@ -94,17 +113,7 @@ export default function CentralCredencialPage() {
         setErro(e.message || 'Não foi possível carregar a Central de Credencial.');
         setLoading(false);
       });
-
-    fetch('/api/portal-ministro/credencial/qr-token')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d?.token) setQrToken(d.token);
-      })
-      .catch(() => {});
   }, []);
-
-  const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
-  const qrUrl = qrToken ? `${appUrl}/validar-credencial/${qrToken}` : '';
 
   if (loading) {
     return (
@@ -246,15 +255,17 @@ export default function CentralCredencialPage() {
             </div>
 
             {credencialUrl && isCredencialValida && (
-              <a
-                href={credencialUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shadow-md active:scale-95"
+              <button
+                type="button"
+                onClick={() => {
+                  setIframeLoading(true);
+                  setModalCredencialAberto(true);
+                }}
+                className="inline-flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer"
               >
-                <ExternalLink size={14} />
+                <IdCard size={14} />
                 Visualizar Credencial Oficial
-              </a>
+              </button>
             )}
           </div>
         </div>
@@ -447,43 +458,7 @@ export default function CentralCredencialPage() {
         )}
       </div>
 
-      {/* ── 3. VALIDAÇÃO PÚBLICA & QR CODE ── */}
-      {qrToken && (
-        <div className="bg-white rounded-3xl border border-gray-200 shadow-lg p-6 sm:p-7">
-          <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-gray-100">
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-800 flex items-center justify-center">
-              <QrCode size={18} />
-            </div>
-            <div>
-              <h3 className="font-bold text-gray-900 text-base leading-tight">
-                QR Code de Validação Pública
-              </h3>
-              <p className="text-xs text-gray-500">Comprovação instantânea de regularidade ministerial</p>
-            </div>
-          </div>
 
-          <div className="flex flex-col sm:flex-row items-center gap-6">
-            <div className="p-3.5 bg-white border border-gray-200 rounded-2xl shadow-sm inline-block flex-shrink-0">
-              <QRCodeSVG value={qrUrl} size={150} level="M" includeMargin />
-            </div>
-
-            <div className="space-y-3 text-center sm:text-left">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold">
-                <ShieldCheck size={14} className="text-emerald-600" />
-                Validação em Tempo Real
-              </div>
-
-              <p className="text-xs text-gray-600 leading-relaxed max-w-md">
-                Apresente este QR Code em eventos, convenções ou quando solicitado. Ele direciona qualquer pessoa ou autoridade para a página oficial de validação da COMIEADEPA.
-              </p>
-
-              <p className="text-[11px] text-gray-400 font-mono break-all bg-gray-50 p-2 rounded-lg border border-gray-100">
-                {qrUrl}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── 4. HISTÓRICO DE PEDIDOS DE IMPRESSÃO ── */}
       {historicoPedidos.length > 0 && (
@@ -512,6 +487,85 @@ export default function CentralCredencialPage() {
                 </span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE VISUALIZAÇÃO DA CREDENCIAL OFICIAL */}
+      {modalCredencialAberto && credencialUrl && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="modal-credencial-titulo"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setModalCredencialAberto(false)}
+        >
+          <div
+            className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-gray-100 flex flex-col max-h-[92vh] overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Cabeçalho do Modal */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-slate-50/80">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
+                  <IdCard size={18} />
+                </div>
+                <div>
+                  <h3 id="modal-credencial-titulo" className="text-sm sm:text-base font-bold text-gray-900 leading-tight">
+                    Credencial Oficial
+                  </h3>
+                  <p className="text-[11px] text-gray-500">
+                    Documento digital autenticado COMIEADEPA
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setModalCredencialAberto(false)}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-200/80 transition-all cursor-pointer"
+                  title="Fechar (ESC)"
+                  aria-label="Fechar modal"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Corpo do Modal com Iframe Incorporado */}
+            <div className="relative flex-1 w-full bg-slate-100 min-h-[480px] sm:min-h-[560px] overflow-hidden">
+              {iframeLoading && (
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-50 text-gray-600 gap-3">
+                  <Loader2 size={32} className="animate-spin text-blue-600" />
+                  <span className="text-xs font-semibold text-gray-600">
+                    Carregando credencial oficial...
+                  </span>
+                </div>
+              )}
+
+              <iframe
+                src={credencialUrl}
+                title="Credencial Digital Oficial COMIEADEPA"
+                className="w-full h-full min-h-[480px] sm:min-h-[560px] border-0"
+                onLoad={() => setIframeLoading(false)}
+                onError={() => setIframeLoading(false)}
+              />
+            </div>
+
+            {/* Rodapé do Modal */}
+            <div className="px-5 py-3 border-t border-gray-100 bg-white flex items-center justify-between text-xs text-gray-500">
+              <span className="text-[11px] text-gray-400">
+                Pressione <kbd className="px-1.5 py-0.5 bg-gray-100 border border-gray-200 rounded text-[10px] text-gray-600 font-mono">ESC</kbd> para fechar
+              </span>
+              <button
+                type="button"
+                onClick={() => setModalCredencialAberto(false)}
+                className="px-4 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-xl transition cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}

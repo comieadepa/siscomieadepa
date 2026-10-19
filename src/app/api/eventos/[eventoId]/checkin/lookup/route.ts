@@ -16,6 +16,8 @@ type InscricaoRow = {
   tipo_inscricao: string | null;
   alimentacao: boolean | null;
   hospedagem: boolean | null;
+  valor_final: number | null;
+  valor_pago: number | null;
   refeicoes_total: number | null;
   refeicoes_utilizadas: number | null;
   quantidade_refeicoes_total: number | null;
@@ -28,6 +30,7 @@ const SELECT_INSC = [
   'supervisao_id', 'campo_id', 'status_pagamento',
   'checkin_realizado', 'checkin_at', 'qr_code',
   'tipo_inscricao', 'alimentacao', 'hospedagem',
+  'valor_final', 'valor_pago',
   'refeicoes_total', 'refeicoes_utilizadas',
   'quantidade_refeicoes_total', 'quantidade_refeicoes_usadas', 'quantidade_refeicoes_saldo',
 ].join(',');
@@ -228,10 +231,13 @@ export async function GET(
     }
   }
 
-  // ── Contexto para REFEITÓRIO ──────────────────────────────
-  const eventoExigePagamento = (evento.valor_inscricao ?? 0) > 0;
+  // ── Contexto Geral e Financeiro ──────────────────────────
   const statusPag = String(ins.status_pagamento || '').toLowerCase();
-  const pagamentoPendente = eventoExigePagamento && !['pago', 'isento'].includes(statusPag);
+  const valorFinal = Number(ins.valor_final ?? ins.valor_pago ?? 0);
+  const valorEvento = Number(evento.valor_inscricao ?? 0);
+  const exigePagamento = valorFinal > 0 || valorEvento > 0;
+  const pagamentoPendente = exigePagamento && !['pago', 'isento'].includes(statusPag);
+  const aptoCheckin = !pagamentoPendente;
 
   const total  = ins.quantidade_refeicoes_total ?? ins.refeicoes_total ?? 0;
   const usadas = ins.quantidade_refeicoes_usadas ?? ins.refeicoes_utilizadas ?? 0;
@@ -243,6 +249,10 @@ export async function GET(
     inscricao: ins,
     contexto: {
       modo,
+
+      // Elegibilidade de Check-in
+      apto_checkin: aptoCheckin,
+      pagamento_pendente: pagamentoPendente,
 
       // Plenária — data e sessão em uso nesta leitura
       data_plenaria: dataPlen,
@@ -261,7 +271,6 @@ export async function GET(
       ja_presente_plenaria: plenaria_hoje,
 
       // Refeitório
-      pagamento_pendente: pagamentoPendente,
       sem_alimentacao: !ins.alimentacao,
       refeicoes_total: total,
       refeicoes_usadas: usadas,

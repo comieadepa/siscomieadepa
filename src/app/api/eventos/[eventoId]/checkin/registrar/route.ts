@@ -22,6 +22,8 @@ type InscricaoRow = {
   qr_code: string | null;
   tipo_inscricao: string | null;
   alimentacao: boolean | null;
+  valor_final: number | null;
+  valor_pago: number | null;
   refeicoes_total: number | null;
   refeicoes_utilizadas: number | null;
   quantidade_refeicoes_total: number | null;
@@ -36,6 +38,7 @@ const SELECT_INSC = [
   'supervisao_id', 'campo_id', 'status_pagamento',
   'checkin_realizado', 'checkin_at', 'qr_code',
   'tipo_inscricao', 'alimentacao',
+  'valor_final', 'valor_pago',
   'refeicoes_total', 'refeicoes_utilizadas',
   'quantidade_refeicoes_total', 'quantidade_refeicoes_usadas', 'quantidade_refeicoes_saldo',
 ].join(',');
@@ -203,6 +206,17 @@ export async function POST(
 
   const ins = inscricao as unknown as InscricaoRow;
 
+  // ── VALIDAÇÃO DE PAGAMENTO / REGULARIDADE ─────────────────
+  const statusPagamento = String(ins.status_pagamento || '').toLowerCase();
+  const valorFinal = Number(ins.valor_final ?? ins.valor_pago ?? 0);
+  const valorEvento = Number(evRow.valor_inscricao ?? 0);
+  const exigePagamento = valorFinal > 0 || valorEvento > 0;
+  const isApto = !exigePagamento || ['pago', 'isento'].includes(statusPagamento);
+
+  if (!isApto) {
+    return NextResponse.json({ status: 'pagamento_pendente', inscricao: ins }, { status: 200 });
+  }
+
   // ── MODO CREDENCIAMENTO ──────────────────────────────────
   if (tipoCheckin === 'credenciamento') {
     if (ins.checkin_realizado) {
@@ -249,12 +263,6 @@ export async function POST(
 
   // ── MODO REFEITORIO ──────────────────────────────────────
   if (tipoCheckin === 'refeitorio') {
-    const eventoExigePagamento = (evRow.valor_inscricao ?? 0) > 0;
-    const statusPagamento = String(ins.status_pagamento || '').toLowerCase();
-    if (eventoExigePagamento && !['pago', 'isento'].includes(statusPagamento)) {
-      return NextResponse.json({ status: 'pagamento_pendente', inscricao: ins }, { status: 200 });
-    }
-
     if (!ins.alimentacao) {
       return NextResponse.json({ status: 'sem_alimentacao', inscricao: ins }, { status: 200 });
     }
