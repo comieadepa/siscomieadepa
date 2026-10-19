@@ -17,6 +17,7 @@ type EquipeRow = {
   evento_id: string;
   tipo: 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem';
   ativo: boolean;
+  local_id?: string | null;
 };
 
 function endOfDayUtc(dateStr: string): Date {
@@ -57,10 +58,10 @@ export async function POST(
 
   const { data: equipe } = await supabase
     .from('evento_equipe')
-    .select('id,evento_id,tipo,ativo')
+    .select('id,evento_id,tipo,ativo,local_id')
     .eq('id', equipeId)
     .eq('evento_id', eventoId)
-    .single();
+    .maybeSingle();
 
   if (!equipe) {
     return NextResponse.json({ error: 'Equipe nao encontrada.' }, { status: 404 });
@@ -70,6 +71,25 @@ export async function POST(
 
   if (!equipeRow.ativo) {
     return NextResponse.json({ error: 'Acesso encerrado.' }, { status: 403 });
+  }
+
+  let localInfo: { id: string; nome: string; tipo: 'plenaria' | 'refeitorio'; ativo: boolean } | null = null;
+  if (equipeRow.local_id) {
+    const { data: loc } = await supabase
+      .from('evento_locais_checkin')
+      .select('id,nome,tipo,ativo')
+      .eq('id', equipeRow.local_id)
+      .eq('evento_id', eventoId)
+      .maybeSingle();
+
+    if (loc) {
+      localInfo = {
+        id: loc.id,
+        nome: loc.nome,
+        tipo: loc.tipo as 'plenaria' | 'refeitorio',
+        ativo: loc.ativo === true,
+      };
+    }
   }
 
   const tipoPermitido = area === 'hospedagem_checkin'
@@ -114,6 +134,12 @@ export async function POST(
       data_fim: evRow.data_fim,
       status: evRow.status,
       checkin_ativo: evRow.checkin_ativo,
+    },
+    operador: {
+      id: equipeRow.id,
+      tipo: equipeRow.tipo,
+      local_id: equipeRow.local_id ?? null,
+      local: localInfo,
     },
   });
 }

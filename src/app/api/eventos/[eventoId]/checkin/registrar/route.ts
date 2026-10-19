@@ -93,6 +93,69 @@ export async function POST(
   if (evRow.checkin_ativo !== true)
     return NextResponse.json({ error: 'Check-in desativado.' }, { status: 403 });
 
+  // ── Determinação e Validação Rigorosa do Local do Operador ────
+  // NUNCA confiar em local_id vindo de body, URL ou cliente.
+  // Obter exclusivamente a partir do operador autenticado em evento_equipe.
+  let resolvedLocalId: string | null = null;
+  const equipeIdFromGuard = guard.ctx.equipe?.id;
+  const equipeIdFromHeader = request.headers.get('x-evento-equipe-id')?.trim();
+  const equipeIdFromBody = typeof body.equipe_id === 'string' ? body.equipe_id.trim() : null;
+  const targetEquipeId = equipeIdFromGuard || equipeIdFromHeader || equipeIdFromBody;
+
+  if (targetEquipeId) {
+    const { data: opRow } = await supabase
+      .from('evento_equipe')
+      .select('id,evento_id,tipo,ativo,local_id')
+      .eq('id', targetEquipeId)
+      .eq('evento_id', eventoId)
+      .maybeSingle();
+
+    if (!opRow || !opRow.ativo) {
+      return NextResponse.json({ error: 'Operador não autorizado ou inativo.' }, { status: 403 });
+    }
+
+    if (opRow.local_id) {
+      const { data: localRec } = await supabase
+        .from('evento_locais_checkin')
+        .select('id,evento_id,tipo,nome,ativo')
+        .eq('id', opRow.local_id)
+        .eq('evento_id', eventoId)
+        .maybeSingle();
+
+      if (!localRec) {
+        return NextResponse.json({
+          error: 'Local vinculado ao operador não encontrado neste evento.',
+        }, { status: 400 });
+      }
+
+      if (localRec.ativo !== true) {
+        return NextResponse.json({
+          error: `O local "${localRec.nome}" vinculado a este operador está inativo.`,
+        }, { status: 400 });
+      }
+
+      if (tipoCheckin === 'plenaria' && localRec.tipo !== 'plenaria') {
+        return NextResponse.json({
+          error: `Operação incompatível: este operador está vinculado ao restaurante "${localRec.nome}" e não pode registrar presença em plenária.`,
+        }, { status: 400 });
+      }
+
+      if (tipoCheckin === 'refeitorio' && localRec.tipo !== 'refeitorio') {
+        return NextResponse.json({
+          error: `Operação incompatível: este operador está vinculado à plenária "${localRec.nome}" e não pode registrar consumo de refeições.`,
+        }, { status: 400 });
+      }
+
+      resolvedLocalId = localRec.id;
+    } else {
+      // Operador legado sem local vinculado -> local_id = NULL
+      resolvedLocalId = null;
+    }
+  } else {
+    // Operação administrativa via sessão de usuário global autenticado sem equipe específica -> local_id = NULL
+    resolvedLocalId = null;
+  }
+
   // ── Busca inscricao ──────────────────────────────────────
   let targetQrToken = qrToken;
   let { data: inscricao } = (await supabase
@@ -229,8 +292,12 @@ export async function POST(
       .eq('id', ins.id);
     if (updError) return NextResponse.json({ error: 'Erro ao registrar check-in.' }, { status: 500 });
     await supabase.from('evento_checkins').insert([{
-      evento_id: eventoId, inscricao_id: ins.id,
-      metodo: 'qrcode', tipo_checkin: 'credenciamento', checkin_user: checkinUser,
+      evento_id: eventoId,
+      inscricao_id: ins.id,
+      metodo: 'qrcode',
+      tipo_checkin: 'credenciamento',
+      checkin_user: checkinUser,
+      local_id: resolvedLocalId,
     }]);
     return NextResponse.json({ status: 'success', inscricao: { ...ins, checkin_realizado: true, checkin_at: now } });
   }
@@ -251,11 +318,14 @@ export async function POST(
     }
 
     const { error: insErr } = await supabase.from('evento_checkins').insert([{
-      evento_id: eventoId, inscricao_id: ins.id,
-      metodo: 'qrcode', tipo_checkin: 'plenaria',
+      evento_id: eventoId,
+      inscricao_id: ins.id,
+      metodo: 'qrcode',
+      tipo_checkin: 'plenaria',
       data_plenaria: dataPlenaria,
       sessao: sessaoPlenaria,
       checkin_user: checkinUser,
+      local_id: resolvedLocalId,
     }]);
     if (insErr) return NextResponse.json({ error: 'Erro ao registrar presenca.' }, { status: 500 });
     return NextResponse.json({ status: 'success', inscricao: ins, data_plenaria: dataPlenaria });
@@ -325,13 +395,18 @@ export async function POST(
       origem: 'refeitorio',
       saldo_antes: saldoAtual,
       saldo_depois: saldoDepois,
+      local_id: resolvedLocalId,
     }]);
 
     await supabase.from('evento_checkins').insert([{
-      evento_id: eventoId, inscricao_id: ins.id,
-      metodo: 'qrcode', tipo_checkin: 'refeitorio',
-      saldo_antes: saldoAtual, saldo_depois: saldoDepois,
+      evento_id: eventoId,
+      inscricao_id: ins.id,
+      metodo: 'qrcode',
+      tipo_checkin: 'refeitorio',
+      saldo_antes: saldoAtual,
+      saldo_depois: saldoDepois,
       checkin_user: checkinUser,
+      local_id: resolvedLocalId,
     }]);
 
     return NextResponse.json({

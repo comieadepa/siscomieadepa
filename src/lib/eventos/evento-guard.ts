@@ -24,6 +24,7 @@ type EquipeRow = {
   tipo: EventoRole;
   ativo: boolean;
   convite_expira_em?: string | null;
+  local_id?: string | null;
 };
 
 export type EventoGuardContext = {
@@ -227,7 +228,7 @@ async function resolveEquipeRole(args: {
 }): Promise<{ role: EventoRole; equipe: EquipeRow; source: EventoGuardContext['source'] } | null> {
   const { data: equipe } = await args.supabaseAdmin
     .from('evento_equipe')
-    .select('id,evento_id,tipo,ativo,convite_expira_em')
+    .select('id,evento_id,tipo,ativo,convite_expira_em,local_id')
     .eq('id', args.equipeId)
     .eq('evento_id', args.eventoId)
     .maybeSingle();

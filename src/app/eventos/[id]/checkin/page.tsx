@@ -283,6 +283,13 @@ export default function CheckinMobilePage() {
 
   // Sessão de equipe e gate de acesso
   const [equipeSessao, setEquipeSessao] = useState<EquipeSession | null>(null);
+  const [operadorLocal, setOperadorLocal] = useState<{
+    id: string;
+    nome: string;
+    tipo: 'plenaria' | 'refeitorio';
+    ativo: boolean;
+  } | null>(null);
+  const [operadorCarregado, setOperadorCarregado] = useState(false);
   const [emailAcesso, setEmailAcesso] = useState('');
   const [solicitando, setSolicitando] = useState(false);
   const [gateMsg, setGateMsg] = useState<string | null>(null);
@@ -406,16 +413,50 @@ export default function CheckinMobilePage() {
         }
         throw new Error('Sessao invalida');
       }
+      if (json?.operador) {
+        const loc = (json.operador.local as {
+          id: string;
+          nome: string;
+          tipo: 'plenaria' | 'refeitorio';
+          ativo: boolean;
+        } | null) || null;
+        setOperadorLocal(loc);
+        setOperadorCarregado(true);
+        if (loc) {
+          if (loc.tipo === 'plenaria' && modoCheckin !== 'plenaria') {
+            setModoCheckin('plenaria');
+          } else if (loc.tipo === 'refeitorio' && modoCheckin !== 'refeitorio') {
+            setModoCheckin('refeitorio');
+          }
+        }
+      } else {
+        setOperadorLocal(null);
+        setOperadorCarregado(true);
+      }
       return (json?.evento as Evento) || null;
     } catch {
       clearEquipeSession();
       setEquipeSessao(null);
+      setOperadorLocal(null);
+      setOperadorCarregado(false);
       setScannerAtivo(false);
       setAcessoNegado(false);
       setLoadingEvento(false);
       return null;
     }
   }, [id, modoCheckin]);
+
+  // ── Sincroniza vínculo do operador ao focar na janela/app ──
+  useEffect(() => {
+    const handleFocus = () => {
+      const sess = getEquipeSession();
+      if (sess && sess.eventoId === id) {
+        void validarSessaoEquipe(sess);
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [id, validarSessaoEquipe]);
 
   // ── Carrega Evento e Estrutura ─────────────────────────────
   useEffect(() => {
@@ -511,6 +552,21 @@ export default function CheckinMobilePage() {
       };
       setEquipeSession(sessao);
       setEquipeSessao(sessao);
+      if (json.operador) {
+        const loc = (json.operador.local as {
+          id: string;
+          nome: string;
+          tipo: 'plenaria' | 'refeitorio';
+          ativo: boolean;
+        } | null) || null;
+        setOperadorLocal(loc);
+        setOperadorCarregado(true);
+        if (loc?.tipo === 'plenaria') {
+          setModoCheckin('plenaria');
+        } else if (loc?.tipo === 'refeitorio') {
+          setModoCheckin('refeitorio');
+        }
+      }
       setAcessoNegado(false);
       setAcessoMotivo(null);
       setLoadingEvento(true);
@@ -638,6 +694,17 @@ export default function CheckinMobilePage() {
   // ── FASE 1: Leitura QR → Lookup com Validação Backend ───────
   async function consultarInscricao(tokenOuId: string) {
     if (ignorandoRef.current || processando || pendingConfirm) return;
+
+    if (operadorLocal && !operadorLocal.ativo) {
+      setResultado({
+        estado: 'invalid',
+        message: `O local "${operadorLocal.nome}" está inativo.`,
+        bloqueadoMotivo: `O local "${operadorLocal.nome}" vinculado a este terminal está inativo. Registros bloqueados pela organização.`,
+      });
+      emitirSom('erro');
+      vibrar('erro');
+      return;
+    }
 
     ignorandoRef.current = true;
     setProcessando(true);
@@ -801,6 +868,21 @@ export default function CheckinMobilePage() {
   // ── FASE 2: Confirmação Efetiva no Backend ───────────────────
   async function confirmarCheckin() {
     if (!pendingConfirm || confirmando) return;
+
+    if (operadorLocal && !operadorLocal.ativo) {
+      setPendingConfirm(null);
+      setResultado({
+        estado: 'invalid',
+        inscricao: pendingConfirm.inscricao,
+        nomeSup: pendingConfirm.nomeSup,
+        nomeCampo: pendingConfirm.nomeCampo,
+        bloqueadoMotivo: `O local "${operadorLocal.nome}" vinculado a este terminal está inativo.`,
+      });
+      emitirSom('erro');
+      vibrar('erro');
+      return;
+    }
+
     setConfirmando(true);
 
     const { inscricao, qrToken, nomeSup, nomeCampo, contexto } = pendingConfirm;
@@ -830,7 +912,7 @@ export default function CheckinMobilePage() {
           inscricao,
           nomeSup,
           nomeCampo,
-          bloqueadoMotivo: json?.message || 'Erro ao registrar check-in no sistema.',
+          bloqueadoMotivo: json?.error || json?.message || 'Erro ao registrar check-in no sistema.',
         });
         emitirSom('erro');
         vibrar('erro');
@@ -886,6 +968,9 @@ export default function CheckinMobilePage() {
       emitirSom('sucesso');
       vibrar('sucesso');
       void carregarContadores();
+      if (equipeSessao) {
+        void validarSessaoEquipe(equipeSessao);
+      }
 
     } catch {
       setPendingConfirm(null);
@@ -917,6 +1002,7 @@ export default function CheckinMobilePage() {
 
   function alternarModo(novoModo: 'plenaria' | 'refeitorio') {
     if (modoForcado || modoCheckin === novoModo) return;
+    if (operadorLocal && operadorLocal.tipo !== novoModo) return;
     setPendingConfirm(null);
     setResultado(null);
     setModoCheckin(novoModo);
@@ -1721,26 +1807,42 @@ export default function CheckinMobilePage() {
           <div className="flex-1 py-6 space-y-2">
             <button
               onClick={() => { alternarModo('plenaria'); setMenuOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-semibold transition ${
+              disabled={operadorLocal ? operadorLocal.tipo !== 'plenaria' : false}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl text-xs font-semibold transition ${
                 modoCheckin === 'plenaria'
                   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                  : 'text-slate-300 hover:bg-white/5'
+                  : operadorLocal && operadorLocal.tipo !== 'plenaria'
+                    ? 'text-slate-600 cursor-not-allowed opacity-50'
+                    : 'text-slate-300 hover:bg-white/5'
               }`}
             >
-              <Users className="w-4 h-4" />
-              <span>Plenária</span>
+              <span className="flex items-center gap-3">
+                <Users className="w-4 h-4" />
+                <span>Plenária</span>
+              </span>
+              {operadorLocal && operadorLocal.tipo !== 'plenaria' && (
+                <span className="text-[10px] bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">Bloqueado</span>
+              )}
             </button>
 
             <button
               onClick={() => { alternarModo('refeitorio'); setMenuOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-semibold transition ${
+              disabled={operadorLocal ? operadorLocal.tipo !== 'refeitorio' : false}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl text-xs font-semibold transition ${
                 modoCheckin === 'refeitorio'
                   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                  : 'text-slate-300 hover:bg-white/5'
+                  : operadorLocal && operadorLocal.tipo !== 'refeitorio'
+                    ? 'text-slate-600 cursor-not-allowed opacity-50'
+                    : 'text-slate-300 hover:bg-white/5'
               }`}
             >
-              <Utensils className="w-4 h-4" />
-              <span>Refeitório</span>
+              <span className="flex items-center gap-3">
+                <Utensils className="w-4 h-4" />
+                <span>Refeitório</span>
+              </span>
+              {operadorLocal && operadorLocal.tipo !== 'refeitorio' && (
+                <span className="text-[10px] bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">Bloqueado</span>
+              )}
             </button>
 
             <button
@@ -1774,6 +1876,21 @@ export default function CheckinMobilePage() {
                 Operador: {equipeSessao.email}
               </p>
             )}
+            <div className="mt-2 text-xs">
+              {operadorLocal ? (
+                <div className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold inline-flex items-center gap-1.5 ${
+                  !operadorLocal.ativo
+                    ? 'bg-red-500/15 border border-red-500/30 text-red-300'
+                    : 'bg-white/5 border border-white/10 text-slate-200'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${operadorLocal.ativo ? 'bg-emerald-400' : 'bg-red-400 animate-pulse'}`} />
+                  <span>{operadorLocal.tipo === 'plenaria' ? '🏛️' : '🍽️'} {operadorLocal.nome}</span>
+                  {!operadorLocal.ativo && <span className="text-red-400 font-bold ml-1">(Inativo)</span>}
+                </div>
+              ) : (
+                <span className="text-[11px] text-slate-500">Terminal: Local não definido</span>
+              )}
+            </div>
             <button
               onClick={() => {
                 clearEquipeSession();
@@ -1833,38 +1950,80 @@ export default function CheckinMobilePage() {
       <DrawerMenu />
 
       {/* ── CABEÇALHO DO EVENTO ───────────────────────────────── */}
-      <header className="bg-[#0D1D35] border-b border-white/10 px-4 py-3.5 flex items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <button
-            onClick={() => setMenuOpen(true)}
-            className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-white transition active:scale-95 shrink-0"
-            aria-label="Menu"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-          <div className="min-w-0">
-            <h1 className="text-sm font-bold text-white uppercase tracking-tight truncate leading-tight">
-              {evento.nome}
-            </h1>
-            <p className="text-[11px] text-slate-400 truncate flex items-center gap-1 mt-0.5">
-              <MapPin className="w-3 h-3 text-emerald-400 shrink-0" />
-              <span>{periodoFormatado}</span>
-            </p>
+      <header className="bg-[#0D1D35] border-b border-white/10 px-4 py-3 flex flex-col gap-2.5 shrink-0">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              onClick={() => setMenuOpen(true)}
+              className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-white transition active:scale-95 shrink-0"
+              aria-label="Menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div className="min-w-0">
+              <h1 className="text-sm font-bold text-white uppercase tracking-tight truncate leading-tight">
+                {evento.nome}
+              </h1>
+              <p className="text-[11px] text-slate-400 truncate flex items-center gap-1 mt-0.5">
+                <MapPin className="w-3 h-3 text-emerald-400 shrink-0" />
+                <span>{periodoFormatado}</span>
+              </p>
+            </div>
           </div>
+
+          {/* Contador de Check-ins Badge */}
+          <button
+            onClick={() => setHistoricoOpen(true)}
+            className="bg-[#08101E] border border-white/10 hover:border-emerald-400/40 rounded-2xl px-3 py-1.5 flex flex-col items-end transition shrink-0"
+          >
+            <span className="text-[9px] text-slate-400 uppercase tracking-widest font-semibold leading-none">
+              Check-ins
+            </span>
+            <span className="text-base font-black text-emerald-400 leading-none mt-1">
+              {totalCheckins}
+            </span>
+          </button>
         </div>
 
-        {/* Contador de Check-ins Badge */}
-        <button
-          onClick={() => setHistoricoOpen(true)}
-          className="bg-[#08101E] border border-white/10 hover:border-emerald-400/40 rounded-2xl px-3 py-1.5 flex flex-col items-end transition shrink-0"
-        >
-          <span className="text-[9px] text-slate-400 uppercase tracking-widest font-semibold leading-none">
-            Check-ins
-          </span>
-          <span className="text-base font-black text-emerald-400 leading-none mt-1">
-            {totalCheckins}
-          </span>
-        </button>
+        {/* ── IDENTIFICAÇÃO DO LOCAL / TERMINAL ── */}
+        <div className="pt-2 border-t border-white/5 flex items-center justify-between gap-2">
+          {operadorCarregado && operadorLocal ? (
+            <div className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-xl text-xs font-semibold max-w-[75%] truncate ${
+              !operadorLocal.ativo
+                ? 'bg-red-500/15 border border-red-500/30 text-red-300'
+                : operadorLocal.tipo === 'plenaria'
+                  ? 'bg-blue-500/15 border border-blue-500/30 text-blue-200'
+                  : 'bg-amber-500/15 border border-amber-500/30 text-amber-200'
+            }`}>
+              <span className={`w-2 h-2 rounded-full shrink-0 ${
+                !operadorLocal.ativo ? 'bg-red-400 animate-pulse' : 'bg-emerald-400'
+              }`} />
+              <span className="text-[10px] uppercase tracking-wider font-bold shrink-0">
+                {operadorLocal.tipo === 'plenaria' ? '🏛️ Plenária' : '🍽️ Refeitório'}:
+              </span>
+              <span className="font-bold text-white truncate">
+                {operadorLocal.nome}
+              </span>
+              {!operadorLocal.ativo && (
+                <span className="text-[9px] bg-red-600 px-1.5 py-0.5 rounded text-white font-bold shrink-0 ml-1">
+                  INATIVO
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-800/80 border border-white/10 text-slate-300 text-xs font-medium">
+              <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0" />
+              <span className="text-[10px] text-slate-400 shrink-0">Terminal:</span>
+              <span className="font-semibold text-slate-200">Local não definido</span>
+            </div>
+          )}
+
+          {equipeSessao?.email && (
+            <span className="text-[10px] text-slate-400 truncate max-w-[130px]" title={equipeSessao.email}>
+              👤 {equipeSessao.email.split('@')[0]}
+            </span>
+          )}
+        </div>
       </header>
 
       {/* ── ABAS DE MODO (Plenária / Refeitório) ─────── */}
@@ -1873,20 +2032,29 @@ export default function CheckinMobilePage() {
           const ativo = modoCheckin === m;
           const label = m === 'plenaria' ? 'Plenária' : 'Refeitório';
           const Icon = m === 'plenaria' ? Users : Utensils;
+          const bloqueadoPorLocal = operadorLocal ? operadorLocal.tipo !== m : false;
 
           return (
             <button
               key={m}
               onClick={() => alternarModo(m)}
-              disabled={!!modoForcado}
+              disabled={!!modoForcado || bloqueadoPorLocal}
+              title={bloqueadoPorLocal ? `Operador vinculado a ${operadorLocal?.tipo === 'plenaria' ? 'Plenária' : 'Refeitório'}` : undefined}
               className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-b-2 transition ${
                 ativo
                   ? 'border-emerald-400 text-emerald-400'
-                  : 'border-transparent text-slate-400 hover:text-white'
-              } ${modoForcado ? 'cursor-default' : ''}`}
+                  : bloqueadoPorLocal
+                    ? 'border-transparent text-slate-600 cursor-not-allowed opacity-50'
+                    : 'border-transparent text-slate-400 hover:text-white'
+              } ${modoForcado || bloqueadoPorLocal ? 'cursor-default' : ''}`}
             >
               <Icon className="w-3.5 h-3.5" />
               <span>{label}</span>
+              {bloqueadoPorLocal && (
+                <span className="text-[9px] lowercase bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded ml-1">
+                  bloqueado
+                </span>
+              )}
             </button>
           );
         })}
@@ -1931,6 +2099,19 @@ export default function CheckinMobilePage() {
 
       {/* ── CORPO PRINCIPAL ──────────────────────────────────── */}
       <main className="flex-1 overflow-y-auto px-4 pb-6">
+        {/* Banner de Alerta se o Local estiver Inativo */}
+        {operadorLocal && !operadorLocal.ativo && (
+          <div className="max-w-sm mx-auto mb-3 bg-red-950/80 border border-red-800 rounded-2xl p-3.5 text-center text-xs text-red-200 flex items-center justify-center gap-2.5 shadow-lg">
+            <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
+            <div className="text-left">
+              <p className="font-bold text-white">Local Inativo</p>
+              <p className="text-[11px] text-red-300">
+                O local <strong>{operadorLocal.nome}</strong> foi inativado. Check-ins estão suspensos pela coordenação.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* ═══ MODO CÂMERA (SCREEN 1) ═══════════════════════════ */}
         {!modoManual && (
           <div className="max-w-sm mx-auto flex flex-col items-center">

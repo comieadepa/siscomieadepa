@@ -24,6 +24,8 @@ import TabBackup        from './TabBackup';
 import TabProgramacao   from './TabProgramacao';
 import TabCertificados  from './TabCertificados';
 import TabControleAGO  from './TabControleAGO';
+import GerenciadorLocaisCheckin from './GerenciadorLocaisCheckin';
+import { RelatorioPresencasPlenaria, RelatorioConsumoRestaurante } from './RelatoriosLocais';
 import { calcularValorFinanceiroInscricao, formatarValorUI, identificarResponsavelFinanceiro } from '@/lib/eventos/financeiro-lote-utils';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────
@@ -156,6 +158,7 @@ interface Equipe {
   nome: string | null;
   email: string;
   tipo: 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem';
+  local_id?: string | null;
   ativo: boolean;
   created_at: string;
   ultimo_acesso_em: string | null;
@@ -3144,9 +3147,9 @@ function TabCheckin({ eventoId, evento, inscricoes, loading, nomeSup, nomeCampo,
   if (loading) return <LoadingSkeleton />;
 
   return (
-    <div className="max-w-2xl">
+    <div className="space-y-6 max-w-5xl">
       {/* Card modo mobile + toggle ativo */}
-      <div className="bg-gradient-to-r from-[#0D2B4E] to-[#123b63] rounded-xl p-5 mb-6">
+      <div className="bg-gradient-to-r from-[#0D2B4E] to-[#123b63] rounded-xl p-5">
         <div className="flex items-center justify-between gap-4 mb-4">
           <div>
             <p className="text-white font-bold text-base">📱 Modo Check-in Mobile</p>
@@ -3175,54 +3178,60 @@ function TabCheckin({ eventoId, evento, inscricoes, loading, nomeSup, nomeCampo,
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-        <h3 className="font-bold text-[#123b63] mb-4 flex items-center gap-2">✅ Check-in Manual (desktop)</h3>
-        <input type="text" placeholder="🔍 Buscar por nome ou CPF..." value={busca}
-          onChange={e => setBusca(e.target.value)}
-          className={inputCls} />
-      </div>
+      {/* Gestão de Setores: Plenárias e Restaurantes / Refeitórios */}
+      <GerenciadorLocaisCheckin eventoId={eventoId} />
 
-      {busca.trim() && resultado.length === 0 && (
-        <EmptyState icon="🔍" title="Nenhum inscrito encontrado" desc="Verifique o nome ou CPF digitado." />
-      )}
+      {/* Operação Desktop: Check-in Manual e Histórico Recente */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        <div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-4">
+            <h3 className="font-bold text-[#123b63] mb-4 flex items-center gap-2">✅ Check-in Manual (desktop)</h3>
+            <input type="text" placeholder="🔍 Buscar por nome ou CPF..." value={busca}
+              onChange={e => setBusca(e.target.value)}
+              className={inputCls} />
+          </div>
 
-      {resultado.map(ins => {
-        const pagCfg = STATUS_PAG_CFG[ins.status_pagamento] ?? STATUS_PAG_CFG.pendente;
-        return (
-          <div key={ins.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-3">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="font-bold text-gray-900">{ins.nome_inscrito}</p>
-                <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 mt-1">
-                  {ins.cpf && <span>CPF: {ins.cpf}</span>}
-                  <span>{nomeSup(ins.supervisao_id)}</span>
-                  <span>{nomeCampo(ins.campo_id)}</span>
-                  <span className={`font-semibold px-1.5 py-0.5 rounded-full ${pagCfg.cls}`}>{pagCfg.label}</span>
+          {busca.trim() && resultado.length === 0 && (
+            <EmptyState icon="🔍" title="Nenhum inscrito encontrado" desc="Verifique o nome ou CPF digitado." />
+          )}
+
+          {resultado.map(ins => {
+            const pagCfg = STATUS_PAG_CFG[ins.status_pagamento] ?? STATUS_PAG_CFG.pendente;
+            return (
+              <div key={ins.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="font-bold text-gray-900">{ins.nome_inscrito}</p>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 mt-1">
+                      {ins.cpf && <span>CPF: {ins.cpf}</span>}
+                      <span>{nomeSup(ins.supervisao_id)}</span>
+                      <span>{nomeCampo(ins.campo_id)}</span>
+                      <span className={`font-semibold px-1.5 py-0.5 rounded-full ${pagCfg.cls}`}>{pagCfg.label}</span>
+                    </div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    {ins.checkin_realizado ? (
+                      <div className="text-emerald-600 text-sm font-semibold">
+                        ✅ Check-in feito<br />
+                        <span className="text-xs text-gray-400">{fmtDT(ins.checkin_at)}</span>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => fazerCheckin(ins)}
+                        disabled={salvando === ins.id}
+                        className="bg-[#123b63] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-[#0f2a45] transition disabled:opacity-50"
+                      >
+                        {salvando === ins.id ? 'Aguarde...' : '✅ Realizar Check-in'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
-              <div className="text-right flex-shrink-0">
-                {ins.checkin_realizado ? (
-                  <div className="text-emerald-600 text-sm font-semibold">
-                    ✅ Check-in feito<br />
-                    <span className="text-xs text-gray-400">{fmtDT(ins.checkin_at)}</span>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => fazerCheckin(ins)}
-                    disabled={salvando === ins.id}
-                    className="bg-[#123b63] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-[#0f2a45] transition disabled:opacity-50"
-                  >
-                    {salvando === ins.id ? 'Aguarde...' : '✅ Realizar Check-in'}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })}
+            );
+          })}
+        </div>
 
-      {/* Últimos check-ins */}
-      {!busca && (
+        {/* Últimos check-ins */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <h3 className="font-bold text-gray-700 mb-4">Últimos Check-ins</h3>
           {inscricoes.filter(i => i.checkin_realizado).length === 0 ? (
@@ -3242,7 +3251,7 @@ function TabCheckin({ eventoId, evento, inscricoes, loading, nomeSup, nomeCampo,
             </div>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -3678,17 +3687,19 @@ function TabEtiquetas({ inscricoes, loading, nomeSup, nomeCampo, supabase, onRef
 // ABA RELATÓRIOS
 // ═══════════════════════════════════════════════════════════════
 
-type RelTipo = 'resumo' | 'supervisao' | 'campo' | 'tipo_inscricao' | 'hospedagem' | 'alimentacao' | 'presenca' | 'financeiro';
+type RelTipo = 'resumo' | 'plenarias' | 'restaurantes' | 'supervisao' | 'campo' | 'tipo_inscricao' | 'hospedagem' | 'alimentacao' | 'presenca' | 'financeiro';
 
 const REL_TABS: { id: RelTipo; label: string; icon: string; financeiro?: boolean }[] = [
-  { id: 'resumo',          label: 'Resumo Geral',       icon: '📊' },
-  { id: 'supervisao',      label: 'Por Supervisão',     icon: '🏛️' },
-  { id: 'campo',           label: 'Por Campo',          icon: '⛪' },
-  { id: 'tipo_inscricao',  label: 'Por Tipo Inscrição',  icon: '🏷️' },
-  { id: 'hospedagem',      label: 'Hospedagem',         icon: '🛏️' },
-  { id: 'alimentacao',     label: 'Alimentação',        icon: '🍽️' },
-  { id: 'presenca',        label: 'Presença',           icon: '📋' },
-  { id: 'financeiro',      label: 'Financeiro',         icon: '💳', financeiro: true },
+  { id: 'resumo',          label: 'Resumo Geral',              icon: '📊' },
+  { id: 'plenarias',       label: 'Presenças por Plenária',   icon: '🏛️' },
+  { id: 'restaurantes',    label: 'Consumo por Restaurante',  icon: '🍽️' },
+  { id: 'supervisao',      label: 'Por Supervisão',            icon: '🏢' },
+  { id: 'campo',           label: 'Por Campo',                 icon: '⛪' },
+  { id: 'tipo_inscricao',  label: 'Por Tipo Inscrição',         icon: '🏷️' },
+  { id: 'hospedagem',      label: 'Hospedagem',                icon: '🛏️' },
+  { id: 'alimentacao',     label: 'Alimentação',               icon: '🍴' },
+  { id: 'presenca',        label: 'Presença Geral',            icon: '📋' },
+  { id: 'financeiro',      label: 'Financeiro',                icon: '💳', financeiro: true },
 ];
 
 // CSV helper
@@ -4326,66 +4337,88 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
         ))}
       </div>
 
-      {/* Filtros */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 flex flex-wrap gap-2 items-end">
-        <div>
-          <p className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Supervisão</p>
-          <select value={filtroSup} onChange={e => { setFiltroSup(e.target.value); setFiltroCampo(''); }}
-            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] min-w-[140px]">
-            <option value="">Todas</option>
-            {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
-          </select>
-        </div>
-        <div>
-          <p className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Campo</p>
-          <select value={filtroCampo} onChange={e => setFiltroCampo(e.target.value)}
-            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] min-w-[140px]">
-            <option value="">Todos</option>
-            {camposFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-          </select>
-        </div>
-        <div>
-          <p className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Pagamento</p>
-          <select value={filtroPag} onChange={e => setFiltroPag(e.target.value)}
-            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-            <option value="">Todos</option>
-            <option value="pago">Pago</option>
-            <option value="pendente">Pendente</option>
-            <option value="isento">Isento</option>
-            <option value="cancelado">Cancelado</option>
-          </select>
-        </div>
-        <div>
-          <p className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Check-in</p>
-          <select value={filtroCheckin} onChange={e => setFiltroCheckin(e.target.value)}
-            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
-            <option value="">Todos</option>
-            <option value="1">Realizados</option>
-            <option value="0">Não realizados</option>
-          </select>
-        </div>
-        {filtrosAtivos && (
-          <button onClick={() => { setFiltroSup(''); setFiltroCampo(''); setFiltroPag(''); setFiltroCheckin(''); }}
-            className="text-xs text-red-500 hover:text-red-700 underline mt-4">
-            Limpar filtros
-          </button>
-        )}
-        <div className="ml-auto flex gap-2 mt-auto">
-          <button onClick={exportarCSV}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition">
-            📥 Exportar CSV
-          </button>
-          <button onClick={abrirImpressaoRelatorio}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#123b63] text-white text-xs font-semibold hover:bg-[#0f2a45] transition">
-            🖨️ Imprimir
-          </button>
-        </div>
-      </div>
+      {/* PRESENÇAS POR PLENÁRIA */}
+      {relTipo === 'plenarias' && (
+        <RelatorioPresencasPlenaria
+          eventoId={eventoId}
+          nomeSup={nomeSup}
+          nomeCampo={nomeCampo}
+        />
+      )}
 
-      {/* Contador */}
-      <p className="text-xs text-gray-400 px-1">
-        {filtradas.length} registro{filtradas.length !== 1 ? 's' : ''}{filtrosAtivos ? ' (com filtros)' : ''}
-      </p>
+      {/* CONSUMO POR RESTAURANTE */}
+      {relTipo === 'restaurantes' && (
+        <RelatorioConsumoRestaurante
+          eventoId={eventoId}
+          nomeSup={nomeSup}
+          nomeCampo={nomeCampo}
+        />
+      )}
+
+      {/* Filtros para Relatórios de Inscrição Padrão */}
+      {relTipo !== 'plenarias' && relTipo !== 'restaurantes' && (
+        <>
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 flex flex-wrap gap-2 items-end">
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Supervisão</p>
+              <select value={filtroSup} onChange={e => { setFiltroSup(e.target.value); setFiltroCampo(''); }}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] min-w-[140px]">
+                <option value="">Todas</option>
+                {supervisoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+              </select>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Campo</p>
+              <select value={filtroCampo} onChange={e => setFiltroCampo(e.target.value)}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63] min-w-[140px]">
+                <option value="">Todos</option>
+                {camposFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              </select>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Pagamento</p>
+              <select value={filtroPag} onChange={e => setFiltroPag(e.target.value)}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+                <option value="">Todos</option>
+                <option value="pago">Pago</option>
+                <option value="pendente">Pendente</option>
+                <option value="isento">Isento</option>
+                <option value="cancelado">Cancelado</option>
+              </select>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Check-in</p>
+              <select value={filtroCheckin} onChange={e => setFiltroCheckin(e.target.value)}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#123b63]">
+                <option value="">Todos</option>
+                <option value="1">Realizados</option>
+                <option value="0">Não realizados</option>
+              </select>
+            </div>
+            {filtrosAtivos && (
+              <button onClick={() => { setFiltroSup(''); setFiltroCampo(''); setFiltroPag(''); setFiltroCheckin(''); }}
+                className="text-xs text-red-500 hover:text-red-700 underline mt-4">
+                Limpar filtros
+              </button>
+            )}
+            <div className="ml-auto flex gap-2 mt-auto">
+              <button onClick={exportarCSV}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition">
+                📥 Exportar CSV
+              </button>
+              <button onClick={abrirImpressaoRelatorio}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#123b63] text-white text-xs font-semibold hover:bg-[#0f2a45] transition">
+                🖨️ Imprimir
+              </button>
+            </div>
+          </div>
+
+          {/* Contador */}
+          <p className="text-xs text-gray-400 px-1">
+            {filtradas.length} registro{filtradas.length !== 1 ? 's' : ''}{filtrosAtivos ? ' (com filtros)' : ''}
+          </p>
+        </>
+      )}
 
       {/* ── CONTEÚDO DO RELATÓRIO ───────────────────────────── */}
 
@@ -5337,6 +5370,8 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [funcao, setFuncao] = useState<'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem'>('checkin');
+  const [localId, setLocalId] = useState<string>('');
+  const [locais, setLocais] = useState<Array<{ id: string; nome: string; tipo: 'plenaria' | 'refeitorio'; ativo: boolean }>>([]);
   const [senha, setSenha] = useState('');
   const [confirmarSenha, setConfirmarSenha] = useState('');
   const [salvando, setSalvando] = useState(false);
@@ -5349,6 +5384,7 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
   const [editNome, setEditNome] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editFuncao, setEditFuncao] = useState<'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem'>('checkin');
+  const [editLocalId, setEditLocalId] = useState<string>('');
   const [editSenha, setEditSenha] = useState('');
   const [editConfirmarSenha, setEditConfirmarSenha] = useState('');
   const [resetando, setResetando] = useState<Equipe | null>(null);
@@ -5362,6 +5398,22 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
     timeoutsRef.current.forEach(t => clearTimeout(t));
     timeoutsRef.current = [];
   }, []);
+
+  const carregarLocais = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/locais-checkin`);
+      if (res.ok) {
+        const json = await res.json();
+        setLocais(json.locais || []);
+      }
+    } catch {
+      // Falha silenciosa no carregamento de locais auxiliares
+    }
+  }, [eventoId]);
+
+  useEffect(() => {
+    carregarLocais();
+  }, [carregarLocais]);
 
   const scheduleClear = useCallback((fn: () => void, ms = 5000) => {
     const id = window.setTimeout(fn, ms);
@@ -5474,6 +5526,7 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
           nome: nome.trim(),
           email: email.trim(),
           funcao,
+          local_id: (funcao === 'checkin' || funcao === 'checkin_refeitorio') && localId ? localId : null,
           senha: funcao === 'operador' || funcao === 'hospedagem' ? senha : undefined,
         }),
       });
@@ -5485,6 +5538,7 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
       setNome('');
       setEmail('');
       setFuncao('checkin');
+      setLocalId('');
       setSenha('');
       setConfirmarSenha('');
       onRefresh();
@@ -5503,6 +5557,7 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
     setEditNome(eq.nome || '');
     setEditEmail(eq.email);
     setEditFuncao(eq.tipo);
+    setEditLocalId(eq.local_id || '');
     setEditSenha('');
     setEditConfirmarSenha('');
   }
@@ -5539,6 +5594,7 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
           nome: editNome.trim(),
           email: editEmail.trim(),
           funcao: editFuncao,
+          local_id: (editFuncao === 'checkin' || editFuncao === 'checkin_refeitorio') ? (editLocalId || null) : null,
           senha: editSenha || undefined,
         }),
       });
@@ -5549,7 +5605,7 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
       }
       onRefresh();
       setEditando(null);
-      mostrarSucesso('Dados atualizados.');
+      mostrarSucesso('Dados atualizados com sucesso.');
     } catch {
       mostrarErro('Erro ao editar membro.');
     } finally {
@@ -5714,7 +5770,10 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
           </div>
           <div>
             <label className={labelCls}>Funcao</label>
-            <select value={funcao} onChange={e => setFuncao(e.target.value as 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem')}
+            <select value={funcao} onChange={e => {
+              setFuncao(e.target.value as 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem');
+              setLocalId('');
+            }}
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white w-full">
               <option value="checkin">Check-in</option>
               <option value="checkin_refeitorio">Refeitório</option>
@@ -5723,6 +5782,36 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
               <option value="operador">Operador</option>
             </select>
           </div>
+
+          {funcao === 'checkin' && (
+            <div>
+              <label className={labelCls}>Plenária de Atuação <span className="text-gray-400 font-normal">(Opcional)</span></label>
+              <select
+                value={localId}
+                onChange={e => setLocalId(e.target.value)}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white w-full">
+                <option value="">Nenhuma / Sem vínculo inicial</option>
+                {locais.filter(l => l.tipo === 'plenaria' && l.ativo).map(l => (
+                  <option key={l.id} value={l.id}>{l.nome}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {funcao === 'checkin_refeitorio' && (
+            <div>
+              <label className={labelCls}>Restaurante / Refeitório <span className="text-gray-400 font-normal">(Opcional)</span></label>
+              <select
+                value={localId}
+                onChange={e => setLocalId(e.target.value)}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white w-full">
+                <option value="">Nenhum / Sem vínculo inicial</option>
+                {locais.filter(l => l.tipo === 'refeitorio' && l.ativo).map(l => (
+                  <option key={l.id} value={l.id}>{l.nome}</option>
+                ))}
+              </select>
+            </div>
+          )}
           {(funcao === 'operador' || funcao === 'hospedagem') && (
             <div>
               <label className={labelCls}>Senha</label>
@@ -5759,7 +5848,7 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['Nome', 'E-mail', 'Funcao', 'Status', 'Ultimo acesso', 'Acoes'].map(h => (
+                {['Nome', 'E-mail', 'Funcao', 'Local Vinculado', 'Status', 'Ultimo acesso', 'Acoes'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-600">{h}</th>
                 ))}
               </tr>
@@ -5781,6 +5870,27 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
                             ? 'Check-in Hospedagem'
                             : 'Check-in'}
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {eq.local_id ? (
+                      (() => {
+                        const loc = locais.find(l => l.id === eq.local_id);
+                        if (!loc) return <span className="text-gray-400 text-xs">—</span>;
+                        return (
+                          <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-md ${
+                            loc.tipo === 'plenaria'
+                              ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                              : 'bg-amber-50 text-amber-800 border border-amber-200'
+                          }`}>
+                            <span>{loc.tipo === 'plenaria' ? '🏛️' : '🍽️'}</span>
+                            <span className="truncate max-w-[150px]">{loc.nome}</span>
+                            {!loc.ativo && <span className="text-[10px] text-red-500 font-bold">(inativo)</span>}
+                          </span>
+                        );
+                      })()
+                    ) : (
+                      <span className="text-gray-400 text-xs">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${eq.ativo ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
@@ -5914,7 +6024,13 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
                 <label className={labelCls}>Funcao</label>
                 <select
                   value={editFuncao}
-                  onChange={e => setEditFuncao(e.target.value as 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem')}
+                  onChange={e => {
+                    const novaFuncao = e.target.value as 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem';
+                    setEditFuncao(novaFuncao);
+                    if (novaFuncao !== 'checkin' && novaFuncao !== 'checkin_refeitorio') {
+                      setEditLocalId('');
+                    }
+                  }}
                   className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white w-full"
                 >
                   <option value="checkin">Check-in</option>
@@ -5924,6 +6040,40 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
                   <option value="operador">Operador</option>
                 </select>
               </div>
+
+              {editFuncao === 'checkin' && (
+                <div>
+                  <label className={labelCls}>Plenária de Atuação</label>
+                  <select
+                    value={editLocalId}
+                    onChange={e => setEditLocalId(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white w-full">
+                    <option value="">Nenhuma / Desvincular plenária</option>
+                    {locais.filter(l => l.tipo === 'plenaria' && (l.ativo || l.id === editLocalId)).map(l => (
+                      <option key={l.id} value={l.id}>
+                        {l.nome} {!l.ativo ? '(Inativo)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {editFuncao === 'checkin_refeitorio' && (
+                <div>
+                  <label className={labelCls}>Restaurante / Refeitório</label>
+                  <select
+                    value={editLocalId}
+                    onChange={e => setEditLocalId(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white w-full">
+                    <option value="">Nenhum / Desvincular restaurante</option>
+                    {locais.filter(l => l.tipo === 'refeitorio' && (l.ativo || l.id === editLocalId)).map(l => (
+                      <option key={l.id} value={l.id}>
+                        {l.nome} {!l.ativo ? '(Inativo)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               {(editFuncao === 'operador' || editFuncao === 'hospedagem') && (
                 <div>
                   <label className={labelCls}>Nova senha (opcional)</label>

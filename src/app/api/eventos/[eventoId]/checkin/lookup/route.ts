@@ -83,6 +83,65 @@ export async function GET(
   if (evento.status !== 'programado') return NextResponse.json({ error: 'evento_encerrado', message: 'Evento encerrado.' }, { status: 403 });
   if (evento.checkin_ativo !== true) return NextResponse.json({ error: 'checkin_desativado', message: 'Check-in desativado.' }, { status: 403 });
 
+  // ── Validação do Local Vinculado ao Operador ──────────────
+  const equipeIdFromGuard = guard.ctx.equipe?.id;
+  const equipeIdFromHeader = request.headers.get('x-evento-equipe-id')?.trim();
+  const equipeIdFromQuery = searchParams.get('equipe_id')?.trim();
+  const targetEquipeId = equipeIdFromGuard || equipeIdFromHeader || equipeIdFromQuery;
+
+  if (targetEquipeId) {
+    const { data: opRow } = await supabase
+      .from('evento_equipe')
+      .select('id,evento_id,tipo,ativo,local_id')
+      .eq('id', targetEquipeId)
+      .eq('evento_id', eventoId)
+      .maybeSingle();
+
+    if (!opRow || !opRow.ativo) {
+      return NextResponse.json({
+        error: 'operador_inativo',
+        message: 'Acesso do operador encerrado ou inativo.',
+      }, { status: 403 });
+    }
+
+    if (opRow.local_id) {
+      const { data: localRec } = await supabase
+        .from('evento_locais_checkin')
+        .select('id,evento_id,tipo,nome,ativo')
+        .eq('id', opRow.local_id)
+        .eq('evento_id', eventoId)
+        .maybeSingle();
+
+      if (!localRec) {
+        return NextResponse.json({
+          error: 'local_nao_encontrado',
+          message: 'Local vinculado ao operador não encontrado neste evento.',
+        }, { status: 400 });
+      }
+
+      if (localRec.ativo !== true) {
+        return NextResponse.json({
+          error: 'local_inativo',
+          message: `O local "${localRec.nome}" vinculado a este operador está inativo.`,
+        }, { status: 400 });
+      }
+
+      if (modo === 'plenaria' && localRec.tipo !== 'plenaria') {
+        return NextResponse.json({
+          error: 'modalidade_incompativel',
+          message: `Operação incompatível: este terminal está vinculado ao restaurante "${localRec.nome}". Mude para o modo Refeitório.`,
+        }, { status: 400 });
+      }
+
+      if (modo === 'refeitorio' && localRec.tipo !== 'refeitorio') {
+        return NextResponse.json({
+          error: 'modalidade_incompativel',
+          message: `Operação incompatível: este terminal está vinculado à plenária "${localRec.nome}". Mude para o modo Plenária.`,
+        }, { status: 400 });
+      }
+    }
+  }
+
   // ── Busca inscrição pelo token ────────────────────────────
   let inscricao: InscricaoRow | null = null;
 

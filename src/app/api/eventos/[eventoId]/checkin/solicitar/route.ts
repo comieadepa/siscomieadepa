@@ -18,6 +18,7 @@ type EquipeRow = {
   ativo: boolean;
   convite_token?: string | null;
   convite_expira_em?: string | null;
+  local_id?: string | null;
 };
 
 function endOfDayUtc(dateStr: string): Date {
@@ -80,7 +81,7 @@ export async function POST(
 
   let query = supabase
     .from('evento_equipe')
-    .select('id,evento_id,email,tipo,ativo,convite_token,convite_expira_em')
+    .select('id,evento_id,email,tipo,ativo,convite_token,convite_expira_em,local_id')
     .eq('evento_id', eventoId);
 
   if (funcao === 'checkin_hospedagem') {
@@ -133,6 +134,25 @@ export async function POST(
     return NextResponse.json({ error: 'Erro ao registrar acesso.' }, { status: 500 });
   }
 
+  let localInfo: { id: string; nome: string; tipo: 'plenaria' | 'refeitorio'; ativo: boolean } | null = null;
+  if (equipeRow.local_id) {
+    const { data: loc } = await supabase
+      .from('evento_locais_checkin')
+      .select('id,nome,tipo,ativo')
+      .eq('id', equipeRow.local_id)
+      .eq('evento_id', eventoId)
+      .maybeSingle();
+
+    if (loc) {
+      localInfo = {
+        id: loc.id,
+        nome: loc.nome,
+        tipo: loc.tipo as 'plenaria' | 'refeitorio',
+        ativo: loc.ativo === true,
+      };
+    }
+  }
+
   void logDB({
     acao: funcao === 'checkin_hospedagem'
       ? 'acesso_checkin_hospedagem_liberado'
@@ -151,5 +171,11 @@ export async function POST(
     ok: true,
     equipe_id: (equipe as EquipeRow).id,
     expira_em: expiraEm,
+    operador: {
+      id: equipeRow.id,
+      tipo: equipeRow.tipo,
+      local_id: equipeRow.local_id ?? null,
+      local: localInfo,
+    },
   });
 }

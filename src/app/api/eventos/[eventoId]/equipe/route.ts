@@ -14,6 +14,7 @@ type EquipeRow = {
   nome: string | null;
   email: string;
   tipo: FuncaoEquipe;
+  local_id?: string | null;
   ativo: boolean;
   senha_hash: string | null;
   convite_token?: string | null;
@@ -83,7 +84,7 @@ export async function POST(
   const guard = await requireEventoPermission(request, eventoId, 'equipe');
   if (!guard.ok) return guard.response;
 
-  let body: { nome?: string; email?: string; funcao?: string; senha?: string };
+  let body: { nome?: string; email?: string; funcao?: string; senha?: string; local_id?: string | null };
   try {
     body = await request.json();
   } catch {
@@ -106,6 +107,41 @@ export async function POST(
   }
 
   const supabase = guard.ctx.supabaseAdmin;
+
+  // Validação estrita do local_id para operadores de checkin / refeitório
+  let localIdFinal: string | null = null;
+  const rawLocalId = body.local_id ? String(body.local_id).trim() : null;
+
+  if (rawLocalId && rawLocalId !== 'none') {
+    const { data: localData, error: localErr } = await supabase
+      .from('evento_locais_checkin')
+      .select('id, evento_id, tipo, ativo, nome')
+      .eq('id', rawLocalId)
+      .eq('evento_id', eventoId)
+      .maybeSingle();
+
+    if (localErr || !localData) {
+      return NextResponse.json({ error: 'O local de check-in selecionado não existe ou não pertence a este evento.' }, { status: 400 });
+    }
+
+    if (!localData.ativo) {
+      return NextResponse.json({ error: `O local "${localData.nome}" está inativo. Selecione um local ativo.` }, { status: 400 });
+    }
+
+    if (funcao === 'checkin' && localData.tipo !== 'plenaria') {
+      return NextResponse.json({ error: 'Para operador de plenária, o local deve ser do tipo "plenaria".' }, { status: 400 });
+    }
+
+    if (funcao === 'checkin_refeitorio' && localData.tipo !== 'refeitorio') {
+      return NextResponse.json({ error: 'Para operador de refeitório, o local deve ser do tipo "refeitorio".' }, { status: 400 });
+    }
+
+    if (funcao === 'checkin' || funcao === 'checkin_refeitorio') {
+      localIdFinal = localData.id;
+    } else {
+      localIdFinal = null;
+    }
+  }
 
   const { data: eventoInfo } = await supabase
     .from('eventos')
@@ -152,6 +188,7 @@ export async function POST(
         nome,
         email,
         tipo: funcao,
+        local_id: localIdFinal,
         ativo: true,
         senha_hash: senhaHash,
         convite_token: codigoAcesso,
@@ -241,7 +278,24 @@ export async function PATCH(
   const guard = await requireEventoPermission(request, eventoId, 'equipe');
   if (!guard.ok) return guard.response;
 
-  let body: { equipe_id?: string; nome?: string; email?: string; funcao?: string; ativo?: boolean; senha?: string };
+  // Apenas gestores administrativos podem alterar vínculos e configurações de membros
+  const isGestor = guard.ctx.source === 'global' || guard.ctx.role === 'admin_evento';
+  if (!isGestor) {
+    return NextResponse.json(
+      { error: 'Apenas administradores podem gerenciar e alterar vinculações da equipe.' },
+      { status: 403 }
+    );
+  }
+
+  let body: {
+    equipe_id?: string;
+    nome?: string;
+    email?: string;
+    funcao?: string;
+    local_id?: string | null;
+    ativo?: boolean;
+    senha?: string;
+  };
   try {
     body = await request.json();
   } catch {
@@ -254,7 +308,7 @@ export async function PATCH(
   const supabase = guard.ctx.supabaseAdmin;
   const { data: existente } = await supabase
     .from('evento_equipe')
-    .select('id,evento_id,nome,email,tipo,ativo,senha_hash,convite_token')
+    .select('id,evento_id,nome,email,tipo,local_id,ativo,senha_hash,convite_token')
     .eq('id', equipeId)
     .eq('evento_id', eventoId)
     .single();
@@ -272,6 +326,62 @@ export async function PATCH(
 
   if (!nome) return NextResponse.json({ error: 'Nome obrigatorio.' }, { status: 400 });
   if (!email) return NextResponse.json({ error: 'E-mail obrigatorio.' }, { status: 400 });
+
+  // Validação estrita do local_id para operadores de checkin / refeitório
+  let localIdUpdate: string | null | undefined = undefined;
+
+  if (body.local_id !== undefined) {
+    const rawLocalId = body.local_id ? String(body.local_id).trim() : null;
+    if (!rawLocalId || rawLocalId === 'none') {
+      localIdUpdate = null; // Permite desvincular
+    } else {
+      const { data: localData, error: localErr } = await supabase
+        .from('evento_locais_checkin')
+        .select('id, evento_id, tipo, ativo, nome')
+        .eq('id', rawLocalId)
+        .eq('evento_id', eventoId)
+        .maybeSingle();
+
+      if (localErr || !localData) {
+        return NextResponse.json(
+          { error: 'O local selecionado não existe ou não pertence a este evento.' },
+          { status: 400 }
+        );
+      }
+
+      if (!localData.ativo) {
+        return NextResponse.json(
+          { error: `O local "${localData.nome}" está inativo. Selecione um local ativo.` },
+          { status: 400 }
+        );
+      }
+
+      if (funcao === 'checkin' && localData.tipo !== 'plenaria') {
+        return NextResponse.json(
+          { error: 'Para operador de plenária, o local deve ser do tipo "plenaria".' },
+          { status: 400 }
+        );
+      }
+
+      if (funcao === 'checkin_refeitorio' && localData.tipo !== 'refeitorio') {
+        return NextResponse.json(
+          { error: 'Para operador de refeitório, o local deve ser do tipo "refeitorio".' },
+          { status: 400 }
+        );
+      }
+
+      if (funcao === 'checkin' || funcao === 'checkin_refeitorio') {
+        localIdUpdate = localData.id;
+      } else {
+        localIdUpdate = null;
+      }
+    }
+  } else if (body.funcao && body.funcao !== row.tipo) {
+    // Se mudou para função que não aceita setor de checkin, remove local_id
+    if (funcao !== 'checkin' && funcao !== 'checkin_refeitorio') {
+      localIdUpdate = null;
+    }
+  }
 
   if (email !== row.email) {
     const { data: duplicado } = await supabase
@@ -364,18 +474,24 @@ export async function PATCH(
     ? calcExpiraEm((eventoInfoPatch as { data_fim?: string | null } | null)?.data_fim ?? null)
     : null;
 
+  const updatePayload: Record<string, any> = {
+    nome,
+    email,
+    tipo: funcao,
+    ativo,
+    senha_hash: deveTerSenha ? senhaHash : null,
+    convite_token: isFuncaoCheckinSemSenha(funcao) ? codigoAcesso : null,
+    convite_expira_em: isFuncaoCheckinSemSenha(funcao) ? conviteExpiraEm : null,
+    atualizado_em: now,
+  };
+
+  if (localIdUpdate !== undefined) {
+    updatePayload.local_id = localIdUpdate;
+  }
+
   const { error: updError } = await supabase
     .from('evento_equipe')
-    .update({
-      nome,
-      email,
-      tipo: funcao,
-      ativo,
-      senha_hash: deveTerSenha ? senhaHash : null,
-      convite_token: isFuncaoCheckinSemSenha(funcao) ? codigoAcesso : null,
-      convite_expira_em: isFuncaoCheckinSemSenha(funcao) ? conviteExpiraEm : null,
-      atualizado_em: now,
-    })
+    .update(updatePayload)
     .eq('id', equipeId)
     .eq('evento_id', eventoId);
 
