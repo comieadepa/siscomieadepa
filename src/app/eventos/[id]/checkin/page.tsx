@@ -30,9 +30,38 @@ import {
   Play,
   Check,
   ChevronLeft,
+  RefreshCw,
 } from 'lucide-react';
 
 // ─── Tipos ────────────────────────────────────────────────────
+interface DiaRefeicao {
+  data: string;
+  dia_mes: string;
+  dia_semana: string;
+  total: number;
+  status: 'hoje' | 'passado' | 'futuro';
+  percentual: number;
+}
+
+interface DadosControleRefeicoes {
+  ok: boolean;
+  evento: {
+    id: string;
+    nome: string;
+    data_inicio: string;
+    data_fim: string;
+  };
+  hoje: string;
+  ontem: string;
+  total_hoje: number;
+  total_ontem: number;
+  total_acumulado: number;
+  max_dia: number;
+  dias: DiaRefeicao[];
+  tem_subcategorias: boolean;
+  gerado_em: string;
+}
+
 interface Evento {
   id: string;
   nome: string;
@@ -130,14 +159,6 @@ interface PendingConfirm {
 type AcessoMotivo = 'nao_autorizado' | 'evento_encerrado' | 'checkin_desativado';
 
 // ─── Helpers ─────────────────────────────────────────────────
-const fmtDT = (d: string | null) => {
-  if (!d) return '-';
-  try {
-    return new Date(d).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
-  } catch {
-    return d;
-  }
-};
 
 const fmtHora = (d: string | null) => {
   if (!d) return '';
@@ -280,18 +301,24 @@ export default function CheckinMobilePage() {
   const [ultimosCheckins, setUltimosCheckins] = useState<Inscricao[]>([]);
 
   // Modos de visualização e drawers
-  const [modoCheckin, setModoCheckin] = useState<'credenciamento' | 'plenaria' | 'refeitorio'>('credenciamento');
+  const [modoCheckin, setModoCheckin] = useState<'plenaria' | 'refeitorio'>('plenaria');
   const [modoManual, setModoManual] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [historicoOpen, setHistoricoOpen] = useState(false);
 
+  // Controle de Refeições
+  const [controleRefeicoesOpen, setControleRefeicoesOpen] = useState(false);
+  const [dadosRefeicoes, setDadosRefeicoes] = useState<DadosControleRefeicoes | null>(null);
+  const [carregandoRefeicoes, setCarregandoRefeicoes] = useState(false);
+  const [erroRefeicoes, setErroRefeicoes] = useState<string | null>(null);
+  const [diaSelecionado, setDiaSelecionado] = useState<string | null>(null);
+
   // Modo forçado por URL
-  const modoForcado = useMemo<'credenciamento' | 'plenaria' | 'refeitorio' | null>(() => {
-    if (pathname?.endsWith('/checkin/credenciamento')) return 'credenciamento';
+  const modoForcado = useMemo<'plenaria' | 'refeitorio' | null>(() => {
     if (pathname?.endsWith('/checkin/plenaria')) return 'plenaria';
     if (pathname?.endsWith('/checkin/refeitorio')) return 'refeitorio';
     const modoParam = searchParams?.get('modo');
-    if (modoParam === 'credenciamento' || modoParam === 'plenaria' || modoParam === 'refeitorio') return modoParam;
+    if (modoParam === 'plenaria' || modoParam === 'refeitorio') return modoParam;
     return null;
   }, [pathname, searchParams]);
 
@@ -691,21 +718,7 @@ export default function CheckinMobilePage() {
         return;
       }
 
-      // ── Bloqueio 2: Check-in já realizado (Entrada) ─────────
-      if (modoCheckin === 'credenciamento' && ins.checkin_realizado) {
-        setResultado({
-          estado: 'already',
-          inscricao: ins,
-          nomeSup,
-          nomeCampo,
-          bloqueadoMotivo: `Check-in de entrada já realizado em ${fmtDT(ins.checkin_at)}.`,
-        });
-        emitirSom('erro');
-        vibrar('erro');
-        return;
-      }
-
-      // ── Bloqueio 3: Presença já registrada hoje (Plenária) ───
+      // ── Bloqueio 2: Presença já registrada hoje (Plenária) ───
       if (modoCheckin === 'plenaria' && ctx.plenaria_hoje) {
         setResultado({
           estado: 'already_plenaria',
@@ -901,6 +914,43 @@ export default function CheckinMobilePage() {
     setPendingConfirm(null);
     voltarParaScan();
   }
+
+  function alternarModo(novoModo: 'plenaria' | 'refeitorio') {
+    if (modoForcado || modoCheckin === novoModo) return;
+    setPendingConfirm(null);
+    setResultado(null);
+    setModoCheckin(novoModo);
+    voltarParaScan();
+  }
+
+  const carregarDadosRefeicoes = useCallback(async () => {
+    if (!id) return;
+    setCarregandoRefeicoes(true);
+    setErroRefeicoes(null);
+    try {
+      const headers: Record<string, string> = {};
+      if (equipeSessao?.equipeId) {
+        headers['x-evento-equipe-id'] = equipeSessao.equipeId;
+      }
+      const res = await fetch(`/api/eventos/${id}/checkin/refeicoes`, { headers });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        throw new Error(json?.error || 'Erro ao carregar dados de refeições.');
+      }
+      setDadosRefeicoes(json as DadosControleRefeicoes);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha na comunicação com o servidor.';
+      setErroRefeicoes(msg);
+    } finally {
+      setCarregandoRefeicoes(false);
+    }
+  }, [id, equipeSessao]);
+
+  const abrirControleRefeicoes = () => {
+    setMenuOpen(false);
+    setControleRefeicoesOpen(true);
+    void carregarDadosRefeicoes();
+  };
 
   // ── Busca Manual com Debounce ──────────────────────────────
   useEffect(() => {
@@ -1199,7 +1249,6 @@ export default function CheckinMobilePage() {
     if (!resultado || resultado.estado !== 'success') return null;
     const ins = resultado.inscricao;
     const isRefeitorio = modoCheckin === 'refeitorio';
-    const isPlenaria   = modoCheckin === 'plenaria';
 
     return (
       <div className="fixed inset-0 z-50 flex flex-col bg-[#08101E] overflow-y-auto p-4 sm:p-6 animate-in zoom-in-95 duration-200">
@@ -1252,7 +1301,7 @@ export default function CheckinMobilePage() {
             </div>
             <div className="flex items-center gap-2.5 text-slate-300">
               <Ticket className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>Tipo de check-in: <strong className="text-white">{isRefeitorio ? 'Refeitório' : isPlenaria ? 'Plenária' : 'Entrada'}</strong></span>
+              <span>Tipo de check-in: <strong className="text-white">{isRefeitorio ? 'Refeitório' : 'Plenária'}</strong></span>
             </div>
             {isRefeitorio && resultado.saldoRestante != null && (
               <div className="flex items-center gap-2.5 text-slate-300">
@@ -1431,6 +1480,213 @@ export default function CheckinMobilePage() {
   };
 
   // ═══════════════════════════════════════════════════════════
+  // MODAL: CONTROLE DE REFEIÇÕES (PAINEL DE AUDITORIA)
+  // ═══════════════════════════════════════════════════════════
+  const ModalControleRefeicoes = () => {
+    if (!controleRefeicoesOpen) return null;
+
+    const diaDetalhe = dadosRefeicoes?.dias.find(d => d.data === diaSelecionado);
+
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col bg-[#08101E] overflow-y-auto p-4 sm:p-6 animate-in fade-in duration-200">
+        <div className="w-full max-w-md mx-auto flex flex-col h-full min-h-0">
+          {/* Header */}
+          <div className="flex items-center justify-between pb-4 border-b border-white/10 shrink-0">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setControleRefeicoesOpen(false)}
+                className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-white transition active:scale-95 shrink-0"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                  <Utensils className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-white tracking-wide leading-tight">Controle de Refeições</h2>
+                  <p className="text-[11px] text-slate-400 truncate max-w-[200px]">{evento.nome}</p>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => void carregarDadosRefeicoes()}
+              disabled={carregandoRefeicoes}
+              className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-300 hover:text-white transition active:scale-95 shrink-0 disabled:opacity-50"
+              title="Atualizar dados"
+            >
+              <RefreshCw className={`w-4 h-4 ${carregandoRefeicoes ? 'animate-spin text-emerald-400' : ''}`} />
+            </button>
+          </div>
+
+          {/* Conteúdo com Scroll */}
+          <div className="flex-1 overflow-y-auto py-4 space-y-3.5">
+            {/* Estado de Carregamento Inicial */}
+            {carregandoRefeicoes && !dadosRefeicoes && (
+              <div className="py-20 text-center">
+                <div className="w-10 h-10 border-4 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold">
+                  Carregando consumo de refeições...
+                </p>
+              </div>
+            )}
+
+            {/* Estado de Erro */}
+            {erroRefeicoes && (
+              <div className="bg-red-950/60 border border-red-800/80 rounded-2xl p-4 text-center space-y-2">
+                <AlertTriangle className="w-6 h-6 text-red-400 mx-auto" />
+                <p className="text-xs text-red-200 font-semibold">{erroRefeicoes}</p>
+                <button
+                  onClick={() => void carregarDadosRefeicoes()}
+                  className="bg-red-900/60 hover:bg-red-800/80 text-white text-xs px-4 py-2 rounded-xl transition"
+                >
+                  Tentar novamente
+                </button>
+              </div>
+            )}
+
+            {/* Dados Carregados */}
+            {dadosRefeicoes && (
+              <>
+                {/* Dois Cards no Topo: Hoje e Ontem (conforme mockup) */}
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Card 1: Refeições hoje */}
+                  <div className="bg-[#0F1E36] border border-white/10 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
+                    <div>
+                      <span className="text-xs text-slate-400 font-medium">Refeições hoje</span>
+                      <p className="text-3xl font-black text-emerald-400 mt-1 leading-none">
+                        {dadosRefeicoes.total_hoje.toLocaleString('pt-BR')}
+                      </p>
+                    </div>
+                    <span className="text-[11px] text-slate-500 mt-2 font-medium">Até o momento</span>
+                  </div>
+
+                  {/* Card 2: Ontem */}
+                  <div className="bg-[#0F1E36] border border-white/10 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
+                    <div>
+                      <span className="text-xs text-slate-400 font-medium">Ontem</span>
+                      <p className="text-3xl font-black text-white mt-1 leading-none">
+                        {dadosRefeicoes.total_ontem.toLocaleString('pt-BR')}
+                      </p>
+                    </div>
+                    <span className="text-[11px] text-slate-500 mt-2 font-medium">Dia encerrado</span>
+                  </div>
+                </div>
+
+                {/* Card Informativo: Total Acumulado */}
+                <div className="bg-[#0F1E36]/70 border border-white/10 rounded-2xl px-4 py-3 flex items-center justify-between">
+                  <span className="text-xs text-slate-400">Consumo acumulado do evento</span>
+                  <span className="text-sm font-black text-emerald-400">
+                    {dadosRefeicoes.total_acumulado.toLocaleString('pt-BR')} refeições
+                  </span>
+                </div>
+
+                {/* Card Consumo por dia (Gráfico/Barras conforme mockup) */}
+                <div className="bg-[#0F1E36] border border-white/10 rounded-2xl p-4 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-white tracking-wide">Consumo por dia</h3>
+                    <span className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">
+                      {dadosRefeicoes.dias.length} dias oficiais
+                    </span>
+                  </div>
+
+                  {/* Lista de Dias */}
+                  <div className="space-y-2.5 pt-1">
+                    {dadosRefeicoes.dias.map(d => {
+                      const isSelecionado = diaSelecionado === d.data;
+                      const isFuturo = d.status === 'futuro';
+                      const isHoje = d.status === 'hoje';
+
+                      return (
+                        <div
+                          key={d.data}
+                          onClick={() => setDiaSelecionado(isSelecionado ? null : d.data)}
+                          className={`flex items-center gap-2 p-1.5 rounded-xl cursor-pointer transition select-none ${
+                            isSelecionado ? 'bg-white/10 ring-1 ring-emerald-400/50' : 'hover:bg-white/5'
+                          }`}
+                        >
+                          {/* Data label */}
+                          <div className="w-12 shrink-0 flex flex-col">
+                            <span className="text-xs font-semibold text-slate-200">{d.dia_mes}</span>
+                            <span className="text-[9px] text-slate-500 uppercase">{d.dia_semana}</span>
+                          </div>
+
+                          {/* Barra de Progresso */}
+                          <div className="flex-1 h-3.5 bg-slate-800 rounded-full overflow-hidden mx-1 relative">
+                            {d.total > 0 && (
+                              <div
+                                className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                                style={{ width: `${Math.max(d.percentual, 6)}%` }}
+                              />
+                            )}
+                          </div>
+
+                          {/* Quantidade */}
+                          <div className="w-14 shrink-0 text-right">
+                            {isFuturo ? (
+                              <span className="text-xs text-slate-600 font-bold">—</span>
+                            ) : d.total > 0 ? (
+                              <span className={`text-xs font-bold ${isHoje ? 'text-emerald-400' : 'text-white'}`}>
+                                {d.total.toLocaleString('pt-BR')}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-500 font-medium">0</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Detalhe da Data Selecionada */}
+                  {diaDetalhe && (
+                    <div className="mt-3 pt-3 border-t border-white/10 bg-[#08101E]/60 rounded-xl p-3 flex items-center justify-between text-xs animate-in fade-in duration-150">
+                      <div>
+                        <p className="font-bold text-white">
+                          {diaDetalhe.dia_mes} ({diaDetalhe.dia_semana})
+                        </p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          {diaDetalhe.status === 'hoje'
+                            ? 'Dia em andamento'
+                            : diaDetalhe.status === 'futuro'
+                              ? 'Data futura do evento'
+                              : 'Dia encerrado'}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-black text-emerald-400 text-sm">
+                          {diaDetalhe.status === 'futuro' ? '0 refeições' : `${diaDetalhe.total.toLocaleString('pt-BR')} refeições`}
+                        </p>
+                        {dadosRefeicoes.total_acumulado > 0 && diaDetalhe.total > 0 && (
+                          <p className="text-[10px] text-slate-400">
+                            {Math.round((diaDetalhe.total / dadosRefeicoes.total_acumulado) * 100)}% do total
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Nota do Rodapé (conforme mockup) */}
+                <p className="text-[11px] text-slate-500 text-center leading-relaxed px-2">
+                  Os números reais serão calculados a partir dos check-ins de refeições registrados no sistema.
+                </p>
+
+                {dadosRefeicoes.gerado_em && (
+                  <p className="text-[10px] text-slate-600 text-center">
+                    Atualizado às {new Date(dadosRefeicoes.gerado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ═══════════════════════════════════════════════════════════
   // SCREEN 7: DRAWER DE NAVEGAÇÃO / MENU LATERAL
   // ═══════════════════════════════════════════════════════════
   const DrawerMenu = () => {
@@ -1464,19 +1720,7 @@ export default function CheckinMobilePage() {
           {/* Links de Navegação */}
           <div className="flex-1 py-6 space-y-2">
             <button
-              onClick={() => { setModoCheckin('credenciamento'); setMenuOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-semibold transition ${
-                modoCheckin === 'credenciamento'
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                  : 'text-slate-300 hover:bg-white/5'
-              }`}
-            >
-              <QrCode className="w-4 h-4" />
-              <span>Check-in Entrada</span>
-            </button>
-
-            <button
-              onClick={() => { setModoCheckin('plenaria'); setMenuOpen(false); }}
+              onClick={() => { alternarModo('plenaria'); setMenuOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-semibold transition ${
                 modoCheckin === 'plenaria'
                   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
@@ -1488,7 +1732,7 @@ export default function CheckinMobilePage() {
             </button>
 
             <button
-              onClick={() => { setModoCheckin('refeitorio'); setMenuOpen(false); }}
+              onClick={() => { alternarModo('refeitorio'); setMenuOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-semibold transition ${
                 modoCheckin === 'refeitorio'
                   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
@@ -1497,6 +1741,14 @@ export default function CheckinMobilePage() {
             >
               <Utensils className="w-4 h-4" />
               <span>Refeitório</span>
+            </button>
+
+            <button
+              onClick={abrirControleRefeicoes}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-semibold text-slate-300 hover:bg-white/5 transition"
+            >
+              <Utensils className="w-4 h-4 text-emerald-400" />
+              <span>Controle de Refeições</span>
             </button>
 
             <button
@@ -1585,6 +1837,7 @@ export default function CheckinMobilePage() {
       <TelaSucesso />
       <TelaBloqueio />
       <ModalHistorico />
+      <ModalControleRefeicoes />
       <DrawerMenu />
 
       {/* ── CABEÇALHO DO EVENTO ───────────────────────────────── */}
@@ -1622,19 +1875,19 @@ export default function CheckinMobilePage() {
         </button>
       </header>
 
-      {/* ── ABAS DE MODO (Entrada / Plenária / Refeitório) ─────── */}
+      {/* ── ABAS DE MODO (Plenária / Refeitório) ─────── */}
       <nav className="bg-[#0D1D35] px-2 flex border-b border-white/10 shrink-0">
-        {(['credenciamento', 'plenaria', 'refeitorio'] as const).map(m => {
+        {(['plenaria', 'refeitorio'] as const).map(m => {
           const ativo = modoCheckin === m;
-          const label = m === 'credenciamento' ? 'Entrada' : m === 'plenaria' ? 'Plenária' : 'Refeitório';
-          const Icon = m === 'credenciamento' ? Calendar : m === 'plenaria' ? Users : Utensils;
+          const label = m === 'plenaria' ? 'Plenária' : 'Refeitório';
+          const Icon = m === 'plenaria' ? Users : Utensils;
 
           return (
             <button
               key={m}
-              onClick={() => { if (!modoForcado) setModoCheckin(m); }}
+              onClick={() => alternarModo(m)}
               disabled={!!modoForcado}
-              className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 border-b-2 transition ${
+              className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-b-2 transition ${
                 ativo
                   ? 'border-emerald-400 text-emerald-400'
                   : 'border-transparent text-slate-400 hover:text-white'
@@ -1749,6 +2002,23 @@ export default function CheckinMobilePage() {
             {/* Mensagem de Erro de Câmera */}
             {cameraMsg && (
               <p className="text-amber-400 text-center mt-3 text-xs font-semibold px-2">{cameraMsg}</p>
+            )}
+
+            {/* Atalho Rápido para Controle de Refeições no modo Refeitório */}
+            {modoCheckin === 'refeitorio' && (
+              <button
+                onClick={abrirControleRefeicoes}
+                className="w-full mt-3 bg-gradient-to-r from-emerald-950/70 via-[#0F1E36] to-emerald-950/70 hover:from-emerald-900/80 hover:to-[#132746] border border-emerald-500/30 rounded-2xl py-2.5 px-4 text-xs font-semibold text-emerald-300 flex items-center justify-between transition active:scale-95 shadow-sm"
+              >
+                <span className="flex items-center gap-2">
+                  <Utensils className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Acompanhar Controle de Refeições</span>
+                </span>
+                <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-bold">
+                  <span>Ver consumo</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </span>
+              </button>
             )}
 
             {/* Controles Inferiores da Câmera (Screen 1 footer) */}
@@ -1937,7 +2207,7 @@ export default function CheckinMobilePage() {
                       className="w-full bg-slate-800 hover:bg-emerald-500 hover:text-white text-slate-200 py-2.5 px-3 rounded-xl text-xs font-semibold border border-white/10 transition active:scale-95 flex items-center justify-center gap-1.5"
                     >
                       <Check className="w-3.5 h-3.5" />
-                      <span>{ins.checkin_realizado && modoCheckin === 'credenciamento' ? 'Ver Check-in' : 'Realizar Check-in'}</span>
+                      <span>{modoCheckin === 'refeitorio' ? 'Registrar Refeição' : 'Registrar Presença'}</span>
                     </button>
                   </div>
                 );
