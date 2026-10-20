@@ -104,6 +104,13 @@ export async function GET(
       }, { status: 403 });
     }
 
+    if (opRow.tipo === 'checkin_refeitorio' && modo !== 'refeitorio') {
+      return NextResponse.json({
+        error: 'modalidade_incompativel',
+        message: 'Operador de Refeitório autorizado exclusivamente para consumo de refeições.',
+      }, { status: 403 });
+    }
+
     if (opRow.local_id) {
       const { data: localRec } = await supabase
         .from('evento_locais_checkin')

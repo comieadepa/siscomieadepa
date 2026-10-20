@@ -390,10 +390,13 @@ export default function CheckinMobilePage() {
   const validarSessaoEquipe = useCallback(async (sess: EquipeSession): Promise<Evento | null> => {
     if (!sess || !id) return null;
     try {
+      const area = sess.tipo === 'checkin_refeitorio'
+        ? 'refeitorio'
+        : (modoCheckin === 'refeitorio' ? 'refeitorio' : 'checkin');
       const res = await fetch(`/api/eventos/${id}/checkin/validar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ equipe_id: sess.equipeId, area: modoCheckin === 'refeitorio' ? 'refeitorio' : 'checkin' }),
+        body: JSON.stringify({ equipe_id: sess.equipeId, area }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.ok) {
@@ -414,6 +417,7 @@ export default function CheckinMobilePage() {
         throw new Error('Sessao invalida');
       }
       if (json?.operador) {
+        const opTipo: EquipeSession['tipo'] = json.operador.tipo;
         const loc = (json.operador.local as {
           id: string;
           nome: string;
@@ -422,12 +426,10 @@ export default function CheckinMobilePage() {
         } | null) || null;
         setOperadorLocal(loc);
         setOperadorCarregado(true);
-        if (loc) {
-          if (loc.tipo === 'plenaria' && modoCheckin !== 'plenaria') {
-            setModoCheckin('plenaria');
-          } else if (loc.tipo === 'refeitorio' && modoCheckin !== 'refeitorio') {
-            setModoCheckin('refeitorio');
-          }
+        if (opTipo === 'checkin_refeitorio' || loc?.tipo === 'refeitorio') {
+          setModoCheckin('refeitorio');
+        } else if (opTipo === 'checkin' || loc?.tipo === 'plenaria') {
+          setModoCheckin('plenaria');
         }
       } else {
         setOperadorLocal(null);
@@ -543,10 +545,11 @@ export default function CheckinMobilePage() {
         return;
       }
       const expiraEm = json.expira_em || new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
+      const opTipo: EquipeSession['tipo'] = json.operador?.tipo || json.tipo || 'checkin';
       const sessao: EquipeSession = {
         eventoId: id,
         equipeId: json.equipe_id,
-        tipo: 'checkin',
+        tipo: opTipo,
         expiraEm,
         email,
       };
@@ -561,11 +564,13 @@ export default function CheckinMobilePage() {
         } | null) || null;
         setOperadorLocal(loc);
         setOperadorCarregado(true);
-        if (loc?.tipo === 'plenaria') {
-          setModoCheckin('plenaria');
-        } else if (loc?.tipo === 'refeitorio') {
+        if (opTipo === 'checkin_refeitorio' || loc?.tipo === 'refeitorio') {
           setModoCheckin('refeitorio');
+        } else if (opTipo === 'checkin' || loc?.tipo === 'plenaria') {
+          setModoCheckin('plenaria');
         }
+      } else if (opTipo === 'checkin_refeitorio') {
+        setModoCheckin('refeitorio');
       }
       setAcessoNegado(false);
       setAcessoMotivo(null);
@@ -1002,6 +1007,7 @@ export default function CheckinMobilePage() {
 
   function alternarModo(novoModo: 'plenaria' | 'refeitorio') {
     if (modoForcado || modoCheckin === novoModo) return;
+    if (equipeSessao?.tipo === 'checkin_refeitorio' && novoModo !== 'refeitorio') return;
     if (operadorLocal && operadorLocal.tipo !== novoModo) return;
     setPendingConfirm(null);
     setResultado(null);
@@ -1807,11 +1813,11 @@ export default function CheckinMobilePage() {
           <div className="flex-1 py-6 space-y-2">
             <button
               onClick={() => { alternarModo('plenaria'); setMenuOpen(false); }}
-              disabled={operadorLocal ? operadorLocal.tipo !== 'plenaria' : false}
+              disabled={operadorLocal ? operadorLocal.tipo !== 'plenaria' : (equipeSessao?.tipo === 'checkin_refeitorio')}
               className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl text-xs font-semibold transition ${
                 modoCheckin === 'plenaria'
                   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                  : operadorLocal && operadorLocal.tipo !== 'plenaria'
+                  : (operadorLocal ? operadorLocal.tipo !== 'plenaria' : (equipeSessao?.tipo === 'checkin_refeitorio'))
                     ? 'text-slate-600 cursor-not-allowed opacity-50'
                     : 'text-slate-300 hover:bg-white/5'
               }`}
@@ -1820,7 +1826,7 @@ export default function CheckinMobilePage() {
                 <Users className="w-4 h-4" />
                 <span>Plenária</span>
               </span>
-              {operadorLocal && operadorLocal.tipo !== 'plenaria' && (
+              {((operadorLocal && operadorLocal.tipo !== 'plenaria') || (equipeSessao?.tipo === 'checkin_refeitorio')) && (
                 <span className="text-[10px] bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">Bloqueado</span>
               )}
             </button>
@@ -2032,14 +2038,14 @@ export default function CheckinMobilePage() {
           const ativo = modoCheckin === m;
           const label = m === 'plenaria' ? 'Plenária' : 'Refeitório';
           const Icon = m === 'plenaria' ? Users : Utensils;
-          const bloqueadoPorLocal = operadorLocal ? operadorLocal.tipo !== m : false;
+          const bloqueadoPorLocal = (operadorLocal ? operadorLocal.tipo !== m : false) || (equipeSessao?.tipo === 'checkin_refeitorio' && m !== 'refeitorio');
 
           return (
             <button
               key={m}
               onClick={() => alternarModo(m)}
               disabled={!!modoForcado || bloqueadoPorLocal}
-              title={bloqueadoPorLocal ? `Operador vinculado a ${operadorLocal?.tipo === 'plenaria' ? 'Plenária' : 'Refeitório'}` : undefined}
+              title={bloqueadoPorLocal ? (equipeSessao?.tipo === 'checkin_refeitorio' ? 'Operador de Refeitório restrito a este modo' : `Operador vinculado a ${operadorLocal?.tipo === 'plenaria' ? 'Plenária' : 'Refeitório'}`) : undefined}
               className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-b-2 transition ${
                 ativo
                   ? 'border-emerald-400 text-emerald-400'

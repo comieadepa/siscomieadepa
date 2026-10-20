@@ -114,6 +114,12 @@ export async function POST(
       return NextResponse.json({ error: 'Operador não autorizado ou inativo.' }, { status: 403 });
     }
 
+    if (opRow.tipo === 'checkin_refeitorio' && tipoCheckin !== 'refeitorio') {
+      return NextResponse.json({
+        error: 'Operador de Refeitório autorizado exclusivamente para consumo de refeições.',
+      }, { status: 403 });
+    }
+
     if (opRow.local_id) {
       const { data: localRec } = await supabase
         .from('evento_locais_checkin')

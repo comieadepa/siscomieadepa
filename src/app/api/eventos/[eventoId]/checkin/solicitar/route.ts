@@ -86,24 +86,20 @@ export async function POST(
 
   if (funcao === 'checkin_hospedagem') {
     query = query.in('tipo', ['checkin_hospedagem', 'hospedagem', 'operador', 'checkin']);
-  } else if (funcao === 'checkin_refeitorio') {
-    query = query.eq('tipo', 'checkin_refeitorio');
   } else {
-    // funcao === 'checkin'
-    query = query.in('tipo', ['checkin', 'operador']);
+    // Terminal de check-in: aceita operadores de checkin, refeitorio e operador geral
+    query = query.in('tipo', ['checkin', 'checkin_refeitorio', 'operador']);
   }
 
   const { data: equipe } = codigo
     ? await query.eq('convite_token', codigo).maybeSingle()
     : await query.eq('email', email).maybeSingle();
 
-  if (!equipe || equipe.ativo !== true) {
+  if (!equipe) {
     void logDB({
       acao: funcao === 'checkin_hospedagem'
         ? 'acesso_checkin_hospedagem_negado'
-        : funcao === 'checkin_refeitorio'
-          ? 'acesso_checkin_refeitorio_negado'
-          : 'acesso_checkin_negado',
+        : 'acesso_checkin_negado',
       modulo: 'eventos',
       entidade: 'evento_equipe',
       descricao: codigo ? 'Acesso negado por codigo invalido.' : 'Acesso negado por e-mail nao cadastrado.',
@@ -112,6 +108,21 @@ export async function POST(
       request,
     });
     return NextResponse.json({ error: codigo ? 'Codigo nao autorizado.' : 'E-mail nao autorizado.' }, { status: 403 });
+  }
+
+  if (equipe.ativo !== true) {
+    void logDB({
+      acao: funcao === 'checkin_hospedagem'
+        ? 'acesso_checkin_hospedagem_negado'
+        : 'acesso_checkin_negado',
+      modulo: 'eventos',
+      entidade: 'evento_equipe',
+      descricao: 'Acesso negado por operador inativo.',
+      status: 'erro',
+      detalhes: { eventoId, email, equipeId: equipe.id, funcao },
+      request,
+    });
+    return NextResponse.json({ error: 'Acesso do operador inativo ou revogado.' }, { status: 403 });
   }
 
   const equipeRow = equipe as EquipeRow;
@@ -171,6 +182,7 @@ export async function POST(
     ok: true,
     equipe_id: (equipe as EquipeRow).id,
     expira_em: expiraEm,
+    tipo: equipeRow.tipo,
     operador: {
       id: equipeRow.id,
       tipo: equipeRow.tipo,
