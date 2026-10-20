@@ -239,37 +239,107 @@ function extractQrToken(raw: string): string | null {
   }
 }
 
-function emitirSom(tipo: 'sucesso' | 'erro' | 'leitura') {
+let sharedAudioCtx: AudioContext | null = null;
+
+function getAudioContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null;
   try {
-    const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+    const AudioCtxClass =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtxClass) return null;
+    if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+      sharedAudioCtx = new AudioCtxClass();
+    }
+    if (sharedAudioCtx.state === 'suspended') {
+      void sharedAudioCtx.resume();
+    }
+    return sharedAudioCtx;
+  } catch {
+    return null;
+  }
+}
+
+function unlockAudio() {
+  const ctx = getAudioContext();
+  if (ctx && ctx.state === 'suspended') {
+    void ctx.resume();
+  }
+}
+
+type TipoSom = 'bip' | 'sucesso' | 'erro' | 'leitura';
+
+function emitirSom(tipo: TipoSom) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    if (ctx.state === 'suspended') {
+      void ctx.resume();
+    }
+
+    const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain);
     gain.connect(ctx.destination);
-    if (tipo === 'sucesso') {
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.1);
+
+    if (tipo === 'bip' || tipo === 'leitura') {
+      // BIP agudo, curto e límpido (estilo leitor de código de barras profissional: 2400 Hz, 120ms)
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(2400, now);
+
+      const duracao = 0.12;
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.7, now + 0.005);
+      gain.gain.setValueAtTime(0.7, now + 0.07);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duracao);
+
+      osc.start(now);
+      osc.stop(now + duracao);
+    } else if (tipo === 'sucesso') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.setValueAtTime(1100, now + 0.1);
+
+      const duracao = 0.35;
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.4, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duracao);
+
+      osc.start(now);
+      osc.stop(now + duracao);
     } else if (tipo === 'erro') {
-      osc.frequency.setValueAtTime(220, ctx.currentTime);
-      osc.frequency.setValueAtTime(180, ctx.currentTime + 0.1);
-    } else {
-      osc.frequency.setValueAtTime(700, ctx.currentTime);
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(220, now);
+      osc.frequency.setValueAtTime(160, now + 0.12);
+
+      const duracao = 0.4;
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.4, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duracao);
+
+      osc.start(now);
+      osc.stop(now + duracao);
     }
-    const volume = tipo === 'leitura' ? 0.6 : 0.3;
-    const duracao = tipo === 'leitura' ? 0.6 : 0.4;
-    gain.gain.setValueAtTime(volume, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duracao);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + duracao);
   } catch {
-    // Silencioso se AudioContext indisponível
+    // Silencioso se Web Audio estiver indisponível
   }
 }
 
-function vibrar(tipo: 'sucesso' | 'erro') {
-  if (!navigator.vibrate) return;
-  if (tipo === 'sucesso') navigator.vibrate([100, 50, 100]);
-  else navigator.vibrate([200, 100, 200, 100, 200]);
+function vibrar(tipo: TipoSom) {
+  if (typeof navigator === 'undefined' || !navigator.vibrate) return;
+  try {
+    if (tipo === 'bip' || tipo === 'leitura') {
+      navigator.vibrate(60);
+    } else if (tipo === 'sucesso') {
+      navigator.vibrate([100, 50, 100]);
+    } else {
+      navigator.vibrate([200, 100, 200, 100, 200]);
+    }
+  } catch {
+    // Silencioso se vibração não suportada
+  }
 }
 
 // ─── Componente Principal ─────────────────────────────────────
@@ -460,6 +530,21 @@ export default function CheckinMobilePage() {
     return () => window.removeEventListener('focus', handleFocus);
   }, [id, validarSessaoEquipe]);
 
+  // ── Desbloqueio antecipado de áudio em mobile (iOS / Android) ──
+  useEffect(() => {
+    const unlock = () => {
+      unlockAudio();
+    };
+    window.addEventListener('click', unlock, { passive: true });
+    window.addEventListener('touchstart', unlock, { passive: true });
+    window.addEventListener('pointerdown', unlock, { passive: true });
+    return () => {
+      window.removeEventListener('click', unlock);
+      window.removeEventListener('touchstart', unlock);
+      window.removeEventListener('pointerdown', unlock);
+    };
+  }, []);
+
   // ── Carrega Evento e Estrutura ─────────────────────────────
   useEffect(() => {
     if (verificandoSessao) return;
@@ -624,6 +709,7 @@ export default function CheckinMobilePage() {
   };
 
   async function iniciarScanner() {
+    unlockAudio();
     if (iniciandoRef.current) return;
     iniciandoRef.current = true;
     setCameraMsg(null);
@@ -713,7 +799,6 @@ export default function CheckinMobilePage() {
 
     ignorandoRef.current = true;
     setProcessando(true);
-    emitirSom('leitura');
 
     if (scannerRef.current) {
       try { await (scannerRef.current as { pause: () => void }).pause(); } catch { /* ignora */ }
@@ -855,6 +940,10 @@ export default function CheckinMobilePage() {
       if (lastTokenRef.current.token === qrToken && deltaMs < 3000) return;
     }
     if (qrToken) lastTokenRef.current = { token: qrToken, at: Date.now() };
+
+    // Dispara imediatamente o "BIP" sonoro e vibração tátil ao ler o QR Code
+    emitirSom('bip');
+    vibrar('bip');
 
     if (!qrToken) {
       setResultado({
