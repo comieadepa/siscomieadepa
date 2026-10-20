@@ -31,6 +31,8 @@ import {
   Check,
   ChevronLeft,
   RefreshCw,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 
 // ─── Tipos ────────────────────────────────────────────────────
@@ -285,7 +287,15 @@ function unlockAudio() {
 
 type TipoSom = 'bip' | 'sucesso' | 'erro' | 'leitura';
 
-function emitirSom(tipo: TipoSom) {
+function emitirSom(tipo: TipoSom, forcar = false) {
+  if (!forcar && typeof window !== 'undefined') {
+    try {
+      const somAtivo = sessionStorage.getItem('checkin_som_ativo');
+      if (somAtivo === 'false') return;
+    } catch {
+      // ignora
+    }
+  }
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
@@ -428,6 +438,34 @@ export default function CheckinMobilePage() {
   const [confirmando, setConfirmando] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [cameraMsg, setCameraMsg] = useState<string | null>(null);
+  const [capturandoCodigo, setCapturandoCodigo] = useState(false);
+
+  // Preferência de Som (Session)
+  const [somHabilitado, setSomHabilitado] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      const stored = sessionStorage.getItem('checkin_som_ativo');
+      return stored !== null ? stored === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const toggleSom = () => {
+    setSomHabilitado(prev => {
+      const proximo = !prev;
+      try {
+        sessionStorage.setItem('checkin_som_ativo', String(proximo));
+      } catch {
+        // ignora
+      }
+      if (proximo) {
+        unlockAudio();
+        emitirSom('bip', true);
+      }
+      return proximo;
+    });
+  };
 
   const scannerRef = useRef<unknown>(null);
   const scannerElementId = 'qr-scanner-region';
@@ -535,17 +573,35 @@ export default function CheckinMobilePage() {
     }
   }, [id, modoCheckin]);
 
-  // ── Sincroniza vínculo do operador ao focar na janela/app ──
+  // ── Sincroniza vínculo do operador e recupera câmera/áudio ao focar ──
   useEffect(() => {
     const handleFocus = () => {
       const sess = getEquipeSession();
       if (sess && sess.eventoId === id) {
         void validarSessaoEquipe(sess);
       }
+      unlockAudio();
+      // Se scanner estava ativo e a janela/aba retornou, retoma o scanner sem travar
+      if (scannerRef.current && !ignorandoRef.current && !pendingConfirm && !resultado) {
+        try {
+          (scannerRef.current as { resume?: () => void }).resume?.();
+        } catch {
+          // ignora se já estiver ativo
+        }
+      }
     };
     window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, [id, validarSessaoEquipe]);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        handleFocus();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [id, validarSessaoEquipe, pendingConfirm, resultado]);
 
   // ── Desbloqueio antecipado de áudio em mobile (iOS / Android) ──
   useEffect(() => {
@@ -768,16 +824,50 @@ export default function CheckinMobilePage() {
         setCameraMsg(`Erro ao abrir a câmera: ${msg}`);
       };
 
+      const config = {
+        fps: 15,
+        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+          const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+          const edge = Math.floor(minEdge * 0.72);
+          return {
+            width: Math.max(Math.min(edge, 280), 200),
+            height: Math.max(Math.min(edge, 280), 200),
+          };
+        },
+        aspectRatio: 1.0,
+        disableFlip: true,
+        videoConstraints: {
+          facingMode: { ideal: 'environment' },
+          width: { min: 640, ideal: 1280, max: 1920 },
+          height: { min: 480, ideal: 720, max: 1080 },
+        },
+      };
+
       await html5.start(
         { facingMode: 'environment' },
-        {
-          fps: 10,
-          qrbox: { width: 260, height: 260 },
-          aspectRatio: 1.0,
-        },
+        config,
         onQRCodeSuccess,
         onScanError
       );
+
+      // Foco contínuo quando suportado pelo hardware da câmera
+      try {
+        const video = document.querySelector<HTMLVideoElement>(`#${scannerElementId} video`);
+        if (video?.srcObject) {
+          const stream = video.srcObject as MediaStream;
+          const track = stream.getVideoTracks()[0];
+          if (track) {
+            const caps = (track.getCapabilities?.() || {}) as { focusMode?: string[] };
+            if (caps.focusMode && Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) {
+              await track.applyConstraints({
+                advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet],
+              });
+            }
+          }
+        }
+      } catch {
+        // ignora se foco contínuo não for suportado
+      }
     } catch (err) {
       const msg = String(err || '').trim();
       const finalMsg = msg ? `Erro ao abrir a câmera: ${msg}` : 'Erro ao abrir a câmera.';
@@ -943,6 +1033,7 @@ export default function CheckinMobilePage() {
       vibrar('erro');
     } finally {
       setProcessando(false);
+      setCapturandoCodigo(false);
     }
   }
 
@@ -954,15 +1045,27 @@ export default function CheckinMobilePage() {
 
     if (qrToken && lastTokenRef.current) {
       const deltaMs = Date.now() - lastTokenRef.current.at;
-      if (lastTokenRef.current.token === qrToken && deltaMs < 3000) return;
+      if (lastTokenRef.current.token === qrToken && deltaMs < 2500) return;
     }
     if (qrToken) lastTokenRef.current = { token: qrToken, at: Date.now() };
 
-    // Dispara imediatamente o "BIP" sonoro e vibração tátil ao ler o QR Code
+    // Trava de leitura e pausa o decoder sem desligar o hardware da câmera
+    ignorandoRef.current = true;
+    setCapturandoCodigo(true);
+    if (scannerRef.current) {
+      try {
+        (scannerRef.current as { pause: (shouldPauseVideo?: boolean) => void }).pause(true);
+      } catch {
+        // ignora se pause não for suportado
+      }
+    }
+
+    // Dispara imediatamente o "BIP" sonoro e vibração tátil ao capturar QR Code válido
     emitirSom('bip');
     vibrar('bip');
 
     if (!qrToken) {
+      setCapturandoCodigo(false);
       setResultado({
         estado: 'invalid',
         message: 'QR Code não reconhecido.',
@@ -1100,9 +1203,19 @@ export default function CheckinMobilePage() {
   function voltarParaScan() {
     setResultado(null);
     setPendingConfirm(null);
+    setCapturandoCodigo(false);
     ignorandoRef.current = false;
     if (scannerRef.current) {
-      try { (scannerRef.current as { resume: () => void }).resume(); } catch { /* ignora */ }
+      try {
+        (scannerRef.current as { resume: () => void }).resume();
+      } catch {
+        // Se a sessão do html5-qrcode tiver sido interrompida, reinicia o scanner
+        if (!modoManual) {
+          void iniciarScanner();
+        }
+      }
+    } else if (!modoManual) {
+      void iniciarScanner();
     }
   }
 
@@ -2142,6 +2255,21 @@ export default function CheckinMobilePage() {
               <FileText className="w-4 h-4" />
               <span>Relatórios</span>
             </button>
+
+            <button
+              onClick={toggleSom}
+              className="w-full flex items-center justify-between px-4 py-3 rounded-2xl text-xs font-semibold text-slate-300 hover:bg-white/5 transition"
+            >
+              <span className="flex items-center gap-3">
+                {somHabilitado ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
+                <span>Som do Scanner</span>
+              </span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                somHabilitado ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
+              }`}>
+                {somHabilitado ? 'ATIVO' : 'MUTADO'}
+              </span>
+            </button>
           </div>
 
           {/* Rodapé com Logo COMIEADEPA */}
@@ -2406,6 +2534,18 @@ export default function CheckinMobilePage() {
               {/* Elemento Html5Qrcode */}
               <div id={scannerElementId} className="w-full h-full" />
 
+              {/* Botão de Som Mute/Unmute Flutuante */}
+              <button
+                onClick={toggleSom}
+                className={`absolute top-3.5 left-3.5 z-20 w-10 h-10 rounded-full backdrop-blur-md border border-white/15 flex items-center justify-center transition active:scale-95 shadow-lg ${
+                  somHabilitado ? 'bg-black/60 text-emerald-400 hover:text-white' : 'bg-red-950/80 text-red-400 border-red-500/30'
+                }`}
+                title={somHabilitado ? 'Silenciar scanner' : 'Ativar som do scanner'}
+                aria-label={somHabilitado ? 'Silenciar som' : 'Ativar som'}
+              >
+                {somHabilitado ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+              </button>
+
               {/* Botão de Lanterna Flutuante */}
               <button
                 onClick={toggleTorch}
@@ -2416,6 +2556,14 @@ export default function CheckinMobilePage() {
               >
                 <Flashlight className="w-4 h-4" />
               </button>
+
+              {/* Indicador Visual Imediato de Código Capturado */}
+              {capturandoCodigo && (
+                <div className="absolute top-16 inset-x-4 z-30 bg-emerald-500 text-slate-950 font-bold text-xs py-2 px-3 rounded-2xl flex items-center justify-center gap-2 shadow-2xl animate-pulse">
+                  <div className="w-3 h-3 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                  <span>Código capturado! Consultando participante...</span>
+                </div>
+              )}
 
               {/* Cantoneiras Verdes e Laser */}
               {scannerAtivo && (
