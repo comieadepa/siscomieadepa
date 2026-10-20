@@ -42,25 +42,13 @@ type GuardDenied = { ok: false; response: NextResponse };
 type GuardAllowed = { ok: true; ctx: EventoGuardContext };
 
 async function extractEquipeIdFromRequest(request: NextRequest): Promise<string | null> {
-  const byQuery = request.nextUrl.searchParams.get('equipe_id') || request.nextUrl.searchParams.get('equipeId');
-  if (byQuery) return byQuery.trim() || null;
-
   const byHeader = request.headers.get('x-evento-equipe-id');
   if (byHeader) return byHeader.trim() || null;
 
-  const method = request.method.toUpperCase();
-  if (method === 'GET' || method === 'HEAD') return null;
+  const byQuery = request.nextUrl.searchParams.get('equipe_id') || request.nextUrl.searchParams.get('equipeId');
+  if (byQuery) return byQuery.trim() || null;
 
-  const contentType = request.headers.get('content-type') || '';
-  if (!contentType.toLowerCase().includes('application/json')) return null;
-
-  try {
-    const body = await request.clone().json() as { equipe_id?: string; equipeId?: string };
-    const value = body.equipe_id || body.equipeId;
-    return value ? value.trim() || null : null;
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 function deniedResponse(area: EventoArea, role: EventoRole | null, debug?: any): NextResponse {
@@ -154,10 +142,32 @@ async function logGrantedAccess(params: {
   });
 }
 
-async function resolveAuthenticatedUser(): Promise<User | null> {
-  const userClient = await createServerClientFromCookies();
-  const { data: { user } } = await userClient.auth.getUser();
-  return user ?? null;
+async function resolveAuthenticatedUser(request?: NextRequest): Promise<User | null> {
+  // 1. Tentar ler sessão via cookies (@supabase/ssr padrão)
+  try {
+    const userClient = await createServerClientFromCookies();
+    const { data: { user } } = await userClient.auth.getUser();
+    if (user) return user;
+  } catch {
+    // Falha silenciosa nos cookies, tenta via Bearer token
+  }
+
+  // 2. Tentar ler via cabeçalho Authorization: Bearer
+  if (request) {
+    const authHeader = request.headers.get('Authorization') || request.headers.get('authorization') || '';
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+    if (token) {
+      try {
+        const admin = createServerClient();
+        const { data: { user } } = await admin.auth.getUser(token);
+        if (user) return user;
+      } catch {
+        // Token inválido ou expirado
+      }
+    }
+  }
+
+  return null;
 }
 
 async function resolveUserRole(args: {
@@ -167,49 +177,62 @@ async function resolveUserRole(args: {
 }): Promise<{ role: EventoRole; source: EventoGuardContext['source'] } | null> {
   const meta = args.user.user_metadata || {};
   const rawNivel = (meta.nivel || meta.role || args.user.app_metadata?.role) as string | undefined;
-  const nivel = normalizeRole(rawNivel ?? '');
+  let nivel = normalizeRole(rawNivel ?? '');
   const departamento = (meta.subcategoria as string | undefined) ?? '';
-  const isGlobal = nivel === 'super' || nivel === 'administrador';
 
+  // 1. Se nivel não está no user_metadata, busca na tabela public.users (fonte de verdade no banco)
+  if (!nivel) {
+    const { data: dbUser } = await args.supabaseAdmin
+      .from('users')
+      .select('role, is_active')
+      .eq('id', args.user.id)
+      .maybeSingle();
+
+    if (dbUser?.is_active !== false && dbUser?.role) {
+      nivel = normalizeRole(dbUser.role);
+    }
+  }
+
+  const isGlobal = nivel === 'super' || nivel === 'administrador';
   if (isGlobal) {
     return { role: 'admin_evento', source: 'global' };
   }
 
-  if (nivel === 'inscricao') {
-    // 1. Verificar nova tabela usuario_eventos_permitidos
-    const { data: permitido } = await args.supabaseAdmin
-      .from('usuario_eventos_permitidos')
-      .select('id')
-      .eq('usuario_id', args.user.id)
-      .eq('evento_id', args.evento.id)
-      .maybeSingle();
+  // 2. Permissão explícita concedida em usuario_eventos_permitidos (gestor administrativo do evento)
+  const { data: permitido } = await args.supabaseAdmin
+    .from('usuario_eventos_permitidos')
+    .select('id')
+    .eq('usuario_id', args.user.id)
+    .eq('evento_id', args.evento.id)
+    .maybeSingle();
 
-    if (permitido) {
+  if (permitido) {
+    return { role: 'admin_evento', source: 'usuario_evento' };
+  }
+
+  // 3. Subcategoria TODOS para operadores/administradores de departamento
+  if (departamento === 'TODOS') {
+    return { role: 'admin_evento', source: 'departamento' };
+  }
+
+  // 4. Fallback temporário por subcategoria (somente se não houver registros em usuario_eventos_permitidos)
+  const { count } = await args.supabaseAdmin
+    .from('usuario_eventos_permitidos')
+    .select('id', { count: 'exact', head: true })
+    .eq('usuario_id', args.user.id);
+
+  if ((count ?? 0) === 0 && departamento) {
+    // Se subcategoria for exatamente o UUID do evento
+    if (departamento === args.evento.id) {
       return { role: 'admin_evento', source: 'usuario_evento' };
     }
-
-    if (departamento === 'TODOS') {
+    // Se subcategoria for o nome de um departamento (AGO, UMADESPA, etc)
+    if (args.evento.departamento === departamento) {
       return { role: 'admin_evento', source: 'departamento' };
-    }
-
-    // 2. Fallback temporário por subcategoria (somente se não houver registros na nova tabela para este usuário)
-    const { count } = await args.supabaseAdmin
-      .from('usuario_eventos_permitidos')
-      .select('id', { count: 'exact', head: true })
-      .eq('usuario_id', args.user.id);
-
-    if ((count ?? 0) === 0 && departamento) {
-      // Se subcategoria for exatamente o UUID do evento
-      if (departamento === args.evento.id) {
-        return { role: 'admin_evento', source: 'usuario_evento' };
-      }
-      // Se subcategoria for o nome de um departamento (AGO, UMADESPA, etc)
-      if (args.evento.departamento === departamento) {
-        return { role: 'admin_evento', source: 'departamento' };
-      }
     }
   }
 
+  // 5. Papel específico em usuario_eventos
   const { data: vinculo } = await args.supabaseAdmin
     .from('usuario_eventos')
     .select('permissao')
@@ -258,16 +281,34 @@ export async function requireEventoPermission(
   if (!evento) {
     return { ok: false, response: NextResponse.json({ error: 'Evento não encontrado.' }, { status: 404 }) };
   }
-  const user = await resolveAuthenticatedUser();
+  const user = await resolveAuthenticatedUser(request);
   const equipeId = await extractEquipeIdFromRequest(request);
 
   let resolved: { role: EventoRole; source: EventoGuardContext['source']; equipe?: EquipeRow } | null = null;
 
-  if (equipeId) {
-    resolved = await resolveEquipeRole({ supabaseAdmin, eventoId, equipeId });
+  // 1. Se há usuário autenticado no sistema (Admin Global ou Gestor), resolve o papel do usuário primeiro
+  if (user) {
+    const userResolved = await resolveUserRole({ supabaseAdmin, user, evento: evento as EventoRow });
+    if (userResolved && canAccessEventoArea(userResolved.role, area)) {
+      resolved = userResolved;
+    }
   }
-  if (!resolved && user) {
-    resolved = await resolveUserRole({ supabaseAdmin, user, evento: evento as EventoRow });
+
+  // 2. Se não resolveu com permissão suficiente para a área, tenta via operador de equipe (header x-evento-equipe-id ou query)
+  if (!resolved && equipeId) {
+    const equipeResolved = await resolveEquipeRole({ supabaseAdmin, eventoId, equipeId });
+    if (equipeResolved && canAccessEventoArea(equipeResolved.role, area)) {
+      resolved = equipeResolved;
+    }
+  }
+
+  // 3. Fallback: se ainda não resolveu com acesso permitido, obtém o papel real do usuário ou equipe para log e retorno coerentes
+  if (!resolved) {
+    if (user) {
+      resolved = await resolveUserRole({ supabaseAdmin, user, evento: evento as EventoRow });
+    } else if (equipeId) {
+      resolved = await resolveEquipeRole({ supabaseAdmin, eventoId, equipeId });
+    }
   }
 
   if (!resolved) {
@@ -300,11 +341,18 @@ export async function requireEventoPermission(
 
   await logGrantedAccess({ request, eventoId, area, role: resolved.role, user, equipeId });
 
+  // Resolve objeto da equipe se disponível para o contexto operacional
+  let equipeObj: EquipeRow | null = resolved.equipe ?? null;
+  if (!equipeObj && equipeId) {
+    const eq = await resolveEquipeRole({ supabaseAdmin, eventoId, equipeId });
+    if (eq?.equipe) equipeObj = eq.equipe;
+  }
+
   return {
     ok: true,
     ctx: {
       user,
-      equipe: resolved.equipe ?? null,
+      equipe: equipeObj,
       evento: evento as EventoRow,
       role: resolved.role,
       permissao: resolved.role,
@@ -320,7 +368,7 @@ export async function requireEventoAccess(
   eventoId: string,
 ): Promise<GuardAllowed | GuardDenied> {
   const supabaseAdmin = createServerClient();
-  const user = await resolveAuthenticatedUser();
+  const user = await resolveAuthenticatedUser(_request);
   if (!user) {
     return { ok: false, response: NextResponse.json({ error: 'Nao autorizado.' }, { status: 401 }) };
   }

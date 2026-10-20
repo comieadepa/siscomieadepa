@@ -70,7 +70,19 @@ async function verifyEventoAdmin(user: any, eventoId: string): Promise<{ isAdmin
     return { isAdmin: true, isGlobal: false };
   }
 
-  // 4. Subcategoria TODOS para operadores de nível inscrição autorizados administrativamente
+  // 4. Validar se possui permissão administrativa em public.usuario_eventos_permitidos
+  const { data: uep } = await admin
+    .from('usuario_eventos_permitidos')
+    .select('id')
+    .eq('usuario_id', user.id)
+    .eq('evento_id', eventoId)
+    .maybeSingle();
+
+  if (uep) {
+    return { isAdmin: true, isGlobal: false };
+  }
+
+  // 5. Subcategoria TODOS para operadores de nível inscrição autorizados administrativamente
   if (nivel === 'inscricao' && meta.subcategoria === 'TODOS') {
     return { isAdmin: true, isGlobal: false };
   }

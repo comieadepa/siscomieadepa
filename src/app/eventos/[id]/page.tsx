@@ -5795,6 +5795,9 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
                   <option key={l.id} value={l.id}>{l.nome}</option>
                 ))}
               </select>
+              {locais.filter(l => l.tipo === 'plenaria' && l.ativo).length === 0 && (
+                <p className="text-xs text-gray-400 mt-1">Nenhuma plenária ativa cadastrada neste evento.</p>
+              )}
             </div>
           )}
 
@@ -5810,6 +5813,9 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
                   <option key={l.id} value={l.id}>{l.nome}</option>
                 ))}
               </select>
+              {locais.filter(l => l.tipo === 'refeitorio' && l.ativo).length === 0 && (
+                <p className="text-xs text-gray-400 mt-1">Nenhum restaurante ativo cadastrado neste evento.</p>
+              )}
             </div>
           )}
           {(funcao === 'operador' || funcao === 'hospedagem') && (
@@ -6055,6 +6061,9 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
                       </option>
                     ))}
                   </select>
+                  {locais.filter(l => l.tipo === 'plenaria' && (l.ativo || l.id === editLocalId)).length === 0 && (
+                    <p className="text-xs text-gray-400 mt-1">Nenhuma plenária disponível.</p>
+                  )}
                 </div>
               )}
 
@@ -6072,6 +6081,9 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
                       </option>
                     ))}
                   </select>
+                  {locais.filter(l => l.tipo === 'refeitorio' && (l.ativo || l.id === editLocalId)).length === 0 && (
+                    <p className="text-xs text-gray-400 mt-1">Nenhum restaurante disponível.</p>
+                  )}
                 </div>
               )}
               {(editFuncao === 'operador' || editFuncao === 'hospedagem') && (
