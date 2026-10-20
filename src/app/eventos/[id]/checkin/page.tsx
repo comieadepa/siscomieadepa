@@ -1087,8 +1087,8 @@ export default function CheckinMobilePage() {
   // ── Render: Gate de Acesso Equipe ──────────────────────────
   if (precisaGate) {
     return (
-      <div className="min-h-screen bg-[#08101E] flex items-center justify-center p-6 text-white font-sans">
-        <div className="bg-[#0F1E36] border border-white/10 rounded-3xl shadow-2xl p-8 w-full max-w-md text-center">
+      <div className="min-h-[100dvh] w-full max-w-full overflow-x-hidden bg-[#08101E] flex items-center justify-center p-4 sm:p-6 text-white font-sans pt-[calc(1rem+env(safe-area-inset-top,0px))] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pl-[calc(1rem+env(safe-area-inset-left,0px))] pr-[calc(1rem+env(safe-area-inset-right,0px))]">
+        <div className="bg-[#0F1E36] border border-white/10 rounded-3xl shadow-2xl p-6 sm:p-8 w-full max-w-md mx-auto text-center">
           <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto mb-5 shadow-[0_0_20px_rgba(16,185,129,0.2)]">
             <ShieldCheck className="w-8 h-8" />
           </div>
@@ -1103,7 +1103,7 @@ export default function CheckinMobilePage() {
               placeholder="seu-email@exemplo.com"
               value={emailAcesso}
               onChange={e => setEmailAcesso(e.target.value)}
-              className="w-full bg-[#08101E] border border-white/15 rounded-2xl px-4 py-3.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 text-center transition"
+              className="w-full bg-[#08101E] border border-white/15 rounded-2xl px-4 py-3.5 text-base text-white placeholder-slate-500 focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 text-center transition"
               required
             />
             <button
@@ -1129,7 +1129,7 @@ export default function CheckinMobilePage() {
   // ── Render: Carregando ─────────────────────────────────────
   if (verificandoSessao || loadingEvento) {
     return (
-      <div className="min-h-screen bg-[#08101E] flex items-center justify-center font-sans">
+      <div className="min-h-[100dvh] w-full max-w-full overflow-x-hidden bg-[#08101E] flex items-center justify-center font-sans p-4">
         <div className="text-center text-white">
           <div className="w-12 h-12 border-4 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-xs text-slate-400 tracking-wider uppercase font-semibold">Carregando Check-in...</p>
@@ -1156,8 +1156,8 @@ export default function CheckinMobilePage() {
     };
     const msg = mensagens[acessoMotivo || 'nao_autorizado'];
     return (
-      <div className="min-h-screen bg-[#08101E] flex items-center justify-center p-6 text-white font-sans">
-        <div className="bg-[#0F1E36] border border-white/10 rounded-3xl p-8 text-center max-w-sm w-full shadow-2xl">
+      <div className="min-h-[100dvh] w-full max-w-full overflow-x-hidden bg-[#08101E] flex items-center justify-center p-4 sm:p-6 text-white font-sans pt-[calc(1rem+env(safe-area-inset-top,0px))] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pl-[calc(1rem+env(safe-area-inset-left,0px))] pr-[calc(1rem+env(safe-area-inset-right,0px))]">
+        <div className="bg-[#0F1E36] border border-white/10 rounded-3xl p-6 sm:p-8 text-center max-w-sm w-full mx-auto shadow-2xl">
           <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center mx-auto mb-4 shadow-[0_0_20px_rgba(239,68,68,0.2)]">
             <XCircle className="w-8 h-8" />
           </div>
@@ -1185,14 +1185,14 @@ export default function CheckinMobilePage() {
     const isPlenaria   = modoCheckin === 'plenaria';
 
     return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-[#08101E]/95 backdrop-blur-md overflow-y-auto p-4 sm:p-6 animate-in fade-in duration-200">
+      <div className="fixed inset-0 z-50 flex flex-col bg-[#08101E]/95 backdrop-blur-md overflow-y-auto overflow-x-hidden p-3 sm:p-6 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pl-[calc(0.75rem+env(safe-area-inset-left,0px))] pr-[calc(0.75rem+env(safe-area-inset-right,0px))] animate-in fade-in duration-200">
         <div className="w-full max-w-md mx-auto my-auto flex flex-col">
           {/* Top Bar com Voltar */}
           <div className="flex items-center gap-3 mb-4">
             <button
               onClick={cancelarConfirmacao}
               disabled={confirmando}
-              className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-white transition active:scale-95"
+              className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-white transition active:scale-95 shrink-0"
             >
               <ChevronLeft className="w-6 h-6" />
             </button>
@@ -1200,7 +1200,7 @@ export default function CheckinMobilePage() {
           </div>
 
           {/* Card Central */}
-          <div className="bg-[#0F1E36] border border-white/10 rounded-3xl p-6 shadow-2xl space-y-5 text-white">
+          <div className="bg-[#0F1E36] border border-white/10 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-5 text-white">
             {/* Foto e Badge Superior */}
             <div className="flex flex-col items-center text-center">
               <div className="w-24 h-24 rounded-2xl overflow-hidden border-2 border-emerald-400/50 bg-slate-800 shadow-[0_0_20px_rgba(16,185,129,0.25)] flex items-center justify-center mb-3">
@@ -1223,10 +1223,10 @@ export default function CheckinMobilePage() {
               </div>
 
               {/* Nome do Participante */}
-              <h3 className="text-lg font-black text-white uppercase leading-snug max-w-xs">{ins.nome_inscrito}</h3>
+              <h3 className="text-lg font-black text-white uppercase leading-snug max-w-full break-words">{ins.nome_inscrito}</h3>
 
               {/* Badges de Cargo e Matrícula */}
-              <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+              <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 mt-2">
                 {(ins.cargo_ministerial || ins.tipo_inscricao) && (
                   <span className="px-2.5 py-1 rounded-lg bg-blue-500/20 border border-blue-500/30 text-blue-300 text-[11px] font-bold uppercase tracking-wider">
                     {ins.cargo_ministerial || ins.tipo_inscricao}
@@ -1343,7 +1343,7 @@ export default function CheckinMobilePage() {
     const isRefeitorio = modoCheckin === 'refeitorio';
 
     return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-[#08101E] overflow-y-auto p-4 sm:p-6 animate-in zoom-in-95 duration-200">
+      <div className="fixed inset-0 z-50 flex flex-col bg-[#08101E] overflow-y-auto overflow-x-hidden p-3 sm:p-6 pt-[calc(1rem+env(safe-area-inset-top,0px))] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pl-[calc(0.75rem+env(safe-area-inset-left,0px))] pr-[calc(0.75rem+env(safe-area-inset-right,0px))] animate-in zoom-in-95 duration-200">
         <div className="w-full max-w-md mx-auto my-auto flex flex-col items-center text-center">
           {/* Círculo Verde com Pulso */}
           <div className="w-20 h-20 rounded-full bg-emerald-500/20 border-2 border-emerald-400 text-emerald-400 flex items-center justify-center shadow-[0_0_35px_rgba(16,185,129,0.35)] mb-4">
@@ -1437,7 +1437,7 @@ export default function CheckinMobilePage() {
                 : 'QR CODE INVÁLIDO';
 
     return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-[#08101E] overflow-y-auto p-4 sm:p-6 animate-in zoom-in-95 duration-200">
+      <div className="fixed inset-0 z-50 flex flex-col bg-[#08101E] overflow-y-auto overflow-x-hidden p-3 sm:p-6 pt-[calc(1rem+env(safe-area-inset-top,0px))] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pl-[calc(0.75rem+env(safe-area-inset-left,0px))] pr-[calc(0.75rem+env(safe-area-inset-right,0px))] animate-in zoom-in-95 duration-200">
         <div className="w-full max-w-md mx-auto my-auto flex flex-col items-center text-center">
           {/* Círculo Vermelho de Bloqueio */}
           <div className="w-20 h-20 rounded-full bg-red-500/20 border-2 border-red-500 text-red-500 flex items-center justify-center shadow-[0_0_35px_rgba(239,68,68,0.35)] mb-4">
@@ -1515,19 +1515,19 @@ export default function CheckinMobilePage() {
     if (!historicoOpen) return null;
 
     return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-[#08101E]/95 backdrop-blur-md animate-in fade-in duration-200">
-        <div className="w-full max-w-md mx-auto flex flex-col h-full p-4 sm:p-6">
+      <div className="fixed inset-0 z-50 flex flex-col bg-[#08101E]/95 backdrop-blur-md overflow-x-hidden animate-in fade-in duration-200">
+        <div className="w-full max-w-md mx-auto flex flex-col h-full p-3 sm:p-6 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pl-[calc(0.75rem+env(safe-area-inset-left,0px))] pr-[calc(0.75rem+env(safe-area-inset-right,0px))]">
           {/* Header do Sheet */}
           <div className="flex items-center justify-between pb-4 border-b border-white/10">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setHistoricoOpen(false)}
-                className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-white transition active:scale-95"
+                className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-white transition active:scale-95 shrink-0"
               >
                 <ChevronLeft className="w-6 h-6" />
               </button>
-              <div>
-                <h2 className="text-base font-bold text-white tracking-wide">Últimos Check-ins</h2>
+              <div className="min-w-0">
+                <h2 className="text-base font-bold text-white tracking-wide truncate">Últimos Check-ins</h2>
                 <p className="text-xs text-slate-400">{totalCheckins} check-ins realizados</p>
               </div>
             </div>
@@ -1543,7 +1543,7 @@ export default function CheckinMobilePage() {
               ultimosCheckins.map(ins => (
                 <div
                   key={ins.id}
-                  className="bg-[#0F1E36] border border-white/10 rounded-2xl p-3.5 flex items-center gap-3 shadow-sm"
+                  className="bg-[#0F1E36] border border-white/10 rounded-2xl p-3 sm:p-3.5 flex items-center gap-3 shadow-sm min-w-0"
                 >
                   <div className="w-10 h-10 rounded-full bg-slate-800 border border-emerald-400/30 overflow-hidden flex items-center justify-center shrink-0">
                     {ins.foto_url ? (
@@ -1580,7 +1580,7 @@ export default function CheckinMobilePage() {
     const diaDetalhe = dadosRefeicoes?.dias.find(d => d.data === diaSelecionado);
 
     return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-[#08101E] overflow-y-auto p-4 sm:p-6 animate-in fade-in duration-200">
+      <div className="fixed inset-0 z-50 flex flex-col bg-[#08101E] overflow-y-auto overflow-x-hidden p-3 sm:p-6 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pl-[calc(0.75rem+env(safe-area-inset-left,0px))] pr-[calc(0.75rem+env(safe-area-inset-right,0px))] animate-in fade-in duration-200">
         <div className="w-full max-w-md mx-auto flex flex-col h-full min-h-0">
           {/* Header */}
           <div className="flex items-center justify-between pb-4 border-b border-white/10 shrink-0">
@@ -1785,7 +1785,7 @@ export default function CheckinMobilePage() {
     if (!menuOpen) return null;
 
     return (
-      <div className="fixed inset-0 z-50 flex">
+      <div className="fixed inset-0 z-50 flex overflow-hidden">
         {/* Backdrop */}
         <div
           className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
@@ -1793,7 +1793,7 @@ export default function CheckinMobilePage() {
         />
 
         {/* Painel lateral */}
-        <div className="relative w-full max-w-xs bg-[#08101E] border-r border-white/10 h-full flex flex-col p-6 z-10 shadow-2xl text-white animate-in slide-in-from-left duration-200">
+        <div className="relative w-full max-w-xs bg-[#08101E] border-r border-white/10 h-full flex flex-col p-5 sm:p-6 z-10 shadow-2xl text-white animate-in slide-in-from-left duration-200 pt-[calc(1rem+env(safe-area-inset-top,0px))] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pl-[calc(1rem+env(safe-area-inset-left,0px))] pr-[calc(1rem+env(safe-area-inset-right,0px))]">
           {/* Header do Drawer */}
           <div className="flex items-start justify-between pb-6 border-b border-white/10">
             <div>
@@ -1918,7 +1918,7 @@ export default function CheckinMobilePage() {
   // RENDER PRINCIPAL (LAYOUT)
   // ═══════════════════════════════════════════════════════════
   return (
-    <div className="min-h-screen bg-[#08101E] text-white font-sans flex flex-col selection:bg-emerald-500 selection:text-white">
+    <div className="min-h-[100dvh] w-full max-w-full overflow-x-hidden bg-[#08101E] text-white font-sans flex flex-col selection:bg-emerald-500 selection:text-white">
       {/* Estilos para animação laser e customização da câmera */}
       <style jsx global>{`
         @keyframes scanLaser {
@@ -1933,9 +1933,13 @@ export default function CheckinMobilePage() {
           border: none !important;
           background: #000 !important;
           position: relative;
+          width: 100% !important;
+          max-width: 100% !important;
+          overflow: hidden !important;
         }
         #qr-scanner-region video {
           width: 100% !important;
+          max-width: 100% !important;
           height: 100% !important;
           object-fit: cover !important;
           border-radius: 1.5rem !important;
@@ -1956,9 +1960,9 @@ export default function CheckinMobilePage() {
       <DrawerMenu />
 
       {/* ── CABEÇALHO DO EVENTO ───────────────────────────────── */}
-      <header className="bg-[#0D1D35] border-b border-white/10 px-4 py-3 flex flex-col gap-2.5 shrink-0">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
+      <header className="bg-[#0D1D35] border-b border-white/10 px-3 sm:px-4 py-2.5 sm:py-3 flex flex-col gap-2 shrink-0 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] pl-[calc(0.75rem+env(safe-area-inset-left,0px))] pr-[calc(0.75rem+env(safe-area-inset-right,0px))]">
+        <div className="flex items-center justify-between gap-2 sm:gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <button
               onClick={() => setMenuOpen(true)}
               className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-white transition active:scale-95 shrink-0"
@@ -1980,21 +1984,21 @@ export default function CheckinMobilePage() {
           {/* Contador de Check-ins Badge */}
           <button
             onClick={() => setHistoricoOpen(true)}
-            className="bg-[#08101E] border border-white/10 hover:border-emerald-400/40 rounded-2xl px-3 py-1.5 flex flex-col items-end transition shrink-0"
+            className="bg-[#08101E] border border-white/10 hover:border-emerald-400/40 rounded-2xl px-2.5 sm:px-3 py-1.5 flex flex-col items-end transition shrink-0"
           >
             <span className="text-[9px] text-slate-400 uppercase tracking-widest font-semibold leading-none">
               Check-ins
             </span>
-            <span className="text-base font-black text-emerald-400 leading-none mt-1">
+            <span className="text-sm sm:text-base font-black text-emerald-400 leading-none mt-1">
               {totalCheckins}
             </span>
           </button>
         </div>
 
         {/* ── IDENTIFICAÇÃO DO LOCAL / TERMINAL ── */}
-        <div className="pt-2 border-t border-white/5 flex items-center justify-between gap-2">
+        <div className="pt-2 border-t border-white/5 flex items-center justify-between gap-2 min-w-0">
           {operadorCarregado && operadorLocal ? (
-            <div className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-xl text-xs font-semibold max-w-[75%] truncate ${
+            <div className={`inline-flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 rounded-xl text-xs font-semibold max-w-[68%] sm:max-w-[75%] min-w-0 ${
               !operadorLocal.ativo
                 ? 'bg-red-500/15 border border-red-500/30 text-red-300'
                 : operadorLocal.tipo === 'plenaria'
@@ -2007,7 +2011,7 @@ export default function CheckinMobilePage() {
               <span className="text-[10px] uppercase tracking-wider font-bold shrink-0">
                 {operadorLocal.tipo === 'plenaria' ? '🏛️ Plenária' : '🍽️ Refeitório'}:
               </span>
-              <span className="font-bold text-white truncate">
+              <span className="font-bold text-white truncate min-w-0">
                 {operadorLocal.nome}
               </span>
               {!operadorLocal.ativo && (
@@ -2017,15 +2021,15 @@ export default function CheckinMobilePage() {
               )}
             </div>
           ) : (
-            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-800/80 border border-white/10 text-slate-300 text-xs font-medium">
+            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-800/80 border border-white/10 text-slate-300 text-xs font-medium min-w-0">
               <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0" />
               <span className="text-[10px] text-slate-400 shrink-0">Terminal:</span>
-              <span className="font-semibold text-slate-200">Local não definido</span>
+              <span className="font-semibold text-slate-200 truncate">Local não definido</span>
             </div>
           )}
 
           {equipeSessao?.email && (
-            <span className="text-[10px] text-slate-400 truncate max-w-[130px]" title={equipeSessao.email}>
+            <span className="text-[10px] text-slate-400 truncate max-w-[110px] sm:max-w-[140px] shrink-0 text-right" title={equipeSessao.email}>
               👤 {equipeSessao.email.split('@')[0]}
             </span>
           )}
@@ -2033,7 +2037,7 @@ export default function CheckinMobilePage() {
       </header>
 
       {/* ── ABAS DE MODO (Plenária / Refeitório) ─────── */}
-      <nav className="bg-[#0D1D35] px-2 flex border-b border-white/10 shrink-0">
+      <nav className="bg-[#0D1D35] px-2 flex border-b border-white/10 shrink-0 w-full">
         {(['plenaria', 'refeitorio'] as const).map(m => {
           const ativo = modoCheckin === m;
           const label = m === 'plenaria' ? 'Plenária' : 'Refeitório';
@@ -2067,7 +2071,7 @@ export default function CheckinMobilePage() {
       </nav>
 
       {/* ── TOGGLE CÂMERA / MANUAL ───────────────────────────── */}
-      <div className="px-4 py-3 shrink-0">
+      <div className="px-4 py-3 shrink-0 w-full">
         <div className="max-w-xs mx-auto bg-[#0F1E36] border border-white/10 rounded-2xl p-1 flex">
           <button
             onClick={() => {
@@ -2104,7 +2108,7 @@ export default function CheckinMobilePage() {
       </div>
 
       {/* ── CORPO PRINCIPAL ──────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto px-4 pb-6">
+      <main className="w-full max-w-full flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] pl-[calc(0.75rem+env(safe-area-inset-left,0px))] pr-[calc(0.75rem+env(safe-area-inset-right,0px))]">
         {/* Banner de Alerta se o Local estiver Inativo */}
         {operadorLocal && !operadorLocal.ativo && (
           <div className="max-w-sm mx-auto mb-3 bg-red-950/80 border border-red-800 rounded-2xl p-3.5 text-center text-xs text-red-200 flex items-center justify-center gap-2.5 shadow-lg">
@@ -2120,7 +2124,7 @@ export default function CheckinMobilePage() {
 
         {/* ═══ MODO CÂMERA (SCREEN 1) ═══════════════════════════ */}
         {!modoManual && (
-          <div className="max-w-sm mx-auto flex flex-col items-center">
+          <div className="w-full max-w-sm mx-auto flex flex-col items-center">
             {/* Viewfinder da Câmera */}
             <div className="w-full aspect-square relative rounded-3xl overflow-hidden bg-black border border-white/10 shadow-2xl flex items-center justify-center">
               {/* Elemento Html5Qrcode */}
@@ -2274,7 +2278,7 @@ export default function CheckinMobilePage() {
 
         {/* ═══ MODO MANUAL (SCREEN 2) ═══════════════════════════ */}
         {modoManual && (
-          <div className="max-w-sm mx-auto space-y-4">
+          <div className="w-full max-w-sm mx-auto space-y-4">
             {/* Header da Busca */}
             <div>
               <h2 className="text-lg font-bold text-white tracking-wide">Consultar credencial</h2>
@@ -2293,7 +2297,7 @@ export default function CheckinMobilePage() {
                   value={buscaManual}
                   onChange={e => setBuscaManual(e.target.value)}
                   autoFocus
-                  className="w-full bg-transparent text-white placeholder-slate-500 text-sm focus:outline-none"
+                  className="w-full bg-transparent text-white placeholder-slate-500 text-base focus:outline-none"
                 />
                 {buscaManual && (
                   <button

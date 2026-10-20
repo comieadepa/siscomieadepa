@@ -1,10 +1,16 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { AppDialogProvider } from '@/providers/AppDialogProvider';
 import { AuthProvider } from '@/providers/AuthProvider';
 import { UsuarioProvider } from '@/providers/UsuarioContext';
 
 export const dynamic = 'force-dynamic';
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+};
 
 export const metadata: Metadata = {
   title: 'SISCOMIEADEPA - Acesso ao Sistema',
