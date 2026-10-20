@@ -43,6 +43,18 @@ interface DiaRefeicao {
   percentual: number;
 }
 
+interface RestauranteControle {
+  id: string;
+  nome: string;
+  ativo: boolean;
+  total_hoje: number;
+  total_ontem: number;
+  total_acumulado: number;
+  percentual: number;
+  max_dia: number;
+  dias: DiaRefeicao[];
+}
+
 interface DadosControleRefeicoes {
   ok: boolean;
   evento: {
@@ -53,11 +65,15 @@ interface DadosControleRefeicoes {
   };
   hoje: string;
   ontem: string;
+  filtro_local_id?: string;
   total_hoje: number;
   total_ontem: number;
   total_acumulado: number;
+  total_geral_evento?: number;
   max_dia: number;
   dias: DiaRefeicao[];
+  restaurantes?: RestauranteControle[];
+  tem_registros_sem_local?: boolean;
   tem_subcategorias: boolean;
   gerado_em: string;
 }
@@ -389,6 +405,7 @@ export default function CheckinMobilePage() {
   const [carregandoRefeicoes, setCarregandoRefeicoes] = useState(false);
   const [erroRefeicoes, setErroRefeicoes] = useState<string | null>(null);
   const [diaSelecionado, setDiaSelecionado] = useState<string | null>(null);
+  const [filtroRestaurante, setFiltroRestaurante] = useState<string>('todos');
 
   // Modo forçado por URL
   const modoForcado = useMemo<'plenaria' | 'refeitorio' | null>(() => {
@@ -1130,6 +1147,7 @@ export default function CheckinMobilePage() {
   const abrirControleRefeicoes = () => {
     setMenuOpen(false);
     setControleRefeicoesOpen(true);
+    setDiaSelecionado(null);
     void carregarDadosRefeicoes();
   };
 
@@ -1666,7 +1684,16 @@ export default function CheckinMobilePage() {
   const ModalControleRefeicoes = () => {
     if (!controleRefeicoesOpen) return null;
 
-    const diaDetalhe = dadosRefeicoes?.dias.find(d => d.data === diaSelecionado);
+    const restauranteAtivo = filtroRestaurante !== 'todos'
+      ? dadosRefeicoes?.restaurantes?.find(r => r.id === filtroRestaurante) ?? null
+      : null;
+
+    const totHoje = restauranteAtivo ? restauranteAtivo.total_hoje : (dadosRefeicoes?.total_hoje ?? 0);
+    const totOntem = restauranteAtivo ? restauranteAtivo.total_ontem : (dadosRefeicoes?.total_ontem ?? 0);
+    const totAcumulado = restauranteAtivo ? restauranteAtivo.total_acumulado : (dadosRefeicoes?.total_acumulado ?? 0);
+    const diasList = restauranteAtivo ? restauranteAtivo.dias : (dadosRefeicoes?.dias ?? []);
+    const diaDetalhe = diasList.find(d => d.data === diaSelecionado);
+    const totalGeralEvento = dadosRefeicoes?.total_geral_evento ?? dadosRefeicoes?.total_acumulado ?? 0;
 
     return (
       <div className="fixed inset-0 z-50 flex flex-col bg-[#08101E] overflow-y-auto overflow-x-hidden p-3 sm:p-6 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pl-[calc(0.75rem+env(safe-area-inset-left,0px))] pr-[calc(0.75rem+env(safe-area-inset-right,0px))] animate-in fade-in duration-200">
@@ -1730,17 +1757,66 @@ export default function CheckinMobilePage() {
             {/* Dados Carregados */}
             {dadosRefeicoes && (
               <>
-                {/* Dois Cards no Topo: Hoje e Ontem (conforme mockup) */}
+                {/* ── FILTRO POR RESTAURANTE / REFEITÓRIO ── */}
+                {dadosRefeicoes.restaurantes && dadosRefeicoes.restaurantes.length > 0 && (
+                  <div className="bg-[#0F1E36] border border-white/10 rounded-2xl p-3 shadow-sm space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400 font-medium flex items-center gap-1.5">
+                        <Utensils className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Restaurante / Refeitório</span>
+                      </span>
+                      {filtroRestaurante !== 'todos' && (
+                        <button
+                          onClick={() => {
+                            setFiltroRestaurante('todos');
+                            setDiaSelecionado(null);
+                          }}
+                          className="text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold active:scale-95 transition"
+                        >
+                          Ver todos
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="relative">
+                      <select
+                        value={filtroRestaurante}
+                        onChange={e => {
+                          setFiltroRestaurante(e.target.value);
+                          setDiaSelecionado(null);
+                        }}
+                        className="w-full bg-[#08101E] border border-white/15 rounded-xl px-3 py-2.5 pr-8 text-xs text-white appearance-none focus:outline-none focus:border-emerald-400 font-medium cursor-pointer"
+                      >
+                        <option value="todos">
+                          🍽️ Todos os restaurantes ({totalGeralEvento.toLocaleString('pt-BR')} ref.)
+                        </option>
+                        {dadosRefeicoes.restaurantes.map(r => (
+                          <option key={r.id} value={r.id}>
+                            {r.id === '__sem_local__' ? '📍' : '🍽️'} {r.nome}
+                            {!r.ativo && r.id !== '__sem_local__' ? ' (Inativo)' : ''} — {r.total_acumulado.toLocaleString('pt-BR')} ref. ({r.percentual}%)
+                          </option>
+                        ))}
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
+                        <ChevronRight className="w-4 h-4 rotate-90" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── DOIS CARDS NO TOPO: HOJE E ONTEM ── */}
                 <div className="grid grid-cols-2 gap-3">
                   {/* Card 1: Refeições hoje */}
                   <div className="bg-[#0F1E36] border border-white/10 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
                     <div>
                       <span className="text-xs text-slate-400 font-medium">Refeições hoje</span>
                       <p className="text-3xl font-black text-emerald-400 mt-1 leading-none">
-                        {dadosRefeicoes.total_hoje.toLocaleString('pt-BR')}
+                        {totHoje.toLocaleString('pt-BR')}
                       </p>
                     </div>
-                    <span className="text-[11px] text-slate-500 mt-2 font-medium">Até o momento</span>
+                    <span className="text-[11px] text-slate-500 mt-2 font-medium truncate" title={restauranteAtivo ? restauranteAtivo.nome : 'Todos os restaurantes'}>
+                      {restauranteAtivo ? restauranteAtivo.nome : 'Até o momento'}
+                    </span>
                   </div>
 
                   {/* Card 2: Ontem */}
@@ -1748,33 +1824,47 @@ export default function CheckinMobilePage() {
                     <div>
                       <span className="text-xs text-slate-400 font-medium">Ontem</span>
                       <p className="text-3xl font-black text-white mt-1 leading-none">
-                        {dadosRefeicoes.total_ontem.toLocaleString('pt-BR')}
+                        {totOntem.toLocaleString('pt-BR')}
                       </p>
                     </div>
                     <span className="text-[11px] text-slate-500 mt-2 font-medium">Dia encerrado</span>
                   </div>
                 </div>
 
-                {/* Card Informativo: Total Acumulado */}
-                <div className="bg-[#0F1E36]/70 border border-white/10 rounded-2xl px-4 py-3 flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Consumo acumulado do evento</span>
-                  <span className="text-sm font-black text-emerald-400">
-                    {dadosRefeicoes.total_acumulado.toLocaleString('pt-BR')} refeições
+                {/* ── CARD INFORMATIVO: TOTAL ACUMULADO ── */}
+                <div className="bg-[#0F1E36]/70 border border-white/10 rounded-2xl px-4 py-3 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="text-xs text-slate-400 block truncate">
+                      {restauranteAtivo ? `Consumo: ${restauranteAtivo.nome}` : 'Consumo acumulado do evento'}
+                    </span>
+                    {restauranteAtivo && (
+                      <span className="text-[10px] text-emerald-400 font-semibold block truncate">
+                        {restauranteAtivo.percentual}% do total do evento ({totalGeralEvento.toLocaleString('pt-BR')} refeições)
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-sm font-black text-emerald-400 shrink-0">
+                    {totAcumulado.toLocaleString('pt-BR')} refeições
                   </span>
                 </div>
 
-                {/* Card Consumo por dia (Gráfico/Barras conforme mockup) */}
+                {/* ── CARD CONSUMO POR DIA ── */}
                 <div className="bg-[#0F1E36] border border-white/10 rounded-2xl p-4 shadow-sm space-y-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-white tracking-wide">Consumo por dia</h3>
-                    <span className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">
-                      {dadosRefeicoes.dias.length} dias oficiais
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-bold text-white tracking-wide">Consumo por dia</h3>
+                      {restauranteAtivo && (
+                        <p className="text-[11px] text-emerald-400 font-medium truncate">{restauranteAtivo.nome}</p>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold shrink-0">
+                      {diasList.length} dias oficiais
                     </span>
                   </div>
 
                   {/* Lista de Dias */}
                   <div className="space-y-2.5 pt-1">
-                    {dadosRefeicoes.dias.map(d => {
+                    {diasList.map(d => {
                       const isSelecionado = diaSelecionado === d.data;
                       const isFuturo = d.status === 'futuro';
                       const isHoje = d.status === 'hoje';
@@ -1839,9 +1929,9 @@ export default function CheckinMobilePage() {
                         <p className="font-black text-emerald-400 text-sm">
                           {diaDetalhe.status === 'futuro' ? '0 refeições' : `${diaDetalhe.total.toLocaleString('pt-BR')} refeições`}
                         </p>
-                        {dadosRefeicoes.total_acumulado > 0 && diaDetalhe.total > 0 && (
+                        {totAcumulado > 0 && diaDetalhe.total > 0 && (
                           <p className="text-[10px] text-slate-400">
-                            {Math.round((diaDetalhe.total / dadosRefeicoes.total_acumulado) * 100)}% do total
+                            {Math.round((diaDetalhe.total / totAcumulado) * 100)}% {restauranteAtivo ? 'deste local' : 'do total'}
                           </p>
                         )}
                       </div>
@@ -1849,9 +1939,106 @@ export default function CheckinMobilePage() {
                   )}
                 </div>
 
-                {/* Nota do Rodapé (conforme mockup) */}
+                {/* ── NOVA SEÇÃO: CONSUMO POR RESTAURANTE ── */}
+                {dadosRefeicoes.restaurantes && dadosRefeicoes.restaurantes.length > 0 && (
+                  <div className="bg-[#0F1E36] border border-white/10 rounded-2xl p-4 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Utensils className="w-4 h-4 text-emerald-400" />
+                        <h3 className="text-sm font-bold text-white tracking-wide">Consumo por restaurante</h3>
+                      </div>
+                      <span className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">
+                        {dadosRefeicoes.restaurantes.length} {dadosRefeicoes.restaurantes.length === 1 ? 'local' : 'locais'}
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      Toque em um restaurante para filtrar e visualizar seu histórico detalhado por dia.
+                    </p>
+
+                    <div className="space-y-2 pt-1">
+                      {dadosRefeicoes.restaurantes.map(r => {
+                        const isSelected = filtroRestaurante === r.id;
+
+                        return (
+                          <div
+                            key={r.id}
+                            onClick={() => {
+                              setFiltroRestaurante(isSelected ? 'todos' : r.id);
+                              setDiaSelecionado(null);
+                            }}
+                            className={`p-3 rounded-2xl border transition-all cursor-pointer select-none ${
+                              isSelected
+                                ? 'bg-emerald-500/15 border-emerald-400/60 ring-1 ring-emerald-400/40 shadow-sm'
+                                : 'bg-[#08101E]/60 border-white/5 hover:border-white/15 hover:bg-[#08101E]/90'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-bold text-white text-xs truncate">
+                                    {r.id === '__sem_local__' ? '📍' : '🍽️'} {r.nome}
+                                  </span>
+                                  {!r.ativo && r.id !== '__sem_local__' && (
+                                    <span className="text-[9px] bg-red-600/80 text-white font-bold px-1.5 py-0.5 rounded">
+                                      Inativo
+                                    </span>
+                                  )}
+                                  {r.id === '__sem_local__' && (
+                                    <span className="text-[9px] bg-slate-700 text-slate-300 font-medium px-1.5 py-0.5 rounded">
+                                      Sem vínculo
+                                    </span>
+                                  )}
+                                  {isSelected && (
+                                    <span className="text-[9px] bg-emerald-500/30 text-emerald-300 font-bold px-1.5 py-0.5 rounded">
+                                      Filtro ativo
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-3 mt-1.5 text-[11px] text-slate-400">
+                                  <span>
+                                    Hoje: <strong className="text-emerald-400 font-bold">{r.total_hoje.toLocaleString('pt-BR')}</strong>
+                                  </span>
+                                  <span>·</span>
+                                  <span>
+                                    Ontem: <strong className="text-slate-200 font-semibold">{r.total_ontem.toLocaleString('pt-BR')}</strong>
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="text-right shrink-0">
+                                <p className="text-xs font-black text-white leading-tight">
+                                  {r.total_acumulado.toLocaleString('pt-BR')}{' '}
+                                  <span className="text-[10px] font-normal text-slate-400">ref.</span>
+                                </p>
+                                <p className="text-[10px] text-emerald-400 font-bold mt-0.5">
+                                  {r.percentual}% do total
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Barra de progresso proporcional do restaurante */}
+                            <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mt-2.5">
+                              <div
+                                className={`h-full rounded-full transition-all duration-300 ${
+                                  !r.ativo && r.id !== '__sem_local__' ? 'bg-amber-500' : 'bg-emerald-500'
+                                }`}
+                                style={{
+                                  width: `${totalGeralEvento > 0 ? Math.max(Math.round((r.total_acumulado / totalGeralEvento) * 100), r.total_acumulado > 0 ? 3 : 0) : 0}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Nota do Rodapé */}
                 <p className="text-[11px] text-slate-500 text-center leading-relaxed px-2">
-                  Os números reais serão calculados a partir dos check-ins de refeições registrados no sistema.
+                  Os números são calculados a partir dos débitos oficiais registrados em evento_refeicoes_consumo.
                 </p>
 
                 {dadosRefeicoes.gerado_em && (
