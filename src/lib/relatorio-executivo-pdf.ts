@@ -4,7 +4,7 @@
 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { LOGO_COMIEADEPA_BASE64, LOGO_AGO_BASE64 } from './logos-base64';
+import { LOGO_COMIEADEPA_BASE64 } from './logos-base64';
 
 export type TipoRelatorioExecutivo =
   | 'completo'
@@ -146,14 +146,6 @@ function desenharCabecalhoOficial(doc: jsPDF, data: DashboardExecutivoData, titu
     }
   }
 
-  // Logomarca AGO à direita (largura 38mm, proporção ~2.13 -> altura 17.8mm)
-  if (LOGO_AGO_BASE64) {
-    try {
-      doc.addImage(LOGO_AGO_BASE64, 'PNG', 158, 9, 38, 17.8);
-    } catch {
-      // continua sem imagem
-    }
-  }
 
   // Textos Centrais
   doc.setFont('helvetica', 'bold');
