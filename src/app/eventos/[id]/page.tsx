@@ -24,6 +24,7 @@ import TabBackup        from './TabBackup';
 import TabProgramacao   from './TabProgramacao';
 import TabCertificados  from './TabCertificados';
 import TabControleAGO  from './TabControleAGO';
+import ModalRelatorioExecutivoPDF from './ModalRelatorioExecutivoPDF';
 import GerenciadorLocaisCheckin from './GerenciadorLocaisCheckin';
 import { RelatorioPresencasPlenaria, RelatorioConsumoRestaurante } from './RelatoriosLocais';
 import { calcularValorFinanceiroInscricao, formatarValorUI, identificarResponsavelFinanceiro } from '@/lib/eventos/financeiro-lote-utils';
@@ -3757,6 +3758,7 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
   eventoId: string;
 }) {
   const [relTipo,      setRelTipo]      = useState<RelTipo>('resumo');
+  const [modalExecPdfOpen, setModalExecPdfOpen] = useState(false);
   const [filtroSup,    setFiltroSup]    = useState('');
   const [filtroCampo,  setFiltroCampo]  = useState('');
   const [filtroPag,    setFiltroPag]    = useState('');
@@ -4436,13 +4438,20 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
                 Limpar filtros
               </button>
             )}
-            <div className="ml-auto flex gap-2 mt-auto">
+            <div className="ml-auto flex flex-wrap gap-2 mt-auto">
+              <button
+                type="button"
+                onClick={() => setModalExecPdfOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0D2B4E] text-white text-xs font-bold hover:bg-[#0a1e38] transition shadow-sm"
+              >
+                📄 Relatório Executivo (PDF)
+              </button>
               <button onClick={exportarCSV}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition">
                 📥 Exportar CSV
               </button>
               <button onClick={abrirImpressaoRelatorio}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#123b63] text-white text-xs font-semibold hover:bg-[#0f2a45] transition">
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 text-xs font-semibold hover:bg-gray-200 transition">
                 🖨️ Imprimir
               </button>
             </div>
@@ -4779,6 +4788,11 @@ function TabRelatorios({ inscricoes, loading, supervisoes, campos, nomeSup, nome
           </div>
         )
       )}
+      <ModalRelatorioExecutivoPDF
+        eventoId={eventoId}
+        isOpen={modalExecPdfOpen}
+        onClose={() => setModalExecPdfOpen(false)}
+      />
     </div>
   );
 }
@@ -7770,6 +7784,7 @@ function TabRelatoriosAGO({ eventoId }: { eventoId: string; evento: Evento }) {
   const [data, setData] = useState<RelatoriosAGOData | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
+  const [modalPdfOpen, setModalPdfOpen] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -7823,24 +7838,40 @@ function TabRelatoriosAGO({ eventoId }: { eventoId: string; evento: Evento }) {
         ))}
       </div>
 
-      {/* Atalhos rápidos */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-        <h3 className="text-sm font-black text-gray-700 mb-3">Atalhos</h3>
+      {/* Ações e Relatórios Oficiais */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h3 className="text-sm font-black text-gray-800">Documentação e Relatórios Oficiais</h3>
+          <p className="text-xs text-gray-400 mt-0.5">Emita demonstrativos executivos timbrados em PDF para presidência e plenária ministerial.</p>
+        </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setModalPdfOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-[#0D2B4E] to-[#123b63] text-white hover:from-[#0a1e38] hover:to-[#0d2b4e] transition shadow-md shadow-blue-900/10"
+          >
+            📄 Gerar Relatório Executivo (PDF)
+          </button>
           <a
             href={`/eventos/${eventoId}/relatorios/frequencia-ago`}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-[#0D2B4E] text-white hover:bg-[#0a1e38] transition"
+            className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition"
           >
             📊 Frequência Detalhada
           </a>
           <a
             href={`/eventos/${eventoId}/ausentes`}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-red-100 text-red-700 hover:bg-red-200 transition"
+            className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition"
           >
             🚨 Página de Ausentes
           </a>
         </div>
       </div>
+
+      <ModalRelatorioExecutivoPDF
+        eventoId={eventoId}
+        isOpen={modalPdfOpen}
+        onClose={() => setModalPdfOpen(false)}
+      />
     </div>
   );
 }

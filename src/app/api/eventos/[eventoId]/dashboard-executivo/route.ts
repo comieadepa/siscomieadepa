@@ -9,6 +9,7 @@ type EventoRow = {
   configuracoes_ago: Record<string, unknown> | null;
   data_inicio: string | null; data_fim: string | null;
   usar_tipos_inscricao: boolean | null; permite_alimentacao: boolean | null;
+  local?: string | null; cidade?: string | null;
 };
 type InscricaoRow = {
   id: string; nome_inscrito: string; cpf: string | null;
@@ -20,14 +21,16 @@ type InscricaoRow = {
   quantidade_refeicoes_usadas: number | null;
   quantidade_refeicoes_saldo: number | null;
   ministro_snapshot: Record<string, unknown> | null; hospedagem: boolean | null;
+  valor_pago?: number | null; valor_final?: number | null; valor_original?: number | null;
+  forma_pagamento?: string | null;
 };
 type CheckinRow    = { id: string; inscricao_id: string | null; tipo_checkin: string | null; data_plenaria: string | null; created_at: string; };
 type RefeicaoConsumoRow = { inscricao_id: string | null; data_hora: string; saldo_antes: number | null; saldo_depois: number | null; };
-type HospRow       = { id: string; inscricao_id: string | null; status: string | null; tipo_cama: string | null; numero_cama: number | null; checkin_at: string | null; };
+type HospRow       = { id: string; inscricao_id: string | null; alojamento_id: string | null; status: string | null; tipo_cama: string | null; numero_cama: number | null; checkin_at: string | null; };
 type AdvertRow     = { id: string; inscricao_id: string | null; status: string | null; };
 type SupervisaoRow = { id: string; nome: string; };
 type CampoRow      = { id: string; nome: string; supervisao_id: string; };
-type AlojRow       = { id: string; total_vagas: number; ativo: boolean; };
+type AlojRow       = { id: string; nome: string; total_vagas: number; ativo: boolean; publico: string | null; grupo_permitido: string | null; };
 
 /**
  * GET /api/eventos/[eventoId]/dashboard-executivo
@@ -79,7 +82,7 @@ export async function GET(
   ] = await Promise.all([
     supabase
       .from('eventos')
-      .select('id, nome, status, configuracoes_ago, data_inicio, data_fim, usar_tipos_inscricao, permite_alimentacao')
+      .select('id, nome, status, configuracoes_ago, data_inicio, data_fim, usar_tipos_inscricao, permite_alimentacao, local, cidade')
       .eq('id', eventoId)
       .single(),
 
@@ -90,7 +93,7 @@ export async function GET(
           'id, nome_inscrito, cpf, tipo_inscricao, supervisao_id, campo_id, ' +
           'status_pagamento, checkin_realizado, alimentacao, refeicoes_utilizadas, refeicoes_total, ' +
           'quantidade_refeicoes_total, quantidade_refeicoes_usadas, quantidade_refeicoes_saldo, ' +
-          'ministro_snapshot, hospedagem',
+          'ministro_snapshot, hospedagem, valor_pago, valor_final, valor_original, forma_pagamento',
         )
         .eq('evento_id', eventoId)
         .neq('status_pagamento', 'cancelado')
@@ -116,7 +119,7 @@ export async function GET(
     fetchAll<HospRow>((f, t) =>
       supabase
         .from('evento_hospedagens')
-        .select('id, inscricao_id, status, tipo_cama, numero_cama, checkin_at')
+        .select('id, inscricao_id, alojamento_id, status, tipo_cama, numero_cama, checkin_at')
         .eq('evento_id', eventoId)
         .range(f, t) as unknown as PromiseLike<{ data: HospRow[] | null; error: unknown }>
     ),
@@ -140,7 +143,7 @@ export async function GET(
 
     supabase
       .from('evento_alojamentos')
-      .select('id, total_vagas, ativo')
+      .select('id, nome, total_vagas, ativo, publico, grupo_permitido')
       .eq('evento_id', eventoId)
       .eq('ativo', true),
 
@@ -206,6 +209,12 @@ export async function GET(
   // ── Categorizar checkins ──────────────────────────────────────────────
   const plenCheckins = checkins.filter(c => c.tipo_checkin === 'plenaria');
 
+  // Participantes com qualquer check-in registrado (para contagem comprovada)
+  const checkinParticipantesSet = new Set<string>();
+  for (const c of checkins) {
+    if (c.inscricao_id) checkinParticipantesSet.add(c.inscricao_id);
+  }
+
   // Presenças por inscrição
   const presencaMap = new Map<string, Set<string>>();
   for (const c of plenCheckins) {
@@ -229,7 +238,8 @@ export async function GET(
   const hoje = new Date().toISOString().slice(0, 10);
 
   const pagos        = inscricoes.filter(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento').length;
-  const credenciados = inscricoes.filter(i => i.checkin_realizado).length;
+  const credenciadosFlag = inscricoes.filter(i => i.checkin_realizado).length;
+  const credenciados = Math.max(credenciadosFlag, checkinParticipantesSet.size);
   const hospedados   = hospedagens.filter(h =>
     ['confirmada', 'alocada', 'checkin_realizado'].includes(h.status as string),
   ).length;
@@ -317,7 +327,7 @@ export async function GET(
     if (!catMap.has(cat)) catMap.set(cat, { inscritos: 0, credenciados: 0, presentes: 0, somaFreq: 0 });
     const c = catMap.get(cat)!;
     c.inscritos++;
-    if (i.checkin_realizado) c.credenciados++;
+    if (i.checkin_realizado || checkinParticipantesSet.has(i.id)) c.credenciados++;
     const presencas = presencaMap.get(i.id)?.size ?? 0;
     if (presencas > 0) c.presentes++;
     c.somaFreq += totalPlenarias > 0 ? (presencas / totalPlenarias) * 100 : 0;
@@ -341,7 +351,7 @@ export async function GET(
     if (!supStatMap.has(sid)) supStatMap.set(sid, { nome, inscritos: 0, credenciados: 0, presentes: 0, somaFreq: 0 });
     const c = supStatMap.get(sid)!;
     c.inscritos++;
-    if (i.checkin_realizado) c.credenciados++;
+    if (i.checkin_realizado || checkinParticipantesSet.has(i.id)) c.credenciados++;
     const presencas = presencaMap.get(i.id)?.size ?? 0;
     if (presencas > 0) c.presentes++;
     c.somaFreq += totalPlenarias > 0 ? (presencas / totalPlenarias) * 100 : 0;
@@ -392,6 +402,75 @@ export async function GET(
     }))
     .sort((a, b) => b.inscritos - a.inscritos);
 
+
+  // ── RESUMO FINANCEIRO OFICIAL ─────────────────────────────────────────
+  let totalArrecadado = 0;
+  let totalIsentos = 0;
+  let totalPagosQtd = 0;
+  let totalPendentesQtd = 0;
+  const formasPagamentoMap = new Map<string, { count: number; total: number }>();
+
+  for (const i of inscricoes) {
+    const val = Number(i.valor_pago ?? i.valor_final ?? 0);
+    const forma = i.forma_pagamento || 'nao_informado';
+
+    if (i.status_pagamento === 'pago') {
+      totalPagosQtd++;
+      totalArrecadado += val;
+      if (!formasPagamentoMap.has(forma)) formasPagamentoMap.set(forma, { count: 0, total: 0 });
+      const f = formasPagamentoMap.get(forma)!;
+      f.count++;
+      f.total += val;
+    } else if (i.status_pagamento === 'isento') {
+      totalIsentos++;
+    } else if (i.status_pagamento === 'pendente') {
+      totalPendentesQtd++;
+    }
+  }
+
+  const formas_pagamento = [...formasPagamentoMap.entries()]
+    .map(([forma, v]) => ({ forma, count: v.count, total: Math.round(v.total * 100) / 100 }))
+    .sort((a, b) => b.total - a.total);
+
+  const financeiro = {
+    total_arrecadado: Math.round(totalArrecadado * 100) / 100,
+    total_pagos: totalPagosQtd,
+    total_isentos: totalIsentos,
+    total_pendentes: totalPendentesQtd,
+    formas_pagamento,
+  };
+
+
+  const ocupacaoPorAlojMap = new Map<string, { ocupadas: number; checkins: number }>();
+  for (const h of hospedagens) {
+    if (!h.alojamento_id) continue;
+    if (!ocupacaoPorAlojMap.has(h.alojamento_id)) ocupacaoPorAlojMap.set(h.alojamento_id, { ocupadas: 0, checkins: 0 });
+    const item = ocupacaoPorAlojMap.get(h.alojamento_id)!;
+    if (['confirmada', 'alocada', 'checkin_realizado', 'checkout_realizado'].includes(h.status as string)) {
+      item.ocupadas++;
+    }
+    if (h.status === 'checkin_realizado') {
+      item.checkins++;
+    }
+  }
+
+  const por_alojamento = alojamentos.map(a => {
+    const st = ocupacaoPorAlojMap.get(a.id) ?? { ocupadas: 0, checkins: 0 };
+    const vagas = Number(a.total_vagas || 0);
+    const taxa = vagas > 0 ? Math.round((st.ocupadas / vagas) * 10000) / 100 : 0;
+    return {
+      id: a.id,
+      nome: a.nome,
+      publico: a.publico,
+      grupo_permitido: a.grupo_permitido,
+      total_vagas: vagas,
+      ocupadas: st.ocupadas,
+      checkins: st.checkins,
+      vagas_restantes: Math.max(0, vagas - st.ocupadas),
+      taxa_ocupacao: taxa,
+    };
+  });
+
   // ── HOSPEDAGEM SUMMARY ───────────────────────────────────────────────
   const hospedagem_stats = {
     capacidade_total:   alojamentos.reduce((s, a) => s + (a.total_vagas as number), 0),
@@ -403,6 +482,7 @@ export async function GET(
       (h.status === 'confirmada' || h.status === 'alocada') && !h.checkin_at,
     ).length,
     lista_espera:       hospedagens.filter(h => h.status === 'lista_espera').length,
+    por_alojamento,
   };
 
   // ── REFEITÓRIO POR DIA ───────────────────────────────────────────────
@@ -565,7 +645,10 @@ export async function GET(
       data_inicio:  evento.data_inicio,
       data_fim:     evento.data_fim,
       plenarias_datas: plenariasDatas,
+      local: evento.local ?? null,
+      cidade: evento.cidade ?? null,
     },
+    financeiro,
     cards,
     integridade,
     matriz,
