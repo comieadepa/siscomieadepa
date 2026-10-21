@@ -135,7 +135,41 @@ export default function RelatoriosPrintPage() {
             lotesMap[l.id] = l;
           });
         }
-        const enriched = (insRes.data as any[]).map(i => ({
+        let listRaw = (insRes.data as any[]);
+        try {
+          let chkPage = 0;
+          const checkinsMap = new Map<string, string>();
+          while (true) {
+            const { data: chkChunk } = await supabase
+              .from("evento_checkins")
+              .select("inscricao_id, created_at")
+              .eq("evento_id", id)
+              .range(chkPage * 1000, (chkPage + 1) * 1000 - 1);
+            if (!chkChunk || chkChunk.length === 0) break;
+            chkChunk.forEach((c: any) => {
+              if (c.inscricao_id && !checkinsMap.has(c.inscricao_id)) {
+                checkinsMap.set(c.inscricao_id, c.created_at);
+              }
+            });
+            if (chkChunk.length < 1000) break;
+            chkPage++;
+          }
+          if (checkinsMap.size > 0) {
+            listRaw = listRaw.map(ins => {
+              if (checkinsMap.has(ins.id)) {
+                return {
+                  ...ins,
+                  checkin_realizado: true,
+                  checkin_at: ins.checkin_at || checkinsMap.get(ins.id) || null,
+                };
+              }
+              return ins;
+            });
+          }
+        } catch (e) {
+          console.warn("Aviso ao sincronizar check-ins históricos no print:", e);
+        }
+        const enriched = listRaw.map(i => ({
           ...i,
           lote: i.lote_id ? (lotesMap[i.lote_id] || null) : null
         }));

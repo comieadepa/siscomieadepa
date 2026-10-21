@@ -803,8 +803,26 @@ export default function CheckinMobilePage() {
         return;
       }
 
-      const html5 = new Html5Qrcode(scannerElementId);
+      const { Html5QrcodeSupportedFormats } = await import('html5-qrcode');
+      const html5 = new Html5Qrcode(scannerElementId, {
+        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+        verbose: false,
+      });
       scannerRef.current = html5;
+
+      // Otimização iOS Safari / Chrome: Ativa tryHarder internamente no leitor ZXing
+      try {
+        const qrcodeShim = (html5 as unknown as { qrcode?: { primaryDecoder?: { hints?: Map<number, unknown> }; secondaryDecoder?: { hints?: Map<number, unknown> } } }).qrcode;
+        if (qrcodeShim) {
+          [qrcodeShim.primaryDecoder, qrcodeShim.secondaryDecoder].forEach(dec => {
+            if (dec?.hints && typeof dec.hints.set === 'function') {
+              dec.hints.set(3, true); // DecodeHintType.TRY_HARDER = 3
+            }
+          });
+        }
+      } catch {
+        // ignora se hints não estiver acessível
+      }
 
       const onScanError = (err: unknown) => {
         const msg = String(err || '').trim();
@@ -826,20 +844,12 @@ export default function CheckinMobilePage() {
 
       const config = {
         fps: 15,
-        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-          const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-          const edge = Math.floor(minEdge * 0.72);
-          return {
-            width: Math.max(Math.min(edge, 280), 200),
-            height: Math.max(Math.min(edge, 280), 200),
-          };
-        },
         aspectRatio: 1.0,
         disableFlip: true,
         videoConstraints: {
           facingMode: { ideal: 'environment' },
-          width: { min: 640, ideal: 1280, max: 1920 },
-          height: { min: 480, ideal: 720, max: 1080 },
+          width: { ideal: 1280, min: 640 },
+          height: { ideal: 720, min: 480 },
         },
       };
 
@@ -906,10 +916,6 @@ export default function CheckinMobilePage() {
 
     ignorandoRef.current = true;
     setProcessando(true);
-
-    if (scannerRef.current) {
-      try { await (scannerRef.current as { pause: () => void }).pause(); } catch { /* ignora */ }
-    }
 
     try {
       const dataPlenaria = new Date().toISOString().slice(0, 10);
@@ -1049,16 +1055,9 @@ export default function CheckinMobilePage() {
     }
     if (qrToken) lastTokenRef.current = { token: qrToken, at: Date.now() };
 
-    // Trava de leitura e pausa o decoder sem desligar o hardware da câmera
+    // Trava atômica de captura para evitar requisições concorrentes
     ignorandoRef.current = true;
     setCapturandoCodigo(true);
-    if (scannerRef.current) {
-      try {
-        (scannerRef.current as { pause: (shouldPauseVideo?: boolean) => void }).pause(true);
-      } catch {
-        // ignora se pause não for suportado
-      }
-    }
 
     // Dispara imediatamente o "BIP" sonoro e vibração tátil ao capturar QR Code válido
     emitirSom('bip');
@@ -1207,12 +1206,16 @@ export default function CheckinMobilePage() {
     ignorandoRef.current = false;
     if (scannerRef.current) {
       try {
-        (scannerRef.current as { resume: () => void }).resume();
-      } catch {
-        // Se a sessão do html5-qrcode tiver sido interrompida, reinicia o scanner
-        if (!modoManual) {
-          void iniciarScanner();
+        const state = (scannerRef.current as { getState?: () => number }).getState?.();
+        // Se por ventura estiver pausado (state 3 = PAUSED), retoma
+        if (state === 3) {
+          (scannerRef.current as { resume: () => void }).resume();
+        } else if (state === 1 || state === 0) {
+          // Se parado/não iniciado, reinicia o scanner
+          if (!modoManual) void iniciarScanner();
         }
+      } catch {
+        if (!modoManual) void iniciarScanner();
       }
     } else if (!modoManual) {
       void iniciarScanner();

@@ -133,8 +133,7 @@ export async function GET(
               tipo_inscricao,
               supervisao_id,
               campo_id,
-              cargo_ministerial,
-              matricula
+              ministro_snapshot
             )
           `)
           .eq('evento_id', eventoId)
@@ -226,8 +225,8 @@ export async function GET(
         inscricao_id: row.inscricao_id,
         nome_inscrito: insc?.nome_inscrito || 'Participante não localizado',
         cpf: insc?.cpf || null,
-        tipo_inscricao: insc?.tipo_inscricao || insc?.cargo_ministerial || 'Geral',
-        matricula: insc?.matricula || null,
+        tipo_inscricao: insc?.tipo_inscricao || (insc?.ministro_snapshot as any)?.cargo || 'Geral',
+        matricula: (insc?.ministro_snapshot as any)?.matricula || null,
         supervisao_id: insc?.supervisao_id || null,
         campo_id: insc?.campo_id || null,
       };
@@ -295,8 +294,7 @@ export async function GET(
             tipo_inscricao,
             supervisao_id,
             campo_id,
-            cargo_ministerial,
-            matricula
+            ministro_snapshot
           )
         `)
         .eq('evento_id', eventoId)
@@ -387,8 +385,8 @@ export async function GET(
       inscricao_id: row.inscricao_id,
       nome_inscrito: insc?.nome_inscrito || 'Participante não localizado',
       cpf: insc?.cpf || null,
-      tipo_inscricao: insc?.tipo_inscricao || insc?.cargo_ministerial || 'Geral',
-      matricula: insc?.matricula || null,
+      tipo_inscricao: insc?.tipo_inscricao || (insc?.ministro_snapshot as any)?.cargo || 'Geral',
+      matricula: (insc?.ministro_snapshot as any)?.matricula || null,
       supervisao_id: insc?.supervisao_id || null,
       campo_id: insc?.campo_id || null,
     };

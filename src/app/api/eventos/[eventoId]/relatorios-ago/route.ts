@@ -3,6 +3,23 @@ import { requireEventoPermission } from '@/lib/evento-guard';
 
 // GET /api/eventos/[eventoId]/relatorios-ago
 // Retorna estatísticas consolidadas para o painel de Relatórios AGO
+async function fetchAllRows<T>(
+  queryBuilder: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>
+): Promise<T[]> {
+  const PAGE = 1000;
+  const result: T[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await queryBuilder(from, from + PAGE - 1);
+    if (error) throw error;
+    const rows = data ?? [];
+    result.push(...rows);
+    if (rows.length < PAGE) break;
+    from += PAGE;
+  }
+  return result;
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ eventoId: string }> }
@@ -29,29 +46,53 @@ export async function GET(
     .eq('evento_id', eventoId)
     .neq('status_pagamento', 'cancelado');
 
-  // Total credenciados (checkin_realizado = true)
-  const { count: totalCredenciados } = await supabase
+  // Busca check-ins paginados para totalizar participantes comprovados
+  let checkinsAll: Array<{ inscricao_id: string; tipo_checkin: string; data_plenaria: string | null }> = [];
+  try {
+    checkinsAll = await fetchAllRows(async (from, to) => {
+      return supabase
+        .from('evento_checkins')
+        .select('inscricao_id, tipo_checkin, data_plenaria')
+        .eq('evento_id', eventoId)
+        .range(from, to);
+    });
+  } catch (err) {
+    console.warn('Erro ao buscar check-ins completos para indicadores AGO:', err);
+  }
+
+  const credenciadosSet = new Set<string>();
+  const presencaPlenariaSet = new Set<string>();
+  for (const ck of checkinsAll) {
+    if (!ck.inscricao_id) continue;
+    credenciadosSet.add(ck.inscricao_id);
+    if (ck.tipo_checkin === 'plenaria') presencaPlenariaSet.add(ck.inscricao_id);
+  }
+
+  // Total credenciados: se evento_inscricoes possui checkin_realizado usa contagem, senão participantes com check-in registrado
+  const { count: countFlagCredenciados } = await supabase
     .from('evento_inscricoes')
     .select('id', { count: 'exact', head: true })
     .eq('evento_id', eventoId)
     .eq('checkin_realizado', true)
     .neq('status_pagamento', 'cancelado');
 
-  // Total com pelo menos 1 presença em plenária
-  const { data: comPresenca } = await supabase
-    .from('evento_checkins')
-    .select('inscricao_id')
-    .eq('tipo_checkin', 'plenaria')
-    .eq('evento_id', eventoId);
+  const totalCredenciados = Math.max(countFlagCredenciados ?? 0, credenciadosSet.size);
+  const inscricosComPresenca = presencaPlenariaSet.size;
 
-  const inscricosComPresenca = new Set((comPresenca ?? []).map(c => c.inscricao_id)).size;
-
-  // Refeições consumidas e restantes
-  const { data: refeicoes } = await supabase
-    .from('evento_inscricoes')
-    .select('alimentacao, refeicoes_total, refeicoes_utilizadas, quantidade_refeicoes_total, quantidade_refeicoes_usadas, quantidade_refeicoes_saldo')
-    .eq('evento_id', eventoId)
-    .neq('status_pagamento', 'cancelado');
+  // Refeições consumidas e restantes (paginado)
+  let refeicoes: any[] = [];
+  try {
+    refeicoes = await fetchAllRows(async (from, to) => {
+      return supabase
+        .from('evento_inscricoes')
+        .select('alimentacao, refeicoes_total, refeicoes_utilizadas, quantidade_refeicoes_total, quantidade_refeicoes_usadas, quantidade_refeicoes_saldo')
+        .eq('evento_id', eventoId)
+        .neq('status_pagamento', 'cancelado')
+        .range(from, to);
+    });
+  } catch (err) {
+    console.warn('Erro ao buscar refeições paginadas:', err);
+  }
 
   let refeicoesConsumidas = 0;
   let refeicoesPrevistas  = 0;

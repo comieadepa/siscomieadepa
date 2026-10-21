@@ -48,7 +48,9 @@ export function QRCodeCanvas({ value, sizePx }: { value: string; sizePx: number 
     if (!value || !ref.current) return;
     import('qrcode').then(QRCode => {
       QRCode.toCanvas(ref.current!, value, {
-        width: sizePx, margin: 0,
+        width: sizePx,
+        margin: 1,
+        errorCorrectionLevel: 'M',
         color: { dark: '#000000', light: '#ffffff' },
       });
     });
