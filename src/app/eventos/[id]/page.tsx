@@ -25,6 +25,7 @@ import TabProgramacao   from './TabProgramacao';
 import TabCertificados  from './TabCertificados';
 import TabControleAGO  from './TabControleAGO';
 import ModalRelatorioExecutivoPDF from './ModalRelatorioExecutivoPDF';
+import ModalConciliacaoAsaas from './ModalConciliacaoAsaas';
 import GerenciadorLocaisCheckin from './GerenciadorLocaisCheckin';
 import { RelatorioPresencasPlenaria, RelatorioConsumoRestaurante } from './RelatoriosLocais';
 import { calcularValorFinanceiroInscricao, formatarValorUI, identificarResponsavelFinanceiro } from '@/lib/eventos/financeiro-lote-utils';
@@ -4820,6 +4821,7 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
   const [erroModal,      setErroModal]      = useState<string | null>(null);
   const [ordensComplementares, setOrdensComplementares] = useState<any[]>([]);
   const [carregandoOrdens, setCarregandoOrdens] = useState(false);
+  const [modalConciliacaoOpen, setModalConciliacaoOpen] = useState(false);
 
   // Estados da sub-aba de Fechamentos de Caixa
   const [subTab, setSubTab] = useState<'transacoes' | 'fechamentos'>('transacoes');
@@ -4987,23 +4989,35 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
       </div>
 
       {/* Seletor de Sub-abas */}
-      <div className="flex border-b border-gray-200 mb-6 gap-6">
-        <button
-          onClick={() => setSubTab('transacoes')}
-          className={`pb-3 text-sm font-semibold border-b-2 transition ${
-            subTab === 'transacoes' ? 'border-[#123b63] text-[#123b63]' : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          💳 Transações / Inscrições
-        </button>
-        <button
-          onClick={() => setSubTab('fechamentos')}
-          className={`pb-3 text-sm font-semibold border-b-2 transition ${
-            subTab === 'fechamentos' ? 'border-[#123b63] text-[#123b63]' : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          🔒 Fechamentos de Caixa (Operadores)
-        </button>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-gray-200 mb-6 gap-4">
+        <div className="flex gap-6">
+          <button
+            onClick={() => setSubTab('transacoes')}
+            className={`pb-3 text-sm font-semibold border-b-2 transition ${
+              subTab === 'transacoes' ? 'border-[#123b63] text-[#123b63]' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            💳 Transações / Inscrições
+          </button>
+          <button
+            onClick={() => setSubTab('fechamentos')}
+            className={`pb-3 text-sm font-semibold border-b-2 transition ${
+              subTab === 'fechamentos' ? 'border-[#123b63] text-[#123b63]' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            🔒 Fechamentos de Caixa (Operadores)
+          </button>
+        </div>
+
+        <div className="pb-3 sm:pb-2">
+          <button
+            type="button"
+            onClick={() => setModalConciliacaoOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-[#0D2B4E] text-white hover:bg-[#0a1e38] transition shadow-sm"
+          >
+            ⚖️ Conciliar pagamentos Asaas
+          </button>
+        </div>
       </div>
 
       {subTab === 'transacoes' && (
@@ -5327,6 +5341,16 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
       </div>
       </>
       )}
+
+      <ModalConciliacaoAsaas
+        eventoId={eventoId}
+        isOpen={modalConciliacaoOpen}
+        onClose={() => setModalConciliacaoOpen(false)}
+        onConcluido={() => {
+          onRefresh();
+          carregarOrdensComplementares();
+        }}
+      />
 
       {/* SE FOR TAB FECHAMENTOS */}
       {subTab === 'fechamentos' && (

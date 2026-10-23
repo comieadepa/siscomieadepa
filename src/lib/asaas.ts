@@ -23,7 +23,7 @@ export class AsaasApiError extends Error {
   }
 }
 
-const asaasFetch = async (path: string, init: RequestInit) => {
+export const asaasFetch = async (path: string, init: RequestInit) => {
   const ASAAS_API_KEY = getAsaasApiKey();
   if (!ASAAS_API_KEY) {
     throw new Error('ASAAS não configurado');
