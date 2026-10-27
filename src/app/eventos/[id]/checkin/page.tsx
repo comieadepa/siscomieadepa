@@ -439,6 +439,14 @@ export default function CheckinMobilePage() {
   const [torchOn, setTorchOn] = useState(false);
   const [cameraMsg, setCameraMsg] = useState<string | null>(null);
   const [capturandoCodigo, setCapturandoCodigo] = useState(false);
+  const autoLiberarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Limpa timer de autoliberação ao desmontar
+  useEffect(() => {
+    return () => {
+      if (autoLiberarTimerRef.current) clearTimeout(autoLiberarTimerRef.current);
+    };
+  }, []);
 
   // Preferência de Som (Session)
   const [somHabilitado, setSomHabilitado] = useState<boolean>(() => {
@@ -1180,10 +1188,19 @@ export default function CheckinMobilePage() {
       });
       emitirSom('sucesso');
       vibrar('sucesso');
-      void carregarContadores();
-      if (equipeSessao) {
-        void validarSessaoEquipe(equipeSessao);
+
+      // Em alto fluxo, não bloquear a fila chamando validação de operador síncrona a cada bipe.
+      // Apenas recarrega contadores em background se a página estiver visível.
+      if (typeof window !== 'undefined' && !document.hidden) {
+        setTimeout(() => void carregarContadores(), 500);
       }
+
+      // Autoliberação da fila: após exibir a confirmação de sucesso,
+      // retorna automaticamente para a câmera sem exigir clique manual do operador
+      if (autoLiberarTimerRef.current) clearTimeout(autoLiberarTimerRef.current);
+      autoLiberarTimerRef.current = setTimeout(() => {
+        voltarParaScan();
+      }, 1800);
 
     } catch {
       setPendingConfirm(null);
@@ -1200,6 +1217,10 @@ export default function CheckinMobilePage() {
   }
 
   function voltarParaScan() {
+    if (autoLiberarTimerRef.current) {
+      clearTimeout(autoLiberarTimerRef.current);
+      autoLiberarTimerRef.current = null;
+    }
     setResultado(null);
     setPendingConfirm(null);
     setCapturandoCodigo(false);

@@ -80,12 +80,36 @@ export async function POST(
   const guard = await requireEventoPermission(request, eventoId, areaGuard);
   if (!guard.ok) return guard.response;
 
-  // ── Valida evento ────────────────────────────────────────
-  const { data: evento } = await supabase
-    .from('eventos')
-    .select('id,status,checkin_ativo,valor_inscricao')
-    .eq('id', eventoId)
-    .single();
+  // ── Busca em paralelo: Evento, Operador de Equipe e Inscrição por QR/ID ────
+  let resolvedLocalId: string | null = null;
+  const equipeIdFromGuard = guard.ctx.equipe?.id;
+  const equipeIdFromHeader = request.headers.get('x-evento-equipe-id')?.trim();
+  const equipeIdFromBody = typeof body.equipe_id === 'string' ? body.equipe_id.trim() : null;
+  const targetEquipeId = equipeIdFromGuard || equipeIdFromHeader || equipeIdFromBody;
+
+  const [eventoRes, opRowRes, byTokenRes] = await Promise.all([
+    supabase
+      .from('eventos')
+      .select('id,status,checkin_ativo,valor_inscricao')
+      .eq('id', eventoId)
+      .single(),
+    targetEquipeId
+      ? supabase
+          .from('evento_equipe')
+          .select('id,evento_id,tipo,ativo,local_id')
+          .eq('id', targetEquipeId)
+          .eq('evento_id', eventoId)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    supabase
+      .from('evento_inscricoes')
+      .select(SELECT_INSC)
+      .eq('evento_id', eventoId)
+      .or(`qr_code.eq.${qrToken},id.eq.${qrToken}`)
+      .maybeSingle()
+  ]);
+
+  const evento = eventoRes.data;
   if (!evento) return NextResponse.json({ error: 'Evento nao encontrado.' }, { status: 404 });
   const evRow = evento as EventoRow;
   if (evRow.status !== 'programado')
@@ -94,22 +118,8 @@ export async function POST(
     return NextResponse.json({ error: 'Check-in desativado.' }, { status: 403 });
 
   // ── Determinação e Validação Rigorosa do Local do Operador ────
-  // NUNCA confiar em local_id vindo de body, URL ou cliente.
-  // Obter exclusivamente a partir do operador autenticado em evento_equipe.
-  let resolvedLocalId: string | null = null;
-  const equipeIdFromGuard = guard.ctx.equipe?.id;
-  const equipeIdFromHeader = request.headers.get('x-evento-equipe-id')?.trim();
-  const equipeIdFromBody = typeof body.equipe_id === 'string' ? body.equipe_id.trim() : null;
-  const targetEquipeId = equipeIdFromGuard || equipeIdFromHeader || equipeIdFromBody;
-
   if (targetEquipeId) {
-    const { data: opRow } = await supabase
-      .from('evento_equipe')
-      .select('id,evento_id,tipo,ativo,local_id')
-      .eq('id', targetEquipeId)
-      .eq('evento_id', eventoId)
-      .maybeSingle();
-
+    const opRow = opRowRes.data;
     if (!opRow || !opRow.ativo) {
       return NextResponse.json({ error: 'Operador não autorizado ou inativo.' }, { status: 403 });
     }
@@ -154,22 +164,15 @@ export async function POST(
 
       resolvedLocalId = localRec.id;
     } else {
-      // Operador legado sem local vinculado -> local_id = NULL
       resolvedLocalId = null;
     }
   } else {
-    // Operação administrativa via sessão de usuário global autenticado sem equipe específica -> local_id = NULL
     resolvedLocalId = null;
   }
 
-  // ── Busca inscricao ──────────────────────────────────────
+  // ── Inscrição identificada ou fallback ────────────────────
   let targetQrToken = qrToken;
-  let { data: inscricao } = (await supabase
-    .from('evento_inscricoes')
-    .select(SELECT_INSC)
-    .eq('evento_id', eventoId)
-    .or(`qr_code.eq.${targetQrToken},id.eq.${targetQrToken}`)
-    .maybeSingle()) as any;
+  let inscricao = byTokenRes.data as any;
 
   // Se não encontrou a inscrição diretamente pelo token, tenta buscar se o token é uma Credencial de Ministro permanente
   if (!inscricao) {
@@ -292,11 +295,20 @@ export async function POST(
       return NextResponse.json({ status: 'already', inscricao: ins }, { status: 200 });
     }
     const now = new Date().toISOString();
-    const { error: updError } = await supabase
+    // Atualização com condição defensiva para evitar corrida de credenciamento
+    const { data: updated, error: updError } = await supabase
       .from('evento_inscricoes')
       .update({ checkin_realizado: true, checkin_at: now })
-      .eq('id', ins.id);
+      .eq('id', ins.id)
+      .eq('checkin_realizado', false)
+      .select('id')
+      .maybeSingle();
+
     if (updError) return NextResponse.json({ error: 'Erro ao registrar check-in.' }, { status: 500 });
+    if (!updated) {
+      return NextResponse.json({ status: 'already', inscricao: { ...ins, checkin_realizado: true } }, { status: 200 });
+    }
+
     await supabase.from('evento_checkins').insert([{
       evento_id: eventoId,
       inscricao_id: ins.id,
@@ -343,90 +355,59 @@ export async function POST(
       return NextResponse.json({ status: 'sem_alimentacao', inscricao: ins }, { status: 200 });
     }
 
-    const total = ins.quantidade_refeicoes_total ?? ins.refeicoes_total ?? 0;
-    const usadas = ins.quantidade_refeicoes_usadas ?? ins.refeicoes_utilizadas ?? 0;
-    const saldoAtual = ins.quantidade_refeicoes_saldo ?? Math.max(0, total - usadas);
+    // Geração de chave de idempotência segura para a leitura
+    const idempotencyKey = body.qr ? String(body.qr).trim() : null;
 
-    if (saldoAtual <= 0) {
-      return NextResponse.json({ status: 'sem_saldo', inscricao: ins, saldo_antes: 0, saldo_depois: 0 }, { status: 200 });
+    // Execução EXCLUSIVA via RPC Transacional Atômica no PostgreSQL
+    const { data: rpcRes, error: rpcErr } = await supabase.rpc('registrar_consumo_refeicao_atomico', {
+      p_evento_id: eventoId,
+      p_inscricao_id: ins.id,
+      p_qr_code: qrToken,
+      p_equipe_id: guard.ctx.equipe?.id ?? null,
+      p_user_id: guard.ctx.user?.id ?? null,
+      p_checkin_user: checkinUser,
+      p_idempotency_key: idempotencyKey,
+      p_janela_duplicidade_segundos: 20,
+    } as any);
+
+    if (rpcErr) {
+      console.error('[CHECKIN REFEITORIO RPC ERRO]', rpcErr);
+      return NextResponse.json(
+        {
+          error: 'Operação transacional de refeição indisponível no servidor. Nenhum débito foi realizado.',
+          detalhe: rpcErr.message,
+        },
+        { status: 503 }
+      );
     }
 
-    const { data: consumoRecente } = await supabase
-      .from('evento_refeicoes_consumo')
-      .select('id,data_hora,saldo_antes,saldo_depois')
-      .eq('evento_id', eventoId)
-      .eq('inscricao_id', ins.id)
-      .eq('origem', 'refeitorio')
-      .order('data_hora', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (consumoRecente) {
-      const deltaMs = Date.now() - new Date(consumoRecente.data_hora).getTime();
-      if (deltaMs >= 0 && deltaMs <= 20_000) {
-        return NextResponse.json({
-          status: 'duplicate_rapida',
+    const resObj = typeof rpcRes === 'string' ? JSON.parse(rpcRes) : rpcRes;
+    if (!resObj || !resObj.sucesso) {
+      return NextResponse.json(
+        {
+          status: resObj?.status || 'invalid',
           inscricao: ins,
-          saldo_antes: consumoRecente.saldo_antes,
-          saldo_depois: consumoRecente.saldo_depois,
-          ultima_leitura_em: consumoRecente.data_hora,
-        }, { status: 200 });
-      }
+          saldo_antes: resObj?.saldo_antes ?? 0,
+          saldo_depois: resObj?.saldo_depois ?? 0,
+          error: resObj?.mensagem || 'Não foi possível registrar o consumo de refeição.',
+          ultima_leitura_em: resObj?.ultima_leitura_em,
+        },
+        { status: 200 }
+      );
     }
-
-    const saldoDepois = saldoAtual - 1;
-
-    const { data: updatedInsc, error: updErr } = await supabase
-      .from('evento_inscricoes')
-      .update({
-        quantidade_refeicoes_total: total,
-        quantidade_refeicoes_usadas: usadas + 1,
-        quantidade_refeicoes_saldo: saldoDepois,
-        refeicoes_total: total,
-        refeicoes_utilizadas: usadas + 1,
-      })
-      .eq('id', ins.id)
-      .select('id,quantidade_refeicoes_total,quantidade_refeicoes_usadas,quantidade_refeicoes_saldo,refeicoes_total,refeicoes_utilizadas')
-      .single();
-
-    if (updErr || !updatedInsc)
-      return NextResponse.json({ error: 'Erro ao debitar refeicao.' }, { status: 500 });
-
-    await supabase.from('evento_refeicoes_consumo').insert([{
-      evento_id: eventoId,
-      inscricao_id: ins.id,
-      qr_code: qrToken,
-      tipo_consumo: 'refeicao',
-      operador_id: guard.ctx.user?.id ?? null,
-      origem: 'refeitorio',
-      saldo_antes: saldoAtual,
-      saldo_depois: saldoDepois,
-      local_id: resolvedLocalId,
-    }]);
-
-    await supabase.from('evento_checkins').insert([{
-      evento_id: eventoId,
-      inscricao_id: ins.id,
-      metodo: 'qrcode',
-      tipo_checkin: 'refeitorio',
-      saldo_antes: saldoAtual,
-      saldo_depois: saldoDepois,
-      checkin_user: checkinUser,
-      local_id: resolvedLocalId,
-    }]);
 
     return NextResponse.json({
       status: 'success',
       inscricao: {
         ...ins,
-        quantidade_refeicoes_total: total,
-        quantidade_refeicoes_usadas: usadas + 1,
-        quantidade_refeicoes_saldo: saldoDepois,
-        refeicoes_total: total,
-        refeicoes_utilizadas: usadas + 1,
+        quantidade_refeicoes_total: resObj.quantidade_refeicoes_total ?? ins.quantidade_refeicoes_total,
+        quantidade_refeicoes_usadas: resObj.quantidade_refeicoes_usadas ?? ((ins.quantidade_refeicoes_usadas ?? 0) + 1),
+        quantidade_refeicoes_saldo: resObj.saldo_depois,
+        refeicoes_total: resObj.quantidade_refeicoes_total ?? ins.refeicoes_total,
+        refeicoes_utilizadas: resObj.quantidade_refeicoes_usadas ?? ((ins.refeicoes_utilizadas ?? 0) + 1),
       },
-      saldo_antes: saldoAtual,
-      saldo_depois: saldoDepois,
+      saldo_antes: resObj.saldo_antes,
+      saldo_depois: resObj.saldo_depois,
     });
   }
 

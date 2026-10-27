@@ -72,31 +72,42 @@ export async function GET(
 
   const supabase = createServerClient();
 
-  // ── Busca evento ─────────────────────────────────────────
-  const { data: evento } = await supabase
-    .from('eventos')
-    .select('id,nome,status,checkin_ativo,valor_inscricao')
-    .eq('id', eventoId)
-    .single();
-
-  if (!evento) return NextResponse.json({ error: 'evento_nao_encontrado', message: 'Evento não encontrado.' }, { status: 404 });
-  if (evento.status !== 'programado') return NextResponse.json({ error: 'evento_encerrado', message: 'Evento encerrado.' }, { status: 403 });
-  if (evento.checkin_ativo !== true) return NextResponse.json({ error: 'checkin_desativado', message: 'Check-in desativado.' }, { status: 403 });
-
-  // ── Validação do Local Vinculado ao Operador ──────────────
+  // Executa validação de evento e busca inicial de operador/local em paralelo com a busca de inscrição
   const equipeIdFromGuard = guard.ctx.equipe?.id;
   const equipeIdFromHeader = request.headers.get('x-evento-equipe-id')?.trim();
   const equipeIdFromQuery = searchParams.get('equipe_id')?.trim();
   const targetEquipeId = equipeIdFromGuard || equipeIdFromHeader || equipeIdFromQuery;
 
-  if (targetEquipeId) {
-    const { data: opRow } = await supabase
-      .from('evento_equipe')
-      .select('id,evento_id,tipo,ativo,local_id')
-      .eq('id', targetEquipeId)
+  const [eventoRes, opRowRes, byTokenRes] = await Promise.all([
+    supabase
+      .from('eventos')
+      .select('id,nome,status,checkin_ativo,valor_inscricao')
+      .eq('id', eventoId)
+      .single(),
+    targetEquipeId
+      ? supabase
+          .from('evento_equipe')
+          .select('id,evento_id,tipo,ativo,local_id')
+          .eq('id', targetEquipeId)
+          .eq('evento_id', eventoId)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    supabase
+      .from('evento_inscricoes')
+      .select(SELECT_INSC)
       .eq('evento_id', eventoId)
-      .maybeSingle();
+      .or(`qr_code.eq.${qrToken},id.eq.${qrToken}`)
+      .maybeSingle() as unknown as Promise<{ data: InscricaoRow | null; error: any }>
+  ]);
 
+  const evento = eventoRes.data;
+  if (!evento) return NextResponse.json({ error: 'evento_nao_encontrado', message: 'Evento não encontrado.' }, { status: 404 });
+  if (evento.status !== 'programado') return NextResponse.json({ error: 'evento_encerrado', message: 'Evento encerrado.' }, { status: 403 });
+  if (evento.checkin_ativo !== true) return NextResponse.json({ error: 'checkin_desativado', message: 'Check-in desativado.' }, { status: 403 });
+
+  // ── Validação do Local Vinculado ao Operador ──────────────
+  if (targetEquipeId) {
+    const opRow = opRowRes.data;
     if (!opRow || !opRow.ativo) {
       return NextResponse.json({
         error: 'operador_inativo',
@@ -150,16 +161,7 @@ export async function GET(
   }
 
   // ── Busca inscrição pelo token ────────────────────────────
-  let inscricao: InscricaoRow | null = null;
-
-  const { data: byToken } = await supabase
-    .from('evento_inscricoes')
-    .select(SELECT_INSC)
-    .eq('evento_id', eventoId)
-    .or(`qr_code.eq.${qrToken},id.eq.${qrToken}`)
-    .maybeSingle() as { data: InscricaoRow | null };
-
-  inscricao = byToken;
+  let inscricao: InscricaoRow | null = byTokenRes.data;
 
   // Fallback: credencial permanente do ministro
   if (!inscricao) {
@@ -270,34 +272,35 @@ export async function GET(
   let plenaria_ultimo_data: string | null = null;
 
   if (modo === 'plenaria') {
-    // 1. Verifica se já registrou NESTA data/sessão (chave de bloqueio)
-    const { data: presHoje } = await supabase
-      .from('evento_checkins')
-      .select('id,created_at,checkin_user')
-      .eq('inscricao_id', ins.id)
-      .eq('tipo_checkin', 'plenaria')
-      .eq('data_plenaria', dataPlen)
-      .eq('sessao', sessao)          // null == null em PostgreSQL com .eq() só se ambos forem null; Supabase trata .eq('sessao', null) como IS NULL
-      .maybeSingle();
+    // Executa em paralelo a checagem de hoje e a busca do último registro
+    const [presHojeRes, ultimoRegistroRes] = await Promise.all([
+      supabase
+        .from('evento_checkins')
+        .select('id,created_at,checkin_user')
+        .eq('inscricao_id', ins.id)
+        .eq('tipo_checkin', 'plenaria')
+        .eq('data_plenaria', dataPlen)
+        .eq('sessao', sessao)
+        .maybeSingle(),
+      supabase
+        .from('evento_checkins')
+        .select('id,created_at,data_plenaria')
+        .eq('inscricao_id', ins.id)
+        .eq('tipo_checkin', 'plenaria')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    ]);
 
+    const presHoje = presHojeRes.data;
     if (presHoje) {
       plenaria_hoje = true;
       plenaria_hoje_at = (presHoje as any).created_at ?? null;
       plenaria_hoje_operador = (presHoje as any).checkin_user ?? null;
     }
 
-    // 2. Busca último registro em QUALQUER data/sessão (apenas informativo)
-    const { data: ultimoRegistro } = await supabase
-      .from('evento_checkins')
-      .select('id,created_at,data_plenaria')
-      .eq('inscricao_id', ins.id)
-      .eq('tipo_checkin', 'plenaria')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
+    const ultimoRegistro = ultimoRegistroRes.data;
     if (ultimoRegistro && !plenaria_hoje) {
-      // Só preenche histórico se NÃO for o registro de hoje/sessão atual
       plenaria_ultimo_at = (ultimoRegistro as any).created_at ?? null;
       plenaria_ultimo_data = (ultimoRegistro as any).data_plenaria ?? null;
     }
