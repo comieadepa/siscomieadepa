@@ -197,21 +197,32 @@ export async function POST(
     return NextResponse.json({ error: 'Erro ao registrar envio.' }, { status: 500 });
   }
 
+  const idempotencyKey = `confirmacao_${inscricaoId}`;
+
   const resultado = await sendEmail({
     para: inscricao.email,
     assunto: payload.assunto,
     mensagem: payload.mensagem,
     nomeDestinatario: inscricao.nome_inscrito,
     fromEmail: 'inscricoes@siscomieadepa.org',
+    idempotencyKey,
   });
+
+  const isTimeout = resultado.erro?.startsWith('TIMEOUT_OU_FALHA_REDE');
+  const updateData: Record<string, unknown> = {
+    status: resultado.sucesso ? 'enviado' : 'erro',
+    enviado_em: resultado.sucesso ? new Date().toISOString() : null,
+    erro: resultado.sucesso ? null : resultado.erro,
+  };
+
+  if (!resultado.sucesso && isTimeout) {
+    updateData.status = 'pendente';
+    updateData.erro = `Possível envio em andamento (timeout de rede): ${resultado.erro}`;
+  }
 
   await supabase
     .from('evento_notificacoes')
-    .update({
-      status: resultado.sucesso ? 'enviado' : 'erro',
-      enviado_em: resultado.sucesso ? new Date().toISOString() : null,
-      erro: resultado.sucesso ? null : resultado.erro,
-    })
+    .update(updateData)
     .eq('id', notif.id);
 
   if (!resultado.sucesso) {

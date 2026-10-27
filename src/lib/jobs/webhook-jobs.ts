@@ -16,10 +16,17 @@ function formatarPeriodoEvento(dataInicio?: string | null, dataFim?: string | nu
   return dataInicio;
 }
 
+// ── Validador básico de e-mail RFC 5322 simplificado ───────────
+function isValidEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const clean = email.trim();
+  return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(clean);
+}
+
 /**
- * Envia e-mail de confirmação de pagamento com deduplicação.
- * Usa evento_notificacoes (UNIQUE inscricao_id, tipo, gatilho) para garantir
- * que apenas um e-mail seja enviado por inscrição.
+ * Envia e-mail de confirmação de pagamento com deduplicação atômica e prevenção cross-gatilho.
+ * Garante que cada inscrição (inscricaoId) receba no máximo um e-mail de confirmação com sucesso.
+ * Se múltiplos inscritos compartilharem o mesmo e-mail, cada um recebe seu e-mail individual com seu respectivo QR Code.
  */
 async function enviarEmailComDeduplicacao(
   supabase: SupabaseClient,
@@ -38,6 +45,44 @@ async function enviarEmailComDeduplicacao(
   }
 ): Promise<void> {
   const { inscricaoId, eventoId, nome, email, qrCode, nomeEvento, mensagemConfirmacao, linkWhatsapp, dataInicio, dataFim, local } = params;
+
+  // 1. Verificação prévia de e-mail já enviado (cross-gatilho: 'pagamento_confirmado' ou 'manual')
+  const { data: alreadySent } = await supabase
+    .from('evento_notificacoes')
+    .select('id, status, gatilho')
+    .eq('inscricao_id', inscricaoId)
+    .eq('tipo', 'email')
+    .eq('status', 'enviado')
+    .in('gatilho', ['pagamento_confirmado', 'manual'])
+    .maybeSingle();
+
+  if (alreadySent) {
+    console.log(`[WEBHOOK JOBS] E-mail já enviado para inscrição ${inscricaoId} (gatilho: ${alreadySent.gatilho}) — duplicata ignorada.`);
+    return;
+  }
+
+  // 2. Validação sintática do endereço de e-mail
+  const emailLimpo = email ? email.trim() : '';
+  if (!isValidEmail(emailLimpo)) {
+    const motivoErro = !emailLimpo ? 'E-mail ausente' : `Endereço de e-mail inválido: "${emailLimpo}"`;
+    console.warn(`[WEBHOOK JOBS] Inscrição ${inscricaoId}: ${motivoErro}. Registrando pendência corrigível.`);
+
+    await supabase
+      .from('evento_notificacoes')
+      .upsert({
+        evento_id: eventoId,
+        inscricao_id: inscricaoId,
+        tipo: 'email',
+        gatilho: 'pagamento_confirmado',
+        status: 'erro',
+        assunto: `Inscrição confirmada — ${nomeEvento}`,
+        mensagem: `E-mail não enviado: ${motivoErro}`,
+        erro: motivoErro,
+      }, { onConflict: 'inscricao_id,tipo,gatilho' });
+
+    // Registra como pendência sem propagar erro fatal (não trava outros jobs do lote)
+    return;
+  }
 
   const finalNomeEvento = nomeEvento.toUpperCase().includes('UMADESPA') ? 'CONGRESSO UMADESPA 2026 - BELÉM' : nomeEvento;
 
@@ -75,6 +120,9 @@ async function enviarEmailComDeduplicacao(
   let mensagem = `Olá, ${nome}!\n\nSeu pagamento para o evento *${finalNomeEvento}* foi confirmado. ✅\n\n🎫 Código de check-in: ${qrCode}`;
   if (mensagemConfirmacao) mensagem += `\n\n${subst(mensagemConfirmacao, vars)}`;
   if (linkWhatsapp)        mensagem += `\n\n📲 Grupo do WhatsApp: ${linkWhatsapp}`;
+
+  // 3. Reserva atômica da notificação: garante status 'pendente' ou reutiliza registro existente
+  const idempotencyKey = `confirmacao_${inscricaoId}`;
 
   const { data: newRow, error: insErr } = await supabase
     .from('evento_notificacoes')
@@ -114,21 +162,33 @@ async function enviarEmailComDeduplicacao(
     notifId = newRow.id as string;
   }
 
+  // 4. Envio externo via Resend com cabeçalho Idempotency-Key
   const resultado = await sendEmail({
-    para: email,
+    para: emailLimpo,
     assunto,
     mensagem,
     nomeDestinatario: nome,
     fromEmail: 'inscricoes@siscomieadepa.org',
+    idempotencyKey,
   });
+
+  // 5. Atualização de status condicional estrita ao retorno do Resend
+  const isTimeout = resultado.erro?.startsWith('TIMEOUT_OU_FALHA_REDE');
+  const updateData: Record<string, unknown> = {
+    status: resultado.sucesso ? 'enviado' : 'erro',
+    enviado_em: resultado.sucesso ? new Date().toISOString() : null,
+    erro: resultado.sucesso ? null : (resultado.erro ?? 'Erro desconhecido'),
+  };
+
+  // Se timeout, mantemos status 'pendente' com observação de timeout para reconciliação
+  if (!resultado.sucesso && isTimeout) {
+    updateData.status = 'pendente';
+    updateData.erro = `Possível envio em andamento (timeout de rede). Aguardando reconciliação: ${resultado.erro}`;
+  }
 
   const { error: updErr } = await supabase
     .from('evento_notificacoes')
-    .update({
-      status:     resultado.sucesso ? 'enviado' : 'erro',
-      enviado_em: resultado.sucesso ? new Date().toISOString() : null,
-      erro:       resultado.sucesso ? null : (resultado.erro ?? 'Erro desconhecido'),
-    })
+    .update(updateData)
     .eq('id', notifId);
 
   if (updErr) {
@@ -136,7 +196,7 @@ async function enviarEmailComDeduplicacao(
   }
 
   if (!resultado.sucesso) {
-    console.error(`[WEBHOOK JOBS] Falha ao enviar e-mail para ${email}:`, resultado.erro);
+    console.error(`[WEBHOOK JOBS] Falha ao enviar e-mail para ${emailLimpo}:`, resultado.erro);
     throw new Error(resultado.erro ?? 'Erro ao enviar e-mail');
   }
 }
@@ -171,8 +231,8 @@ export async function enqueueWebhookJobs(
     external_payment_id?: string;
     payload?: any;
   }>
-) {
-  if (jobs.length === 0) return;
+): Promise<string[]> {
+  if (jobs.length === 0) return [];
   const rows = jobs.map(j => ({
     source: 'asaas',
     job_type: j.job_type,
@@ -187,17 +247,20 @@ export async function enqueueWebhookJobs(
     available_at: new Date().toISOString(),
   }));
 
-  const { error } = await supabase
+  const { data: inserted, error } = await supabase
     .from('webhook_jobs')
     .upsert(rows, {
       onConflict: 'source,job_type,entity_type,entity_id,external_payment_id',
       ignoreDuplicates: true,
-    });
+    })
+    .select('id');
 
   if (error) {
     console.error('[WEBHOOK JOBS] Erro ao enfileirar jobs:', error.message);
     throw error;
   }
+
+  return (inserted || []).map(r => r.id);
 }
 
 /**
@@ -282,23 +345,19 @@ export async function processSingleWebhookJob(supabase: SupabaseClient, job: any
         throw new Error(`Evento ${fullIns.evento_id} não encontrado: ${evErr?.message}`);
       }
 
-      if (fullIns.email) {
-        await enviarEmailComDeduplicacao(supabase, {
-          inscricaoId:         fullIns.id,
-          eventoId:            fullIns.evento_id,
-          nome:                fullIns.nome_inscrito,
-          email:               fullIns.email,
-          qrCode:              fullIns.qr_code,
-          nomeEvento:          evData.nome,
-          mensagemConfirmacao: evData.mensagem_confirmacao,
-          linkWhatsapp:        evData.link_whatsapp,
-          dataInicio:          evData.data_inicio,
-          dataFim:             evData.data_fim,
-          local:               evData.local,
-        });
-      } else {
-        console.warn(`[WEBHOOK JOBS] Job ${job.id} ignorado por e-mail ausente.`);
-      }
+      await enviarEmailComDeduplicacao(supabase, {
+        inscricaoId:         fullIns.id,
+        eventoId:            fullIns.evento_id,
+        nome:                fullIns.nome_inscrito,
+        email:               fullIns.email,
+        qrCode:              fullIns.qr_code,
+        nomeEvento:          evData.nome,
+        mensagemConfirmacao: evData.mensagem_confirmacao,
+        linkWhatsapp:        evData.link_whatsapp,
+        dataInicio:          evData.data_inicio,
+        dataFim:             evData.data_fim,
+        local:               evData.local,
+      });
     } else {
       throw new Error(`SEND_CONFIRMATION_EMAIL não suporta entity_type ${entity_type}`);
     }
@@ -358,10 +417,62 @@ export async function processSingleWebhookJob(supabase: SupabaseClient, job: any
 }
 
 /**
- * Busca e processa até 20 jobs pendentes/falhados disponíveis
+ * Processa uma lista específica de jobs por IDs (usado pelo trigger imediato pós-webhook)
  */
-export async function processPendingWebhookJobs(supabase: SupabaseClient): Promise<number> {
+export async function processWebhookJobsByIds(supabase: SupabaseClient, jobIds: string[]): Promise<number> {
+  if (!jobIds || jobIds.length === 0) return 0;
   const lockId = Math.random().toString(36).substring(7);
+
+  // Lock dos jobs especificados
+  const { data: lockedJobs, error: lockErr } = await supabase
+    .from('webhook_jobs')
+    .update({
+      status: 'processing',
+      locked_at: new Date().toISOString(),
+      locked_by: lockId,
+      updated_at: new Date().toISOString(),
+    })
+    .in('id', jobIds)
+    .in('status', ['pending', 'failed'])
+    .select('*');
+
+  if (lockErr || !lockedJobs || lockedJobs.length === 0) {
+    return 0;
+  }
+
+  let processedCount = 0;
+  for (const job of lockedJobs) {
+    const start = Date.now();
+    try {
+      await processSingleWebhookJob(supabase, job);
+      await markJobDone(supabase, job.id);
+      processedCount++;
+      console.log(`[WEBHOOK JOBS] ✔ Job ${job.id} finalizado imediatamente | Status: done | Tempo: ${Date.now() - start}ms`);
+    } catch (err: any) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[WEBHOOK JOBS] ❌ Falha no job ${job.id}:`, errorMsg);
+      try {
+        await markJobFailed(supabase, job, errorMsg);
+      } catch (markErr) {
+        console.error(`[WEBHOOK JOBS] Erro crítico ao marcar falha do job ${job.id}:`, markErr);
+      }
+    }
+  }
+
+  return processedCount;
+}
+
+/**
+ * Busca e processa até 20 jobs pendentes/falhados disponíveis (modo cron / recuperação)
+ * Suporta filtro opcional por IDs ou entidade.
+ */
+export async function processPendingWebhookJobs(supabase: SupabaseClient, options?: { limit?: number; onlyJobIds?: string[] }): Promise<number> {
+  if (options?.onlyJobIds && options.onlyJobIds.length > 0) {
+    return processWebhookJobsByIds(supabase, options.onlyJobIds);
+  }
+
+  const lockId = Math.random().toString(36).substring(7);
+  const maxJobs = options?.limit ?? 20;
 
   // 1. Busca jobs disponíveis
   const { data: jobsToLock, error: selectErr } = await supabase
@@ -370,7 +481,7 @@ export async function processPendingWebhookJobs(supabase: SupabaseClient): Promi
     .in('status', ['pending', 'failed'])
     .lte('available_at', new Date().toISOString())
     .order('available_at', { ascending: true })
-    .limit(20);
+    .limit(maxJobs);
 
   if (selectErr || !jobsToLock || jobsToLock.length === 0) {
     return 0;

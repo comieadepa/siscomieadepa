@@ -19,6 +19,7 @@ export interface EmailPayload {
   fromName?: string;
   fromEmail?: string;
   from?: string;
+  idempotencyKey?: string;  // Chave de idempotência (header Idempotency-Key)
 }
 
 export interface EmailResult {
@@ -89,12 +90,17 @@ export async function sendEmail(payload: EmailPayload): Promise<EmailResult> {
     const fromEmail = payload.fromEmail || process.env.RESEND_FROM_EMAIL || 'naoresponda@siscomieadepa.org';
     const fromName = payload.fromName || process.env.RESEND_FROM_NAME || 'SISCOMIEADEPA';
     const from = payload.from || process.env.RESEND_FROM || `${fromName} <${fromEmail}>`;
+    const headers: Record<string, string> = {
+      'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+      'Content-Type':  'application/json',
+    };
+    if (payload.idempotencyKey) {
+      headers['Idempotency-Key'] = payload.idempotencyKey;
+    }
+
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-        'Content-Type':  'application/json',
-      },
+      headers,
       body: JSON.stringify({
         from,
         to:      [payload.para],
@@ -114,6 +120,11 @@ export async function sendEmail(payload: EmailPayload): Promise<EmailResult> {
 
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    return { sucesso: false, provider: 'resend', erro: msg };
+    const isNetworkOrTimeout = msg.includes('timeout') || msg.includes('fetch failed') || msg.includes('ECONNRESET');
+    return {
+      sucesso: false,
+      provider: 'resend',
+      erro: isNetworkOrTimeout ? `TIMEOUT_OU_FALHA_REDE: ${msg}` : msg,
+    };
   }
 }

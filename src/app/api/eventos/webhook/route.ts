@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { logDB } from '@/lib/audit';
-import { enqueueWebhookJobs } from '@/lib/jobs/webhook-jobs';
+import { enqueueWebhookJobs, processPendingWebhookJobs } from '@/lib/jobs/webhook-jobs';
 import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
 
 export const runtime = 'nodejs';
@@ -243,8 +243,20 @@ export async function POST(request: NextRequest) {
             );
           }
           try {
-            await enqueueWebhookJobs(supabase, jobs);
+            const enqueuedIds = await enqueueWebhookJobs(supabase, jobs);
             console.log(`[EVENTOS WEBHOOK] Enfileirados ${jobs.length} jobs para o lote ${loteId}`);
+
+            // Aciona processamento assíncrono imediato pós-resposta sem bloquear o Asaas
+            if (enqueuedIds && enqueuedIds.length > 0) {
+              after(async () => {
+                try {
+                  const asyncClient = createServerClient();
+                  await processPendingWebhookJobs(asyncClient, { onlyJobIds: enqueuedIds });
+                } catch (procErr: any) {
+                  console.error('[EVENTOS WEBHOOK] Erro no processamento imediato pós-lote:', procErr?.message);
+                }
+              });
+            }
           } catch (jobErr: any) {
             console.error(`[EVENTOS WEBHOOK] ERRO CRÍTICO: Falha ao enfileirar jobs do lote ${loteId}:`, jobErr.message);
             void logDB({
@@ -356,12 +368,24 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        await enqueueWebhookJobs(supabase, [
+        const enqueuedIds = await enqueueWebhookJobs(supabase, [
           { job_type: 'ALLOCATE_ACCOMMODATION', entity_type: 'inscricao', entity_id: ins.id, external_event_id: eventId, external_payment_id: asaasId },
           { job_type: 'SEND_CONFIRMATION_EMAIL', entity_type: 'inscricao', entity_id: ins.id, external_event_id: eventId, external_payment_id: asaasId },
           { job_type: 'REGISTER_MINISTERIAL_HISTORY', entity_type: 'inscricao', entity_id: ins.id, external_event_id: eventId, external_payment_id: asaasId }
         ]);
         console.log(`[EVENTOS WEBHOOK] Enfileirados jobs pós-baixa para inscrição ${ins.id}`);
+
+        // Aciona processamento assíncrono imediato pós-resposta sem bloquear o Asaas
+        if (enqueuedIds && enqueuedIds.length > 0) {
+          after(async () => {
+            try {
+              const asyncClient = createServerClient();
+              await processPendingWebhookJobs(asyncClient, { onlyJobIds: enqueuedIds });
+            } catch (procErr: any) {
+              console.error('[EVENTOS WEBHOOK] Erro no processamento imediato pós-inscrição:', procErr?.message);
+            }
+          });
+        }
       } catch (jobErr: any) {
         console.error(`[EVENTOS WEBHOOK] ERRO CRÍTICO: Falha ao enfileirar jobs da inscrição ${ins.id}:`, jobErr.message);
         void logDB({
