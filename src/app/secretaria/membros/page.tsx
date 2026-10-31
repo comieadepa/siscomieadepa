@@ -1986,10 +1986,16 @@ useEffect(() => {
 
 
   // Filtrar membros
+  const searchClean = searchTerm.trim().toLowerCase();
+  const searchDigits = onlyDigits(searchTerm);
+
   const membrosFiltrados = membros.filter(m => {
-    const matchSearch = m.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchSearch =
+      !searchClean ||
+      m.nome.toLowerCase().includes(searchClean) ||
+      m.matricula.toLowerCase().includes(searchClean) ||
       m.cpf.includes(searchTerm) ||
-      m.matricula.includes(searchTerm);
+      (searchDigits.length > 0 && onlyDigits(m.cpf).includes(searchDigits));
     const sf = statusFilter.toLowerCase();
     const matchStatus = sf === 'todos'
       || (sf === 'jubilado' ? m.jubilado === true : m.status.toLowerCase() === sf);
