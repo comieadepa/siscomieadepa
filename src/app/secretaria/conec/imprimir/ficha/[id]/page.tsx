@@ -203,6 +203,16 @@ function FichaContent() {
       (m) => `<strong class="text-emerald-800 block mt-1.5 mb-1 font-bold text-[10px] tracking-wide uppercase">${m}</strong>`
     );
 
+    // --- Correção de Apresentação Institucional: CEC -> CONEC ---
+    formatted = formatted.replace(
+      /Conselho de Educação Cristã\s*[-–—]\s*CEC/gi,
+      'Conselho de Educação Cristã - CONEC'
+    );
+    formatted = formatted.replace(
+      /\bCEC\b/g,
+      'CONEC'
+    );
+
     return formatted.split('\n').map(p => p.trim()).filter(Boolean).map(paragraph => {
       if (paragraph.includes('text-emerald-800')) {
         return `<div class="mb-1">${paragraph}</div>`;
@@ -669,7 +679,7 @@ function FichaContent() {
                 <img 
                   src="/img/pr_assis.png" 
                   alt="Assinatura Pr. Francisco de Assis" 
-                  className="max-h-[14mm] object-contain"
+                  className="max-h-[14mm] object-contain translate-y-[10px]"
                 />
               </div>
               <div className="w-full border-b border-black mb-1" />
@@ -703,7 +713,7 @@ function FichaContent() {
                 <img 
                   src="/img/pr_jesanias.png" 
                   alt="Assinatura Pr. Jesanias Pereira" 
-                  className="max-h-[14mm] object-contain"
+                  className="max-h-[14mm] object-contain translate-y-[10px]"
                 />
               </div>
               <div className="w-full border-b border-black mb-1" />
