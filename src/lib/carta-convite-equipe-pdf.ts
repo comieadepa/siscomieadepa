@@ -1,6 +1,4 @@
 import { jsPDF } from 'jspdf';
-import fs from 'fs';
-import path from 'path';
 import { LOGO_COMIEADEPA_BASE64 } from '@/lib/logos-base64';
 
 export interface DadosCartaConviteEquipe {
@@ -20,26 +18,6 @@ const GOLD_COLOR: [number, number, number] = [212, 175, 55];   // #D4AF37
 const TEXT_DARK: [number, number, number] = [31, 41, 55];      // #1F2937
 const TEXT_MUTED: [number, number, number] = [100, 116, 139];  // #64748B
 const BORDER_COLOR: [number, number, number] = [226, 232, 240];
-
-// Carregamento em memória cache da assinatura institucional do Presidente
-let assinaturaPresidenteBase64Cache: string | null = null;
-
-function getAssinaturaPresidenteBase64(): string | null {
-  if (assinaturaPresidenteBase64Cache) {
-    return assinaturaPresidenteBase64Cache;
-  }
-  try {
-    const filePath = path.join(process.cwd(), 'public', 'img', 'assinatura_presidente.png');
-    if (fs.existsSync(filePath)) {
-      const buffer = fs.readFileSync(filePath);
-      assinaturaPresidenteBase64Cache = `data:image/png;base64,${buffer.toString('base64')}`;
-      return assinaturaPresidenteBase64Cache;
-    }
-  } catch (err) {
-    console.error('[CARTA-CONVITE] Erro ao carregar assinatura institucional:', err);
-  }
-  return null;
-}
 
 function formatarDataIso(dataIso?: string | null): string {
   if (!dataIso) return '';
@@ -250,37 +228,19 @@ export async function gerarCartaConviteEquipePdf(dados: DadosCartaConviteEquipe)
   doc.text(splitVersiculo, 105, currentY, { align: 'center' });
   currentY += splitVersiculo.length * 4.8 + 8;
 
-  // ── 8. ASSINATURA INSTITUCIONAL AUTORIZADA ───────────────────────────────
-  const assinaturaBase64 = getAssinaturaPresidenteBase64();
-  if (assinaturaBase64) {
-    try {
-      // Assinatura digitalizada oficial do Presidente
-      doc.addImage(assinaturaBase64, 'PNG', 105 - 28, currentY - 4, 56, 18);
-      currentY += 15;
-    } catch (e) {
-      console.warn('[CARTA-CONVITE] Falha ao renderizar imagem da assinatura:', e);
-      currentY += 8;
-    }
-  } else {
-    currentY += 12;
-  }
+  // ── 8. IDENTIFICAÇÃO INSTITUCIONAL CENTRALIZADA ─────────────────────────
+  currentY += 16;
 
-  // Linha da assinatura
-  doc.setDrawColor(...NAVY_COLOR);
-  doc.setLineWidth(0.5);
-  doc.line(105 - 45, currentY, 105 + 45, currentY);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.setTextColor(...NAVY_COLOR);
+  doc.text('COMISSÃO DE TECNOLOGIA', 105, currentY, { align: 'center' });
 
   currentY += 4.5;
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
+  doc.setFontSize(9);
   doc.setTextColor(...NAVY_COLOR);
-  doc.text('Pr. Océlio Nauar de Araújo', 105, currentY, { align: 'center' });
-
-  currentY += 4;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(...TEXT_MUTED);
-  doc.text('Presidente da COMIEADEPA', 105, currentY, { align: 'center' });
+  doc.text('COMIEADEPA', 105, currentY, { align: 'center' });
 
   // ── 9. RODAPÉ INSTITUCIONAL ──────────────────────────────────────────────
   doc.setDrawColor(...BORDER_COLOR);

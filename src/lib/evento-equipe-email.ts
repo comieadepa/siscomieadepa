@@ -51,17 +51,16 @@ export function getEquipeAccessUrl(origin: string, eventoId: string, funcao: Fun
 
 export function getFuncaoEquipeLabel(funcao: FuncaoEquipeEvento): string {
   switch (funcao) {
-    case 'operador':
-      return 'Operador';
-    case 'hospedagem':
-      return 'Hospedagem';
-    case 'checkin_hospedagem':
-      return 'Check-in de Hospedagem';
-    case 'checkin_refeitorio':
-      return 'Refeitório';
     case 'checkin':
+    case 'checkin_refeitorio':
+      return 'Equipe de Check-in';
+    case 'hospedagem':
+    case 'checkin_hospedagem':
+      return 'Equipe de Hospedagem';
+    case 'operador':
+      return 'Equipe de Inscrição';
     default:
-      return 'Check-in';
+      return 'Equipe de Trabalho';
   }
 }
 
