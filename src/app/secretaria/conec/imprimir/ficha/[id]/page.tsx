@@ -371,40 +371,38 @@ function FichaContent() {
           }
           .print-page {
             width: 210mm !important;
-            min-height: 297mm !important;
-            padding: 22mm 22mm 15mm 22mm !important;
+            height: 297mm !important;
+            max-height: 297mm !important;
+            padding: 16mm 18mm 12mm 18mm !important;
             margin: 0 !important;
             border: 0 !important;
             box-shadow: none !important;
             border-radius: 0 !important;
             box-sizing: border-box !important;
             position: relative !important;
-            page-break-after: auto !important;
+            page-break-after: avoid !important;
             page-break-before: avoid !important;
+            page-break-inside: avoid !important;
+            overflow: hidden !important;
             background-image: url('/img/bg_termo.jpg') !important;
-            background-size: cover !important;
+            background-size: 100% 100% !important;
             background-repeat: no-repeat !important;
             display: flex !important;
             flex-direction: column !important;
+            justify-content: space-between !important;
           }
           .print-container {
             width: 210mm !important;
-            min-height: 297mm !important;
-            background-size: cover !important;
+            height: 297mm !important;
+            max-height: 297mm !important;
+            background-size: 100% 100% !important;
             border: 0 !important;
             box-shadow: none !important;
             border-radius: 0 !important;
             margin: 0 !important;
             transform: none !important;
+            overflow: hidden !important;
           }
-          /* Container de observações cresce livremente; overflow natural gera 2ª página */
-          .obs-overflow-container {
-            overflow: visible !important;
-            height: auto !important;
-            max-height: none !important;
-            page-break-inside: auto !important;
-          }
-          /* Rodapé (data + assinaturas) nunca é cortado no meio */
           .obs-footer {
             page-break-inside: avoid !important;
             break-inside: avoid !important;
@@ -413,19 +411,21 @@ function FichaContent() {
 
         .print-page {
           width: 210mm;
-          min-height: 297mm;
-          padding: 22mm 22mm 15mm 22mm;
+          height: 297mm;
+          max-height: 297mm;
+          padding: 16mm 18mm 12mm 18mm;
           background-image: url('/img/bg_termo.jpg');
-          background-size: cover;
+          background-size: 100% 100%;
           background-repeat: no-repeat;
           background-color: #ffffff;
           border: 1px solid #ccc;
           box-shadow: 0 4px 15px rgba(0,0,0,0.1);
           box-sizing: border-box;
           position: relative;
-          overflow: visible;
+          overflow: hidden;
           display: flex;
           flex-direction: column;
+          justify-content: space-between;
         }
 
         .watermark {
@@ -434,11 +434,11 @@ function FichaContent() {
 
         .vertical-register {
           position: absolute;
-          right: 8mm;
-          top: 80mm;
+          right: 7mm;
+          top: 70mm;
           writing-mode: vertical-rl;
           transform: rotate(180deg);
-          font-size: 11px;
+          font-size: 10.5px;
           font-family: 'Courier New', Courier, monospace;
           color: #333;
           letter-spacing: 2px;
@@ -448,49 +448,49 @@ function FichaContent() {
 
         .data-box {
           border: 1.2px solid #b89353;
-          border-radius: 5px;
-          margin-bottom: 3.5mm;
+          border-radius: 4px;
+          margin-bottom: 2mm;
           position: relative;
           z-index: 10;
           background-color: rgba(255, 255, 255, 0.75);
-          padding: 6px 12px;
+          padding: 4px 10px;
           box-sizing: border-box;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+          box-shadow: 0 1px 2px rgba(0,0,0,0.02);
         }
 
         .observations-data-box {
           border: 1.2px solid #b89353;
-          border-radius: 5px;
-          margin-bottom: 3.5mm;
+          border-radius: 4px;
+          margin-bottom: 2mm;
           position: relative;
           z-index: 10;
-          background-color: rgba(255, 255, 255, 0.8);
-          padding: 10px 14px;
+          background-color: rgba(255, 255, 255, 0.85);
+          padding: 6px 10px;
           box-sizing: border-box;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+          box-shadow: 0 1px 2px rgba(0,0,0,0.02);
         }
 
         .data-box-label {
           display: block;
-          font-size: 8px;
+          font-size: 7.5px;
           font-weight: bold;
           text-transform: uppercase;
-          letter-spacing: 0.8px;
+          letter-spacing: 0.7px;
           color: #8a6d3b;
           font-family: 'Arial', sans-serif;
-          margin-bottom: 1.5px;
+          margin-bottom: 1px;
         }
 
         .data-box-content {
-          font-size: 11.5px;
+          font-size: 10.5px;
           color: #1a202c;
           font-family: 'Arial', sans-serif;
-          line-height: 1.35;
+          line-height: 1.3;
         }
 
         .header-title-main {
-          font-size: 15px;
-          font-weight: bold;
+          font-size: 14.5px;
+          font-weight: 800;
           color: #000000;
           margin: 0;
           font-family: 'Times New Roman', Times, serif;
@@ -498,37 +498,37 @@ function FichaContent() {
         }
 
         .header-title-sub {
-          font-size: 9.5px;
+          font-size: 8.5px;
           font-weight: bold;
           color: #222222;
-          margin: 2px 0 0 0;
+          margin: 1.5px 0 0 0;
           text-transform: uppercase;
           font-family: 'Arial', sans-serif;
         }
 
         .header-address {
-          font-size: 8.5px;
+          font-size: 7.5px;
           color: #444444;
-          margin: 3px 0 0 0;
+          margin: 2px 0 0 0;
           font-family: 'Arial', sans-serif;
         }
 
         .doc-title-container {
           text-align: center;
-          margin: 12mm 0 8mm 0;
+          margin: 3mm 0 2.5mm 0;
           position: relative;
           z-index: 10;
         }
 
         .doc-title {
-          font-size: 16.5px;
-          font-family: Arial, Helvetica, sans-serif;
-          font-weight: 900;
-          letter-spacing: 1px;
+          font-size: 16px;
+          font-family: 'Times New Roman', Times, serif;
+          font-weight: bold;
+          letter-spacing: 1.2px;
           text-transform: uppercase;
-          border-bottom: 3px double #000000;
+          border-bottom: 2.5px double #000000;
           display: inline-block;
-          padding-bottom: 2px;
+          padding-bottom: 1.5px;
         }
       `}</style>
 
@@ -553,11 +553,11 @@ function FichaContent() {
         {/* Conteúdo Principal Superior */}
         <div className="flex-grow flex flex-col justify-start">
           {/* Cabeçalho Oficial */}
-          <div className="flex items-center justify-between border-b-2 border-black pb-3 mb-2 relative z-10">
+          <div className="flex items-center justify-between border-b-2 border-black pb-2 mb-1.5 relative z-10">
             <img 
               src="/img/logo_comieadepa.png" 
               alt="Logo COMIEADEPA" 
-              className="w-[18mm] h-[18mm] object-contain"
+              className="w-[20mm] h-[20mm] object-contain"
             />
             <div className="flex-1 text-center px-4">
               <h1 className="header-title-main text-[14px]">CONSELHO DE EDUCAÇÃO CRISTÃ - CONEC</h1>
@@ -572,10 +572,10 @@ function FichaContent() {
           </div>
 
           {/* Título do Documento e Registro em Destaque */}
-          <div className="doc-title-container flex flex-col items-center mb-2">
-            <h2 className="doc-title font-black">Credenciamento de Instituição</h2>
-            <div className="mt-1.5 text-xs font-bold text-gray-800 tracking-wider">
-              REGISTRO CONEC Nº <span className="text-sm text-black underline decoration-2 font-mono font-bold">{credenciamento?.numero_registro || 'PENDENTE'}</span>
+          <div className="doc-title-container flex flex-col items-center mb-1.5">
+            <h2 className="doc-title">Credenciamento de Instituição</h2>
+            <div className="mt-1 text-[11px] font-bold text-gray-800 tracking-wider">
+              REGISTRO CONEC Nº <span className="text-xs text-black underline decoration-2 font-mono font-bold">{credenciamento?.numero_registro || 'PENDENTE'}</span>
             </div>
           </div>
 
@@ -641,19 +641,19 @@ function FichaContent() {
               </div>
             </div>
 
-            {/* Bloco: OBSERVAÇÕES – flex-grow, sem altura fixa; overflow longo gera 2ª página */}
-            <div className="observations-data-box mt-1 obs-overflow-container" style={{ flex: '1 1 auto', overflow: 'visible', minHeight: '32mm' }}>
+            {/* Bloco: OBSERVAÇÕES – flex-grow dinâmico para preenchimento de página única */}
+            <div className="observations-data-box mt-0.5 obs-overflow-container" style={{ flex: '1 1 auto', overflow: 'hidden' }}>
               <span className="data-box-label">Observações e Histórico Institucional</span>
               {/* Texto oficial de credenciamento */}
-              <div className="mb-2 text-[10.5px] leading-relaxed text-justify text-gray-800">
+              <div className="mb-1 text-[10px] leading-relaxed text-justify text-gray-800">
                 Certificamos que a instituição de ensino teológico supracitada foi submetida ao processo de avaliação e credenciamento perante o Conselho de Educação Cristã (CONEC), órgão estatutário da COMIEADEPA. Diante da conformidade técnica, pedagógica e documental apresentada, esta credencial é concedida atestando sua regularidade e habilitação para a formação de ministros e promoção da educação cristã.
               </div>
               {/* Grade curricular / Texto oficial da instituição */}
               {instituicao.observacoes_internas && (
                 <div
                   ref={obsRef}
-                  className="mt-2 pt-2 border-t border-dashed border-gray-300 font-sans data-box-content"
-                  style={{ fontSize: '11px', lineHeight: '1.4' }}
+                  className="mt-1 pt-1 border-t border-dashed border-gray-300 font-sans data-box-content"
+                  style={{ fontSize: '10.5px', lineHeight: '1.35' }}
                   dangerouslySetInnerHTML={{ __html: formatObservacoes(instituicao.observacoes_internas) }}
                 />
               )}
@@ -663,10 +663,10 @@ function FichaContent() {
         </div>
 
         {/* Rodapé: Local, Data e Assinaturas (Espaço 100% isolado no rodapé) */}
-        <div className="mt-auto mb-6 relative z-10 w-full obs-footer">
+        <div className="mt-auto mb-2 relative z-10 w-full obs-footer">
           
           {/* Data por Extenso */}
-          <div className="text-center font-serif italic text-[13px] mb-6 relative z-10">
+          <div className="text-center font-serif italic text-[12px] mb-3 relative z-10">
             Belém - PA, {emissaoLonga}.
           </div>
 
@@ -675,11 +675,11 @@ function FichaContent() {
             
             {/* Bloco Assinatura 1: Secretário */}
             <div className="flex flex-col items-center w-[65mm] text-center">
-              <div className="h-[15mm] flex items-end justify-center mb-1 overflow-visible">
+              <div className="h-[14mm] flex items-end justify-center mb-0.5">
                 <img 
                   src="/img/pr_assis.png" 
                   alt="Assinatura Pr. Francisco de Assis" 
-                  className="max-h-[14mm] object-contain translate-y-[25px]"
+                  className="max-h-[14mm] object-contain"
                 />
               </div>
               <div className="w-full border-b border-black mb-1" />
@@ -693,15 +693,15 @@ function FichaContent() {
 
             {/* QR Code de Validação no Centro */}
             {token && (
-              <div className="flex flex-col items-center justify-center mb-1 max-w-[48mm] text-center">
+              <div className="flex flex-col items-center justify-center mb-0.5 max-w-[48mm] text-center">
                 <div className="p-1 bg-white border border-gray-250 rounded">
                   <QRCodeSVG 
                     value={`${typeof window !== 'undefined' ? window.location.origin : ''}/conec/credenciamento/validar/${token}`} 
-                    size={65} 
+                    size={60} 
                     level="M" 
                   />
                 </div>
-                <span className="text-[5.5px] text-gray-500 font-sans mt-1 leading-normal uppercase font-semibold">
+                <span className="text-[5.5px] text-gray-500 font-sans mt-0.5 leading-normal uppercase font-semibold">
                   Leia o QR Code para validar a autenticidade deste credenciamento.
                 </span>
               </div>
@@ -709,11 +709,11 @@ function FichaContent() {
 
             {/* Bloco Assinatura 2: Presidente CONEC */}
             <div className="flex flex-col items-center w-[65mm] text-center">
-              <div className="h-[15mm] flex items-end justify-center mb-1 overflow-visible">
+              <div className="h-[14mm] flex items-end justify-center mb-0.5">
                 <img 
                   src="/img/pr_jesanias.png" 
                   alt="Assinatura Pr. Jesanias Pereira" 
-                  className="max-h-[14mm] object-contain translate-y-[25px]"
+                  className="max-h-[14mm] object-contain"
                 />
               </div>
               <div className="w-full border-b border-black mb-1" />
