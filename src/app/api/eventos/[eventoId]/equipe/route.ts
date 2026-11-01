@@ -145,7 +145,7 @@ export async function POST(
 
   const { data: eventoInfo } = await supabase
     .from('eventos')
-    .select('nome,data_fim')
+    .select('nome,data_inicio,data_fim,local,cidade')
     .eq('id', eventoId)
     .single();
 
@@ -244,15 +244,27 @@ export async function POST(
     request,
   });
 
+  const eventoDados = eventoInfo as {
+    nome?: string;
+    data_inicio?: string | null;
+    data_fim?: string | null;
+    local?: string | null;
+    cidade?: string | null;
+  } | null;
+
   const emailResult = await enviarEmailAcessoEquipe({
     para: email,
     nome,
-    eventoNome: (eventoInfo as { nome?: string } | null)?.nome || 'evento',
+    eventoNome: eventoDados?.nome || 'evento',
     eventoId,
     funcao,
     origin: getRequestOrigin(request),
     senha: exigeSenha(funcao) ? senha : undefined,
     codigo: isFuncaoCheckinSemSenha(funcao) ? (codigoAcesso ?? undefined) : undefined,
+    dataInicio: eventoDados?.data_inicio ?? null,
+    dataFim: eventoDados?.data_fim ?? null,
+    local: eventoDados?.local ?? null,
+    cidade: eventoDados?.cidade ?? null,
   });
 
   void logDB({
@@ -502,19 +514,31 @@ export async function PATCH(
   if (exigeSenha(funcao) && senha) {
     const { data: eventoEmail } = await supabase
       .from('eventos')
-      .select('nome')
+      .select('nome,data_inicio,data_fim,local,cidade')
       .eq('id', eventoId)
       .single();
+
+    const eventoEmailDados = eventoEmail as {
+      nome?: string;
+      data_inicio?: string | null;
+      data_fim?: string | null;
+      local?: string | null;
+      cidade?: string | null;
+    } | null;
 
     const emailResult = await enviarEmailAcessoEquipe({
       para: email,
       nome,
-      eventoNome: (eventoEmail as { nome?: string } | null)?.nome || 'evento',
+      eventoNome: eventoEmailDados?.nome || 'evento',
       eventoId,
       funcao,
       origin: getRequestOrigin(request),
       senha,
       redefinicao: true,
+      dataInicio: eventoEmailDados?.data_inicio ?? null,
+      dataFim: eventoEmailDados?.data_fim ?? null,
+      local: eventoEmailDados?.local ?? null,
+      cidade: eventoEmailDados?.cidade ?? null,
     });
 
     void logDB({

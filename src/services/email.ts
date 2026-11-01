@@ -10,6 +10,12 @@
 // Para simular envio: defina SIMULATE_EMAIL=true nas variáveis de ambiente
 const SIMULATE_EMAIL = process.env.SIMULATE_EMAIL === 'true';
 
+export interface EmailAttachment {
+  filename: string;
+  content: string; // Base64 encoded string
+  contentType?: string;
+}
+
 export interface EmailPayload {
   para:     string;         // e-mail do destinatário
   assunto:  string;
@@ -20,6 +26,7 @@ export interface EmailPayload {
   fromEmail?: string;
   from?: string;
   idempotencyKey?: string;  // Chave de idempotência (header Idempotency-Key)
+  attachments?: EmailAttachment[]; // Anexos em Base64
 }
 
 export interface EmailResult {
@@ -80,8 +87,9 @@ function renderHtml(payload: EmailPayload): string {
  * Em modo simulação apenas loga e retorna sucesso.
  */
 export async function sendEmail(payload: EmailPayload): Promise<EmailResult> {
-  if (SIMULATE_EMAIL) {
-    console.log('[EMAIL SERVICE] Simulação — seria enviado para:', payload.para, '| Assunto:', payload.assunto);
+  const isSimulated = process.env.SIMULATE_EMAIL === 'true' || SIMULATE_EMAIL;
+  if (isSimulated) {
+    console.log('[EMAIL SERVICE] Simulação — seria enviado para:', payload.para, '| Assunto:', payload.assunto, '| Anexos:', payload.attachments?.length ?? 0);
     return { sucesso: true, provider: 'simulate', messageId: `sim_${Date.now()}` };
   }
 
@@ -98,16 +106,25 @@ export async function sendEmail(payload: EmailPayload): Promise<EmailResult> {
       headers['Idempotency-Key'] = payload.idempotencyKey;
     }
 
+    const requestBody: Record<string, any> = {
+      from,
+      to:      [payload.para],
+      subject: payload.assunto,
+      html:    payload.html ?? renderHtml(payload),
+      text:    payload.mensagem,
+    };
+
+    if (payload.attachments && payload.attachments.length > 0) {
+      requestBody.attachments = payload.attachments.map((att) => ({
+        filename: att.filename,
+        content: att.content,
+      }));
+    }
+
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        from,
-        to:      [payload.para],
-        subject: payload.assunto,
-        html:    payload.html ?? renderHtml(payload),
-        text:    payload.mensagem,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!res.ok) {

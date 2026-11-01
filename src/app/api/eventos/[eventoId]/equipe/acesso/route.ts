@@ -77,7 +77,7 @@ export async function POST(
 
   const { data: evento } = await supabase
     .from('eventos')
-    .select('nome,data_fim')
+    .select('nome,data_inicio,data_fim,local,cidade')
     .eq('id', eventoId)
     .single();
 
@@ -91,14 +91,26 @@ export async function POST(
       .eq('id', row.id);
   }
 
+  const eventoDados = evento as {
+    nome?: string;
+    data_inicio?: string | null;
+    data_fim?: string | null;
+    local?: string | null;
+    cidade?: string | null;
+  } | null;
+
   const result = await enviarEmailAcessoEquipe({
     para: row.email,
     nome: row.nome || row.email,
-    eventoNome: (evento as { nome?: string } | null)?.nome || 'evento',
+    eventoNome: eventoDados?.nome || 'evento',
     eventoId,
     funcao: row.tipo,
     origin: getRequestOrigin(request),
     codigo: (row.tipo === 'checkin' || row.tipo === 'checkin_refeitorio' || row.tipo === 'checkin_hospedagem') ? (codigo || undefined) : undefined,
+    dataInicio: eventoDados?.data_inicio ?? null,
+    dataFim: eventoDados?.data_fim ?? null,
+    local: eventoDados?.local ?? null,
+    cidade: eventoDados?.cidade ?? null,
   });
 
   void logDB({
