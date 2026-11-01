@@ -100,17 +100,19 @@ function FichaContent() {
 
   useEffect(() => {
     if (!loading && obsRef.current) {
+      const el = obsRef.current;
+      // Reset to starting font size
       let size = 11;
-      obsRef.current.style.fontSize = `${size}px`;
-      // Reduce font size if content overflows
+      el.style.fontSize = `${size}px`;
+      // Reduce font until content fits or minimum reached
       let attempts = 0;
       while (
-        obsRef.current.scrollHeight > obsRef.current.clientHeight &&
-        size > 8.5 &&
-        attempts < 10
+        el.scrollHeight > el.clientHeight &&
+        size > 7.5 &&
+        attempts < 20
       ) {
-        size -= 0.5;
-        obsRef.current.style.fontSize = `${size}px`;
+        size -= 0.25;
+        el.style.fontSize = `${size}px`;
         attempts++;
       }
     }
@@ -176,14 +178,29 @@ function FichaContent() {
   const formatObservacoes = (text: string) => {
     if (!text) return '';
     let formatted = text;
-    // Highlight specific key academic cycles in observations
+
+    // --- Padrões ICET: Ciclos ---
     formatted = formatted.replace(
-      /CICLO I[–\- ]+NÍVEL BÁSICO E MÉDIO/g,
+      /CICLO I[–\-\s]+NÍVEL BÁSICO E MÉDIO/g,
       '<strong class="text-emerald-800 block mt-1.5 mb-1 font-bold text-[10px] tracking-wide uppercase">CICLO I – NÍVEL BÁSICO E MÉDIO</strong>'
     );
     formatted = formatted.replace(
-      /CICLO II[–\- ]+NÍVEL AVANÇADO \/ PLENO/g,
+      /CICLO II[–\-\s]+NÍVEL AVANÇADO \/ PLENO/g,
       '<strong class="text-emerald-800 block mt-1.5 mb-1 font-bold text-[10px] tracking-wide uppercase">CICLO II – NÍVEL AVANÇADO / PLENO</strong>'
+    );
+
+    // --- Padrões EETED / ETADEB: Cabeçalhos de Curso ---
+    formatted = formatted.replace(
+      /CURSO BÁSICO(?:\s*\/\s*AVANÇADO)?/g,
+      (m) => `<strong class="text-emerald-800 block mt-1.5 mb-1 font-bold text-[10px] tracking-wide uppercase">${m}</strong>`
+    );
+    formatted = formatted.replace(
+      /CURSO MÉDIO(?:\s*\/\s*AVANÇADO)?/g,
+      (m) => `<strong class="text-emerald-800 block mt-1.5 mb-1 font-bold text-[10px] tracking-wide uppercase">${m}</strong>`
+    );
+    formatted = formatted.replace(
+      /^BACHAREL(?:\s+EM[^\n<]*)?/gm,
+      (m) => `<strong class="text-emerald-800 block mt-1.5 mb-1 font-bold text-[10px] tracking-wide uppercase">${m}</strong>`
     );
 
     return formatted.split('\n').map(p => p.trim()).filter(Boolean).map(paragraph => {
@@ -339,7 +356,7 @@ function FichaContent() {
           }
           .print-page {
             width: 210mm !important;
-            height: 297mm !important;
+            min-height: 297mm !important;
             padding: 22mm 22mm 15mm 22mm !important;
             margin: 0 !important;
             border: 0 !important;
@@ -347,44 +364,53 @@ function FichaContent() {
             border-radius: 0 !important;
             box-sizing: border-box !important;
             position: relative !important;
-            page-break-after: avoid !important;
+            page-break-after: auto !important;
             page-break-before: avoid !important;
-            overflow: hidden !important;
             background-image: url('/img/bg_termo.jpg') !important;
-            background-size: 100% 100% !important;
+            background-size: cover !important;
             background-repeat: no-repeat !important;
             display: flex !important;
             flex-direction: column !important;
-            justify-content: space-between !important;
           }
           .print-container {
             width: 210mm !important;
-            height: 297mm !important;
-            background-size: 100% 100% !important;
+            min-height: 297mm !important;
+            background-size: cover !important;
             border: 0 !important;
             box-shadow: none !important;
             border-radius: 0 !important;
             margin: 0 !important;
             transform: none !important;
           }
+          /* Container de observações cresce livremente; overflow natural gera 2ª página */
+          .obs-overflow-container {
+            overflow: visible !important;
+            height: auto !important;
+            max-height: none !important;
+            page-break-inside: auto !important;
+          }
+          /* Rodapé (data + assinaturas) nunca é cortado no meio */
+          .obs-footer {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
         }
 
         .print-page {
           width: 210mm;
-          height: 297mm;
+          min-height: 297mm;
           padding: 22mm 22mm 15mm 22mm;
           background-image: url('/img/bg_termo.jpg');
-          background-size: 100% 100%;
+          background-size: cover;
           background-repeat: no-repeat;
           background-color: #ffffff;
           border: 1px solid #ccc;
           box-shadow: 0 4px 15px rgba(0,0,0,0.1);
           box-sizing: border-box;
           position: relative;
-          overflow: hidden;
+          overflow: visible;
           display: flex;
           flex-direction: column;
-          justify-content: space-between;
         }
 
         .watermark {
@@ -499,7 +525,7 @@ function FichaContent() {
           validationToken={token}
         />
       ) : (
-        <div className="print-container print-page relative flex flex-col justify-between h-[297mm]">
+        <div className="print-container print-page relative flex flex-col">
         
         {/* Marca d'água de Fundo */}
         <div className="watermark" />
@@ -593,31 +619,29 @@ function FichaContent() {
               </div>
             </div>
 
-            {/* Bloco: OBSERVAÇÕES com altura controlada e auto-scaling de fonte */}
-            <div className="observations-data-box mt-1 h-[42mm] max-h-[42mm] overflow-hidden relative">
+            {/* Bloco: OBSERVAÇÕES – flex-grow, sem altura fixa; overflow longo gera 2ª página */}
+            <div className="observations-data-box mt-1 obs-overflow-container" style={{ flex: '1 1 auto', overflow: 'visible', minHeight: '32mm' }}>
               <span className="data-box-label">Observações e Histórico Institucional</span>
-              <div 
-                ref={obsRef}
-                className="data-box-content text-justify leading-relaxed text-gray-800 transition-all duration-200"
-                style={{ fontSize: '11px', height: '100%', overflow: 'hidden', padding: '2px 0' }}
-              >
-                <div className="mb-2 text-[10.5px] leading-relaxed">
-                  Certificamos que a instituição de ensino teológico supracitada foi submetida ao processo de avaliação e credenciamento perante o Conselho de Educação Cristã (CONEC), órgão estatutário da COMIEADEPA. Diante da conformidade técnica, pedagógica e documental apresentada, esta credencial é concedida atestando sua regularidade e habilitação para a formação de ministros e promoção da educação cristã.
-                </div>
-                {instituicao.observacoes_internas && (
-                  <div 
-                    className="mt-2 pt-2 border-t border-dashed border-gray-300 font-sans text-[10px]"
-                    dangerouslySetInnerHTML={{ __html: formatObservacoes(instituicao.observacoes_internas) }}
-                  />
-                )}
+              {/* Texto oficial de credenciamento */}
+              <div className="mb-2 text-[10.5px] leading-relaxed text-justify text-gray-800">
+                Certificamos que a instituição de ensino teológico supracitada foi submetida ao processo de avaliação e credenciamento perante o Conselho de Educação Cristã (CONEC), órgão estatutário da COMIEADEPA. Diante da conformidade técnica, pedagógica e documental apresentada, esta credencial é concedida atestando sua regularidade e habilitação para a formação de ministros e promoção da educação cristã.
               </div>
+              {/* Grade curricular / Texto oficial da instituição */}
+              {instituicao.observacoes_internas && (
+                <div
+                  ref={obsRef}
+                  className="mt-2 pt-2 border-t border-dashed border-gray-300 font-sans data-box-content"
+                  style={{ fontSize: '11px', lineHeight: '1.4' }}
+                  dangerouslySetInnerHTML={{ __html: formatObservacoes(instituicao.observacoes_internas) }}
+                />
+              )}
             </div>
 
           </div>
         </div>
 
         {/* Rodapé: Local, Data e Assinaturas (Espaço 100% isolado no rodapé) */}
-        <div className="mt-auto mb-6 relative z-10 w-full">
+        <div className="mt-auto mb-6 relative z-10 w-full obs-footer">
           
           {/* Data por Extenso */}
           <div className="text-center font-serif italic text-[13px] mb-6 relative z-10">
