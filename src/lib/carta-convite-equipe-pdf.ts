@@ -229,18 +229,24 @@ export async function gerarCartaConviteEquipePdf(dados: DadosCartaConviteEquipe)
   currentY += splitVersiculo.length * 4.8 + 8;
 
   // ── 8. IDENTIFICAÇÃO INSTITUCIONAL CENTRALIZADA ─────────────────────────
-  currentY += 16;
+  currentY += 14;
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10.5);
+  doc.setFontSize(10);
   doc.setTextColor(...NAVY_COLOR);
-  doc.text('COMISSÃO DE TECNOLOGIA', 105, currentY, { align: 'center' });
+  doc.text('CONSELHO DE TECNOLOGIA DA INFORMAÇÃO', 105, currentY, { align: 'center' });
 
   currentY += 4.5;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(...NAVY_COLOR);
-  doc.text('COMIEADEPA', 105, currentY, { align: 'center' });
+  doc.text('PR ASSIS ALCANTARA (REG. 4267)', 105, currentY, { align: 'center' });
+
+  currentY += 4;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...TEXT_MUTED);
+  doc.text('SISTEMA & SUPORTE', 105, currentY, { align: 'center' });
 
   // ── 9. RODAPÉ INSTITUCIONAL ──────────────────────────────────────────────
   doc.setDrawColor(...BORDER_COLOR);
