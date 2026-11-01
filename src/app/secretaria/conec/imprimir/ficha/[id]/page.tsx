@@ -307,6 +307,11 @@ function FichaContent() {
         };
       });
 
+    // Se o template não possui elementos visuais configurados, usar o layout oficial polido HTML/CSS
+    if (mappedElements.length === 0) {
+      return null;
+    }
+
     return {
       background_url: tData.backgroundUrl || '',
       largura: tData.largura || (tData.orientacao === 'portrait' ? 794 : 1123),
@@ -564,9 +569,16 @@ function FichaContent() {
             </div>
           </div>
 
+          {/* Alerta de credenciamento ausente (visível apenas em tela) */}
+          {!credenciamento && (
+            <div className="print:hidden mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs flex items-center justify-between">
+              <span>⚠️ <strong>Atenção:</strong> Esta instituição ainda não possui um credenciamento registrado. Os campos de registro e vigência estão exibidos como pendentes.</span>
+            </div>
+          )}
+
           {/* Selo Discreto */}
           <div className="absolute top-[26mm] right-[20mm] border-2 border-emerald-600 text-emerald-600 px-3 py-1 text-[9px] font-bold tracking-widest rounded uppercase select-none opacity-80 print:opacity-100 rotate-12 z-20">
-            CREDENCIADO
+            {credenciamento ? 'CREDENCIADO' : 'PENDENTE'}
           </div>
 
           {/* Grid de Campos em Caixas com Bordas Pretas */}

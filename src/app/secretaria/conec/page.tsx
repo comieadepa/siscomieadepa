@@ -639,25 +639,30 @@ function ModalPrintSelection({ type, templates, onConfirm, onClose }: ModalPrint
             Escolha abaixo o modelo visual de documento que deseja utilizar para gerar o(a) {type === 'termo' ? 'Termo de Credenciamento A4' : 'Certificado Oficial'}.
           </p>
           <div className="space-y-2">
-            {/* Mostrar opção padrão apenas se não houver modelos customizados */}
-            {templates.length === 0 && (
-              <label className="flex items-center gap-3 p-3 rounded-xl border border-emerald-500 bg-emerald-50/20 hover:bg-emerald-50/30 transition cursor-pointer">
-                <input
-                  type="radio"
-                  name="print-template"
-                  value="default"
-                  checked={selectedId === 'default'}
-                  onChange={() => setSelectedId('default')}
-                  className="text-emerald-600 focus:ring-emerald-500 animate-none"
-                />
-                <div className="flex-1">
-                  <span className="block text-xs font-bold text-gray-800">Modelo Padrão do Sistema</span>
-                  <span className="block text-[10px] text-emerald-700 font-medium">Layout oficial polido do CONEC</span>
-                </div>
-              </label>
-            )}
+            {/* Opção padrão do sistema: layout oficial polido HTML/CSS */}
+            <label className={`flex items-center gap-3 p-3 rounded-xl border transition cursor-pointer ${
+              selectedId === 'default'
+                ? 'border-emerald-500 bg-emerald-50/20'
+                : 'border-gray-200 hover:bg-gray-50'
+            }`}>
+              <input
+                type="radio"
+                name="print-template"
+                value="default"
+                checked={selectedId === 'default'}
+                onChange={() => setSelectedId('default')}
+                className="text-emerald-600 focus:ring-emerald-500 animate-none"
+              />
+              <div className="flex-1">
+                <span className="block text-xs font-bold text-gray-800">Modelo Padrão do Sistema</span>
+                <span className="block text-[10px] text-emerald-700 font-medium">Layout oficial polido do CONEC (Recomendado)</span>
+              </div>
+            </label>
 
-            {templates.map((t) => (
+            {templates.filter((t: any) => {
+              const el = t.template_data?.elementos || t.elementos;
+              return Array.isArray(el) ? el.length > 0 : Boolean(el);
+            }).map((t) => (
               <label
                 key={t.template_key}
                 className={`flex items-center gap-3 p-3 rounded-xl border transition cursor-pointer ${
