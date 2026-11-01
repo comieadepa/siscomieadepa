@@ -521,10 +521,10 @@ function FichaContent() {
         }
 
         .doc-title {
-          font-size: 17px;
-          font-family: 'Times New Roman', Times, serif;
-          font-weight: bold;
-          letter-spacing: 1.5px;
+          font-size: 16.5px;
+          font-family: Arial, Helvetica, sans-serif;
+          font-weight: 900;
+          letter-spacing: 1px;
           text-transform: uppercase;
           border-bottom: 3px double #000000;
           display: inline-block;
@@ -573,7 +573,7 @@ function FichaContent() {
 
           {/* Título do Documento e Registro em Destaque */}
           <div className="doc-title-container flex flex-col items-center mb-2">
-            <h2 className="doc-title text-[15px]">Credenciamento de Instituição</h2>
+            <h2 className="doc-title font-black">Credenciamento de Instituição</h2>
             <div className="mt-1.5 text-xs font-bold text-gray-800 tracking-wider">
               REGISTRO CONEC Nº <span className="text-sm text-black underline decoration-2 font-mono font-bold">{credenciamento?.numero_registro || 'PENDENTE'}</span>
             </div>
@@ -675,11 +675,11 @@ function FichaContent() {
             
             {/* Bloco Assinatura 1: Secretário */}
             <div className="flex flex-col items-center w-[65mm] text-center">
-              <div className="h-[15mm] flex items-end justify-center mb-1">
+              <div className="h-[15mm] flex items-end justify-center mb-1 overflow-visible">
                 <img 
                   src="/img/pr_assis.png" 
                   alt="Assinatura Pr. Francisco de Assis" 
-                  className="max-h-[14mm] object-contain translate-y-[10px]"
+                  className="max-h-[14mm] object-contain translate-y-[25px]"
                 />
               </div>
               <div className="w-full border-b border-black mb-1" />
@@ -709,11 +709,11 @@ function FichaContent() {
 
             {/* Bloco Assinatura 2: Presidente CONEC */}
             <div className="flex flex-col items-center w-[65mm] text-center">
-              <div className="h-[15mm] flex items-end justify-center mb-1">
+              <div className="h-[15mm] flex items-end justify-center mb-1 overflow-visible">
                 <img 
                   src="/img/pr_jesanias.png" 
                   alt="Assinatura Pr. Jesanias Pereira" 
-                  className="max-h-[14mm] object-contain translate-y-[10px]"
+                  className="max-h-[14mm] object-contain translate-y-[25px]"
                 />
               </div>
               <div className="w-full border-b border-black mb-1" />
