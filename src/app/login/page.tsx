@@ -153,17 +153,6 @@ export default function LoginPage() {
           background-position: center center;
           background-repeat: no-repeat;
           position: relative;
-        }
-        /* Garante o rodapé sempre visível */
-        .login-footer {
-          position: absolute;
-          bottom: 0;
-          left: 0;
-          right: 0;
-          text-align: center;
-          padding: 10px 16px 12px;
-          background: linear-gradient(to top, rgba(0,0,0,0.55) 0%, transparent 100%);
-        }
         .login-card {
           width: 100%;
           max-width: 370px;
@@ -460,16 +449,6 @@ export default function LoginPage() {
             textTransform: 'uppercase',
           }}>
             Conselho de Tecnologia da Informação
-          </p>
-        </div>
-
-        {/* Rodapé da página */}
-        <div className="login-footer">
-          <p style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.85)', fontWeight: 600, marginBottom: '2px' }}>
-            SISCOMIEADEPA &ndash; Sistema Integrado de Gestão Convencional &ndash; Ver 1.0
-          </p>
-          <p style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,0.65)' }}>
-            Desenvolvido por: Alcântara Sistemas LTDA
           </p>
         </div>
       </div>
