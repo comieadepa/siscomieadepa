@@ -377,8 +377,6 @@ export default function LoginPage() {
             className="login-logo"
           />
 
-          <p className="login-subtitle">Sistema Integrado de Gestão Convencional</p>
-
           <h2 className="login-title">ACESSO AO SISTEMA</h2>
 
           <form onSubmit={handleSubmit} style={{ width: '100%' }}>
