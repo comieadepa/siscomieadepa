@@ -17,9 +17,13 @@ function authorize(request: NextRequest): boolean {
   }
   const authHeader = request.headers.get('authorization');
   if (authHeader) {
-    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+    const token = authHeader.replace('Bearer ', '').trim();
     if (token === CRON_SECRET) return true;
   }
+  const { searchParams } = new URL(request.url);
+  const secretParam = searchParams.get('secret');
+  if (secretParam && secretParam === CRON_SECRET) return true;
+
   return false;
 }
 
@@ -35,8 +39,8 @@ async function handle(request: NextRequest) {
   try {
     const supabase = createServerClient();
     
-    // 1. Processa fila de webhook jobs (apenas jobs novos criados a partir do marco de ativação, em lotes de 10)
-    const processedWebhooks = await processPendingWebhookJobs(supabase, { limit: 10 });
+    // 1. Processa fila de webhook jobs (inscrições / pagamentos)
+    const processedWebhooks = await processPendingWebhookJobs(supabase);
     
     // 2. Processa avisos diários de validade da credencial ministerial
     const resumoValidade = await processarAvisosValidadeCredenciais(supabase);

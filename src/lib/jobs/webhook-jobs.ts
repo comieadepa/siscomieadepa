@@ -143,35 +143,21 @@ async function enviarEmailComDeduplicacao(
   if (insErr || !newRow) {
     const { data: existing } = await supabase
       .from('evento_notificacoes')
-      .select('id, status, gatilho')
+      .select('id, status')
       .eq('inscricao_id', inscricaoId)
       .eq('tipo', 'email')
-      .in('gatilho', ['pagamento_confirmado', 'manual'])
-      .maybeSingle();
+      .eq('gatilho', 'pagamento_confirmado')
+      .single();
 
     if (!existing) {
       console.error(`[WEBHOOK JOBS] Falha ao registrar notificação para inscrição ${inscricaoId}:`, insErr?.message);
       return;
     }
-    if (existing.status === 'enviado') {
-      console.log(`[WEBHOOK JOBS] E-mail já enviado para inscrição ${inscricaoId} (gatilho: ${existing.gatilho}) — duplicata ignorada.`);
+    if ((existing as { id: string; status: string }).status === 'enviado') {
+      console.log(`[WEBHOOK JOBS] E-mail já enviado para inscrição ${inscricaoId} — duplicata ignorada.`);
       return;
     }
-
-    // Se estava como erro, atualiza atomicamente de volta para 'pendente' para nova tentativa segura
-    await supabase
-      .from('evento_notificacoes')
-      .update({
-        status: 'pendente',
-        erro: null,
-        assunto,
-        mensagem,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', existing.id)
-      .neq('status', 'enviado');
-
-    notifId = existing.id;
+    notifId = (existing as { id: string; status: string }).id;
   } else {
     notifId = newRow.id as string;
   }
@@ -476,12 +462,9 @@ export async function processWebhookJobsByIds(supabase: SupabaseClient, jobIds: 
   return processedCount;
 }
 
-/** Marco fixo de ativação para isolar os 15.864 jobs históricos de junho/outubro sem apagá-los */
-export const WEBHOOK_JOBS_ACTIVATION_EPOCH = '2026-11-02T00:00:00.000Z';
-
 /**
- * Busca e processa jobs pendentes/falhados disponíveis (modo cron / worker)
- * Processa estritamente jobs criados a partir do marco de ativação para não liberar jobs antigos.
+ * Busca e processa até 20 jobs pendentes/falhados disponíveis (modo cron / recuperação)
+ * Suporta filtro opcional por IDs ou entidade.
  */
 export async function processPendingWebhookJobs(supabase: SupabaseClient, options?: { limit?: number; onlyJobIds?: string[] }): Promise<number> {
   if (options?.onlyJobIds && options.onlyJobIds.length > 0) {
@@ -489,14 +472,13 @@ export async function processPendingWebhookJobs(supabase: SupabaseClient, option
   }
 
   const lockId = Math.random().toString(36).substring(7);
-  const maxJobs = options?.limit ?? 10;
+  const maxJobs = options?.limit ?? 20;
 
-  // 1. Busca jobs disponíveis criados ESTRITAMENTE a partir do marco de ativação
+  // 1. Busca jobs disponíveis
   const { data: jobsToLock, error: selectErr } = await supabase
     .from('webhook_jobs')
     .select('id, status, attempts')
     .in('status', ['pending', 'failed'])
-    .gte('created_at', WEBHOOK_JOBS_ACTIVATION_EPOCH)
     .lte('available_at', new Date().toISOString())
     .order('available_at', { ascending: true })
     .limit(maxJobs);

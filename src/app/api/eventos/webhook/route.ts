@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { logDB } from '@/lib/audit';
-import { enqueueWebhookJobs } from '@/lib/jobs/webhook-jobs';
+import { enqueueWebhookJobs, processPendingWebhookJobs } from '@/lib/jobs/webhook-jobs';
+import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -121,25 +122,16 @@ export async function POST(request: NextRequest) {
           acao: 'erro_critico',
           modulo: 'eventos',
           entidade: 'webhook',
-          descricao: `Cobrança de complemento recebida mas inscrição não foi encontrada: ${inscricaoId}`,
+          descricao: 'Cobrança de complemento recebida mas inscrição não foi encontrada: ' + inscricaoId,
           status: 'aviso',
           detalhes: { event, eventId, asaasId, inscricaoId, extRef },
         });
-        // Retorna HTTP 200 para confirmar recebimento sem bloquear fila do Asaas, mas sem dar baixa indevida
+        // Retorna HTTP 200 para confirmar recebimento e não pausar a fila do Asaas (divergência definitiva de negócio)
         return NextResponse.json({ received: true, action: 'ignored_not_found', inscricaoId });
       }
 
-      // Idempotência com garantia de jobs enfileirados
+      // Idempotência
       if (inscricao.status_pagamento === 'pago' && novoStatus !== 'cancelado') {
-        try {
-          await enqueueWebhookJobs(supabase, [
-            { job_type: 'ALLOCATE_ACCOMMODATION', entity_type: 'inscricao', entity_id: inscricaoId, external_event_id: eventId, external_payment_id: asaasId },
-            { job_type: 'SEND_CONFIRMATION_EMAIL', entity_type: 'inscricao', entity_id: inscricaoId, external_event_id: eventId, external_payment_id: asaasId },
-            { job_type: 'REGISTER_MINISTERIAL_HISTORY', entity_type: 'inscricao', entity_id: inscricaoId, external_event_id: eventId, external_payment_id: asaasId }
-          ]);
-        } catch (retryJobErr: any) {
-          console.error(`[EVENTOS WEBHOOK] Erro ao garantir jobs na entrega idempotente do complemento (${inscricaoId}):`, retryJobErr.message);
-        }
         console.log('[EVENTOS WEBHOOK] Inscrição do complemento já está paga:', inscricaoId);
         console.timeEnd("ASAAS_WEBHOOK_TOTAL");
         return NextResponse.json({ received: true, action: 'already_paid', inscricaoId });
@@ -180,8 +172,14 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: updErr.message }, { status: 500 });
       }
 
-      // Enfileira jobs de pós-baixa (autoalocação, e-mail e histórico) na fila persistente durável
+      // Dispara autoalocação e jobs de confirmação se pago
       if (novoStatus === 'pago') {
+        try {
+          await alocarLeitoParaInscricao(supabase, inscricaoId);
+        } catch (alocErr: any) {
+          console.error(`[EVENTOS WEBHOOK] Erro na autoalocação imediata para inscrição complementar ${inscricaoId}:`, alocErr.message);
+        }
+
         try {
           await enqueueWebhookJobs(supabase, [
             { job_type: 'ALLOCATE_ACCOMMODATION', entity_type: 'inscricao', entity_id: inscricaoId, external_event_id: eventId, external_payment_id: asaasId },
@@ -189,17 +187,7 @@ export async function POST(request: NextRequest) {
             { job_type: 'REGISTER_MINISTERIAL_HISTORY', entity_type: 'inscricao', entity_id: inscricaoId, external_event_id: eventId, external_payment_id: asaasId }
           ]);
         } catch (jobErr: any) {
-          console.error(`[EVENTOS WEBHOOK] Falha ao enfileirar jobs do complemento da inscrição ${inscricaoId}:`, jobErr.message);
-          void logDB({
-            acao: 'erro_critico',
-            modulo: 'eventos',
-            entidade: 'webhook',
-            descricao: `Falha ao enfileirar jobs do complemento da inscrição ${inscricaoId}: ${jobErr.message}`,
-            status: 'erro',
-            detalhes: { event, eventId, asaasId, inscricaoId }
-          });
-          // Não retorna 200 se a persistência dos jobs pós-baixa falhar; permite retry do Asaas
-          return NextResponse.json({ error: 'Falha ao registrar jobs pós-baixa do complemento' }, { status: 500 });
+          console.error(`[EVENTOS WEBHOOK] ERRO CRÍTICO: Falha ao enfileirar jobs do complemento da inscrição ${inscricaoId}:`, jobErr.message);
         }
       }
 
@@ -226,27 +214,6 @@ export async function POST(request: NextRequest) {
       }
 
       if (loteCurrent && loteCurrent.status_pagamento === novoStatus && novoStatus !== 'cancelado') {
-        if (novoStatus === 'pago') {
-          try {
-            const { data: loteIns } = await supabase
-              .from('evento_inscricoes')
-              .select('id')
-              .eq('lote_id', loteId);
-
-            if (loteIns && loteIns.length > 0) {
-              const jobs = loteIns.map((li) => ({
-                job_type: 'ALLOCATE_ACCOMMODATION',
-                entity_type: 'inscricao',
-                entity_id: li.id,
-                external_event_id: eventId,
-                external_payment_id: asaasId,
-              }));
-              await enqueueWebhookJobs(supabase, jobs);
-            }
-          } catch (retryLoteErr: any) {
-            console.error(`[EVENTOS WEBHOOK] Erro ao garantir jobs de lote idempotente (${loteId}):`, retryLoteErr.message);
-          }
-        }
         console.log('[EVENTOS WEBHOOK] Lote já está com status correto (idempotência):', loteId, novoStatus);
         console.timeEnd("ASAAS_WEBHOOK_TOTAL");
         return NextResponse.json({ received: true, action: 'already_processed', loteId });
@@ -285,8 +252,20 @@ export async function POST(request: NextRequest) {
             );
           }
           try {
-            await enqueueWebhookJobs(supabase, jobs);
+            const enqueuedIds = await enqueueWebhookJobs(supabase, jobs);
             console.log(`[EVENTOS WEBHOOK] Enfileirados ${jobs.length} jobs para o lote ${loteId}`);
+
+            // Aciona processamento assíncrono imediato pós-resposta sem bloquear o Asaas
+            if (enqueuedIds && enqueuedIds.length > 0) {
+              after(async () => {
+                try {
+                  const asyncClient = createServerClient();
+                  await processPendingWebhookJobs(asyncClient, { onlyJobIds: enqueuedIds });
+                } catch (procErr: any) {
+                  console.error('[EVENTOS WEBHOOK] Erro no processamento imediato pós-lote:', procErr?.message);
+                }
+              });
+            }
           } catch (jobErr: any) {
             console.error(`[EVENTOS WEBHOOK] ERRO CRÍTICO: Falha ao enfileirar jobs do lote ${loteId}:`, jobErr.message);
             void logDB({
@@ -297,8 +276,6 @@ export async function POST(request: NextRequest) {
               status: 'erro',
               detalhes: { event, eventId, asaasId, loteId }
             });
-            // Não retorna 200 se a persistência dos jobs do lote falhar; permite retry do Asaas
-            return NextResponse.json({ error: 'Falha ao registrar jobs do lote pago' }, { status: 500 });
           }
         }
       }
@@ -350,19 +327,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true, action: 'not_found_in_eventos' });
     }
 
-    // 5. Idempotência com garantia de jobs enfileirados
-    // Se a inscrição já estiver 'pago', assegura que os jobs pós-baixa não foram perdidos por falha prévia
+    // 5. Idempotência rápida: não regride status (pago → pendente não acontece)
     if (ins.status_pagamento === 'pago' && novoStatus !== 'cancelado') {
-      try {
-        await enqueueWebhookJobs(supabase, [
-          { job_type: 'ALLOCATE_ACCOMMODATION', entity_type: 'inscricao', entity_id: ins.id, external_event_id: eventId, external_payment_id: asaasId },
-          { job_type: 'SEND_CONFIRMATION_EMAIL', entity_type: 'inscricao', entity_id: ins.id, external_event_id: eventId, external_payment_id: asaasId },
-          { job_type: 'REGISTER_MINISTERIAL_HISTORY', entity_type: 'inscricao', entity_id: ins.id, external_event_id: eventId, external_payment_id: asaasId }
-        ]);
-      } catch (retryJobErr: any) {
-        console.error(`[EVENTOS WEBHOOK] Erro ao garantir jobs na entrega idempotente (${ins.id}):`, retryJobErr.message);
-      }
-      console.log('[EVENTOS WEBHOOK] Inscrição já está paga (idempotência preservada):', ins.id);
+      console.log('[EVENTOS WEBHOOK] Inscrição já está paga (idempotência):', ins.id);
       console.timeEnd("ASAAS_WEBHOOK_TOTAL");
       return NextResponse.json({ received: true, action: 'already_paid', inscricaoId: ins.id });
     }
@@ -400,17 +367,36 @@ export async function POST(request: NextRequest) {
 
     console.log('[EVENTOS WEBHOOK] Inscrição atualizada:', ins.id, '→', novoStatus);
 
-    // Enfileira jobs pós-baixa (autoalocação, e-mail e histórico) na fila persistente durável
+    // Enfileira jobs pós-baixa se pago
     if (novoStatus === 'pago') {
+      // Garantir chamada síncrona/imediata da autoalocação
       try {
-        await enqueueWebhookJobs(supabase, [
+        await alocarLeitoParaInscricao(supabase, ins.id);
+      } catch (alocErr: any) {
+        console.error(`[EVENTOS WEBHOOK] Erro na autoalocação imediata para inscrição ${ins.id}:`, alocErr.message);
+      }
+
+      try {
+        const enqueuedIds = await enqueueWebhookJobs(supabase, [
           { job_type: 'ALLOCATE_ACCOMMODATION', entity_type: 'inscricao', entity_id: ins.id, external_event_id: eventId, external_payment_id: asaasId },
           { job_type: 'SEND_CONFIRMATION_EMAIL', entity_type: 'inscricao', entity_id: ins.id, external_event_id: eventId, external_payment_id: asaasId },
           { job_type: 'REGISTER_MINISTERIAL_HISTORY', entity_type: 'inscricao', entity_id: ins.id, external_event_id: eventId, external_payment_id: asaasId }
         ]);
         console.log(`[EVENTOS WEBHOOK] Enfileirados jobs pós-baixa para inscrição ${ins.id}`);
+
+        // Aciona processamento assíncrono imediato pós-resposta sem bloquear o Asaas
+        if (enqueuedIds && enqueuedIds.length > 0) {
+          after(async () => {
+            try {
+              const asyncClient = createServerClient();
+              await processPendingWebhookJobs(asyncClient, { onlyJobIds: enqueuedIds });
+            } catch (procErr: any) {
+              console.error('[EVENTOS WEBHOOK] Erro no processamento imediato pós-inscrição:', procErr?.message);
+            }
+          });
+        }
       } catch (jobErr: any) {
-        console.error(`[EVENTOS WEBHOOK] Falha ao enfileirar jobs da inscrição ${ins.id}:`, jobErr.message);
+        console.error(`[EVENTOS WEBHOOK] ERRO CRÍTICO: Falha ao enfileirar jobs da inscrição ${ins.id}:`, jobErr.message);
         void logDB({
           acao: 'erro_critico',
           modulo: 'eventos',
@@ -419,8 +405,6 @@ export async function POST(request: NextRequest) {
           status: 'erro',
           detalhes: { event, eventId, asaasId, inscricaoId: ins.id }
         });
-        // Não retorna 200 se a persistência dos jobs falhar; permite retry do Asaas
-        return NextResponse.json({ error: 'Falha ao registrar jobs da inscrição paga' }, { status: 500 });
       }
     }
 
