@@ -515,20 +515,24 @@ function FichaContent() {
 
         .doc-title-container {
           text-align: center;
-          margin: 3mm 0 2.5mm 0;
+          width: 100%;
+          margin: 4mm 0 3mm 0;
           position: relative;
           z-index: 10;
         }
 
         .doc-title {
-          font-size: 16px;
+          font-size: 18px;
           font-family: 'Times New Roman', Times, serif;
-          font-weight: bold;
-          letter-spacing: 1.2px;
+          font-weight: 700;
+          letter-spacing: 1.5px;
           text-transform: uppercase;
-          border-bottom: 2.5px double #000000;
-          display: inline-block;
-          padding-bottom: 1.5px;
+          display: block;
+          text-align: center;
+          width: 100%;
+          padding: 0;
+          margin: 0;
+          color: #000000;
         }
       `}</style>
 
@@ -540,7 +544,7 @@ function FichaContent() {
           validationToken={token}
         />
       ) : (
-        <div className="print-container print-page relative flex flex-col">
+        <div className="print-container print-page relative flex flex-col justify-between">
         
         {/* Marca d'água de Fundo */}
         <div className="watermark" />
@@ -551,7 +555,7 @@ function FichaContent() {
         </div>
 
         {/* Conteúdo Principal Superior */}
-        <div className="flex-1 flex flex-col justify-between">
+        <div className="flex-grow flex flex-col">
           {/* Cabeçalho Oficial */}
           <div className="flex items-center justify-between border-b-2 border-black pb-2 mb-2 relative z-10">
             <img 
@@ -574,10 +578,10 @@ function FichaContent() {
             />
           </div>
 
-          {/* Título do Documento e Registro em Destaque */}
-          <div className="doc-title-container flex flex-col items-center mb-3">
+          {/* Título do Documento e Registro em Destaque - Perfeitamente centralizado na largura útil */}
+          <div className="doc-title-container flex flex-col items-center justify-center mb-3 w-full">
             <h2 className="doc-title">Termo de Credenciamento</h2>
-            <div className="mt-1 text-[11px] font-bold text-gray-800 tracking-wider">
+            <div className="mt-1 text-[11px] font-bold text-gray-800 tracking-wider text-center">
               REGISTRO CONEC Nº <span className="text-xs text-black underline decoration-2 font-mono font-bold">{credenciamento?.numero_registro || 'PENDENTE'}</span>
             </div>
           </div>
@@ -594,11 +598,11 @@ function FichaContent() {
             {credenciamento ? 'CREDENCIADO' : 'PENDENTE'}
           </div>
 
-          {/* Grid de Campos em Caixas com Bordas Pretas - distribuídas verticalmente de forma harmoniosa */}
-          <div className="flex-1 flex flex-col justify-between my-2">
+          {/* Bloco de Identificação: Espaçamento reduzido em ~50% entre os quadros */}
+          <div className="flex flex-col gap-1.5 mt-1">
             
             {/* Campo: NOME */}
-            <div className="data-box">
+            <div className="data-box !mb-0">
               <span className="data-box-label">Nome da Instituição</span>
               <div className="data-box-content font-bold uppercase">
                 {instituicao.nome_instituicao}
@@ -606,7 +610,7 @@ function FichaContent() {
             </div>
 
             {/* Campo: REPRESENTANTE */}
-            <div className="data-box">
+            <div className="data-box !mb-0">
               <span className="data-box-label">Representante Legal / Diretor</span>
               <div className="data-box-content">
                 <span className="font-semibold uppercase">{instituicao.nome_representante}</span>
@@ -617,7 +621,7 @@ function FichaContent() {
             </div>
 
             {/* Campo: ENDEREÇO */}
-            <div className="data-box">
+            <div className="data-box !mb-0">
               <span className="data-box-label">Endereço Completo</span>
               <div className="data-box-content">
                 {enderecoCompleto}
@@ -644,25 +648,26 @@ function FichaContent() {
               </div>
             </div>
 
-            {/* Bloco: OBSERVAÇÕES – expandido para preencher harmoniosamente a folha */}
-            <div className="observations-data-box !mb-0 obs-overflow-container">
-              <span className="data-box-label">Observações e Histórico Institucional</span>
-              {/* Texto oficial de credenciamento */}
-              <div className="mb-2 text-[10px] leading-relaxed text-justify text-gray-800">
-                Certificamos que a instituição de ensino teológico supracitada foi submetida ao processo de avaliação e credenciamento perante o Conselho de Educação Cristã (CONEC), órgão estatutário da COMIEADEPA. Diante da conformidade técnica, pedagógica e documental apresentada, esta credencial é concedida atestando sua regularidade e habilitação para a formação de ministros e promoção da educação cristã.
-              </div>
-              {/* Grade curricular / Texto oficial da instituição */}
-              {instituicao.observacoes_internas && (
-                <div
-                  ref={obsRef}
-                  className="mt-1.5 pt-1.5 border-t border-dashed border-gray-300 font-sans data-box-content"
-                  style={{ fontSize: '10.5px', lineHeight: '1.4' }}
-                  dangerouslySetInnerHTML={{ __html: formatObservacoes(instituicao.observacoes_internas) }}
-                />
-              )}
-            </div>
-
           </div>
+
+          {/* Bloco: OBSERVAÇÕES E HISTÓRICO INSTITUCIONAL – 100% PRESERVADO */}
+          <div className="observations-data-box mt-3 obs-overflow-container">
+            <span className="data-box-label">Observações e Histórico Institucional</span>
+            {/* Texto oficial de credenciamento */}
+            <div className="mb-2 text-[10px] leading-relaxed text-justify text-gray-800">
+              Certificamos que a instituição de ensino teológico supracitada foi submetida ao processo de avaliação e credenciamento perante o Conselho de Educação Cristã (CONEC), órgão estatutário da COMIEADEPA. Diante da conformidade técnica, pedagógica e documental apresentada, esta credencial é concedida atestando sua regularidade e habilitação para a formação de ministros e promoção da educação cristã.
+            </div>
+            {/* Grade curricular / Texto oficial da instituição */}
+            {instituicao.observacoes_internas && (
+              <div
+                ref={obsRef}
+                className="mt-1.5 pt-1.5 border-t border-dashed border-gray-300 font-sans data-box-content"
+                style={{ fontSize: '10.5px', lineHeight: '1.4' }}
+                dangerouslySetInnerHTML={{ __html: formatObservacoes(instituicao.observacoes_internas) }}
+              />
+            )}
+          </div>
+
         </div>
 
         {/* Rodapé: Local, Data e Assinaturas (Espaço 100% isolado no rodapé) */}
