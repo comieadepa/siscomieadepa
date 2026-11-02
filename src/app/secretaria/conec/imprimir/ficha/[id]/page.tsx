@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
 import { getInstituicaoById } from '@/lib/conec-service';
 import { formatCnpj } from '@/lib/mascaras';
-import { Printer, ArrowLeft } from 'lucide-react';
+import { Printer, ArrowLeft, Lock } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import TemplateStudioRenderer from '@/components/TemplateStudioRenderer';
 
@@ -14,6 +14,7 @@ function FichaContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const templateId = searchParams?.get('templateId') || '';
+  const credIdParam = searchParams?.get('credId') || '';
   const id = params.id as string;
   const obsRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
@@ -31,49 +32,58 @@ function FichaContent() {
         const instData = await getInstituicaoById(supabase, id);
         setInstituicao(instData);
 
-        // Buscar o credenciamento mais recente
-        const { data: creds, error: credError } = await supabase
+        // Buscar credenciamento específico (se informado credId) ou listar os do cadastro
+        let credQuery = supabase
           .from('conec_credenciamentos')
           .select('*')
           .eq('instituicao_id', id)
-          .is('deleted_at', null)
-          .order('ano_referencia', { ascending: false });
+          .is('deleted_at', null);
+
+        if (credIdParam) {
+          credQuery = credQuery.eq('id', credIdParam);
+        } else {
+          credQuery = credQuery.order('ano_referencia', { ascending: false });
+        }
+
+        const { data: creds, error: credError } = await credQuery;
 
         if (!credError && creds && creds.length > 0) {
           const cred = creds[0];
           setCredenciamento(cred);
 
-          // Buscar ou criar token de validação para a ficha/termo
-          const { data: existingToken } = await supabase
-            .from('document_tokens')
-            .select('token')
-            .eq('reference_id', cred.id)
-            .eq('document_type', 'conec_credenciamento')
-            .maybeSingle();
-
-          if (existingToken?.token) {
-            setToken(existingToken.token);
-          } else {
-            const { data: newToken, error: createError } = await supabase
+          // Buscar ou criar token de validação apenas se o credenciamento estiver quitado e ativo
+          if (cred.status_pagamento === 'pago' && cred.status_credenciamento === 'ativo') {
+            const { data: existingToken } = await supabase
               .from('document_tokens')
-              .insert({
-                template_id: '12345678-1234-1234-1234-123456789abc',
-                document_type: 'conec_credenciamento',
-                reference_id: cred.id,
-                dados_publicos: {
-                  nome_instituicao: instData.nome_instituicao,
-                  cnpj: instData.cnpj,
-                  numero_registro: cred.numero_registro,
-                  data_inicio: cred.data_inicio,
-                  data_fim: cred.data_fim,
-                  status: cred.status_credenciamento,
-                },
-              })
               .select('token')
-              .single();
+              .eq('reference_id', cred.id)
+              .eq('document_type', 'conec_credenciamento')
+              .maybeSingle();
 
-            if (!createError && newToken) {
-              setToken(newToken.token);
+            if (existingToken?.token) {
+              setToken(existingToken.token);
+            } else {
+              const { data: newToken, error: createError } = await supabase
+                .from('document_tokens')
+                .insert({
+                  template_id: '12345678-1234-1234-1234-123456789abc',
+                  document_type: 'conec_credenciamento',
+                  reference_id: cred.id,
+                  dados_publicos: {
+                    nome_instituicao: instData.nome_instituicao,
+                    cnpj: instData.cnpj,
+                    numero_registro: cred.numero_registro,
+                    data_inicio: cred.data_inicio,
+                    data_fim: cred.data_fim,
+                    status: cred.status_credenciamento,
+                  },
+                })
+                .select('token')
+                .single();
+
+              if (!createError && newToken) {
+                setToken(newToken.token);
+              }
             }
           }
         }
@@ -118,6 +128,11 @@ function FichaContent() {
     }
   }, [instituicao, loading]);
 
+  // Regra de Bloqueio Obrigatória: documento liberado apenas com pagamento confirmado e status ativo
+  const isLocked = !credenciamento ||
+                   credenciamento.status_pagamento !== 'pago' ||
+                   credenciamento.status_credenciamento !== 'ativo';
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -126,15 +141,20 @@ function FichaContent() {
     );
   }
 
-  if (error || !instituicao) {
+  if (error || !instituicao || isLocked) {
+    const errorMsg = error || (isLocked
+      ? 'Termo de Credenciamento disponível somente após a confirmação do pagamento da taxa anual e homologação do credenciamento.'
+      : 'Instituição não encontrada.');
+
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
-        <div className="bg-red-50 border border-red-200 text-red-700 p-6 rounded-lg max-w-md text-center">
-          <h2 className="text-lg font-bold mb-2">Erro</h2>
-          <p>{error || 'Instituição não encontrada.'}</p>
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 p-8 rounded-2xl max-w-md w-full text-center shadow-xl">
+          <Lock className="w-12 h-12 text-amber-600 mx-auto mb-4" />
+          <h2 className="text-xl font-bold mb-3 text-amber-950">Acesso Bloqueado</h2>
+          <p className="text-sm text-amber-800 leading-relaxed mb-6">{errorMsg}</p>
           <button
             onClick={() => router.back()}
-            className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold transition"
+            className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-sm font-semibold transition shadow-sm"
           >
             Voltar
           </button>

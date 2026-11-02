@@ -20,7 +20,7 @@ const supabaseAdmin = new Proxy({} as any, {
 });
 
 // Tipos de status disponíveis
-export const ATTENDANCE_STATUSES = {
+const ATTENDANCE_STATUSES = {
   NOT_CONTACTED: 'not_contacted',
   IN_PROGRESS: 'in_progress',
   BUDGET_SENT: 'budget_sent',
@@ -29,15 +29,7 @@ export const ATTENDANCE_STATUSES = {
   FINALIZED_NEGATIVE: 'finalized_negative',
 } as const;
 
-// Labels em português
-export const STATUS_LABELS: Record<string, string> = {
-  not_contacted: '❌ Não Atendido',
-  in_progress: '📞 Em Atendimento',
-  budget_sent: '💰 Orçamento Enviado',
-  contract_generating: '📄 Gerando Contrato',
-  finalized_positive: '✅ Finalizado - Positivo',
-  finalized_negative: '❌ Finalizado - Negativo',
-};
+// GET /api/v1/admin/attendance - Listar todos os atendimentos
 
 // GET /api/v1/admin/attendance - Listar todos os atendimentos
 export async function GET(request: NextRequest) {

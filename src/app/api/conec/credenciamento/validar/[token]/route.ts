@@ -36,6 +36,15 @@ export async function GET(
       return NextResponse.json({ error: 'Credenciamento não pôde ser validado.' }, { status: 404 });
     }
 
+    // Regra de Integridade: se o credenciamento não foi quitado ou não está ativo, a validação pública rejeita
+    if (cred.status_pagamento !== 'pago' || cred.status_credenciamento !== 'ativo') {
+      return NextResponse.json({
+        error: 'Credenciamento pendente de regularização financeira ou inativo.',
+        status: cred.status_credenciamento || 'aguardando_pagamento',
+        status_pagamento: cred.status_pagamento || 'pendente',
+      }, { status: 403 });
+    }
+
     // 3. Buscar a instituição
     const { data: inst, error: instError } = await supabase
       .from('conec_instituicoes')
@@ -49,6 +58,7 @@ export async function GET(
     }
 
     return NextResponse.json({
+      valid: true,
       nome_instituicao: inst.nome_instituicao,
       cnpj: inst.cnpj,
       nome_representante: inst.nome_representante,
@@ -58,6 +68,7 @@ export async function GET(
       data_emissao: cred.data_emissao || cred.data_inicio,
       data_fim: cred.data_fim,
       status: cred.status_credenciamento,
+      status_pagamento: cred.status_pagamento,
     });
   } catch (err: any) {
     console.error(err);

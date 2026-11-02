@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createServerClientFromCookies } from '@/lib/supabase-server';
+import { createServerClient } from '@/lib/supabase-server';
+import { requireRole } from '@/lib/auth/require-auth';
+import { logDB } from '@/lib/audit';
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. Validar autenticação
-    const userClient = await createServerClientFromCookies();
-    const { data: { user }, error: authError } = await userClient.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+    // 1. Validar autenticação e restringir a operadores financeiros autorizados
+    const auth = await requireRole(request, ['super', 'administrador', 'financeiro']);
+    if (!auth.ok) {
+      return auth.response;
     }
+    const { user, userId, role } = auth.ctx;
 
     // 2. Extrair dados
     const {
@@ -35,7 +37,7 @@ export async function POST(request: NextRequest) {
     // 3. Buscar credenciamento
     const { data: cred, error: credError } = await supabase
       .from('conec_credenciamentos')
-      .select('*')
+      .select('*, conec_instituicoes(nome_instituicao)')
       .eq('id', credenciamentoId)
       .single();
 
@@ -76,6 +78,31 @@ export async function POST(request: NextRequest) {
     if (updateError || !updatedCred) {
       throw updateError || new Error('Erro ao salvar atualização no banco de dados.');
     }
+
+    // 6. Registro de Auditoria obrigatório
+    void logDB({
+      userId,
+      userEmail: user?.email,
+      acao: 'baixa_financeira',
+      modulo: 'financeiro',
+      entidade: 'conec_credenciamentos',
+      entidadeId: credenciamentoId,
+      descricao: `Baixa manual confirmada pelo operador [${role}]: ${cred.numero_registro || credenciamentoId} - R$ ${cred.valor}`,
+      status: 'sucesso',
+      detalhes: {
+        credenciamentoId,
+        instituicaoId: cred.instituicao_id,
+        nomeInstituicao: cred.conec_instituicoes?.nome_instituicao,
+        anoReferencia: cred.ano_referencia,
+        formaPagamento: forma_pagamento,
+        dataPagamento: data_pagamento,
+        valor: cred.valor,
+        operadorId: userId,
+        operadorEmail: user?.email,
+        operadorRole: role,
+        observacoes: observacoes_financeiras || null,
+      },
+    });
 
     return NextResponse.json({
       message: 'Pagamento confirmado com sucesso!',

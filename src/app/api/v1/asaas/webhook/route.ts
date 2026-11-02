@@ -4,8 +4,6 @@ import { logDB } from '@/lib/audit';
 import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
 import { criarNotificacaoMinistro } from '@/lib/notificacoes-ministro';
 
-const ASAAS_WEBHOOK_TOKEN = process.env.ASAAS_WEBHOOK_TOKEN;
-
 const resolveToken = (request: NextRequest) => {
   const direct = request.headers.get('asaas-access-token') || request.headers.get('access_token');
   if (direct) return direct;
@@ -17,12 +15,13 @@ const resolveToken = (request: NextRequest) => {
 
 export async function POST(request: NextRequest) {
   try {
-    if (!ASAAS_WEBHOOK_TOKEN) {
+    const asaasWebhookToken = process.env.ASAAS_WEBHOOK_TOKEN;
+    if (!asaasWebhookToken) {
       console.error('[ASAAS WEBHOOK] ASAAS_WEBHOOK_TOKEN não configurado — request rejeitado');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const token = resolveToken(request);
-    if (!token || token !== ASAAS_WEBHOOK_TOKEN) {
+    if (!token || token !== asaasWebhookToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -178,6 +177,146 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ received: true });
       }
       return NextResponse.json({ received: true });
+    }
+
+    // ── Credenciamento CONEC (Anuidade Instituição) ──────────────────────────
+    const isConecEvent = externalRef.startsWith('conec_credenciamento:') || externalRef.startsWith('conec:');
+    
+    // Suporte tanto ao formato novo com externalReference quanto à busca por asaas_payment_id existente
+    let conecCredQuery = supabase.from('conec_credenciamentos').select('*, conec_instituicoes(nome_instituicao)').is('deleted_at', null);
+
+    if (isConecEvent) {
+      const credId = externalRef.replace(/^conec_credenciamento:|^conec:/, '');
+      conecCredQuery = conecCredQuery.eq('id', credId);
+    } else {
+      conecCredQuery = conecCredQuery.eq('asaas_payment_id', asaasPaymentId);
+    }
+
+    const { data: targetCred, error: conecLookupErr } = await conecCredQuery.maybeSingle();
+
+    if (!conecLookupErr && targetCred) {
+      // 1. Validação de Vínculo do ID da Cobrança: se o credenciamento já tiver cobrança vinculada, deve bater exatamente com o payment ID recebido
+      if (targetCred.asaas_payment_id && targetCred.asaas_payment_id !== asaasPaymentId) {
+        console.error(`[ASAAS WEBHOOK CONEC] Inconsistência de Payment ID para credenciamento ${targetCred.id}: cadastrado ${targetCred.asaas_payment_id}, recebido ${asaasPaymentId}`);
+        void logDB({
+          acao: 'erro_critico',
+          modulo: 'financeiro',
+          entidade: 'conec_credenciamentos',
+          entidadeId: targetCred.id,
+          descricao: `Tentativa de quitação com Payment ID divergente: esperado ${targetCred.asaas_payment_id}, recebido ${asaasPaymentId}`,
+          status: 'erro',
+          detalhes: { asaasPaymentId, cadastrado: targetCred.asaas_payment_id, externalRef },
+        });
+        return NextResponse.json({ error: 'Payment ID divergente' }, { status: 400 });
+      }
+
+      const isPaidEvent = event === 'PAYMENT_CONFIRMED' || event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_RECEIVED_IN_CASH';
+      const isOverdueEvent = event === 'PAYMENT_OVERDUE';
+      const isCancelEvent = event === 'PAYMENT_DELETED' || event === 'PAYMENT_CANCELED' || event === 'PAYMENT_REFUNDED';
+
+      if (isPaidEvent) {
+        // 2. Validação estrita do valor efetivamente devido (targetCred.valor ou padrão R$ 800)
+        const valorRecebido = Number(payment?.value || 0);
+        const valorEsperado = Number(targetCred.valor || 800.00);
+
+        // Não aceita pagamentos com valor inferior ou divergência superior a centavos da taxa devida
+        const diferenca = Math.abs(valorRecebido - valorEsperado);
+        if (valorRecebido <= 0 || diferenca > 0.05) {
+          console.error(`[ASAAS WEBHOOK CONEC] Valor divergente do devido para credenciamento ${targetCred.id}: Recebido R$ ${valorRecebido}, Devido R$ ${valorEsperado}`);
+          void logDB({
+            acao: 'erro_critico',
+            modulo: 'financeiro',
+            entidade: 'conec_credenciamentos',
+            entidadeId: targetCred.id,
+            descricao: `Valor divergente do montante devido no pagamento CONEC: recebido R$ ${valorRecebido}, devido R$ ${valorEsperado}`,
+            status: 'erro',
+            detalhes: { asaasPaymentId, externalRef, valorRecebido, valorEsperado, diferenca },
+          });
+          return NextResponse.json({ error: 'Valor divergente do devido' }, { status: 422 });
+        }
+
+        // Idempotência: Se já está pago e ativo, não reprocessa nem gera duplicidade
+        if (targetCred.status_pagamento === 'pago' && targetCred.status_credenciamento === 'ativo') {
+          console.log(`[ASAAS WEBHOOK CONEC] Pagamento já confirmado anteriormente para credenciamento ${targetCred.id} (Idempotente).`);
+          return NextResponse.json({ received: true, status: 'already_processed' });
+        }
+
+        const billingType = String(payment?.billingType || 'pix').toLowerCase();
+        const dataPagto = paymentDate || new Date().toISOString();
+
+        const { error: conecUpdateErr } = await supabase
+          .from('conec_credenciamentos')
+          .update({
+            status_pagamento: 'pago',
+            status_credenciamento: 'ativo',
+            data_pagamento: dataPagto,
+            data_emissao: targetCred.data_emissao || new Date().toISOString(),
+            forma_pagamento: billingType,
+            asaas_payment_id: asaasPaymentId,
+            asaas_status: event,
+            observacoes_financeiras: targetCred.observacoes_financeiras 
+              ? `${targetCred.observacoes_financeiras}\n[Webhook Asaas] Pagamento confirmado via ${billingType.toUpperCase()} em ${new Date().toLocaleString('pt-BR')}`
+              : `[Webhook Asaas] Pagamento confirmado via ${billingType.toUpperCase()} em ${new Date().toLocaleString('pt-BR')}`,
+          })
+          .eq('id', targetCred.id)
+          .eq('status_pagamento', 'pendente'); // trava atômica de idempotência
+
+        if (conecUpdateErr) {
+          console.error('[ASAAS WEBHOOK CONEC] Erro ao atualizar credenciamento:', conecUpdateErr.message);
+          return NextResponse.json({ error: conecUpdateErr.message }, { status: 500 });
+        }
+
+        // Registro de auditoria financeira
+        void logDB({
+          acao: 'baixa_financeira',
+          modulo: 'financeiro',
+          entidade: 'conec_credenciamentos',
+          entidadeId: targetCred.id,
+          descricao: `Pagamento CONEC confirmado via Asaas (${billingType.toUpperCase()}): ${targetCred.numero_registro}`,
+          status: 'sucesso',
+          detalhes: {
+            asaasPaymentId,
+            externalRef,
+            instituicaoId: targetCred.instituicao_id,
+            anoReferencia: targetCred.ano_referencia,
+            valor: valorRecebido || valorEsperado,
+            billingType,
+            dataPagamento: dataPagto,
+          },
+        });
+
+        return NextResponse.json({ received: true, updated: targetCred.id });
+      }
+
+      if (isOverdueEvent) {
+        await supabase
+          .from('conec_credenciamentos')
+          .update({
+            asaas_status: 'OVERDUE',
+            observacoes_financeiras: targetCred.observacoes_financeiras
+              ? `${targetCred.observacoes_financeiras}\n[Asaas] Cobrança vencida.`
+              : '[Asaas] Cobrança vencida.',
+          })
+          .eq('id', targetCred.id);
+        return NextResponse.json({ received: true, status: 'overdue' });
+      }
+
+      if (isCancelEvent) {
+        // Se a cobrança for cancelada ou estornada no Asaas
+        if (targetCred.status_pagamento !== 'pago') {
+          await supabase
+            .from('conec_credenciamentos')
+            .update({
+              status_pagamento: 'cancelado',
+              status_credenciamento: 'cancelado',
+              asaas_status: event,
+            })
+            .eq('id', targetCred.id);
+        }
+        return NextResponse.json({ received: true, status: 'cancelled' });
+      }
+
+      return NextResponse.json({ received: true, note: 'event_ignored_for_conec' });
     }
 
     // ── Pagamentos mensalidade ───────────────────────────────────────────────

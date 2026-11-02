@@ -52,13 +52,15 @@ function CertificadoContent() {
         }
         setInstituicao(inst);
 
-        // 3. Buscar ou criar token de validação para o certificado
-        const { data: existingToken } = await supabase
-          .from('document_tokens')
-          .select('token')
-          .eq('reference_id', id)
-          .eq('document_type', 'conec_credenciamento')
-          .maybeSingle();
+        // 3. Buscar ou criar token de validação para o certificado (apenas se pago e ativo)
+        const isPaidAndActive = cred.status_pagamento === 'pago' && cred.status_credenciamento === 'ativo';
+        if (isPaidAndActive) {
+          const { data: existingToken } = await supabase
+            .from('document_tokens')
+            .select('token')
+            .eq('reference_id', id)
+            .eq('document_type', 'conec_credenciamento')
+            .maybeSingle();
 
         let currentToken = '';
 
@@ -92,6 +94,7 @@ function CertificadoContent() {
             setToken(currentToken);
           }
         }
+      }
 
         // 4. Buscar o template do visual editor
         const requestedTemplateId = searchParams?.get('templateId') || '';

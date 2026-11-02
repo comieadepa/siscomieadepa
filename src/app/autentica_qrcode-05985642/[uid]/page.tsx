@@ -3,8 +3,6 @@
 import { use, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-export const CREDENCIAL_URL_PREFIX = '/autentica_qrcode-05985642/';
-
 interface EsposaData {
   cadastrada: boolean;
   nome: string;

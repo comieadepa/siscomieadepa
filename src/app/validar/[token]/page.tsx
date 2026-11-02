@@ -44,6 +44,20 @@ export default function PublicValidationPage({ params }: { params: Promise<{ tok
           throw new Error('Token de validação inválido ou não encontrado.');
         }
 
+        // Se for credenciamento CONEC, valida em tempo real se está quitado e ativo no banco
+        if (data.document_type === 'conec_credenciamento' && data.reference_id) {
+          const { data: credLive } = await supabase
+            .from('conec_credenciamentos')
+            .select('status_pagamento, status_credenciamento')
+            .eq('id', data.reference_id)
+            .is('deleted_at', null)
+            .maybeSingle();
+
+          if (!credLive || credLive.status_pagamento !== 'pago' || credLive.status_credenciamento !== 'ativo') {
+            throw new Error('Credenciamento pendente de regularização financeira ou inativo.');
+          }
+        }
+
         setDocToken(data as unknown as DocumentTokenRow);
       } catch (err: any) {
         setError(err.message || 'Erro ao validar documento.');

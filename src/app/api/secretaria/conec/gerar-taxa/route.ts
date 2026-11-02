@@ -77,22 +77,7 @@ export async function POST(request: NextRequest) {
         .eq('id', inst.id);
     }
 
-    // Prazo padrão de 7 dias
-    const d = new Date();
-    d.setDate(d.getDate() + 7);
-    const dueDate = d.toISOString().slice(0, 10);
-
-    // 6. Criar cobrança no ASAAS
-    const description = `Taxa de Credenciamento CONEC ${currentYear} — ${inst.nome_instituicao}`;
-    const payment = await createEventoPayment({
-      customerId,
-      value: 800.00,
-      dueDate,
-      description,
-      externalReference: inst.id,
-    });
-
-    // 7. Determinar ou criar o credenciamento do ano
+    // 6. Determinar ou criar o credenciamento do ano antes de chamar o Asaas
     let credId = existingCred?.id;
 
     if (!credId) {
@@ -125,6 +110,21 @@ export async function POST(request: NextRequest) {
       }
       credId = newCred.id;
     }
+
+    // Prazo padrão de 7 dias
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    const dueDate = d.toISOString().slice(0, 10);
+
+    // 7. Criar cobrança no ASAAS vinculada unicamente ao credenciamento do ano
+    const description = `Taxa de Credenciamento CONEC ${currentYear} — ${inst.nome_instituicao}`;
+    const payment = await createEventoPayment({
+      customerId,
+      value: 800.00,
+      dueDate,
+      description,
+      externalReference: `conec_credenciamento:${credId}`,
+    });
 
     // 8. Tentar salvar todas as informações no credenciamento (com tratamento de fallback se as colunas novas não existirem no banco)
     let updateSuccess = false;
