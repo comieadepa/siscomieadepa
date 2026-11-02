@@ -148,11 +148,12 @@ export default function LoginPage() {
           align-items: center;
           justify-content: center;
           padding: 16px;
-          background-image: url('/img/bg_login.png');
+          background-image: url('/img/bg02.png');
           background-size: cover;
           background-position: center center;
           background-repeat: no-repeat;
           position: relative;
+        }
         .login-card {
           width: 100%;
           max-width: 370px;
