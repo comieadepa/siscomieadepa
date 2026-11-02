@@ -197,7 +197,8 @@ export async function POST(
     return NextResponse.json({ error: 'Erro ao registrar envio.' }, { status: 500 });
   }
 
-  const idempotencyKey = `confirmacao_${inscricaoId}`;
+  // Chave exclusiva da notificação manual persistida, estável para repetição segura da mesma tentativa (evita Resend HTTP 409)
+  const idempotencyKey = 'reenvio_' + notif.id;
 
   const resultado = await sendEmail({
     para: inscricao.email,
