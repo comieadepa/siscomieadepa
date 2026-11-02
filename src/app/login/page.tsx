@@ -148,11 +148,47 @@ export default function LoginPage() {
           align-items: center;
           justify-content: center;
           padding: 16px;
-          background-image: url('/img/bg02.png');
+          background-image: url('/img/bg_06.png');
           background-size: cover;
           background-position: center center;
           background-repeat: no-repeat;
           position: relative;
+        }
+        .login-wrapper {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 48px;
+          width: 100%;
+          max-width: 1100px;
+          z-index: 10;
+        }
+        .login-side-logo-container {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        @keyframes floatUpDown {
+          0% {
+            transform: translateY(0px);
+          }
+          50% {
+            transform: translateY(-14px);
+          }
+          100% {
+            transform: translateY(0px);
+          }
+        }
+        .login-side-logo {
+          width: 380px;
+          max-width: 100%;
+          height: auto;
+          object-fit: contain;
+          filter: drop-shadow(0 15px 30px rgba(0,0,0,0.45));
+          animation: floatUpDown 4.5s ease-in-out infinite;
+          will-change: transform;
         }
         .login-card {
           width: 100%;
@@ -323,7 +359,19 @@ export default function LoginPage() {
           line-height: 1.4;
         }
         /* ── Responsividade ─────────────────────────────────────── */
+        @media (max-width: 900px) {
+          .login-wrapper {
+            flex-direction: column;
+            gap: 24px;
+          }
+          .login-side-logo {
+            width: 240px;
+          }
+        }
         @media (max-width: 480px) {
+          .login-side-logo {
+            width: 180px;
+          }
           .login-card {
             padding: 28px 20px 22px;
             border-radius: 16px;
@@ -340,6 +388,13 @@ export default function LoginPage() {
           .login-root {
             align-items: flex-start;
             padding: 8px 16px 40px;
+          }
+          .login-wrapper {
+            flex-direction: row;
+            gap: 20px;
+          }
+          .login-side-logo {
+            width: 140px;
           }
           .login-card {
             padding: 18px 24px 16px;
@@ -369,8 +424,18 @@ export default function LoginPage() {
           autoClose={3500}
         />
 
-        {/* Card de Login */}
-        <div className="login-card">
+        <div className="login-wrapper">
+          {/* Logo Comemorativa da 126ª AGO ao lado do card */}
+          <div className="login-side-logo-container">
+            <img
+              src="/img/ago26.png"
+              alt="126ª AGO COMIEADEPA"
+              className="login-side-logo"
+            />
+          </div>
+
+          {/* Card de Login */}
+          <div className="login-card">
           {/* Logomarca */}
           <img
             src="/img/logo_login.png"
@@ -449,6 +514,7 @@ export default function LoginPage() {
           }}>
             Conselho de Tecnologia da Informação
           </p>
+        </div>
         </div>
       </div>
     </>
