@@ -431,7 +431,7 @@ export default function LoginPage() {
               />
             </div>
 
-            {/* Lembrar-me + Esqueceu a senha */}
+            {/* Lembrar-me apenas */}
             <div className="login-row">
               <label className="login-remember">
                 <input
@@ -441,13 +441,6 @@ export default function LoginPage() {
                 />
                 Lembrar-me
               </label>
-              <button
-                type="button"
-                className="login-forgot"
-                onClick={() => router.push('/validar-senha')}
-              >
-                Esqueceu a senha?
-              </button>
             </div>
 
             {/* Botão Entrar */}
@@ -456,16 +449,18 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Links do rodapé do card */}
-          <div className="login-links">
-            <button type="button" onClick={() => router.push('/validar-senha')}>
-              Esqueceu a senha?
-            </button>
-            <span>|</span>
-            <button type="button" onClick={() => router.push('/pre-cadastro')}>
-              Criar conta
-            </button>
-          </div>
+          {/* Rodapé institucional do card */}
+          <p style={{
+            marginTop: '18px',
+            fontSize: '0.68rem',
+            fontWeight: 700,
+            letterSpacing: '0.06em',
+            color: '#1e3659',
+            textAlign: 'center',
+            textTransform: 'uppercase',
+          }}>
+            Conselho de Tecnologia da Informação
+          </p>
         </div>
 
         {/* Rodapé da página */}
