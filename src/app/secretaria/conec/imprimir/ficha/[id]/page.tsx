@@ -449,11 +449,11 @@ function FichaContent() {
         .data-box {
           border: 1.2px solid #b89353;
           border-radius: 4px;
-          margin-bottom: 2mm;
+          margin-bottom: 2.5mm;
           position: relative;
           z-index: 10;
           background-color: rgba(255, 255, 255, 0.75);
-          padding: 4px 10px;
+          padding: 5px 12px;
           box-sizing: border-box;
           box-shadow: 0 1px 2px rgba(0,0,0,0.02);
         }
@@ -465,7 +465,7 @@ function FichaContent() {
           position: relative;
           z-index: 10;
           background-color: rgba(255, 255, 255, 0.85);
-          padding: 6px 10px;
+          padding: 8px 12px;
           box-sizing: border-box;
           box-shadow: 0 1px 2px rgba(0,0,0,0.02);
         }
@@ -551,29 +551,32 @@ function FichaContent() {
         </div>
 
         {/* Conteúdo Principal Superior */}
-        <div className="flex-grow flex flex-col justify-start">
+        <div className="flex-1 flex flex-col justify-between">
           {/* Cabeçalho Oficial */}
-          <div className="flex items-center justify-between border-b-2 border-black pb-2 mb-1.5 relative z-10">
+          <div className="flex items-center justify-between border-b-2 border-black pb-2 mb-2 relative z-10">
             <img 
               src="/img/logo_comieadepa.png" 
               alt="Logo COMIEADEPA" 
-              className="w-[20mm] h-[20mm] object-contain"
+              className="w-[20mm] h-[20mm] object-contain flex-shrink-0"
             />
-            <div className="flex-1 text-center px-4">
-              <h1 className="header-title-main text-[14px]">CONSELHO DE EDUCAÇÃO CRISTÃ - CONEC</h1>
-              <p className="header-title-sub text-[8.5px]">COMIEADEPA - CONVENÇÃO DE MINISTROS E IGREJAS EVANGÉLICAS ASSEMBLEIAS DE DEUS NO ESTADO DO PARÁ</p>
-              <p className="header-address text-[7.5px]">Rod. BR-316, Km 08, s/n - Centro, Ananindeua - PA, 67113-970</p>
+            <div className="flex-1 text-center px-3 max-w-[130mm] mx-auto">
+              <h1 className="header-title-main text-[14px]">CONSELHO DE EDUCAÇÃO CRISTÃ — CONEC</h1>
+              <div className="header-title-sub text-[8px] leading-tight mt-1 font-bold">
+                <div>COMIEADEPA — CONVENÇÃO DE MINISTROS E IGREJAS EVANGÉLICAS ASSEMBLEIAS DE DEUS</div>
+                <div>NO ESTADO DO PARÁ</div>
+              </div>
+              <p className="header-address text-[7.5px] mt-1 text-gray-600">Rod. BR-316, Km 08, s/n - Centro, Ananindeua - PA, 67113-970</p>
             </div>
             <img 
               src="/img/logo_conec.png" 
               alt="Logo CONEC" 
-              className="w-[18mm] h-[18mm] object-contain"
+              className="w-[18mm] h-[18mm] object-contain flex-shrink-0"
             />
           </div>
 
           {/* Título do Documento e Registro em Destaque */}
-          <div className="doc-title-container flex flex-col items-center mb-1.5">
-            <h2 className="doc-title">Credenciamento de Instituição</h2>
+          <div className="doc-title-container flex flex-col items-center mb-3">
+            <h2 className="doc-title">Termo de Credenciamento</h2>
             <div className="mt-1 text-[11px] font-bold text-gray-800 tracking-wider">
               REGISTRO CONEC Nº <span className="text-xs text-black underline decoration-2 font-mono font-bold">{credenciamento?.numero_registro || 'PENDENTE'}</span>
             </div>
@@ -591,8 +594,8 @@ function FichaContent() {
             {credenciamento ? 'CREDENCIADO' : 'PENDENTE'}
           </div>
 
-          {/* Grid de Campos em Caixas com Bordas Pretas */}
-          <div className="flex flex-col gap-1.5 mt-2">
+          {/* Grid de Campos em Caixas com Bordas Pretas - distribuídas verticalmente de forma harmoniosa */}
+          <div className="flex-1 flex flex-col justify-between my-2">
             
             {/* Campo: NOME */}
             <div className="data-box">
@@ -623,14 +626,14 @@ function FichaContent() {
 
             {/* Linha Dupla: CNPJ e PERÍODO */}
             <div className="grid grid-cols-2 gap-3">
-              <div className="data-box">
+              <div className="data-box !mb-0">
                 <span className="data-box-label">CNPJ</span>
                 <div className="data-box-content font-semibold">
                   {formatCnpj(instituicao.cnpj)}
                 </div>
               </div>
 
-              <div className="data-box">
+              <div className="data-box !mb-0">
                 <span className="data-box-label">Período de Vigência / Validade</span>
                 <div className="data-box-content font-semibold text-xs flex flex-col gap-0.5">
                   <div><strong>Emissão:</strong> {dataInicioFormatada || '—'}</div>
@@ -641,19 +644,19 @@ function FichaContent() {
               </div>
             </div>
 
-            {/* Bloco: OBSERVAÇÕES – flex-grow dinâmico para preenchimento de página única */}
-            <div className="observations-data-box mt-0.5 obs-overflow-container" style={{ flex: '1 1 auto', overflow: 'hidden' }}>
+            {/* Bloco: OBSERVAÇÕES – expandido para preencher harmoniosamente a folha */}
+            <div className="observations-data-box !mb-0 obs-overflow-container">
               <span className="data-box-label">Observações e Histórico Institucional</span>
               {/* Texto oficial de credenciamento */}
-              <div className="mb-1 text-[10px] leading-relaxed text-justify text-gray-800">
+              <div className="mb-2 text-[10px] leading-relaxed text-justify text-gray-800">
                 Certificamos que a instituição de ensino teológico supracitada foi submetida ao processo de avaliação e credenciamento perante o Conselho de Educação Cristã (CONEC), órgão estatutário da COMIEADEPA. Diante da conformidade técnica, pedagógica e documental apresentada, esta credencial é concedida atestando sua regularidade e habilitação para a formação de ministros e promoção da educação cristã.
               </div>
               {/* Grade curricular / Texto oficial da instituição */}
               {instituicao.observacoes_internas && (
                 <div
                   ref={obsRef}
-                  className="mt-1 pt-1 border-t border-dashed border-gray-300 font-sans data-box-content"
-                  style={{ fontSize: '10.5px', lineHeight: '1.35' }}
+                  className="mt-1.5 pt-1.5 border-t border-dashed border-gray-300 font-sans data-box-content"
+                  style={{ fontSize: '10.5px', lineHeight: '1.4' }}
                   dangerouslySetInnerHTML={{ __html: formatObservacoes(instituicao.observacoes_internas) }}
                 />
               )}
@@ -663,7 +666,7 @@ function FichaContent() {
         </div>
 
         {/* Rodapé: Local, Data e Assinaturas (Espaço 100% isolado no rodapé) */}
-        <div className="mt-auto mb-2 relative z-10 w-full obs-footer">
+        <div className="mt-2 mb-2 relative z-10 w-full obs-footer">
           
           {/* Data por Extenso */}
           <div className="text-center font-serif italic text-[12px] mb-3 relative z-10">
