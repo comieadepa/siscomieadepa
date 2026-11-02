@@ -1,11 +1,11 @@
 /**
  * GET /api/portal-ministro/auth/verify-reset-token
- * Valida se um token de recuperação de senha é autêntico, não foi utilizado e não expirou.
+ * Valida se um token de ativação/recuperação é autêntico, não utilizado e não expirado.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
-import { checkRateLimit } from '@/lib/rate-limit';
+import { consumeDistributedRateLimit } from '@/lib/rate-limit-distributed';
 
 const RATE_LIMIT_ATTEMPTS = 15;
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     }
 
     const ip = getClientIp(request);
-    const rate = checkRateLimit({
+    const rate = await consumeDistributedRateLimit({
       key: `portal-ministro:verify-token:${ip}`,
       limit: RATE_LIMIT_ATTEMPTS,
       windowMs: RATE_LIMIT_WINDOW_MS,
@@ -50,21 +50,21 @@ export async function GET(request: NextRequest) {
 
     if (resetErr || !resetRecord) {
       return NextResponse.json(
-        { valid: false, error: 'Link de recuperação inválido ou inexistente.' },
+        { valid: false, error: 'Link de confirmação inválido ou inexistente.' },
         { status: 404 },
       );
     }
 
     if (resetRecord.used) {
       return NextResponse.json(
-        { valid: false, error: 'Este link de recuperação já foi utilizado.' },
+        { valid: false, error: 'Este link já foi utilizado.' },
         { status: 410 },
       );
     }
 
     if (new Date(resetRecord.expires_at) <= new Date(agora)) {
       return NextResponse.json(
-        { valid: false, error: 'Este link de recuperação expirou. Solicite um novo link.' },
+        { valid: false, error: 'Este link expirou. Solicite um novo link.' },
         { status: 410 },
       );
     }

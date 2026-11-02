@@ -1,12 +1,13 @@
 /**
  * POST /api/portal-ministro/auth/forgot-password
- * Solicita redefinição de senha para ministro via e-mail cadastrado.
- * Gera token temporário de 15 minutos e envia e-mail institucional.
+ * Solicita redefinição de senha para ministro via e-mail previamente homologado na Secretaria.
+ * Aceita CPF ou E-mail.
+ * Gera token temporário de uso único (15 minutos) e envia e-mail institucional.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
-import { checkRateLimit } from '@/lib/rate-limit';
+import { consumeDistributedRateLimit } from '@/lib/rate-limit-distributed';
 import { sendEmail } from '@/services/email';
 import crypto from 'crypto';
 
@@ -37,15 +38,25 @@ function maskEmail(email: string): string {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const cpf = cleanCpf(String(body?.cpf || ''));
+    const rawIdentificador = String(body?.identificador || body?.email || body?.cpf || '').trim();
+    const cleanIdentificador = cleanCpf(rawIdentificador);
+    const isEmail = rawIdentificador.includes('@');
 
-    if (!cpf || cpf.length !== 11) {
+    if (!rawIdentificador) {
+      return NextResponse.json({ error: 'Informe seu CPF ou E-mail.' }, { status: 400 });
+    }
+
+    if (!isEmail && cleanIdentificador.length !== 11) {
       return NextResponse.json({ error: 'CPF inválido.' }, { status: 400 });
     }
 
     const ip = getClientIp(request);
-    const rate = checkRateLimit({
-      key: `portal-ministro:forgot-password:${ip}:${cpf}`,
+    const rateKey = isEmail
+      ? `portal-ministro:forgot-password:${ip}:${rawIdentificador.toLowerCase()}`
+      : `portal-ministro:forgot-password:${ip}:${cleanIdentificador}`;
+
+    const rate = await consumeDistributedRateLimit({
+      key: rateKey,
       limit: RATE_LIMIT_ATTEMPTS,
       windowMs: RATE_LIMIT_WINDOW_MS,
     });
@@ -65,28 +76,52 @@ export async function POST(request: NextRequest) {
     const supabase = createServerClient();
 
     // Busca ministro ativo
-    const { data: ministro, error: mErr } = await supabase
+    let query = supabase
       .from('members')
-      .select('id, name, email, status, custom_fields')
-      .eq('cpf', cpf)
-      .maybeSingle();
+      .select('id, name, email, cpf, status, custom_fields')
+      .in('status', ['active']);
+
+    if (isEmail) {
+      query = query.ilike('email', rawIdentificador.toLowerCase());
+    } else {
+      query = query.eq('cpf', cleanIdentificador);
+    }
+
+    const { data: ministros, error: mErr } = await query;
 
     if (mErr) {
       console.error('[forgot-password] Erro ao buscar ministro:', mErr.message);
       return NextResponse.json({ error: 'Erro interno ao processar solicitação.' }, { status: 500 });
     }
 
+    // Se houver mais de um registro ativo com o mesmo e-mail (caso raro em cadastros legados)
+    if (ministros && ministros.length > 1) {
+      return NextResponse.json({
+        ok: false,
+        error: 'Mais de um cadastro localizado para este e-mail. Por favor, solicite a recuperação utilizando seu CPF.',
+      }, { status: 409 });
+    }
+
+    const ministro = ministros?.[0] || null;
+
     const cf = (ministro?.custom_fields && typeof ministro.custom_fields === 'object')
       ? (ministro.custom_fields as Record<string, any>)
       : {};
-    const emailDestino = String(ministro?.email || cf.email || '').trim();
+    const emailDestino = String(ministro?.email || cf.email || '').trim().toLowerCase();
 
-    // Prevenção de enumeração: se não existir ou estiver inativo ou sem e-mail, retorna resposta genérica de sucesso
-    if (!ministro || ministro.status !== 'active' || !emailDestino || !emailDestino.includes('@')) {
+    const isEmailValido =
+      emailDestino &&
+      emailDestino.includes('@') &&
+      !emailDestino.includes(' ') &&
+      !emailDestino.includes('desligado') &&
+      !emailDestino.includes('falecido');
+
+    // Prevenção de enumeração: se não existir, estiver inativo ou sem e-mail confiável
+    if (!ministro || ministro.status !== 'active' || !isEmailValido) {
       return NextResponse.json({
         ok: true,
         emailMascarado: null,
-        message: 'Se o CPF informado estiver cadastrado e possuir e-mail válido, as instruções de recuperação foram enviadas.',
+        message: 'Se o dado informado estiver cadastrado e possuir e-mail válido homologado pela Secretaria Geral, as instruções de recuperação foram enviadas.',
       });
     }
 
@@ -97,7 +132,7 @@ export async function POST(request: NextRequest) {
       .eq('ministro_id', ministro.id)
       .eq('used', false);
 
-    // Gera token criptograficamente seguro
+    // Gera token criptograficamente seguro de uso único
     const rawToken = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + RESET_TOKEN_EXPIRATION_MINUTES * 60 * 1000).toISOString();
 
@@ -112,7 +147,7 @@ export async function POST(request: NextRequest) {
       });
 
     if (insertErr) {
-      console.error('[forgot-password] Erro ao criar token de recuperação:', insertErr.message, insertErr.code);
+      console.error('[forgot-password] Erro ao criar token de recuperação:', insertErr.message);
       return NextResponse.json({ error: 'Erro ao gerar link de recuperação.' }, { status: 500 });
     }
 
@@ -124,7 +159,7 @@ export async function POST(request: NextRequest) {
       <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
         <p style="font-size: 16px; margin-bottom: 16px;">Prezado(a) <strong>${ministro.name}</strong>,</p>
         <p style="margin-bottom: 16px;">
-          Recebemos uma solicitação para redefinir a sua senha de acesso ao <strong>Portal do Ministro SISCOMIEADEPA</strong>.
+          Recebemos uma solicitação para redefinir a sua senha de acesso ao <strong>Portal / Aplicativo do Ministro SISCOMIEADEPA</strong>.
         </p>
         <p style="margin-bottom: 24px;">
           Para cadastrar uma nova senha, clique no botão abaixo ou utilize o link. Este link é de uso único e expira em <strong>${RESET_TOKEN_EXPIRATION_MINUTES} minutos</strong>:
@@ -145,7 +180,6 @@ export async function POST(request: NextRequest) {
       </div>
     `;
 
-    // Envia o e-mail através do serviço do projeto
     await sendEmail({
       para: emailDestino,
       assunto: 'Recuperação de Senha — Portal do Ministro COMIEADEPA',
@@ -159,7 +193,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       emailMascarado,
-      message: `Enviamos as instruções de recuperação para o e-mail cadastrado (${emailMascarado}).`,
+      message: `Enviamos as instruções de recuperação para o e-mail previamente cadastrado (${emailMascarado}).`,
     });
   } catch (err) {
     console.error('[forgot-password] Erro inesperado:', err);

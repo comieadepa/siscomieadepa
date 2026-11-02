@@ -1,12 +1,13 @@
 /**
  * POST /api/portal-ministro/auth/check-cpf
- * Verifica se o CPF existe, se o membro está ativo e se já tem senha cadastrada.
- * Retorna { exists: boolean, hasPassword: boolean, nome: string }
+ * Verifica se o identificador (CPF ou E-mail) existe, se o membro está ativo
+ * e se já tem senha cadastrada.
+ * Retorna { exists: boolean, hasPassword: boolean, nome: string, identificadorTipo: 'cpf' | 'email', cpf?: string }
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
-import { checkRateLimit } from '@/lib/rate-limit';
+import { consumeDistributedRateLimit } from '@/lib/rate-limit-distributed';
 
 const RATE_LIMIT_ATTEMPTS = 5;
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -22,15 +23,25 @@ function getClientIp(request: NextRequest): string {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const cpf = cleanCpf(String(body?.cpf || ''));
+    const rawIdentificador = String(body?.identificador || body?.cpf || body?.email || '').trim();
+    const cleanIdentificador = cleanCpf(rawIdentificador);
+    const isEmail = rawIdentificador.includes('@');
 
-    if (!cpf || cpf.length !== 11) {
+    if (!rawIdentificador) {
+      return NextResponse.json({ error: 'Informe seu CPF ou E-mail.' }, { status: 400 });
+    }
+
+    if (!isEmail && cleanIdentificador.length !== 11) {
       return NextResponse.json({ error: 'CPF inválido.' }, { status: 400 });
     }
 
     const ip = getClientIp(request);
-    const rate = checkRateLimit({
-      key: `portal-ministro:check-cpf:${ip}:${cpf}`,
+    const rateKey = isEmail
+      ? `portal-ministro:check-cpf:${ip}:${rawIdentificador.toLowerCase()}`
+      : `portal-ministro:check-cpf:${ip}:${cleanIdentificador}`;
+
+    const rate = await consumeDistributedRateLimit({
+      key: rateKey,
       limit: RATE_LIMIT_ATTEMPTS,
       windowMs: RATE_LIMIT_WINDOW_MS,
     });
@@ -49,23 +60,42 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServerClient();
 
-    // Busca o membro pelo CPF (sem filtro de status para dar mensagem correta)
-    const { data: ministro } = await supabase
+    let query = supabase
       .from('members')
-      .select('id, name, status')
-      .eq('cpf', cpf)
-      .maybeSingle();
+      .select('id, name, cpf, email, status');
 
-    if (!ministro) {
+    if (isEmail) {
+      query = query.ilike('email', rawIdentificador.toLowerCase());
+    } else {
+      query = query.eq('cpf', cleanIdentificador);
+    }
+
+    const { data: ministros, error: mErr } = await query;
+
+    if (mErr) {
+      console.error('[check-cpf]', mErr.message);
+      return NextResponse.json({ error: 'Erro interno ao consultar cadastro.' }, { status: 500 });
+    }
+
+    if (!ministros || ministros.length === 0) {
       return NextResponse.json(
-        { error: 'CPF não encontrado no cadastro ministerial.' },
+        { error: isEmail ? 'E-mail não encontrado no cadastro ministerial.' : 'CPF não encontrado no cadastro ministerial.' },
         { status: 404 },
       );
     }
 
+    if (ministros.length > 1) {
+      return NextResponse.json(
+        { error: 'Mais de um cadastro localizado para este e-mail. Por favor, identifique-se informando seu CPF.' },
+        { status: 409 },
+      );
+    }
+
+    const ministro = ministros[0];
+
     if (ministro.status !== 'active') {
       return NextResponse.json(
-        { error: 'Seu acesso não está disponível. Procure a Secretaria.' },
+        { error: 'Seu acesso não está disponível. Procure a Secretaria Geral.' },
         { status: 403 },
       );
     }
@@ -80,6 +110,8 @@ export async function POST(request: NextRequest) {
       exists: true,
       hasPassword: !!account,
       nome: ministro.name as string,
+      identificadorTipo: isEmail ? 'email' : 'cpf',
+      cpf: ministro.cpf as string,
     });
   } catch (err) {
     console.error('[check-cpf]', err);

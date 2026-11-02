@@ -6,20 +6,20 @@ import {
   Eye,
   EyeOff,
   ArrowLeft,
-  Check,
   AlertCircle,
   ShieldCheck,
   UserCheck,
   Mail,
-  Lock,
-  Calendar,
+  FileBadge,
   CheckCircle2,
+  PhoneCall,
 } from 'lucide-react';
 
 type Stage =
-  | 'cpf'
-  | 'first_access_date'
-  | 'first_access_create'
+  | 'identificacao'
+  | 'first_access_registro'
+  | 'first_access_sent'
+  | 'first_access_sem_email'
   | 'password'
   | 'forgot_password'
   | 'forgot_sent';
@@ -33,51 +33,49 @@ function maskCpf(v: string): string {
 }
 
 export default function PortalMinistroLoginPage() {
-  const [stage, setStage] = useState<Stage>('cpf');
-  const [cpf, setCpf] = useState('');
+  const [stage, setStage] = useState<Stage>('identificacao');
+  const [identificador, setIdentificador] = useState('');
+  const [cpfMinistro, setCpfMinistro] = useState('');
   const [nomeMinistro, setNomeMinistro] = useState('');
-  const [dataNascimento, setDataNascimento] = useState('');
-  const [emailRecuperacao, setEmailRecuperacao] = useState('');
+  const [registroConvencional, setRegistroConvencional] = useState('');
 
   const [senha, setSenha] = useState('');
-  const [senhaConfirm, setSenhaConfirm] = useState('');
   const [showSenha, setShowSenha] = useState(false);
-  const [showSenhaConfirm, setShowSenhaConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
   const [emailMascarado, setEmailMascarado] = useState('');
 
-  const cpfLimpo = cpf.replace(/\D/g, '');
-
-  // Validações em tempo real de requisitos de senha
-  const hasMinLen = senha.length >= 6;
-  const hasLetter = /[a-zA-Z]/.test(senha);
-  const hasNumber = /[0-9]/.test(senha);
-  const isSenhaValid = hasMinLen && hasLetter && hasNumber;
-  const senhasCoincidem = senha.length > 0 && senhaConfirm.length > 0 && senha === senhaConfirm;
-
-  // Etapa 1: Verificar CPF
-  const handleCheckCpf = async (e: React.FormEvent) => {
+  // Identificação inicial por CPF ou E-mail
+  const handleCheckIdentificador = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro('');
-    if (cpfLimpo.length !== 11) {
-      setErro('Digite um CPF válido com 11 dígitos.');
+    const idLimpo = identificador.trim();
+    if (!idLimpo) {
+      setErro('Informe seu CPF ou E-mail cadastrado na COMIEADEPA.');
       return;
     }
+
     setLoading(true);
     try {
       const res = await fetch('/api/portal-ministro/auth/check-cpf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cpf: cpfLimpo }),
+        body: JSON.stringify({ identificador: idLimpo }),
       });
       const json = await res.json();
       if (!res.ok) {
-        setErro(json.error || 'CPF não encontrado no cadastro ministerial.');
+        setErro(json.error || 'Cadastro não localizado. Procure a Secretaria Geral.');
         return;
       }
+
       setNomeMinistro(json.nome || '');
-      setStage(json.hasPassword ? 'password' : 'first_access_date');
+      setCpfMinistro(json.cpf || (json.identificadorTipo === 'cpf' ? idLimpo.replace(/\D/g, '') : ''));
+
+      if (json.hasPassword) {
+        setStage('password');
+      } else {
+        setStage('first_access_registro');
+      }
     } catch {
       setErro('Erro de conexão com o servidor. Tente novamente.');
     } finally {
@@ -85,39 +83,41 @@ export default function PortalMinistroLoginPage() {
     }
   };
 
-  // Etapa 2A (1º Acesso - Passo 1): Validar Data de Nascimento
-  const handleValidateBirthdate = async (e: React.FormEvent) => {
+  // 1º Acesso: Validação com CPF + Registro Convencional e Envio de Link Único
+  const handleValidateRegistro = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro('');
 
-    if (!dataNascimento) {
-      setErro('Informe sua data de nascimento para confirmação.');
+    const reg = registroConvencional.trim();
+    if (!reg) {
+      setErro('Informe o seu Registro Convencional ou Matrícula.');
       return;
     }
 
     setLoading(true);
     try {
-      const res = await fetch('/api/portal-ministro/auth/first-access/validate-birthdate', {
+      const res = await fetch('/api/portal-ministro/auth/first-access/validate-registro', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          cpf: cpfLimpo,
-          data_nascimento: dataNascimento,
+          cpf: cpfMinistro,
+          registro: reg,
         }),
       });
       const json = await res.json();
 
       if (!res.ok) {
-        setErro(json.error || 'Data de nascimento incorreta.');
-        setLoading(false);
+        if (json.requerSecretaria) {
+          setErro(json.error);
+          setStage('first_access_sem_email');
+          return;
+        }
+        setErro(json.error || 'Registro Convencional ou Matrícula incorreto.');
         return;
       }
 
-      if (json.emailSugerido && !emailRecuperacao) {
-        setEmailRecuperacao(json.emailSugerido);
-      }
-
-      setStage('first_access_create');
+      setEmailMascarado(json.emailMascarado || '');
+      setStage('first_access_sent');
     } catch {
       setErro('Erro de conexão com o servidor. Tente novamente.');
     } finally {
@@ -125,61 +125,12 @@ export default function PortalMinistroLoginPage() {
     }
   };
 
-  // Etapa 2B (1º Acesso - Passo 2): Criar Senha e Salvar E-mail
-  const handleFirstAccessCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErro('');
-
-    const emailLimpo = emailRecuperacao.trim();
-    if (!emailLimpo || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailLimpo)) {
-      setErro('Informe um e-mail de recuperação válido.');
-      return;
-    }
-
-    if (!isSenhaValid) {
-      setErro('A nova senha deve atender a todos os requisitos de segurança.');
-      return;
-    }
-
-    if (senha !== senhaConfirm) {
-      setErro('As senhas digitadas não coincidem.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const res = await fetch('/api/portal-ministro/auth/first-access/verify-and-create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cpf: cpfLimpo,
-          data_nascimento: dataNascimento,
-          email: emailLimpo,
-          senha,
-          senhaConfirm,
-        }),
-      });
-      const json = await res.json();
-
-      if (!res.ok) {
-        setErro(json.error || 'Erro ao cadastrar senha de acesso.');
-        setLoading(false);
-        return;
-      }
-
-      window.location.href = '/portal-ministro/dashboard';
-    } catch {
-      setErro('Erro de conexão com o servidor. Tente novamente.');
-      setLoading(false);
-    }
-  };
-
-  // Etapa 3: Login com Senha Existente
+  // Login com Senha Existente
   const handleLoginPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro('');
     if (!senha) {
-      setErro('Digite sua senha.');
+      setErro('Digite sua senha de acesso.');
       return;
     }
 
@@ -189,7 +140,7 @@ export default function PortalMinistroLoginPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          cpf: cpfLimpo,
+          identificador: identificador.trim() || cpfMinistro,
           tipo: 'senha',
           senha,
         }),
@@ -213,8 +164,10 @@ export default function PortalMinistroLoginPage() {
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro('');
-    if (cpfLimpo.length !== 11) {
-      setErro('Digite um CPF válido com 11 dígitos.');
+    const idParaEnvio = identificador.trim() || cpfMinistro;
+
+    if (!idParaEnvio) {
+      setErro('Informe seu CPF ou E-mail cadastrado.');
       return;
     }
 
@@ -223,7 +176,7 @@ export default function PortalMinistroLoginPage() {
       const res = await fetch('/api/portal-ministro/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cpf: cpfLimpo }),
+        body: JSON.stringify({ identificador: idParaEnvio }),
       });
       const json = await res.json();
 
@@ -242,14 +195,14 @@ export default function PortalMinistroLoginPage() {
     }
   };
 
-  const handleResetToCpf = () => {
-    setStage('cpf');
-    setSenha('');
-    setSenhaConfirm('');
-    setDataNascimento('');
-    setEmailRecuperacao('');
-    setErro('');
+  const handleResetToInicio = () => {
+    setStage('identificacao');
+    setIdentificador('');
+    setCpfMinistro('');
     setNomeMinistro('');
+    setRegistroConvencional('');
+    setSenha('');
+    setErro('');
     setEmailMascarado('');
   };
 
@@ -276,7 +229,7 @@ export default function PortalMinistroLoginPage() {
             />
           </div>
           <h1 className="text-white text-2xl font-extrabold tracking-tight">
-            Portal do Ministro
+            Aplicativo do Ministro
           </h1>
           <p className="text-blue-200/90 text-xs uppercase tracking-widest mt-1 font-semibold">
             COMIEADEPA · Convenção Estadual
@@ -286,8 +239,8 @@ export default function PortalMinistroLoginPage() {
         {/* Card Principal */}
         <div className="bg-white rounded-3xl shadow-2xl p-7 sm:p-8 border border-white/20 relative backdrop-blur-sm transition-all duration-300">
 
-          {/* ── ETAPA 1: Identificação por CPF ── */}
-          {stage === 'cpf' && (
+          {/* ── ETAPA 1: Identificação (CPF ou E-mail) ── */}
+          {stage === 'identificacao' && (
             <div>
               <div className="mb-6">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-[#0D2B4E] text-xs font-semibold mb-3 border border-blue-100">
@@ -298,22 +251,28 @@ export default function PortalMinistroLoginPage() {
                   Identifique-se para entrar
                 </h2>
                 <p className="text-gray-500 text-xs mt-1 leading-relaxed">
-                  Digite seu CPF cadastrado na COMIEADEPA para continuar.
+                  Informe seu CPF ou E-mail cadastrado na convenção.
                 </p>
               </div>
 
-              <form onSubmit={handleCheckCpf} className="space-y-5">
+              <form onSubmit={handleCheckIdentificador} className="space-y-5">
                 <div>
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                    CPF
+                    CPF ou E-mail
                   </label>
                   <input
                     type="text"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    placeholder="000.000.000-00"
-                    value={cpf}
-                    onChange={(e) => setCpf(maskCpf(e.target.value))}
+                    autoComplete="username"
+                    placeholder="000.000.000-00 ou seuemail@exemplo.com"
+                    value={identificador}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (!val.includes('@') && /^\d+$/.test(val.replace(/\D/g, '')) && val.length <= 14) {
+                        setIdentificador(maskCpf(val));
+                      } else {
+                        setIdentificador(val);
+                      }
+                    }}
                     autoFocus
                     className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition-all bg-gray-50/50 hover:bg-white"
                     required
@@ -335,7 +294,7 @@ export default function PortalMinistroLoginPage() {
                   {loading ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Verificando cadastro...</span>
+                      <span>Consultando cadastro...</span>
                     </>
                   ) : (
                     'Continuar'
@@ -345,18 +304,18 @@ export default function PortalMinistroLoginPage() {
             </div>
           )}
 
-          {/* ── ETAPA 2A: 1º Acesso - Passo 1: Confirmação de Identidade (Apenas Data de Nascimento) ── */}
-          {stage === 'first_access_date' && (
+          {/* ── ETAPA 2: 1º Acesso - Validação de Titularidade com Registro Convencional ── */}
+          {stage === 'first_access_registro' && (
             <div className="transition-opacity duration-300">
               <div className="flex items-center justify-between mb-4">
                 <button
-                  onClick={handleResetToCpf}
+                  onClick={handleResetToInicio}
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-[#0D2B4E] transition-colors"
                 >
-                  <ArrowLeft size={14} /> Trocar CPF
+                  <ArrowLeft size={14} /> Voltar
                 </button>
                 <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
-                  1º Acesso · Passo 1 de 2
+                  Primeiro Acesso
                 </span>
               </div>
 
@@ -370,34 +329,38 @@ export default function PortalMinistroLoginPage() {
                   <p className="text-sm font-bold text-[#0D2B4E] truncate mt-1">
                     {nomeMinistro}
                   </p>
-                  <p className="text-[11px] text-gray-400 font-mono mt-0.5">
-                    CPF: {maskCpf(cpf)}
-                  </p>
+                  {cpfMinistro && (
+                    <p className="text-[11px] text-gray-400 font-mono mt-0.5">
+                      CPF: {maskCpf(cpfMinistro)}
+                    </p>
+                  )}
                 </div>
               </div>
 
               <div className="mb-5">
                 <h2 className="text-lg font-bold text-gray-900 leading-tight">
-                  Confirme sua Identidade
+                  Confirme a Titularidade
                 </h2>
-                <p className="text-gray-500 text-xs mt-1">
-                  Para sua segurança, informe sua data de nascimento cadastrada na convenção.
+                <p className="text-gray-500 text-xs mt-1 leading-relaxed">
+                  Para sua segurança contra assunção indevida de contas, digite o seu <strong>Registro Convencional</strong> (ou Matrícula oficial) que consta em sua credencial.
                 </p>
               </div>
 
-              <form onSubmit={handleValidateBirthdate} className="space-y-5">
+              <form onSubmit={handleValidateRegistro} className="space-y-5">
                 <div>
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
                     <span className="flex items-center gap-1.5">
-                      <Calendar size={14} className="text-[#0D2B4E]" />
-                      Data de Nascimento
+                      <FileBadge size={14} className="text-[#0D2B4E]" />
+                      Registro Convencional / Matrícula
                     </span>
                   </label>
                   <input
-                    type="date"
-                    value={dataNascimento}
-                    onChange={(e) => setDataNascimento(e.target.value)}
+                    type="text"
+                    inputMode="numeric"
+                    value={registroConvencional}
+                    onChange={(e) => setRegistroConvencional(e.target.value)}
                     autoFocus
+                    placeholder="Ex: 3751"
                     className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition-all bg-gray-50/50 hover:bg-white font-medium"
                     required
                   />
@@ -418,194 +381,82 @@ export default function PortalMinistroLoginPage() {
                   {loading ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Validando dados...</span>
+                      <span>Validando registro e enviando confirmação...</span>
                     </>
                   ) : (
-                    'Confirmar Data de Nascimento'
+                    'Confirmar e Enviar Link de Ativação'
                   )}
                 </button>
               </form>
             </div>
           )}
 
-          {/* ── ETAPA 2B: 1º Acesso - Passo 2: Criação do Acesso (E-mail + Senha) ── */}
-          {stage === 'first_access_create' && (
-            <div className="animate-fadeIn transition-opacity duration-300">
-              <div className="flex items-center justify-between mb-4">
-                <button
-                  onClick={() => {
-                    setStage('first_access_date');
-                    setErro('');
-                  }}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-[#0D2B4E] transition-colors"
-                >
-                  <ArrowLeft size={14} /> Voltar
-                </button>
-                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-                  <CheckCircle2 size={12} className="text-emerald-600" />
-                  Identidade Confirmada · Passo 2 de 2
-                </span>
+          {/* ── ETAPA 2A: Link de Confirmação Única Enviado com Sucesso ── */}
+          {stage === 'first_access_sent' && (
+            <div className="text-center py-2">
+              <div className="w-14 h-14 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-inner">
+                <CheckCircle2 size={30} />
               </div>
 
-              {/* Identificação do Ministro */}
-              <div className="bg-blue-50/80 border border-blue-100 rounded-2xl p-3.5 mb-5 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[#0D2B4E] text-white font-bold flex items-center justify-center text-base flex-shrink-0 shadow-sm">
-                  {nomeMinistro ? nomeMinistro.charAt(0).toUpperCase() : <UserCheck size={18} />}
+              <h2 className="text-xl font-bold text-gray-900 mb-2">
+                Link de Ativação Enviado!
+              </h2>
+
+              <p className="text-gray-600 text-xs leading-relaxed mb-4">
+                Identificamos seu e-mail previamente homologado na Secretaria Geral e enviamos um link de uso único para você definir sua senha de acesso com total segurança:
+              </p>
+
+              {emailMascarado && (
+                <div className="bg-gray-50 border border-gray-200 rounded-xl py-2.5 px-4 mb-6 inline-block">
+                  <span className="font-mono text-sm font-bold text-[#0D2B4E]">
+                    {emailMascarado}
+                  </span>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-gray-500 font-medium leading-none">Ministro</p>
-                  <p className="text-sm font-bold text-[#0D2B4E] truncate mt-1">
-                    {nomeMinistro}
-                  </p>
-                  <p className="text-[11px] text-gray-400 font-mono mt-0.5">
-                    CPF: {maskCpf(cpf)}
-                  </p>
-                </div>
+              )}
+
+              <p className="text-[11px] text-gray-400 mb-6">
+                O link expira em <strong>15 minutos</strong> e só pode ser utilizado uma vez. Acesse sua caixa de entrada para criar sua senha.
+              </p>
+
+              <button
+                type="button"
+                onClick={handleResetToInicio}
+                className="w-full bg-[#0D2B4E] hover:bg-[#163f6d] text-white font-bold py-3.5 rounded-xl transition-all text-sm shadow-md"
+              >
+                Voltar para o Início
+              </button>
+            </div>
+          )}
+
+          {/* ── ETAPA 2B: Ministro sem E-mail Confiável (Exige Secretaria Geral) ── */}
+          {stage === 'first_access_sem_email' && (
+            <div className="text-center py-2">
+              <div className="w-14 h-14 bg-amber-100 text-amber-800 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-inner">
+                <PhoneCall size={28} />
               </div>
 
-              <div className="mb-4">
-                <h2 className="text-lg font-bold text-gray-900 leading-tight">
-                  Cadastre sua Senha de Acesso
-                </h2>
-                <p className="text-gray-500 text-xs mt-1">
-                  Defina seu e-mail de recuperação e crie sua senha de acesso ao portal.
-                </p>
+              <h2 className="text-lg font-bold text-gray-900 mb-2">
+                Atualização na Secretaria Necessária
+              </h2>
+
+              <p className="text-gray-600 text-xs leading-relaxed mb-4">
+                Por diretriz de integridade e segurança do <strong>Aplicativo do Ministro</strong>, a ativação exige um e-mail previamente homologado na convenção.
+              </p>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-left text-xs text-amber-900 mb-6 space-y-2">
+                <p className="font-semibold text-amber-950">Como proceder:</p>
+                <p>1. Entre em contato com a <strong>Secretaria Geral da COMIEADEPA</strong>.</p>
+                <p>2. Solicite a atualização e homologação oficial do seu endereço de e-mail institucional.</p>
+                <p>3. Assim que homologado, retorne aqui para concluir seu primeiro acesso imediatamente.</p>
               </div>
 
-              <form onSubmit={handleFirstAccessCreate} className="space-y-4">
-                {/* E-mail de Recuperação */}
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                    <span className="flex items-center gap-1">
-                      <Mail size={13} className="text-[#0D2B4E]" />
-                      E-mail de Recuperação (Obrigatório)
-                    </span>
-                  </label>
-                  <input
-                    type="email"
-                    placeholder="seuemail@exemplo.com"
-                    value={emailRecuperacao}
-                    onChange={(e) => setEmailRecuperacao(e.target.value)}
-                    autoFocus
-                    className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition-all bg-gray-50/50 hover:bg-white font-medium"
-                    required
-                  />
-                  <p className="text-[10px] text-gray-400 mt-1">
-                    Utilizado exclusivamente caso precise redefinir sua senha no futuro.
-                  </p>
-                </div>
-
-                {/* Nova Senha */}
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                    <span className="flex items-center gap-1">
-                      <Lock size={13} className="text-[#0D2B4E]" />
-                      Nova Senha
-                    </span>
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showSenha ? 'text' : 'password'}
-                      value={senha}
-                      onChange={(e) => setSenha(e.target.value)}
-                      placeholder="Digite sua senha"
-                      className="w-full border border-gray-300 rounded-xl px-4 py-2.5 pr-11 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition-all bg-gray-50/50 hover:bg-white"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowSenha(!showSenha)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
-                      aria-label={showSenha ? 'Ocultar senha' : 'Ver senha'}
-                    >
-                      {showSenha ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Checklist Visual de Requisitos de Senha */}
-                <div className="bg-gray-50 rounded-xl p-3 border border-gray-100 space-y-1.5">
-                  <p className="text-[11px] font-bold text-gray-600 uppercase tracking-wider mb-1">
-                    Requisitos da senha:
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 text-xs">
-                    <div className={`flex items-center gap-1.5 ${hasMinLen ? 'text-green-700 font-semibold' : 'text-gray-400'}`}>
-                      <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${hasMinLen ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-400'}`}>
-                        {hasMinLen ? <Check size={11} /> : '•'}
-                      </div>
-                      <span className="text-[11px]">6+ dígitos</span>
-                    </div>
-                    <div className={`flex items-center gap-1.5 ${hasLetter ? 'text-green-700 font-semibold' : 'text-gray-400'}`}>
-                      <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${hasLetter ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-400'}`}>
-                        {hasLetter ? <Check size={11} /> : '•'}
-                      </div>
-                      <span className="text-[11px]">1 letra</span>
-                    </div>
-                    <div className={`flex items-center gap-1.5 ${hasNumber ? 'text-green-700 font-semibold' : 'text-gray-400'}`}>
-                      <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${hasNumber ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-400'}`}>
-                        {hasNumber ? <Check size={11} /> : '•'}
-                      </div>
-                      <span className="text-[11px]">1 número</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Confirmar Nova Senha */}
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                    Confirmar Nova Senha
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showSenhaConfirm ? 'text' : 'password'}
-                      value={senhaConfirm}
-                      onChange={(e) => setSenhaConfirm(e.target.value)}
-                      placeholder="Repita a senha digitada"
-                      className={`w-full border rounded-xl px-4 py-2.5 pr-11 text-sm text-gray-800 focus:outline-none focus:ring-2 transition-all bg-gray-50/50 hover:bg-white ${
-                        senhaConfirm.length > 0
-                          ? senhasCoincidem
-                            ? 'border-green-400 focus:ring-green-500'
-                            : 'border-red-400 focus:ring-red-500'
-                          : 'border-gray-300 focus:ring-[#0D2B4E]'
-                      }`}
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowSenhaConfirm(!showSenhaConfirm)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
-                      aria-label={showSenhaConfirm ? 'Ocultar senha' : 'Ver senha'}
-                    >
-                      {showSenhaConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                  {senhaConfirm.length > 0 && !senhasCoincidem && (
-                    <p className="text-[11px] text-red-600 mt-1 font-medium">As senhas não coincidem.</p>
-                  )}
-                </div>
-
-                {erro && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-xs flex items-start gap-2">
-                    <AlertCircle size={16} className="text-red-600 flex-shrink-0 mt-0.5" />
-                    <span>{erro}</span>
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-[#0D2B4E] hover:bg-[#163f6d] text-white font-bold py-3.5 rounded-xl shadow-lg shadow-[#0D2B4E]/20 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm tracking-wide mt-2"
-                >
-                  {loading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Criando acesso e entrando...</span>
-                    </>
-                  ) : (
-                    'Criar Senha e Acessar o Portal'
-                  )}
-                </button>
-              </form>
+              <button
+                type="button"
+                onClick={handleResetToInicio}
+                className="w-full bg-[#0D2B4E] hover:bg-[#163f6d] text-white font-bold py-3.5 rounded-xl transition-all text-sm shadow-md"
+              >
+                Voltar ao Início
+              </button>
             </div>
           )}
 
@@ -614,17 +465,17 @@ export default function PortalMinistroLoginPage() {
             <div>
               <div className="flex items-center justify-between mb-4">
                 <button
-                  onClick={handleResetToCpf}
+                  onClick={handleResetToInicio}
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-[#0D2B4E] transition-colors"
                 >
-                  <ArrowLeft size={14} /> Trocar CPF
+                  <ArrowLeft size={14} /> Voltar
                 </button>
                 <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-green-100 text-green-800 border border-green-200">
                   Ministro Cadastrado
                 </span>
               </div>
 
-              {/* Cartão de Boas-Vindas com Nome do Ministro */}
+              {/* Cartão de Boas-Vindas */}
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50/50 border border-blue-100 rounded-2xl p-4 mb-5 flex items-center gap-3.5">
                 <div className="w-11 h-11 rounded-2xl bg-[#0D2B4E] text-white font-bold flex items-center justify-center text-lg flex-shrink-0 shadow-md">
                   {nomeMinistro ? nomeMinistro.charAt(0).toUpperCase() : <UserCheck size={20} />}
@@ -636,9 +487,11 @@ export default function PortalMinistroLoginPage() {
                   <p className="text-sm font-extrabold text-[#0D2B4E] truncate mt-1">
                     {nomeMinistro || 'Ministro'}
                   </p>
-                  <p className="text-[11px] text-gray-400 font-mono mt-0.5">
-                    CPF: {maskCpf(cpf)}
-                  </p>
+                  {cpfMinistro && (
+                    <p className="text-[11px] text-gray-400 font-mono mt-0.5">
+                      CPF: {maskCpf(cpfMinistro)}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -720,7 +573,7 @@ export default function PortalMinistroLoginPage() {
                       <span>Autenticando...</span>
                     </>
                   ) : (
-                    'Entrar no Portal'
+                    'Entrar no Aplicativo'
                   )}
                 </button>
               </form>
@@ -734,7 +587,7 @@ export default function PortalMinistroLoginPage() {
                 <button
                   onClick={() => {
                     setErro('');
-                    setStage(nomeMinistro ? 'password' : 'cpf');
+                    setStage(nomeMinistro ? 'password' : 'identificacao');
                   }}
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-[#0D2B4E] transition-colors"
                 >
@@ -745,8 +598,8 @@ export default function PortalMinistroLoginPage() {
                 </span>
               </div>
 
-              {/* Identificação do Ministro quando já temos o CPF */}
-              {nomeMinistro && cpfLimpo.length === 11 ? (
+              {/* Identificação do Ministro quando já temos */}
+              {nomeMinistro && (
                 <div className="bg-blue-50/80 border border-blue-100 rounded-2xl p-3.5 mb-5 flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-[#0D2B4E] text-white font-bold flex items-center justify-center text-base flex-shrink-0 shadow-sm">
                     {nomeMinistro.charAt(0).toUpperCase()}
@@ -756,37 +609,35 @@ export default function PortalMinistroLoginPage() {
                     <p className="text-sm font-bold text-[#0D2B4E] truncate mt-1">
                       {nomeMinistro}
                     </p>
-                    <p className="text-[11px] text-gray-400 font-mono mt-0.5">
-                      CPF: {maskCpf(cpf)}
-                    </p>
+                    {cpfMinistro && (
+                      <p className="text-[11px] text-gray-400 font-mono mt-0.5">
+                        CPF: {maskCpf(cpfMinistro)}
+                      </p>
+                    )}
                   </div>
                 </div>
-              ) : null}
+              )}
 
               <div className="mb-5">
                 <h2 className="text-xl font-bold text-gray-900 leading-tight">
                   Recuperar Senha
                 </h2>
                 <p className="text-gray-500 text-xs mt-1 leading-relaxed">
-                  {nomeMinistro && cpfLimpo.length === 11
-                    ? 'Enviaremos um link de recuperação exclusivo para o e-mail cadastrado na convenção para o seu CPF.'
-                    : 'Informe seu CPF. Enviaremos um link de recuperação exclusivo para o e-mail cadastrado na convenção.'}
+                  Enviaremos um link de recuperação exclusivo para o e-mail previamente homologado na convenção.
                 </p>
               </div>
 
               <form onSubmit={handleForgotPassword} className="space-y-5">
-                {(!nomeMinistro || cpfLimpo.length !== 11) && (
+                {!nomeMinistro && (
                   <div>
                     <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                      CPF
+                      CPF ou E-mail
                     </label>
                     <input
                       type="text"
-                      inputMode="numeric"
-                      autoComplete="off"
-                      placeholder="000.000.000-00"
-                      value={cpf}
-                      onChange={(e) => setCpf(maskCpf(e.target.value))}
+                      placeholder="000.000.000-00 ou seuemail@exemplo.com"
+                      value={identificador}
+                      onChange={(e) => setIdentificador(e.target.value)}
                       autoFocus
                       className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition-all bg-gray-50/50 hover:bg-white"
                       required
@@ -831,7 +682,7 @@ export default function PortalMinistroLoginPage() {
               </h2>
 
               <p className="text-gray-600 text-xs leading-relaxed mb-4">
-                Se os dados informados estiverem corretos, enviamos um link para redefinição de senha para o e-mail cadastrado:
+                Se os dados informados estiverem corretos, enviamos um link para redefinição de senha para o e-mail previamente cadastrado:
               </p>
 
               {emailMascarado ? (
@@ -850,7 +701,7 @@ export default function PortalMinistroLoginPage() {
 
               <button
                 type="button"
-                onClick={handleResetToCpf}
+                onClick={handleResetToInicio}
                 className="w-full bg-[#0D2B4E] hover:bg-[#163f6d] text-white font-bold py-3.5 rounded-xl transition-all text-sm shadow-md"
               >
                 Voltar para o Início
