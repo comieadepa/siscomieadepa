@@ -687,84 +687,113 @@ export default function AplicativoDoMinistroAppPage() {
           </div>
         </nav>
 
-        {/* ── GAVETA LATERAL (MENU HAMBÚRGUER) ── */}
-        {menuOpen && (
-          <div className="fixed inset-0 z-50 flex justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-            <div className="w-full max-w-[430px] md:max-w-[600px] h-full flex flex-col justify-between bg-[#092A50] text-white p-6 shadow-2xl">
-              <div>
-                <div className="flex items-center justify-between pb-6 border-b border-white/10">
-                  <div className="flex items-center gap-3">
-                    <Image
-                      src="/img/logo_comieadepa.png"
-                      alt="COMIEADEPA"
-                      width={38}
-                      height={38}
-                      className="object-contain"
-                    />
-                    <div>
-                      <p className="font-extrabold text-sm leading-tight">COMIEADEPA</p>
-                      <p className="text-blue-300 text-[10px] tracking-wider uppercase">Aplicativo do Ministro</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setMenuOpen(false)}
-                    className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
-                  >
-                    <X size={20} />
-                  </button>
-                </div>
+        {/* ── GAVETA LATERAL DESLIZANTE (MENU HAMBÚRGUER) ── */}
+        {/* Backdrop animado com fade */}
+        <div
+          onClick={() => setMenuOpen(false)}
+          className={`fixed inset-0 z-50 bg-black/60 backdrop-blur-xs transition-opacity duration-300 ${
+            menuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          }`}
+          aria-hidden={!menuOpen}
+        />
 
-                <div className="py-4 space-y-1">
-                  <button
-                    onClick={() => { setMenuOpen(false); setActiveTab('inicio'); }}
-                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-white/10 text-xs font-semibold text-left transition"
-                  >
-                    <Home size={18} className="text-amber-400" /> Início do Aplicativo
-                  </button>
-                  <button
-                    onClick={() => { setMenuOpen(false); router.push('/portal-ministro/credencial'); }}
-                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-white/10 text-xs font-semibold text-left transition"
-                  >
-                    <IdCard size={18} className="text-blue-300" /> Minha Credencial
-                  </button>
-                  <button
-                    onClick={() => { setMenuOpen(false); router.push('/portal-ministro/eventos'); }}
-                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-white/10 text-xs font-semibold text-left transition"
-                  >
-                    <Calendar size={18} className="text-blue-300" /> Meus Eventos e Inscrições
-                  </button>
-                  <button
-                    onClick={() => { setMenuOpen(false); router.push('/portal-ministro/certificados'); }}
-                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-white/10 text-xs font-semibold text-left transition"
-                  >
-                    <Award size={18} className="text-blue-300" /> Certificados
-                  </button>
-                  <button
-                    onClick={() => { setMenuOpen(false); router.push('/portal-ministro/historico'); }}
-                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-white/10 text-xs font-semibold text-left transition"
-                  >
-                    <Clock size={18} className="text-blue-300" /> Histórico Ministerial
-                  </button>
-                  <button
-                    onClick={() => { setMenuOpen(false); router.push('/portal-ministro/dashboard'); }}
-                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl bg-white/5 hover:bg-white/15 text-xs font-semibold text-left transition text-blue-200 mt-2"
-                  >
-                    <ExternalLink size={18} className="text-blue-400" /> Acessar Portal Web Clássico
-                  </button>
+        {/* Gaveta lateral que desliza da esquerda para a direita (largura 78% do viewport, máx 320px) */}
+        <div
+          className={`fixed top-0 bottom-0 left-0 z-50 w-[78%] max-w-[320px] bg-[#092A50] text-white flex flex-col justify-between p-5 shadow-2xl transition-transform duration-300 ease-out transform ${
+            menuOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
+          style={{
+            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)',
+            paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 20px)',
+          }}
+        >
+          <div className="flex-1 overflow-y-auto pr-1">
+            <div className="flex items-center justify-between pb-5 border-b border-white/10">
+              <div className="flex items-center gap-2.5">
+                <Image
+                  src="/img/logo_comieadepa.png"
+                  alt="COMIEADEPA"
+                  width={34}
+                  height={34}
+                  className="object-contain"
+                />
+                <div>
+                  <p className="font-extrabold text-[13px] leading-tight tracking-tight">COMIEADEPA</p>
+                  <p className="text-amber-400 text-[9.5px] font-semibold tracking-wider uppercase">Menu do Ministro</p>
                 </div>
               </div>
+              <button
+                onClick={() => setMenuOpen(false)}
+                aria-label="Fechar menu"
+                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 active:scale-95 text-white/90 flex items-center justify-center transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
 
-              <div className="pt-4 border-t border-white/10">
+            <div className="py-4 space-y-1">
+              <button
+                onClick={() => { setMenuOpen(false); setActiveTab('inicio'); }}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-left transition ${
+                  activeTab === 'inicio' ? 'bg-white/15 text-white' : 'hover:bg-white/10 text-white/90'
+                }`}
+              >
+                <Home size={17} className="text-amber-400" /> Início do Aplicativo
+              </button>
+              <button
+                onClick={() => { setMenuOpen(false); router.push('/portal-ministro/credencial'); }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 text-xs font-semibold text-left transition text-white/90"
+              >
+                <IdCard size={17} className="text-blue-300" /> Minha Credencial
+              </button>
+              <button
+                onClick={() => { setMenuOpen(false); router.push('/portal-ministro/eventos'); }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 text-xs font-semibold text-left transition text-white/90"
+              >
+                <Calendar size={17} className="text-blue-300" /> Meus Eventos e Inscrições
+              </button>
+              <button
+                onClick={() => { setMenuOpen(false); router.push('/portal-ministro/certificados'); }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 text-xs font-semibold text-left transition text-white/90"
+              >
+                <Award size={17} className="text-blue-300" /> Certificados
+              </button>
+              <button
+                onClick={() => { setMenuOpen(false); router.push('/portal-ministro/historico'); }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 text-xs font-semibold text-left transition text-white/90"
+              >
+                <Clock size={17} className="text-blue-300" /> Histórico Ministerial
+              </button>
+
+              {ministro?.isPastorPresidente && (
                 <button
-                  onClick={handleLogout}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-300 text-xs font-bold transition"
+                  onClick={() => { setMenuOpen(false); router.push('/portal-ministro/contribuicoes'); }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 text-xs font-semibold text-left transition text-amber-200"
                 >
-                  <LogOut size={16} /> Encerrar Sessão
+                  <Coins size={17} className="text-amber-400" /> Contribuição Estatutária
+                </button>
+              )}
+
+              <div className="pt-2">
+                <button
+                  onClick={() => { setMenuOpen(false); router.push('/portal-ministro/dashboard'); }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/5 hover:bg-white/15 text-xs font-semibold text-left transition text-blue-200 border border-white/5"
+                >
+                  <ExternalLink size={16} className="text-blue-400" /> Portal Web Clássico
                 </button>
               </div>
             </div>
           </div>
-        )}
+
+          <div className="pt-3 border-t border-white/10">
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-300 text-xs font-bold transition"
+            >
+              <LogOut size={15} /> Encerrar Sessão
+            </button>
+          </div>
+        </div>
 
         {/* ── MODAL DE NOTIFICAÇÕES / COMUNICADOS ── */}
         {notifOpen && (
