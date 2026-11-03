@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import {
   Eye,
@@ -32,7 +33,11 @@ function maskCpf(v: string): string {
   return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
 }
 
-export default function PortalMinistroLoginPage() {
+function PortalMinistroLoginForm() {
+  const searchParams = useSearchParams();
+  const redirectParam = searchParams?.get('redirect');
+  const targetDestination = redirectParam && redirectParam.startsWith('/') ? redirectParam : '/app';
+
   const [stage, setStage] = useState<Stage>('identificacao');
   const [identificador, setIdentificador] = useState('');
   const [cpfMinistro, setCpfMinistro] = useState('');
@@ -153,7 +158,7 @@ export default function PortalMinistroLoginPage() {
         return;
       }
 
-      window.location.href = '/portal-ministro/dashboard';
+      window.location.href = targetDestination;
     } catch {
       setErro('Erro de conexão. Verifique sua internet e tente novamente.');
       setLoading(false);
@@ -720,5 +725,20 @@ export default function PortalMinistroLoginPage() {
 
       </div>
     </div>
+  );
+}
+
+export default function PortalMinistroLoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0D2B4E] via-[#09203a] to-[#051324]">
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-amber-400/20 border-t-amber-400 rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-white/70 text-xs font-semibold tracking-wide">Carregando...</p>
+        </div>
+      </div>
+    }>
+      <PortalMinistroLoginForm />
+    </Suspense>
   );
 }
