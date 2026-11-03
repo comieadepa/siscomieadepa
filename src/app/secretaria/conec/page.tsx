@@ -473,7 +473,7 @@ export default function ConecDashboardPage() {
                               {/* Selos de Credenciamento */}
                               <button
                                 onClick={() => setSelosModal(inst)}
-                                title="Gerar Selos de Credenciamento (Horizontal e Vertical)"
+                                title="Gerar Selos de Credenciamento"
                                 className="p-2 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 border border-emerald-200 hover:border-emerald-600 rounded-full transition shadow-sm"
                               >
                                 <QrCode className="w-4 h-4" />
