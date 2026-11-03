@@ -773,9 +773,9 @@ function PortalMinistroLoginForm() {
           </div>
 
           {/* ── 11. RODAPÉ INSTITUCIONAL ── */}
-          {/* Deslocado para a região azul-escura com distância visual >= 35px da faixa luminosa */}
+          {/* Deslocado para a região azul-escura com distância visual >= 35px da faixa luminosa (+8px adicionais) */}
           <footer
-            className="text-center w-full mt-[40px]"
+            className="text-center w-full mt-[48px]"
             style={{
               paddingBottom: 'max(20px, env(safe-area-inset-bottom, 0px))',
             }}
