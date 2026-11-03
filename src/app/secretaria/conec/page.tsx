@@ -21,8 +21,10 @@ import {
   X,
   ExternalLink,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  QrCode
 } from 'lucide-react';
+import ConecSelosModal from '@/components/ConecSelosModal';
 
 interface Credenciamento {
   id: string;
@@ -82,6 +84,9 @@ export default function ConecDashboardPage() {
   } | null>(null);
 
   const [billingLoadingId, setBillingLoadingId] = useState<string | null>(null);
+
+  // Modal de Selos de Credenciamento CONEC
+  const [selosModal, setSelosModal] = useState<InstitutionWithId | null>(null);
 
   const fetchDados = async () => {
     setLoading(true);
@@ -465,6 +470,15 @@ export default function ConecDashboardPage() {
                                 <Award className="w-4 h-4" />
                               </button>
 
+                              {/* Selos de Credenciamento */}
+                              <button
+                                onClick={() => setSelosModal(inst)}
+                                title="Gerar Selos de Credenciamento (Horizontal e Vertical)"
+                                className="p-2 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 border border-emerald-200 hover:border-emerald-600 rounded-full transition shadow-sm"
+                              >
+                                <QrCode className="w-4 h-4" />
+                              </button>
+
                               {/* Gerar taxa */}
                               <button
                                 onClick={() => handleGerarTaxa(inst)}
@@ -587,6 +601,13 @@ export default function ConecDashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Modal de Selos de Credenciamento CONEC */}
+      <ConecSelosModal
+        isOpen={!!selosModal}
+        onClose={() => setSelosModal(null)}
+        instituicao={selosModal}
+      />
 
       {/* Modal de Seleção de Modelo para Impressão */}
       {modalPrint && modalPrint.isOpen && (
