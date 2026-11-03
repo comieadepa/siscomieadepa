@@ -14,7 +14,14 @@ import {
   FileBadge,
   CheckCircle2,
   PhoneCall,
+  UserRound,
+  ArrowRight,
+  KeyRound,
+  Smartphone,
+  Layers,
+  Lock,
 } from 'lucide-react';
+import './login.css';
 
 type Stage =
   | 'identificacao'
@@ -212,515 +219,559 @@ function PortalMinistroLoginForm() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0D2B4E] via-[#123b63] to-[#1a4a7a] px-4 py-8 relative overflow-hidden">
-      
-      {/* Elementos Decorativos de Fundo */}
-      <div className="absolute -top-32 -left-32 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="app-login-viewport font-sans selection:bg-amber-400 selection:text-blue-950">
+      <div className="app-login-container">
+        
+        {/* Background oficial /img/login_app.png */}
+        <div className="app-login-bg" aria-hidden="true" />
 
-      <div className="w-full max-w-md relative z-10">
+        {/* Área rolável com safe area e espaçamento dinâmico */}
+        <div
+          className="app-login-scroll"
+          style={{
+            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)',
+            paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
+          }}
+        >
 
-        {/* Logo & Título Institucional */}
-        <div className="text-center mb-6">
-          <div className="inline-block p-1 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 shadow-2xl mb-3">
-            <Image
-              src="/img/logo_comieadepa.png"
-              alt="COMIEADEPA"
-              width={100}
-              height={100}
-              className="drop-shadow-lg"
-              style={{ width: '100px', height: 'auto' }}
-              priority
-            />
+          {/* ── 3. IDENTIDADE E LOGOMARCA ── */}
+          <div className="flex flex-col items-center text-center w-full mb-6">
+            {/* Escudo Oficial COMIEADEPA */}
+            <div className="w-[84px] sm:w-[94px] h-auto flex items-center justify-center mb-3 drop-shadow-[0_8px_16px_rgba(0,10,30,0.35)]">
+              <Image
+                src="/img/logo_comieadepa.png"
+                alt="Escudo COMIEADEPA"
+                width={94}
+                height={108}
+                priority
+                className="object-contain w-full h-auto"
+              />
+            </div>
+
+            {/* Bloco de Título com Acento Dourado */}
+            <div className="relative flex items-center justify-center">
+              {/* Acento vertical dourado: largura 5px, altura 70px, raio 4px, cor #E5B84C */}
+              <div
+                className="w-[5px] h-[64px] sm:h-[70px] rounded-[4px] absolute -left-5 sm:-left-6 shadow-sm"
+                style={{ backgroundColor: '#E5B84C' }}
+                aria-hidden="true"
+              />
+
+              <div className="flex flex-col items-center">
+                <span
+                  className="text-white text-[27px] sm:text-[29px] font-[750] leading-[32px] sm:leading-[34px] tracking-tight drop-shadow-[0_2px_6px_rgba(0,20,50,0.25)]"
+                >
+                  Aplicativo do
+                </span>
+                <span
+                  className="text-white text-[39px] sm:text-[43px] font-[850] leading-[42px] sm:leading-[46px] tracking-tight drop-shadow-[0_2px_8px_rgba(0,20,50,0.30)]"
+                >
+                  Ministro
+                </span>
+              </div>
+            </div>
+
+            {/* Subtítulo institucional */}
+            <p className="text-[#E9F2FF] text-[11.5px] sm:text-[12.5px] font-[600] tracking-[1.5px] uppercase mt-2.5 drop-shadow-[0_1px_3px_rgba(0,0,0,0.4)]">
+              COMIEADEPA • CONVENÇÃO ESTADUAL
+            </p>
           </div>
-          <h1 className="text-white text-2xl font-extrabold tracking-tight">
-            Aplicativo do Ministro
-          </h1>
-          <p className="text-blue-200/90 text-xs uppercase tracking-widest mt-1 font-semibold">
-            COMIEADEPA · Convenção Estadual
-          </p>
-        </div>
 
-        {/* Card Principal */}
-        <div className="bg-white rounded-3xl shadow-2xl p-7 sm:p-8 border border-white/20 relative backdrop-blur-sm transition-all duration-300">
+          {/* ── 4. CARD DE LOGIN PRINCIPAL ── */}
+          <div className="app-login-card p-[22px_18px_24px] sm:p-[24px_22px_26px] mb-6">
 
-          {/* ── ETAPA 1: Identificação (CPF ou E-mail) ── */}
-          {stage === 'identificacao' && (
-            <div>
-              <div className="mb-6">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-[#0D2B4E] text-xs font-semibold mb-3 border border-blue-100">
-                  <ShieldCheck size={14} className="text-[#0D2B4E]" />
-                  Acesso Restrito ao Ministro
+            {/* Faixa decorativa dourada inferior */}
+            <div className="app-login-card-gold-bar" aria-hidden="true" />
+
+            {/* ── ETAPA 1: Identificação (CPF ou E-mail) ── */}
+            {stage === 'identificacao' && (
+              <div className="flex flex-col items-center text-center">
+                
+                {/* 5. Selo de Acesso */}
+                <div className="app-login-badge mb-5">
+                  <Lock size={15} strokeWidth={2.5} className="text-[#142A45]" />
+                  <span>Acesso Restrito ao Ministro</span>
                 </div>
-                <h2 className="text-xl font-bold text-gray-900 leading-tight">
+
+                {/* 6. Título e Instrução */}
+                <h2 className="text-[20px] sm:text-[21px] font-[800] text-[#101828] leading-[26px] sm:leading-[27px]">
                   Identifique-se para entrar
                 </h2>
-                <p className="text-gray-500 text-xs mt-1 leading-relaxed">
+                <p className="text-[12.5px] sm:text-[13px] text-[#4B5D73] leading-[18px] sm:leading-[19px] mt-2 mb-5">
                   Informe seu CPF ou E-mail cadastrado na convenção.
                 </p>
-              </div>
 
-              <form onSubmit={handleCheckIdentificador} className="space-y-5">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                    CPF ou E-mail
-                  </label>
-                  <input
-                    type="text"
-                    autoComplete="username"
-                    placeholder="000.000.000-00 ou seuemail@exemplo.com"
-                    value={identificador}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (!val.includes('@') && /^\d+$/.test(val.replace(/\D/g, '')) && val.length <= 14) {
-                        setIdentificador(maskCpf(val));
-                      } else {
-                        setIdentificador(val);
-                      }
-                    }}
-                    autoFocus
-                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition-all bg-gray-50/50 hover:bg-white"
-                    required
-                  />
-                </div>
-
-                {erro && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-xs flex items-start gap-2">
-                    <AlertCircle size={16} className="text-red-600 flex-shrink-0 mt-0.5" />
-                    <span>{erro}</span>
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-[#0D2B4E] hover:bg-[#163f6d] text-white font-bold py-3.5 rounded-xl shadow-lg shadow-[#0D2B4E]/20 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm tracking-wide"
-                >
-                  {loading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Consultando cadastro...</span>
-                    </>
-                  ) : (
-                    'Continuar'
-                  )}
-                </button>
-              </form>
-            </div>
-          )}
-
-          {/* ── ETAPA 2: 1º Acesso - Validação de Titularidade com Registro Convencional ── */}
-          {stage === 'first_access_registro' && (
-            <div className="transition-opacity duration-300">
-              <div className="flex items-center justify-between mb-4">
-                <button
-                  onClick={handleResetToInicio}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-[#0D2B4E] transition-colors"
-                >
-                  <ArrowLeft size={14} /> Voltar
-                </button>
-                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
-                  Primeiro Acesso
-                </span>
-              </div>
-
-              {/* Identificação do Ministro */}
-              <div className="bg-blue-50/80 border border-blue-100 rounded-2xl p-3.5 mb-5 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[#0D2B4E] text-white font-bold flex items-center justify-center text-base flex-shrink-0 shadow-sm">
-                  {nomeMinistro ? nomeMinistro.charAt(0).toUpperCase() : <UserCheck size={18} />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-gray-500 font-medium leading-none">Ministro localizado</p>
-                  <p className="text-sm font-bold text-[#0D2B4E] truncate mt-1">
-                    {nomeMinistro}
-                  </p>
-                  {cpfMinistro && (
-                    <p className="text-[11px] text-gray-400 font-mono mt-0.5">
-                      CPF: {maskCpf(cpfMinistro)}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div className="mb-5">
-                <h2 className="text-lg font-bold text-gray-900 leading-tight">
-                  Confirme a Titularidade
-                </h2>
-                <p className="text-gray-500 text-xs mt-1 leading-relaxed">
-                  Para sua segurança contra assunção indevida de contas, digite o seu <strong>Registro Convencional</strong> (ou Matrícula oficial) que consta em sua credencial.
-                </p>
-              </div>
-
-              <form onSubmit={handleValidateRegistro} className="space-y-5">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                    <span className="flex items-center gap-1.5">
-                      <FileBadge size={14} className="text-[#0D2B4E]" />
-                      Registro Convencional / Matrícula
-                    </span>
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={registroConvencional}
-                    onChange={(e) => setRegistroConvencional(e.target.value)}
-                    autoFocus
-                    placeholder="Ex: 3751"
-                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition-all bg-gray-50/50 hover:bg-white font-medium"
-                    required
-                  />
-                </div>
-
-                {erro && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-xs flex items-start gap-2">
-                    <AlertCircle size={16} className="text-red-600 flex-shrink-0 mt-0.5" />
-                    <span>{erro}</span>
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-[#0D2B4E] hover:bg-[#163f6d] text-white font-bold py-3.5 rounded-xl shadow-lg shadow-[#0D2B4E]/20 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm tracking-wide"
-                >
-                  {loading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Validando registro e enviando confirmação...</span>
-                    </>
-                  ) : (
-                    'Confirmar e Enviar Link de Ativação'
-                  )}
-                </button>
-              </form>
-            </div>
-          )}
-
-          {/* ── ETAPA 2A: Link de Confirmação Única Enviado com Sucesso ── */}
-          {stage === 'first_access_sent' && (
-            <div className="text-center py-2">
-              <div className="w-14 h-14 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-inner">
-                <CheckCircle2 size={30} />
-              </div>
-
-              <h2 className="text-xl font-bold text-gray-900 mb-2">
-                Link de Ativação Enviado!
-              </h2>
-
-              <p className="text-gray-600 text-xs leading-relaxed mb-4">
-                Identificamos seu e-mail previamente homologado na Secretaria Geral e enviamos um link de uso único para você definir sua senha de acesso com total segurança:
-              </p>
-
-              {emailMascarado && (
-                <div className="bg-gray-50 border border-gray-200 rounded-xl py-2.5 px-4 mb-6 inline-block">
-                  <span className="font-mono text-sm font-bold text-[#0D2B4E]">
-                    {emailMascarado}
-                  </span>
-                </div>
-              )}
-
-              <p className="text-[11px] text-gray-400 mb-6">
-                O link expira em <strong>15 minutos</strong> e só pode ser utilizado uma vez. Acesse sua caixa de entrada para criar sua senha.
-              </p>
-
-              <button
-                type="button"
-                onClick={handleResetToInicio}
-                className="w-full bg-[#0D2B4E] hover:bg-[#163f6d] text-white font-bold py-3.5 rounded-xl transition-all text-sm shadow-md"
-              >
-                Voltar para o Início
-              </button>
-            </div>
-          )}
-
-          {/* ── ETAPA 2B: Ministro sem E-mail Confiável (Exige Secretaria Geral) ── */}
-          {stage === 'first_access_sem_email' && (
-            <div className="text-center py-2">
-              <div className="w-14 h-14 bg-amber-100 text-amber-800 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-inner">
-                <PhoneCall size={28} />
-              </div>
-
-              <h2 className="text-lg font-bold text-gray-900 mb-2">
-                Atualização na Secretaria Necessária
-              </h2>
-
-              <p className="text-gray-600 text-xs leading-relaxed mb-4">
-                Por diretriz de integridade e segurança do <strong>Aplicativo do Ministro</strong>, a ativação exige um e-mail previamente homologado na convenção.
-              </p>
-
-              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-left text-xs text-amber-900 mb-6 space-y-2">
-                <p className="font-semibold text-amber-950">Como proceder:</p>
-                <p>1. Entre em contato com a <strong>Secretaria Geral da COMIEADEPA</strong>.</p>
-                <p>2. Solicite a atualização e homologação oficial do seu endereço de e-mail institucional.</p>
-                <p>3. Assim que homologado, retorne aqui para concluir seu primeiro acesso imediatamente.</p>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleResetToInicio}
-                className="w-full bg-[#0D2B4E] hover:bg-[#163f6d] text-white font-bold py-3.5 rounded-xl transition-all text-sm shadow-md"
-              >
-                Voltar ao Início
-              </button>
-            </div>
-          )}
-
-          {/* ── ETAPA 3: Login com Senha Existente ── */}
-          {stage === 'password' && (
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <button
-                  onClick={handleResetToInicio}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-[#0D2B4E] transition-colors"
-                >
-                  <ArrowLeft size={14} /> Voltar
-                </button>
-                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-green-100 text-green-800 border border-green-200">
-                  Ministro Cadastrado
-                </span>
-              </div>
-
-              {/* Cartão de Boas-Vindas */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50/50 border border-blue-100 rounded-2xl p-4 mb-5 flex items-center gap-3.5">
-                <div className="w-11 h-11 rounded-2xl bg-[#0D2B4E] text-white font-bold flex items-center justify-center text-lg flex-shrink-0 shadow-md">
-                  {nomeMinistro ? nomeMinistro.charAt(0).toUpperCase() : <UserCheck size={20} />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-gray-500 font-medium leading-none">
-                    Bem-vindo de volta!
-                  </p>
-                  <p className="text-sm font-extrabold text-[#0D2B4E] truncate mt-1">
-                    {nomeMinistro || 'Ministro'}
-                  </p>
-                  {cpfMinistro && (
-                    <p className="text-[11px] text-gray-400 font-mono mt-0.5">
-                      CPF: {maskCpf(cpfMinistro)}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <h2 className="text-lg font-bold text-gray-900 mb-1">
-                Digite sua senha
-              </h2>
-              <p className="text-gray-500 text-xs mb-5">
-                Insira sua senha cadastrada para entrar no portal.
-              </p>
-
-              <form onSubmit={handleLoginPassword} className="space-y-4">
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                      Senha
-                    </label>
-                    
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setErro('');
-                        setStage('forgot_password');
-                      }}
-                      className="text-xs font-semibold text-[#0D2B4E] hover:text-[#1a4a7a] hover:underline transition-colors focus:outline-none focus:ring-1 focus:ring-[#0D2B4E] rounded px-1"
-                    >
-                      Esqueci minha senha?
-                    </button>
-                  </div>
-
-                  <div className="relative">
+                {/* 7. Formulário de Identificação */}
+                <form onSubmit={handleCheckIdentificador} className="w-full text-left">
+                  <div className="relative w-full">
+                    <div className="absolute left-[16px] top-1/2 -translate-y-1/2 text-[#728198] pointer-events-none flex items-center">
+                      <UserRound size={21} strokeWidth={2.2} />
+                    </div>
                     <input
-                      type={showSenha ? 'text' : 'password'}
-                      value={senha}
-                      onChange={(e) => setSenha(e.target.value)}
+                      type="text"
+                      autoComplete="username"
+                      placeholder="CPF ou E-mail"
+                      value={identificador}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (!val.includes('@') && /^\d+$/.test(val.replace(/\D/g, '')) && val.length <= 14) {
+                          setIdentificador(maskCpf(val));
+                        } else {
+                          setIdentificador(val);
+                        }
+                      }}
                       autoFocus
-                      placeholder="Sua senha de acesso"
-                      className="w-full border border-gray-300 rounded-xl px-4 py-3 pr-11 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition-all bg-gray-50/50 hover:bg-white"
+                      className="w-full h-[54px] sm:h-[56px] rounded-[14px] border-[1.5px] border-[#A7B8CE] bg-[rgba(255,255,255,0.88)] pl-[48px] pr-[14px] text-[16px] text-[#142A45] font-medium placeholder-[#728198] focus:outline-none focus:border-[#1473BD] focus:ring-[3px] focus:ring-[rgba(20,115,189,0.12)] transition-all"
                       required
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowSenha(!showSenha)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1.5"
-                      aria-label={showSenha ? 'Ocultar senha' : 'Ver senha'}
-                    >
-                      {showSenha ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
                   </div>
 
-                  <div className="flex justify-end mt-1.5">
+                  {erro && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-3.5 py-2.5 text-xs flex items-start gap-2 mt-3">
+                      <AlertCircle size={15} className="text-red-600 flex-shrink-0 mt-0.5" />
+                      <span className="leading-snug">{erro}</span>
+                    </div>
+                  )}
+
+                  {/* 8. Botão Principal 'Entrar' / 'Continuar' */}
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="app-login-btn-primary mt-[18px]"
+                  >
+                    {loading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>Consultando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Entrar</span>
+                        <ArrowRight size={20} strokeWidth={2.4} />
+                      </>
+                    )}
+                  </button>
+
+                  {/* 9. Links Auxiliares */}
+                  <div className="flex flex-col items-center mt-[18px] gap-2">
                     <button
                       type="button"
                       onClick={() => {
                         setErro('');
                         setStage('forgot_password');
                       }}
-                      className="text-[11px] font-medium text-gray-500 hover:text-[#0D2B4E] hover:underline transition-colors"
+                      className="min-h-[44px] inline-flex items-center justify-center gap-1.5 text-[12.5px] sm:text-[13px] font-[650] text-[#07559C] hover:text-[#053866] hover:underline transition-colors"
                     >
-                      Problemas com a senha? <span className="font-bold text-[#0D2B4E]">Recuperar acesso</span>
+                      <KeyRound size={16} strokeWidth={2.2} />
+                      <span>Esqueceu seus dados de acesso?</span>
                     </button>
                   </div>
+                </form>
+
+              </div>
+            )}
+
+            {/* ── ETAPA 2: 1º Acesso - Confirmação de Titularidade (Registro) ── */}
+            {stage === 'first_access_registro' && (
+              <div className="flex flex-col text-left">
+                <div className="flex items-center justify-between mb-3.5">
+                  <button
+                    onClick={handleResetToInicio}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-[#07376B] transition-colors min-h-[36px]"
+                  >
+                    <ArrowLeft size={14} /> Voltar
+                  </button>
+                  <span className="text-[10.5px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                    Primeiro Acesso
+                  </span>
                 </div>
 
-                {erro && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-xs flex items-start gap-2">
-                    <AlertCircle size={16} className="text-red-600 flex-shrink-0 mt-0.5" />
-                    <span>{erro}</span>
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-[#0D2B4E] hover:bg-[#163f6d] text-white font-bold py-3.5 rounded-xl shadow-lg shadow-[#0D2B4E]/20 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm tracking-wide mt-2"
-                >
-                  {loading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Autenticando...</span>
-                    </>
-                  ) : (
-                    'Entrar no Aplicativo'
-                  )}
-                </button>
-              </form>
-            </div>
-          )}
-
-          {/* ── ETAPA 4: Solicitar Esqueci Minha Senha ── */}
-          {stage === 'forgot_password' && (
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <button
-                  onClick={() => {
-                    setErro('');
-                    setStage(nomeMinistro ? 'password' : 'identificacao');
-                  }}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-[#0D2B4E] transition-colors"
-                >
-                  <ArrowLeft size={14} /> Voltar
-                </button>
-                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                  Recuperação
-                </span>
-              </div>
-
-              {/* Identificação do Ministro quando já temos */}
-              {nomeMinistro && (
-                <div className="bg-blue-50/80 border border-blue-100 rounded-2xl p-3.5 mb-5 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#0D2B4E] text-white font-bold flex items-center justify-center text-base flex-shrink-0 shadow-sm">
-                    {nomeMinistro.charAt(0).toUpperCase()}
+                <div className="bg-blue-50/90 border border-blue-100 rounded-xl p-3 mb-4 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-[#07376B] text-white font-bold flex items-center justify-center text-sm flex-shrink-0 shadow-sm">
+                    {nomeMinistro ? nomeMinistro.charAt(0).toUpperCase() : <UserCheck size={16} />}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs text-gray-500 font-medium leading-none">Ministro</p>
-                    <p className="text-sm font-bold text-[#0D2B4E] truncate mt-1">
+                    <p className="text-[11px] text-gray-500 font-medium leading-none">Ministro localizado</p>
+                    <p className="text-xs font-bold text-[#07376B] truncate mt-1">
                       {nomeMinistro}
                     </p>
                     {cpfMinistro && (
-                      <p className="text-[11px] text-gray-400 font-mono mt-0.5">
+                      <p className="text-[10.5px] text-gray-400 font-mono mt-0.5">
                         CPF: {maskCpf(cpfMinistro)}
                       </p>
                     )}
                   </div>
                 </div>
-              )}
 
-              <div className="mb-5">
-                <h2 className="text-xl font-bold text-gray-900 leading-tight">
-                  Recuperar Senha
-                </h2>
-                <p className="text-gray-500 text-xs mt-1 leading-relaxed">
-                  Enviaremos um link de recuperação exclusivo para o e-mail previamente homologado na convenção.
+                <h3 className="text-base font-bold text-gray-900 leading-snug">
+                  Confirme sua Titularidade
+                </h3>
+                <p className="text-gray-500 text-xs mt-1 mb-4 leading-relaxed">
+                  Digite seu <strong>Registro Convencional</strong> (ou Matrícula oficial) constante em sua credencial ministerial.
                 </p>
-              </div>
 
-              <form onSubmit={handleForgotPassword} className="space-y-5">
-                {!nomeMinistro && (
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                      CPF ou E-mail
-                    </label>
+                <form onSubmit={handleValidateRegistro} className="space-y-4">
+                  <div className="relative">
+                    <div className="absolute left-[14px] top-1/2 -translate-y-1/2 text-[#728198] pointer-events-none">
+                      <FileBadge size={19} />
+                    </div>
                     <input
                       type="text"
-                      placeholder="000.000.000-00 ou seuemail@exemplo.com"
-                      value={identificador}
-                      onChange={(e) => setIdentificador(e.target.value)}
+                      inputMode="numeric"
+                      value={registroConvencional}
+                      onChange={(e) => setRegistroConvencional(e.target.value)}
                       autoFocus
-                      className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-[#0D2B4E] focus:border-[#0D2B4E] transition-all bg-gray-50/50 hover:bg-white"
+                      placeholder="Ex: 3751"
+                      className="w-full h-[52px] rounded-xl border border-gray-300 pl-11 pr-3 text-base text-gray-900 focus:outline-none focus:border-[#006DB5] focus:ring-2 focus:ring-blue-100 transition-all font-medium bg-white"
                       required
                     />
                   </div>
-                )}
 
-                {erro && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-xs flex items-start gap-2">
-                    <AlertCircle size={16} className="text-red-600 flex-shrink-0 mt-0.5" />
-                    <span>{erro}</span>
+                  {erro && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-2.5 text-xs flex items-start gap-2">
+                      <AlertCircle size={15} className="text-red-600 flex-shrink-0 mt-0.5" />
+                      <span>{erro}</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="app-login-btn-primary"
+                  >
+                    {loading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>Validando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Confirmar e Ativar</span>
+                        <ArrowRight size={18} />
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {/* ── ETAPA 2A: Link Enviado com Sucesso ── */}
+            {stage === 'first_access_sent' && (
+              <div className="text-center py-2">
+                <div className="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-sm">
+                  <CheckCircle2 size={26} />
+                </div>
+
+                <h3 className="text-base font-bold text-gray-900 mb-1.5">
+                  Link de Ativação Enviado!
+                </h3>
+
+                <p className="text-gray-600 text-xs leading-relaxed mb-3">
+                  Enviamos um link de uso único e temporário para seu e-mail previamente cadastrado:
+                </p>
+
+                {emailMascarado && (
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg py-1.5 px-3 mb-4 inline-block">
+                    <span className="font-mono text-xs font-bold text-[#07376B]">
+                      {emailMascarado}
+                    </span>
                   </div>
                 )}
 
+                <p className="text-[11px] text-gray-400 mb-5">
+                  O link expira em 15 minutos. Verifique sua caixa de entrada para criar sua senha.
+                </p>
+
                 <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-[#0D2B4E] hover:bg-[#163f6d] text-white font-bold py-3.5 rounded-xl shadow-lg shadow-[#0D2B4E]/20 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm tracking-wide"
+                  type="button"
+                  onClick={handleResetToInicio}
+                  className="app-login-btn-primary"
                 >
-                  {loading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Enviando link...</span>
-                    </>
-                  ) : (
-                    'Enviar Link de Recuperação'
-                  )}
+                  Voltar ao Início
                 </button>
-              </form>
-            </div>
-          )}
-
-          {/* ── ETAPA 5: Confirmação de Envio do E-mail de Recuperação ── */}
-          {stage === 'forgot_sent' && (
-            <div className="text-center py-2">
-              <div className="w-14 h-14 bg-green-100 text-green-700 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-inner">
-                <Mail size={28} />
               </div>
+            )}
 
-              <h2 className="text-xl font-bold text-gray-900 mb-2">
-                Instruções Enviadas!
-              </h2>
+            {/* ── ETAPA 2B: Sem E-mail Homologado ── */}
+            {stage === 'first_access_sem_email' && (
+              <div className="text-center py-2">
+                <div className="w-12 h-12 bg-amber-100 text-amber-800 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-sm">
+                  <PhoneCall size={24} />
+                </div>
 
-              <p className="text-gray-600 text-xs leading-relaxed mb-4">
-                Se os dados informados estiverem corretos, enviamos um link para redefinição de senha para o e-mail previamente cadastrado:
-              </p>
+                <h3 className="text-base font-bold text-gray-900 mb-1.5">
+                  Atualização Necessária
+                </h3>
 
-              {emailMascarado ? (
-                <div className="bg-gray-50 border border-gray-200 rounded-xl py-2.5 px-4 mb-6 inline-block">
-                  <span className="font-mono text-sm font-bold text-[#0D2B4E]">
-                    {emailMascarado}
+                <p className="text-gray-600 text-xs leading-relaxed mb-3">
+                  Para segurança do seu acesso, procure a Secretaria Geral da COMIEADEPA para cadastrar e homologar seu e-mail institucional.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={handleResetToInicio}
+                  className="app-login-btn-primary mt-2"
+                >
+                  Entendi, Voltar
+                </button>
+              </div>
+            )}
+
+            {/* ── ETAPA 3: Login com Senha ── */}
+            {stage === 'password' && (
+              <div className="flex flex-col text-left">
+                <div className="flex items-center justify-between mb-3.5">
+                  <button
+                    onClick={handleResetToInicio}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-[#07376B] transition-colors min-h-[36px]"
+                  >
+                    <ArrowLeft size={14} /> Voltar
+                  </button>
+                  <span className="text-[10.5px] font-bold px-2.5 py-0.5 rounded-full bg-green-100 text-green-800 border border-green-200">
+                    Ministro Cadastrado
                   </span>
                 </div>
-              ) : (
-                <div className="mb-6" />
-              )}
 
-              <p className="text-[11px] text-gray-400 mb-6">
-                O link é válido por <strong>15 minutos</strong>. Verifique sua caixa de entrada e a pasta de spam.
-              </p>
+                <div className="bg-blue-50/90 border border-blue-100 rounded-xl p-3 mb-4 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-[#07376B] text-white font-bold flex items-center justify-center text-sm flex-shrink-0 shadow-sm">
+                    {nomeMinistro ? nomeMinistro.charAt(0).toUpperCase() : <UserCheck size={16} />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] text-gray-500 font-medium leading-none">Bem-vindo(a)</p>
+                    <p className="text-xs font-bold text-[#07376B] truncate mt-1">
+                      {nomeMinistro || 'Ministro'}
+                    </p>
+                    {cpfMinistro && (
+                      <p className="text-[10.5px] text-gray-400 font-mono mt-0.5">
+                        CPF: {maskCpf(cpfMinistro)}
+                      </p>
+                    )}
+                  </div>
+                </div>
 
-              <button
-                type="button"
-                onClick={handleResetToInicio}
-                className="w-full bg-[#0D2B4E] hover:bg-[#163f6d] text-white font-bold py-3.5 rounded-xl transition-all text-sm shadow-md"
-              >
-                Voltar para o Início
-              </button>
+                <h3 className="text-base font-bold text-gray-900 leading-snug">
+                  Digite sua senha
+                </h3>
+                <p className="text-gray-500 text-xs mt-1 mb-4">
+                  Insira sua senha de acesso para continuar.
+                </p>
+
+                <form onSubmit={handleLoginPassword} className="space-y-4">
+                  <div>
+                    <div className="relative">
+                      <input
+                        type={showSenha ? 'text' : 'password'}
+                        value={senha}
+                        onChange={(e) => setSenha(e.target.value)}
+                        autoFocus
+                        placeholder="Sua senha de acesso"
+                        className="w-full h-[52px] rounded-xl border border-gray-300 px-4 pr-11 text-base text-gray-900 focus:outline-none focus:border-[#006DB5] focus:ring-2 focus:ring-blue-100 transition-all font-medium bg-white"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSenha(!showSenha)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-2 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                        aria-label={showSenha ? 'Ocultar senha' : 'Ver senha'}
+                      >
+                        {showSenha ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+
+                    <div className="flex justify-end mt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setErro('');
+                          setStage('forgot_password');
+                        }}
+                        className="text-xs font-semibold text-[#07559C] hover:underline min-h-[36px] flex items-center"
+                      >
+                        Esqueceu sua senha?
+                      </button>
+                    </div>
+                  </div>
+
+                  {erro && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-2.5 text-xs flex items-start gap-2">
+                      <AlertCircle size={15} className="text-red-600 flex-shrink-0 mt-0.5" />
+                      <span>{erro}</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="app-login-btn-primary"
+                  >
+                    {loading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>Entrando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Entrar no Aplicativo</span>
+                        <ArrowRight size={18} />
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {/* ── ETAPA 4: Recuperação de Senha ── */}
+            {stage === 'forgot_password' && (
+              <div className="flex flex-col text-left">
+                <div className="flex items-center justify-between mb-3.5">
+                  <button
+                    onClick={() => {
+                      setErro('');
+                      setStage(nomeMinistro ? 'password' : 'identificacao');
+                    }}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-[#07376B] transition-colors min-h-[36px]"
+                  >
+                    <ArrowLeft size={14} /> Voltar
+                  </button>
+                  <span className="text-[10.5px] font-bold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                    Recuperação
+                  </span>
+                </div>
+
+                <h3 className="text-base font-bold text-gray-900 leading-snug">
+                  Recuperar Senha
+                </h3>
+                <p className="text-gray-500 text-xs mt-1 mb-4 leading-relaxed">
+                  Enviaremos instruções seguras para redefinição de senha ao seu e-mail cadastrado.
+                </p>
+
+                <form onSubmit={handleForgotPassword} className="space-y-4">
+                  {!nomeMinistro && (
+                    <div className="relative">
+                      <div className="absolute left-[14px] top-1/2 -translate-y-1/2 text-[#728198] pointer-events-none">
+                        <UserRound size={19} />
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="CPF ou E-mail cadastrado"
+                        value={identificador}
+                        onChange={(e) => setIdentificador(e.target.value)}
+                        autoFocus
+                        className="w-full h-[52px] rounded-xl border border-gray-300 pl-11 pr-3 text-base text-gray-900 focus:outline-none focus:border-[#006DB5] focus:ring-2 focus:ring-blue-100 transition-all font-medium bg-white"
+                        required
+                      />
+                    </div>
+                  )}
+
+                  {erro && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-2.5 text-xs flex items-start gap-2">
+                      <AlertCircle size={15} className="text-red-600 flex-shrink-0 mt-0.5" />
+                      <span>{erro}</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="app-login-btn-primary"
+                  >
+                    {loading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>Enviando link...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Enviar Link de Recuperação</span>
+                        <ArrowRight size={18} />
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {/* ── ETAPA 5: Instruções de Recuperação Enviadas ── */}
+            {stage === 'forgot_sent' && (
+              <div className="text-center py-2">
+                <div className="w-12 h-12 bg-blue-100 text-blue-700 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-sm">
+                  <Mail size={24} />
+                </div>
+
+                <h3 className="text-base font-bold text-gray-900 mb-1.5">
+                  Instruções Enviadas!
+                </h3>
+
+                <p className="text-gray-600 text-xs leading-relaxed mb-3">
+                  Se os dados estiverem cadastrados, você receberá um link seguro de redefinição:
+                </p>
+
+                {emailMascarado && (
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg py-1.5 px-3 mb-4 inline-block">
+                    <span className="font-mono text-xs font-bold text-[#07376B]">
+                      {emailMascarado}
+                    </span>
+                  </div>
+                )}
+
+                <p className="text-[11px] text-gray-400 mb-5">
+                  Válido por 15 minutos. Verifique sua caixa de entrada e pasta de spam.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={handleResetToInicio}
+                  className="app-login-btn-primary"
+                >
+                  Voltar ao Início
+                </button>
+              </div>
+            )}
+
+          </div>
+
+          {/* ── 10. BENEFÍCIOS INSTITUCIONAIS (3 Colunas) ── */}
+          <div className="w-full max-w-[354px] flex items-center justify-between text-center mt-2 mb-4 px-1">
+            
+            {/* Coluna 1: Acesso Seguro */}
+            <div className="flex-1 flex flex-col items-center justify-center">
+              <ShieldCheck size={25} strokeWidth={2.2} className="text-[#F0C35E] drop-shadow-sm mb-1.5" />
+              <span className="text-white text-[11px] sm:text-[12px] font-medium leading-[14px] sm:leading-[15px] drop-shadow-sm">
+                Acesso Seguro
+              </span>
             </div>
-          )}
 
-        </div>
+            {/* Separador vertical 1 */}
+            <div className="w-[1px] h-8 bg-white/25 flex-shrink-0" />
 
-        {/* Rodapé Externo */}
-        <div className="text-center mt-6">
-          <p className="text-xs text-blue-200/60 font-medium">
-            COMIEADEPA &copy; {new Date().getFullYear()} · Todos os direitos reservados
-          </p>
+            {/* Coluna 2: Experiência em App */}
+            <div className="flex-1 flex flex-col items-center justify-center">
+              <Smartphone size={25} strokeWidth={2.2} className="text-[#F0C35E] drop-shadow-sm mb-1.5" />
+              <span className="text-white text-[11px] sm:text-[12px] font-medium leading-[14px] sm:leading-[15px] drop-shadow-sm">
+                Experiência em App
+              </span>
+            </div>
+
+            {/* Separador vertical 2 */}
+            <div className="w-[1px] h-8 bg-white/25 flex-shrink-0" />
+
+            {/* Coluna 3: Serviços Ministeriais */}
+            <div className="flex-1 flex flex-col items-center justify-center">
+              <Layers size={25} strokeWidth={2.2} className="text-[#F0C35E] drop-shadow-sm mb-1.5" />
+              <span className="text-white text-[11px] sm:text-[12px] font-medium leading-[14px] sm:leading-[15px] drop-shadow-sm">
+                Serviços Ministeriais
+              </span>
+            </div>
+
+          </div>
+
+          {/* ── 11. RODAPÉ ── */}
+          <footer className="text-center mt-4">
+            <p className="text-[#D9E8FA] text-[10px] font-medium tracking-wide drop-shadow-sm">
+              COMIEADEPA &copy; {new Date().getFullYear()} • Todos os direitos reservados
+            </p>
+          </footer>
+
         </div>
 
       </div>
@@ -731,10 +782,10 @@ function PortalMinistroLoginForm() {
 export default function PortalMinistroLoginPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0D2B4E] via-[#09203a] to-[#051324]">
+      <div className="min-h-screen flex items-center justify-center bg-[#051A33]">
         <div className="text-center">
           <div className="w-10 h-10 border-4 border-amber-400/20 border-t-amber-400 rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-white/70 text-xs font-semibold tracking-wide">Carregando...</p>
+          <p className="text-white/70 text-xs font-semibold tracking-wide">Iniciando Aplicativo...</p>
         </div>
       </div>
     }>
