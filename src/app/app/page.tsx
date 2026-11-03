@@ -187,7 +187,7 @@ export default function AplicativoDoMinistroAppPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#092A50]">
+      <div className="w-full h-full min-h-[100dvh] flex items-center justify-center bg-[#092A50]">
         <div className="text-center">
           <div className="w-10 h-10 border-4 border-amber-400/20 border-t-amber-400 rounded-full animate-spin mx-auto mb-3" />
           <p className="text-white/70 text-xs font-semibold tracking-wide">Iniciando Aplicativo...</p>
@@ -201,80 +201,78 @@ export default function AplicativoDoMinistroAppPage() {
   const isAtivo = ministro.status === 'active';
 
   return (
-    <div className="min-h-screen bg-[#071D36] text-[#10243C] flex justify-center selection:bg-amber-400 selection:text-blue-950 font-sans">
-      {/* Container Principal Mobile-First: 100vw no celular, max 430px em desktop, max 600px em tablet */}
-      <div className="w-full max-w-[430px] md:max-w-[600px] min-h-screen relative flex flex-col shadow-2xl bg-[#EAF3FF] overflow-x-hidden">
-        
-        {/* CAMADA DO BACKGROUND OFICIAL /img/bg_app1.png */}
-        <div
-          className="absolute inset-0 pointer-events-none z-0"
-          style={{
-            backgroundImage: "url('/img/bg_app1.png')",
-            backgroundPosition: 'center top',
-            backgroundRepeat: 'no-repeat',
-            backgroundSize: '100% auto',
-          }}
-          aria-hidden="true"
-        />
+    <div className="app-container-frame selection:bg-amber-400 selection:text-blue-950 font-sans">
+      
+      {/* CAMADA DO BACKGROUND OFICIAL /img/bg_app1.png */}
+      <div
+        className="absolute inset-0 pointer-events-none z-0"
+        style={{
+          backgroundImage: "url('/img/bg_app1.png')",
+          backgroundPosition: 'center top',
+          backgroundRepeat: 'no-repeat',
+          backgroundSize: '100% auto',
+        }}
+        aria-hidden="true"
+      />
 
-        {/* ── CABEÇALHO SUPERIOR (Altura funcional 64px + safe area) ── */}
-        <header
-          className="relative z-10 w-full px-[18px] flex items-center justify-between"
-          style={{
-            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)',
-            minHeight: '64px',
-          }}
+      {/* ── CABEÇALHO SUPERIOR (Altura funcional 64px + safe area) ── */}
+      <header
+        className="relative z-10 w-full px-[18px] flex items-center justify-between flex-shrink-0"
+        style={{
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)',
+          minHeight: '64px',
+        }}
+      >
+        {/* Menu Hambúrguer (42x42px) */}
+        <button
+          onClick={() => setMenuOpen(true)}
+          aria-label="Abrir Menu Lateral"
+          className="w-[42px] h-[42px] rounded-xl flex items-center justify-center text-white bg-white/10 hover:bg-white/20 active:scale-95 transition-all backdrop-blur-sm shadow-sm flex-shrink-0"
         >
-          {/* Menu Hambúrguer (42x42px) */}
-          <button
-            onClick={() => setMenuOpen(true)}
-            aria-label="Abrir Menu Lateral"
-            className="w-[42px] h-[42px] rounded-xl flex items-center justify-center text-white bg-white/10 hover:bg-white/20 active:scale-95 transition-all backdrop-blur-sm shadow-sm"
-          >
-            <Menu size={22} strokeWidth={2.2} />
-          </button>
+          <Menu size={22} strokeWidth={2.2} />
+        </button>
 
-          {/* Identidade COMIEADEPA Centralizada */}
-          <div className="flex-1 flex flex-col items-center justify-center px-2">
-            <div className="flex items-center gap-2">
-              <Image
-                src="/img/logo_comieadepa.png"
-                alt="COMIEADEPA"
-                width={36}
-                height={36}
-                priority
-                className="object-contain drop-shadow-md"
-                style={{ height: '36px', width: 'auto' }}
-              />
-              <div className="text-left leading-none">
-                <span className="block text-white font-extrabold text-[17px] tracking-tight drop-shadow-sm">
-                  COMIEADEPA
-                </span>
-                <span className="block text-white/90 text-[8.5px] font-medium tracking-tight whitespace-nowrap drop-shadow-sm">
-                  Convenção das Assembleias de Deus no Pará
-                </span>
-              </div>
+        {/* Identidade COMIEADEPA Centralizada */}
+        <div className="flex-1 flex flex-col items-center justify-center px-2 min-w-0">
+          <div className="flex items-center gap-2 max-w-full">
+            <Image
+              src="/img/logo_comieadepa.png"
+              alt="COMIEADEPA"
+              width={36}
+              height={36}
+              priority
+              className="object-contain drop-shadow-md flex-shrink-0"
+              style={{ height: '36px', width: 'auto' }}
+            />
+            <div className="text-left leading-none min-w-0">
+              <span className="block text-white font-extrabold text-[16px] sm:text-[17px] tracking-tight drop-shadow-sm truncate">
+                COMIEADEPA
+              </span>
+              <span className="block text-white/90 text-[8px] sm:text-[8.5px] font-medium tracking-tight whitespace-nowrap drop-shadow-sm truncate">
+                Convenção das Assembleias de Deus no Pará
+              </span>
             </div>
           </div>
+        </div>
 
-          {/* Botão Sino Notificações (42x42px) */}
-          <button
-            onClick={() => setNotifOpen(true)}
-            aria-label="Notificações"
-            className="w-[42px] h-[42px] rounded-xl flex items-center justify-center text-white bg-white/10 hover:bg-white/20 active:scale-95 transition-all relative backdrop-blur-sm shadow-sm"
-          >
-            <Bell size={21} strokeWidth={2.2} />
-            {unreadCount > 0 && (
-              <span className="absolute top-2 right-2 w-[8px] h-[8px] rounded-full bg-[#E74747] ring-2 ring-[#0D2B4E] animate-pulse" />
-            )}
-          </button>
-        </header>
-
-        {/* ── CONTEÚDO PRINCIPAL ROLÁVEL ── */}
-        <main
-          className="relative z-10 flex-1 px-4 pt-2 flex flex-col"
-          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 90px)' }}
+        {/* Botão Sino Notificações (42x42px) */}
+        <button
+          onClick={() => setNotifOpen(true)}
+          aria-label="Notificações"
+          className="w-[42px] h-[42px] rounded-xl flex items-center justify-center text-white bg-white/10 hover:bg-white/20 active:scale-95 transition-all relative backdrop-blur-sm shadow-sm flex-shrink-0"
         >
+          <Bell size={21} strokeWidth={2.2} />
+          {unreadCount > 0 && (
+            <span className="absolute top-2 right-2 w-[8px] h-[8px] rounded-full bg-[#E74747] ring-2 ring-[#0D2B4E] animate-pulse" />
+          )}
+        </button>
+      </header>
+
+      {/* ── CONTEÚDO PRINCIPAL ROLÁVEL (Apenas esta área rola verticalmente) ── */}
+      <main
+        className="app-main-scroll relative z-10 px-4 pt-2 flex flex-col"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 90px)' }}
+      >
           {activeTab === 'inicio' && (
             <>
               {/* ── APRESENTAÇÃO 'Aplicativo do Ministro' ── */}
@@ -602,7 +600,7 @@ export default function AplicativoDoMinistroAppPage() {
 
         {/* ── NAVEGAÇÃO INFERIOR FIXA (Altura 68px + safe area) ── */}
         <nav
-          className="fixed bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none"
+          className="absolute bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none"
         >
           <div
             className="w-full max-w-[430px] md:max-w-[600px] pointer-events-auto rounded-t-[20px] shadow-[0_-4px_18px_rgba(7,33,68,0.2)] px-3 flex items-center justify-around"
@@ -896,7 +894,6 @@ export default function AplicativoDoMinistroAppPage() {
           </div>
         )}
 
-      </div>
     </div>
   );
 }
