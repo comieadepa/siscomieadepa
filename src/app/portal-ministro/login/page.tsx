@@ -236,16 +236,18 @@ function PortalMinistroLoginForm() {
 
           {/* ── 3. IDENTIDADE E LOGOMARCA ── */}
           <div className="flex flex-col items-center text-center w-full mb-6">
-            {/* Escudo Oficial COMIEADEPA */}
-            <div className="w-[84px] sm:w-[94px] h-auto flex items-center justify-center mb-3 drop-shadow-[0_8px_16px_rgba(0,10,30,0.35)]">
-              <Image
-                src="/img/logo_comieadepa.png"
-                alt="Escudo COMIEADEPA"
-                width={94}
-                height={108}
-                priority
-                className="object-contain w-full h-auto"
-              />
+            {/* Escudo Oficial COMIEADEPA com efeito pulse suave e brilho discreto */}
+            <div className="w-[84px] sm:w-[94px] h-auto flex items-center justify-center mb-3">
+              <div className="app-logo-pulse">
+                <Image
+                  src="/img/logo_comieadepa.png"
+                  alt="Escudo COMIEADEPA"
+                  width={94}
+                  height={108}
+                  priority
+                  className="object-contain w-full h-auto"
+                />
+              </div>
             </div>
 
             {/* Bloco de Título com Acento Dourado */}
@@ -731,43 +733,54 @@ function PortalMinistroLoginForm() {
           </div>
 
           {/* ── 10. BENEFÍCIOS INSTITUCIONAIS (3 Colunas) ── */}
-          <div className="w-full max-w-[354px] flex items-center justify-between text-center mt-2 mb-4 px-1">
-            
-            {/* Coluna 1: Acesso Seguro */}
-            <div className="flex-1 flex flex-col items-center justify-center">
-              <ShieldCheck size={25} strokeWidth={2.2} className="text-[#F0C35E] drop-shadow-sm mb-1.5" />
-              <span className="text-white text-[11px] sm:text-[12px] font-medium leading-[14px] sm:leading-[15px] drop-shadow-sm">
-                Acesso Seguro
-              </span>
+          <div className="w-full max-w-[354px] px-[20px] mt-2 mb-4">
+            <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-[12px] text-center">
+              
+              {/* Coluna 1: Acesso Seguro */}
+              <div className="flex flex-col items-center justify-center min-w-0">
+                <ShieldCheck size={28} strokeWidth={2.2} className="text-[#F0C35E] drop-shadow-sm flex-shrink-0" />
+                <div className="mt-[10px] text-[12px] font-[500] leading-[16px] text-white drop-shadow-sm text-center">
+                  <span className="block truncate">Acesso</span>
+                  <span className="block truncate">Seguro</span>
+                </div>
+              </div>
+
+              {/* Separador vertical 1 (altura 42px) */}
+              <div className="w-[1px] h-[42px] bg-white/25 flex-shrink-0" aria-hidden="true" />
+
+              {/* Coluna 2: Experiência em App */}
+              <div className="flex flex-col items-center justify-center min-w-0">
+                <Smartphone size={28} strokeWidth={2.2} className="text-[#F0C35E] drop-shadow-sm flex-shrink-0" />
+                <div className="mt-[10px] text-[12px] font-[500] leading-[16px] text-white drop-shadow-sm text-center">
+                  <span className="block truncate">Experiência</span>
+                  <span className="block truncate">em App</span>
+                </div>
+              </div>
+
+              {/* Separador vertical 2 (altura 42px) */}
+              <div className="w-[1px] h-[42px] bg-white/25 flex-shrink-0" aria-hidden="true" />
+
+              {/* Coluna 3: Serviços Ministeriais */}
+              <div className="flex flex-col items-center justify-center min-w-0">
+                <Layers size={28} strokeWidth={2.2} className="text-[#F0C35E] drop-shadow-sm flex-shrink-0" />
+                <div className="mt-[10px] text-[12px] font-[500] leading-[16px] text-white drop-shadow-sm text-center">
+                  <span className="block truncate">Serviços</span>
+                  <span className="block truncate">Ministeriais</span>
+                </div>
+              </div>
+
             </div>
-
-            {/* Separador vertical 1 */}
-            <div className="w-[1px] h-8 bg-white/25 flex-shrink-0" />
-
-            {/* Coluna 2: Experiência em App */}
-            <div className="flex-1 flex flex-col items-center justify-center">
-              <Smartphone size={25} strokeWidth={2.2} className="text-[#F0C35E] drop-shadow-sm mb-1.5" />
-              <span className="text-white text-[11px] sm:text-[12px] font-medium leading-[14px] sm:leading-[15px] drop-shadow-sm">
-                Experiência em App
-              </span>
-            </div>
-
-            {/* Separador vertical 2 */}
-            <div className="w-[1px] h-8 bg-white/25 flex-shrink-0" />
-
-            {/* Coluna 3: Serviços Ministeriais */}
-            <div className="flex-1 flex flex-col items-center justify-center">
-              <Layers size={25} strokeWidth={2.2} className="text-[#F0C35E] drop-shadow-sm mb-1.5" />
-              <span className="text-white text-[11px] sm:text-[12px] font-medium leading-[14px] sm:leading-[15px] drop-shadow-sm">
-                Serviços Ministeriais
-              </span>
-            </div>
-
           </div>
 
-          {/* ── 11. RODAPÉ ── */}
-          <footer className="text-center mt-4">
-            <p className="text-[#D9E8FA] text-[10px] font-medium tracking-wide drop-shadow-sm">
+          {/* ── 11. RODAPÉ INSTITUCIONAL ── */}
+          {/* Deslocado para a região azul-escura com distância visual >= 35px da faixa luminosa */}
+          <footer
+            className="text-center w-full mt-[40px]"
+            style={{
+              paddingBottom: 'max(20px, env(safe-area-inset-bottom, 0px))',
+            }}
+          >
+            <p className="text-[#EAF2FF] text-[11px] font-normal leading-[16px] tracking-wide drop-shadow-sm">
               COMIEADEPA &copy; {new Date().getFullYear()} • Todos os direitos reservados
             </p>
           </footer>

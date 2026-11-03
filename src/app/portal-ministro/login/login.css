@@ -71,6 +71,42 @@
   padding-right: 18px;
 }
 
+/* ── Animação Pulse Contínua e Suave na Logomarca Oficial ── */
+.app-logo-pulse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  will-change: transform, filter;
+  animation: logoPulseGlow 3s ease-in-out infinite;
+  transform-origin: center center;
+}
+
+@keyframes logoPulseGlow {
+  0% {
+    transform: scale(1);
+    filter: drop-shadow(0 6px 12px rgba(0, 15, 40, 0.35));
+  }
+  50% {
+    transform: scale(1.045);
+    filter: drop-shadow(0 8px 18px rgba(0, 15, 40, 0.45))
+            drop-shadow(0 0 14px rgba(229, 184, 76, 0.28))
+            drop-shadow(0 0 8px rgba(32, 134, 232, 0.22));
+  }
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 6px 12px rgba(0, 15, 40, 0.35));
+  }
+}
+
+/* Acessibilidade: Desativa animação quando o usuário solicita redução de movimento */
+@media (prefers-reduced-motion: reduce) {
+  .app-logo-pulse {
+    animation: none !important;
+    transform: none !important;
+    filter: drop-shadow(0 6px 12px rgba(0, 15, 40, 0.35)) !important;
+  }
+}
+
 /* Card de Login */
 .app-login-card {
   width: calc(100% - 4px);
