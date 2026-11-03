@@ -44,6 +44,8 @@ export default function PortalMinistroLayout({ children }: { children: React.Rea
     pathname.startsWith('/portal-ministro/login') ||
     pathname.startsWith('/portal-ministro/redefinir-senha');
 
+  const isAppRoute = pathname.startsWith('/portal-ministro/app');
+
   useEffect(() => {
     if (isPublicAuthRoute) {
       setLoading(false);
@@ -71,6 +73,24 @@ export default function PortalMinistroLayout({ children }: { children: React.Rea
   };
 
   if (isPublicAuthRoute) return <>{children}</>;
+  if (isAppRoute) {
+    if (loading) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-[#092A50]">
+          <div className="text-center">
+            <div className="w-10 h-10 border-4 border-amber-400/20 border-t-amber-400 rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-white/70 text-xs font-semibold tracking-wide">Iniciando Aplicativo...</p>
+          </div>
+        </div>
+      );
+    }
+    if (!ministro) return null;
+    return (
+      <MinistroContext.Provider value={{ ministro, loading: false }}>
+        {children}
+      </MinistroContext.Provider>
+    );
+  }
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0D2B4E] to-[#1a4a7a]">
