@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { createServerClient } from '@/lib/supabase-server';
+import { verifyAemadepaToken } from '@/lib/aemadepa-token';
 
 const BUCKET = 'membros-fotos';
 const MAX_BYTES = 2 * 1024 * 1024; // 2MB
 
-function onlyDigits(value: string) {
+function onlyDigits(value: string | null | undefined): string {
   return (value || '').replace(/\D/g, '');
 }
 
@@ -34,6 +35,7 @@ export async function POST(request: NextRequest) {
 
     const {
       ministroId,
+      token,
       nome,
       cpf,
       rg,
@@ -50,8 +52,22 @@ export async function POST(request: NextRequest) {
       foto_url,
     } = body;
 
+    // Também verifica header alternativo
+    const authHeaderToken = request.headers.get('x-aemadepa-token') || token;
+
     if (!ministroId) {
       return NextResponse.json({ error: 'Ministro vinculado não identificado.' }, { status: 400 });
+    }
+
+    // 0. Validação de Autorização Temporária (Proteção LGPD contra submissão direta)
+    const tokenVerification = verifyAemadepaToken(authHeaderToken, ministroId);
+    if (!tokenVerification.valid) {
+      return NextResponse.json(
+        {
+          error: 'Sessão de autorização expirada ou inválida. Por favor, valide o CPF e a data de nascimento novamente.',
+        },
+        { status: 401 }
+      );
     }
 
     if (!nome || !String(nome).trim()) {

@@ -13,18 +13,19 @@ import {
   RefreshCw,
   X,
   Check,
+  ShieldCheck,
+  Lock,
+  ArrowRight,
 } from 'lucide-react';
 
 interface MinistroItem {
   id: string;
   nome: string;
   matricula: string;
-  cpf: string;
   cargo: string;
   campo: string;
   supervisao: string;
   temEsposaCadastrada: boolean;
-  nomeEsposa?: string | null;
   status: string;
 }
 
@@ -65,12 +66,21 @@ const FORM_INICIAL: DadosFormulario = {
 const TIPOS_SANGUINEOS = ['', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
 export default function PublicAemadepaCadastroPage() {
-  // Busca de ministros
+  // 1. Busca e seleção de ministros
   const [busca, setBusca] = useState('');
   const [buscando, setBuscando] = useState(false);
   const [resultados, setResultados] = useState<MinistroItem[]>([]);
   const [ministroSelecionado, setMinistroSelecionado] = useState<MinistroItem | null>(null);
-  // Formulário
+
+  // 2. Desafio de Segurança LGPD (CPF + Data de Nascimento)
+  const [desafioCpf, setDesafioCpf] = useState('');
+  const [desafioDataNasc, setDesafioDataNasc] = useState('');
+  const [validandoDesafio, setValidandoDesafio] = useState(false);
+  const [desafioErro, setDesafioErro] = useState<string | null>(null);
+  const [tokenAutorizacao, setTokenAutorizacao] = useState<string | null>(null);
+  const [autorizado, setAutorizado] = useState(false);
+
+  // 3. Formulário Principal da Esposa
   const [formData, setFormData] = useState<DadosFormulario>(FORM_INICIAL);
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
@@ -107,18 +117,65 @@ export default function PublicAemadepaCadastroPage() {
     return () => clearTimeout(timer);
   }, [busca]);
 
-  // Ao selecionar um ministro
-  const selecionarMinistro = async (min: MinistroItem) => {
+  // Ao selecionar um ministro na lista de busca
+  const selecionarMinistro = (min: MinistroItem) => {
     setMinistroSelecionado(min);
     setResultados([]);
     setBusca('');
+    setDesafioCpf('');
+    setDesafioDataNasc('');
+    setDesafioErro(null);
+    setTokenAutorizacao(null);
+    setAutorizado(false);
+    setFormData(FORM_INICIAL);
+    setFotoPreview(null);
     setErro(null);
+  };
+
+  const trocarMinistro = () => {
+    setMinistroSelecionado(null);
+    setDesafioCpf('');
+    setDesafioDataNasc('');
+    setDesafioErro(null);
+    setTokenAutorizacao(null);
+    setAutorizado(false);
+    setFormData(FORM_INICIAL);
+    setFotoPreview(null);
+    setErro(null);
+  };
+
+  // Submissão do Desafio LGPD (Validação no servidor)
+  const handleValidarDesafio = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ministroSelecionado) return;
+
+    setDesafioErro(null);
+    setValidandoDesafio(true);
 
     try {
-      const res = await fetch(`/api/public/aemadepa/ministros?id=${min.id}`);
+      const res = await fetch('/api/public/aemadepa/validar-acesso', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ministroId: ministroSelecionado.id,
+          cpf: desafioCpf,
+          dataNascimento: desafioDataNasc,
+        }),
+      });
+
       const data = await res.json();
-      if (res.ok && data.ministro?.dadosEsposa) {
-        const d = data.ministro.dadosEsposa;
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Dados não conferem. Verifique as informações preenchidas.');
+      }
+
+      // Validação autorizada com sucesso!
+      setTokenAutorizacao(data.token);
+      setAutorizado(true);
+
+      // Se retornou dados existentes da esposa para edição, preenche o formulário
+      if (data.dadosEsposa) {
+        const d = data.dadosEsposa;
         setFormData({
           nome: d.nome || '',
           cpf: d.cpf || '',
@@ -140,19 +197,14 @@ export default function PublicAemadepaCadastroPage() {
         setFormData(FORM_INICIAL);
         setFotoPreview(null);
       }
-    } catch (e) {
-      console.error('Erro ao carregar detalhes do ministro:', e);
+    } catch (err: any) {
+      setDesafioErro(err.message || 'Erro ao validar dados. Tente novamente.');
+    } finally {
+      setValidandoDesafio(false);
     }
   };
 
-  const trocarMinistro = () => {
-    setMinistroSelecionado(null);
-    setFormData(FORM_INICIAL);
-    setFotoPreview(null);
-    setErro(null);
-  };
-
-  // Máscaras
+  // Máscaras de formatação
   const formatCpf = (cpf: string) => {
     const digits = (cpf || '').replace(/\D/g, '').slice(0, 11);
     if (!digits) return '';
@@ -215,7 +267,7 @@ export default function PublicAemadepaCadastroPage() {
         const compressedBase64 = canvas.toDataURL('image/jpeg', 0.85);
 
         setFotoPreview(compressedBase64);
-        setFormData(prev => ({ ...prev, foto_url: compressedBase64 }));
+        setFormData((prev) => ({ ...prev, foto_url: compressedBase64 }));
         setErro(null);
       };
       img.src = dataUrl;
@@ -225,17 +277,18 @@ export default function PublicAemadepaCadastroPage() {
 
   const handleRemoverFoto = () => {
     setFotoPreview(null);
-    setFormData(prev => ({ ...prev, foto_url: null }));
+    setFormData((prev) => ({ ...prev, foto_url: null }));
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // Submissão do formulário
+  // Submissão do formulário final com token
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro(null);
 
-    if (!ministroSelecionado) {
-      setErro('Por favor, pesquise e selecione o ministro vinculado (seu esposo).');
+    if (!ministroSelecionado || !tokenAutorizacao) {
+      setErro('Sessão de validação expirada. Por favor, confirme seus dados de acesso novamente.');
+      setAutorizado(false);
       return;
     }
 
@@ -248,9 +301,13 @@ export default function PublicAemadepaCadastroPage() {
     try {
       const res = await fetch('/api/public/aemadepa/cadastro', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-aemadepa-token': tokenAutorizacao,
+        },
         body: JSON.stringify({
           ministroId: ministroSelecionado.id,
+          token: tokenAutorizacao,
           ...formData,
         }),
       });
@@ -300,7 +357,7 @@ export default function PublicAemadepaCadastroPage() {
             </div>
 
             <div className="space-y-2">
-              <h2 className="text-2xl font-black text-gray-900">Cadastro Realizado com Sucesso!</h2>
+              <h2 className="text-2xl font-black text-gray-900">Cadastro Salvo com Sucesso!</h2>
               <p className="text-gray-600 text-sm max-w-md mx-auto">
                 Seus dados foram vinculados com sucesso ao cadastro do pastor <strong>{ministroSelecionado?.nome}</strong> na AEMADEPA.
               </p>
@@ -319,30 +376,20 @@ export default function PublicAemadepaCadastroPage() {
                 onClick={() => {
                   setSucesso(false);
                   setMinistroSelecionado(null);
+                  setAutorizado(false);
+                  setTokenAutorizacao(null);
                   setFormData(FORM_INICIAL);
                   setFotoPreview(null);
                 }}
                 className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-rose-600 to-pink-700 hover:from-rose-700 hover:to-pink-800 text-white font-bold text-sm rounded-xl shadow-md transition cursor-pointer"
               >
-                Cadastrar Outra Associada
+                Cadastrar / Atualizar Outra Associada
               </button>
             </div>
           </div>
         ) : (
-          /* Formulário Principal */
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Mensagem de Erro Global */}
-            {erro && (
-              <div className="p-4 rounded-2xl bg-red-50 border border-red-200 flex items-start gap-3 text-red-800 text-sm shadow-xs animate-in fade-in duration-200">
-                <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <p className="font-bold">Atenção</p>
-                  <p className="text-xs text-red-700 mt-0.5">{erro}</p>
-                </div>
-              </div>
-            )}
-
-            {/* PASSO 1: MINISTRO VINCULADO (INÍCIO OBRIGATÓRIO) */}
+          <div className="space-y-6">
+            {/* ETAPA 1: MINISTRO VINCULADO (SELEÇÃO) */}
             <div className="bg-white rounded-2xl shadow-sm border border-rose-200/80 p-5 sm:p-6 space-y-4">
               <div className="flex items-center gap-2.5 pb-3 border-b border-gray-100">
                 <div className="w-8 h-8 rounded-lg bg-rose-100 flex items-center justify-center text-rose-700">
@@ -350,10 +397,10 @@ export default function PublicAemadepaCadastroPage() {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-gray-900 uppercase tracking-wide">
-                    Ministro Vinculado
+                    1. Ministro Vinculado
                   </h3>
                   <p className="text-xs text-gray-500">
-                    Selecione o ministro (seu esposo) para vincular seu cadastro na AEMADEPA
+                    Localize o ministro (seu esposo) para vincular seu cadastro na AEMADEPA
                   </p>
                 </div>
               </div>
@@ -366,7 +413,7 @@ export default function PublicAemadepaCadastroPage() {
                       type="text"
                       value={busca}
                       onChange={(e) => setBusca(e.target.value)}
-                      placeholder="Digite o nome, matrícula ou CPF do seu esposo..."
+                      placeholder="Digite o nome ou número de matrícula do pastor..."
                       className="w-full rounded-xl border border-gray-300 bg-white pl-10 pr-4 py-3 text-sm text-gray-900 shadow-xs focus:border-rose-500 focus:outline-none focus:ring-3 focus:ring-rose-500/20 transition"
                       autoFocus
                     />
@@ -420,7 +467,7 @@ export default function PublicAemadepaCadastroPage() {
                     </div>
                     <p className="text-base font-extrabold text-gray-900">{ministroSelecionado.nome}</p>
                     <p className="text-xs text-gray-600">
-                      Matrícula: <strong>{ministroSelecionado.matricula}</strong> • {ministroSelecionado.cargo}
+                      Matrícula: <strong>{ministroSelecionado.matricula || '—'}</strong> • {ministroSelecionado.cargo}
                       {ministroSelecionado.campo ? ` • Campo: ${ministroSelecionado.campo}` : ''}
                     </p>
                   </div>
@@ -436,9 +483,124 @@ export default function PublicAemadepaCadastroPage() {
               )}
             </div>
 
-            {/* PASSO 2: DADOS DA ESPOSA (Habilitado após seleção do ministro) */}
-            {ministroSelecionado && (
-              <div className="space-y-6 animate-in fade-in duration-300">
+            {/* ETAPA 2: DESAFIO DE SEGURANÇA E PRIVACIDADE LGPD */}
+            {ministroSelecionado && !autorizado && (
+              <div className="bg-white rounded-2xl shadow-sm border border-amber-200 p-5 sm:p-6 space-y-4 animate-in fade-in duration-300">
+                <div className="flex items-start gap-3 pb-3 border-b border-gray-100">
+                  <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center text-amber-700 shrink-0">
+                    <Lock className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-bold text-gray-900 uppercase tracking-wide">
+                        2. Confirmação de Identidade e Segurança (LGPD)
+                      </h3>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-amber-100 text-amber-800 uppercase">
+                        Proteção de Dados
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-600 mt-1">
+                      {ministroSelecionado.temEsposaCadastrada ? (
+                        <>
+                          Identificamos um cadastro já existente para a esposa deste ministro. Para proteger seus dados pessoais, informe o <strong>CPF</strong> e a <strong>Data de Nascimento da Esposa</strong> para liberar a edição.
+                        </>
+                      ) : (
+                        <>
+                          Para cadastrar a esposa deste ministro pela primeira vez, confirme o <strong>CPF</strong> e a <strong>Data de Nascimento do Ministro (Esposo)</strong> conforme o cadastro oficial da COMIEADEPA.
+                        </>
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Mensagem de Erro do Desafio */}
+                {desafioErro && (
+                  <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 flex items-start gap-2.5 text-red-800 text-xs animate-in fade-in duration-200">
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold">Atenção</p>
+                      <p className="text-red-700 mt-0.5">{desafioErro}</p>
+                    </div>
+                  </div>
+                )}
+
+                <form onSubmit={handleValidarDesafio} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Campo CPF */}
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
+                        {ministroSelecionado.temEsposaCadastrada ? 'CPF da Esposa *' : 'CPF do Ministro (Esposo) *'}
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={formatCpf(desafioCpf)}
+                        onChange={(e) => setDesafioCpf(e.target.value)}
+                        placeholder="000.000.000-00"
+                        maxLength={14}
+                        className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-sm text-gray-900 shadow-xs focus:border-rose-500 focus:outline-none focus:ring-3 focus:ring-rose-500/20 transition"
+                      />
+                    </div>
+
+                    {/* Campo Data de Nascimento */}
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
+                        {ministroSelecionado.temEsposaCadastrada
+                          ? 'Data de Nascimento da Esposa *'
+                          : 'Data de Nascimento do Ministro (Esposo) *'}
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        value={desafioDataNasc}
+                        onChange={(e) => setDesafioDataNasc(e.target.value)}
+                        className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-sm text-gray-900 shadow-xs focus:border-rose-500 focus:outline-none focus:ring-3 focus:ring-rose-500/20 transition"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                      <span>Validação estritamente segura e confidencial</span>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={validandoDesafio || !desafioCpf || !desafioDataNasc}
+                      className="w-full sm:w-auto px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {validandoDesafio ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Validando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Confirmar e Acessar Formulário</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* ETAPA 3: FORMULÁRIO DE DADOS DA ESPOSA (Liberado SOMENTE após validação) */}
+            {ministroSelecionado && autorizado && (
+              <form onSubmit={handleSubmit} className="space-y-6 animate-in fade-in duration-300">
+                {/* Mensagem de Erro Global */}
+                {erro && (
+                  <div className="p-4 rounded-2xl bg-red-50 border border-red-200 flex items-start gap-3 text-red-800 text-sm shadow-xs animate-in fade-in duration-200">
+                    <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="font-bold">Atenção</p>
+                      <p className="text-xs text-red-700 mt-0.5">{erro}</p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Bloco 1: Foto e Identificação Principal */}
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5 sm:p-6 space-y-5">
                   <div className="flex items-center gap-2.5 pb-3 border-b border-gray-100">
@@ -446,7 +608,7 @@ export default function PublicAemadepaCadastroPage() {
                       <User className="w-4 h-4" />
                     </div>
                     <div>
-                      <h3 className="text-base font-bold text-gray-900">Dados Pessoais da Esposa</h3>
+                      <h3 className="text-base font-bold text-gray-900">3. Dados Pessoais da Esposa</h3>
                       <p className="text-xs text-gray-500">Informações cadastrais para a credencial e ficha AEMADEPA</p>
                     </div>
                   </div>
@@ -588,7 +750,7 @@ export default function PublicAemadepaCadastroPage() {
                         onChange={(e) => setFormData({ ...formData, tipo_sanguineo: e.target.value })}
                         className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-sm text-gray-900 shadow-xs focus:border-rose-500 focus:outline-none focus:ring-3 focus:ring-rose-500/20 transition cursor-pointer"
                       >
-                        {TIPOS_SANGUINEOS.map(ts => (
+                        {TIPOS_SANGUINEOS.map((ts) => (
                           <option key={ts} value={ts}>{ts || 'Não informado'}</option>
                         ))}
                       </select>
@@ -727,14 +889,14 @@ export default function PublicAemadepaCadastroPage() {
                     ) : (
                       <>
                         <CheckCircle2 className="w-5 h-5" />
-                        <span>Enviar Cadastro AEMADEPA</span>
+                        <span>Salvar Cadastro AEMADEPA</span>
                       </>
                     )}
                   </button>
                 </div>
-              </div>
+              </form>
             )}
-          </form>
+          </div>
         )}
 
         {/* Rodapé institucional */}
