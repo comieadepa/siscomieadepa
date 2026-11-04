@@ -319,17 +319,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true, note: 'event_ignored_for_conec' });
     }
 
-    // ── Pagamentos mensalidade ───────────────────────────────────────────────
-    const { error } = await supabase
-      .from('payments')
-      .update(updatePayload)
-      .eq('asaas_payment_id', asaasPaymentId);
+    // ── Evento não associado a lote, credencial ou CONEC ──────────────────────
+    console.log('[ASAAS WEBHOOK] Evento recebido sem vínculo com fluxos ativos (lote, credencial, conec):', {
+      event,
+      asaasPaymentId,
+      externalReference: externalRef || null,
+    });
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
-    }
-
-    return NextResponse.json({ received: true });
+    return NextResponse.json({ received: true, ignored: true });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
