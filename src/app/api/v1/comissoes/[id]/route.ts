@@ -80,7 +80,7 @@ export async function PUT(
 
   try {
     const body = await request.json();
-    const { nome, sigla, finalidade, tipo, status, ato_nomeacao, data_inicio, data_fim, ano_referencia, evento_id, observacoes } = body;
+    const { nome, sigla, finalidade, tipo, status, ato_nomeacao, data_inicio, ano_referencia, evento_id, observacoes } = body;
 
     const supabase = createServerClient();
 
@@ -96,10 +96,17 @@ export async function PUT(
     if (sigla !== undefined) updatePayload.sigla = sigla ? sigla.trim() : null;
     if (finalidade !== undefined) updatePayload.finalidade = finalidade.trim();
     if (tipo !== undefined) updatePayload.tipo = tipo;
-    if (status !== undefined) updatePayload.status = status;
+    if (status !== undefined) {
+      updatePayload.status = status;
+      // Se a comissão for alterada para 'concluida', registra a data real de encerramento sem sobrescrever caso já exista
+      if (status === 'concluida') {
+        if (!oldData?.data_fim) {
+          updatePayload.data_fim = new Date().toISOString().split('T')[0];
+        }
+      }
+    }
     if (ato_nomeacao !== undefined) updatePayload.ato_nomeacao = ato_nomeacao ? ato_nomeacao.trim() : null;
     if (data_inicio !== undefined) updatePayload.data_inicio = data_inicio;
-    if (data_fim !== undefined) updatePayload.data_fim = data_fim || null;
     if (ano_referencia !== undefined) updatePayload.ano_referencia = Number(ano_referencia);
     if (evento_id !== undefined) updatePayload.evento_id = evento_id || null;
     if (observacoes !== undefined) updatePayload.observacoes = observacoes ? observacoes.trim() : null;

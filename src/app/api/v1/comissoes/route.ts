@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
       status: status || 'ativa',
       ato_nomeacao: ato_nomeacao ? ato_nomeacao.trim() : null,
       data_inicio,
-      data_fim: data_fim || null,
+      data_fim: (status === 'concluida') ? (data_fim || new Date().toISOString().split('T')[0]) : null,
       ano_referencia: ano_referencia ? Number(ano_referencia) : new Date(data_inicio).getFullYear(),
       evento_id: evento_id || null,
       observacoes: observacoes ? observacoes.trim() : null,

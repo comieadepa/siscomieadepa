@@ -29,7 +29,6 @@ export default function ComissaoModal({
     status: 'ativa',
     ato_nomeacao: '',
     data_inicio: new Date().toISOString().split('T')[0],
-    data_fim: '',
     ano_referencia: currentYear,
     observacoes: '',
   });
@@ -51,7 +50,6 @@ export default function ComissaoModal({
           status: comissaoToEdit.status || 'ativa',
           ato_nomeacao: comissaoToEdit.ato_nomeacao || '',
           data_inicio: comissaoToEdit.data_inicio || new Date().toISOString().split('T')[0],
-          data_fim: comissaoToEdit.data_fim || '',
           ano_referencia: comissaoToEdit.ano_referencia || currentYear,
           evento_id: comissaoToEdit.evento_id || '',
           observacoes: comissaoToEdit.observacoes || '',
@@ -65,7 +63,6 @@ export default function ComissaoModal({
           status: 'ativa',
           ato_nomeacao: '',
           data_inicio: new Date().toISOString().split('T')[0],
-          data_fim: '',
           ano_referencia: currentYear,
           evento_id: '',
           observacoes: '',
@@ -116,7 +113,6 @@ export default function ComissaoModal({
       const payload = {
         ...formData,
         evento_id: formData.evento_id ? formData.evento_id : null,
-        data_fim: formData.data_fim ? formData.data_fim : null,
       };
 
       const res = await fetch(url, {
@@ -260,7 +256,7 @@ export default function ComissaoModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
                 Data de Início / Posse *
@@ -276,34 +272,20 @@ export default function ComissaoModal({
 
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
-                Data Fim (Previsão / Conclusão)
-              </label>
-              <input
-                type="date"
-                value={formData.data_fim || ''}
-                onChange={(e) => setFormData({ ...formData, data_fim: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#123b63] focus:border-transparent outline-none"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
                 Ato de Nomeação / Portaria
               </label>
               <input
                 type="text"
                 value={formData.ato_nomeacao || ''}
                 onChange={(e) => setFormData({ ...formData, ato_nomeacao: e.target.value })}
-                placeholder="Ex: Portaria COMIEADEPA nº 012/2026"
+                placeholder="Ex: Portaria nº 012/2026"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#123b63] focus:border-transparent outline-none"
               />
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
-                Vínculo a Evento / AGO (Opcional)
+                Vínculo a Evento / AGO
               </label>
               <select
                 value={formData.evento_id || ''}
