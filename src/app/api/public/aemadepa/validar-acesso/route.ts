@@ -42,12 +42,15 @@ function normalizeDate(raw: string | null | undefined): string {
  * Valida o desafio de CPF + Data de Nascimento no servidor.
  * Protegido por rate limiting distribuído sincronizado entre lambdas da Vercel (Supabase RPC).
  *
- * Regras estritas de conformidade LGPD:
- * 1. Se a esposa JÁ estiver cadastrada: exige exclusivamente CPF + nascimento DELA.
- * 2. Se for primeiro cadastro: exige CPF + nascimento do ministro (esposo).
- * 3. Cadastros legados sem CPF/nascimento da esposa cadastrados devem seguir regularização administrativa,
- *    sem exposição pública ou alternativas de bypass.
- * 4. Não informa qual campo está incorreto para prevenir enumeração/ataques.
+ * Regras estritas de conformidade e classificação cadastral:
+ * 1. CADASTRO EFETIVO: Indicado formalmente por CPF da esposa cadastrado ou número AEMADEPA formal.
+ *    - Exige exclusivamente CPF + Data de Nascimento DELA.
+ *    - Se for um cadastro efetivo incompleto (ex: possui CPF mas falta nascimento no banco), protege e direciona para regularização administrativa.
+ * 2. PRIMEIRO CADASTRO: Se houver apenas menção histórica ao nome da esposa na ficha ministerial (sem CPF da esposa),
+ *    é tratado legitimamente como Primeiro Cadastro.
+ *    - Exige validação de CPF + Data de Nascimento do MINISTRO (esposo).
+ *    - Libera o formulário em branco (ou com o nome já sugerido) para inclusão dos dados pessoais da esposa.
+ * 3. Não informa qual campo está incorreto para prevenir enumeração/ataques.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -115,16 +118,19 @@ export async function POST(request: NextRequest) {
     }
 
     const cf = membro.custom_fields && typeof membro.custom_fields === 'object' ? membro.custom_fields : {};
-    const nomeEsposa = String(membro.nome_conjuge || cf.nomeConjuge || '').trim();
-    const temEsposa = Boolean(nomeEsposa && nomeEsposa.length > 0);
+    
+    // Classificação idêntica à rota de busca pública:
+    // Uma menção histórica a nome_conjuge NÃO constitui cadastro efetivo se não houver identificador formal.
+    const dbCpfEsposa = onlyDigits(membro.cpf_conjuge || cf.cpfConjuge);
+    const numeroAemadepa = String(membro.numero_aemadepa || cf.numero_aemadepa || cf.numeroAemadepa || '').trim();
+    const temCadastroEfetivo = Boolean((dbCpfEsposa && dbCpfEsposa.length === 11) || numeroAemadepa.length > 0);
 
     let match = false;
-    let operacao: 'primeiro_cadastro' | 'edicao_esposa' = temEsposa ? 'edicao_esposa' : 'primeiro_cadastro';
+    let operacao: 'primeiro_cadastro' | 'edicao_esposa' = temCadastroEfetivo ? 'edicao_esposa' : 'primeiro_cadastro';
 
-    if (temEsposa) {
-      // Caso 1: Esposa já cadastrada
+    if (temCadastroEfetivo) {
+      // CENÁRIO A: Cadastro efetivo existente
       // Validação estrita e exclusiva: CPF e Data de Nascimento DELA
-      const dbCpfEsposa = onlyDigits(membro.cpf_conjuge || cf.cpfConjuge);
       const dbDataNascEsposa = normalizeDate(membro.data_nascimento_conjuge || cf.dataNascimentoConjuge);
 
       if (dbCpfEsposa && dbDataNascEsposa) {
@@ -132,8 +138,8 @@ export async function POST(request: NextRequest) {
           match = true;
         }
       } else {
-        // Registro legado sem CPF ou sem Data de Nascimento da esposa no banco:
-        // Por diretriz de segurança e privacidade, bloqueia acesso público e orienta regularização
+        // Cadastro efetivo incompleto no banco (possui CPF ou número AEMADEPA mas falta data de nascimento):
+        // Permanece protegido contra enumeração e direciona para regularização administrativa
         return NextResponse.json(
           {
             error:
@@ -144,7 +150,8 @@ export async function POST(request: NextRequest) {
         );
       }
     } else {
-      // Caso 2: Primeiro cadastro da esposa
+      // CENÁRIO B: Primeiro cadastro legítimo da esposa
+      // (inclusive se houver apenas a menção histórica do nome civil na ficha do ministro)
       // Validação obrigatória dos dados oficiais do ministro (esposo)
       const dbCpfMinistro = onlyDigits(membro.cpf || cf.cpf);
       const dbDataNascMinistro = normalizeDate(membro.data_nascimento || cf.dataNascimento);
@@ -166,8 +173,10 @@ export async function POST(request: NextRequest) {
     // Sucesso na autenticação do desafio!
     const token = signAemadepaToken(ministroId, operacao);
 
-    // Se for edição, libera os dados pessoais da esposa para preenchimento seguro do formulário
+    // Se for edição, libera os dados cadastrais da esposa
     let dadosEsposa = null;
+    const nomeEsposa = String(membro.nome_conjuge || cf.nomeConjuge || '').trim();
+
     if (operacao === 'edicao_esposa') {
       dadosEsposa = {
         nome: nomeEsposa,
@@ -184,6 +193,25 @@ export async function POST(request: NextRequest) {
         email: String(membro.conjuge_email || cf.conjugeEmail || '').trim(),
         tipo_sanguineo: String(membro.conjuge_tipo_sanguineo || cf.conjugeTipoSanguineo || '').trim(),
         foto_url: membro.conjuge_foto_url || cf.conjugeFotoUrl || null,
+      };
+    } else if (operacao === 'primeiro_cadastro' && nomeEsposa) {
+      // Se for primeiro cadastro e houver menção ao nome da esposa na ficha do ministro,
+      // sugere apenas o nome para facilitar o preenchimento, mantendo todos os outros campos em branco.
+      dadosEsposa = {
+        nome: nomeEsposa,
+        cpf: '',
+        rg: '',
+        orgao_emissor: '',
+        data_nascimento: '',
+        nacionalidade: 'BRASILEIRA',
+        naturalidade: '',
+        nome_pai: '',
+        nome_mae: '',
+        titulo_eleitoral: '',
+        fone: '',
+        email: '',
+        tipo_sanguineo: '',
+        foto_url: null,
       };
     }
 

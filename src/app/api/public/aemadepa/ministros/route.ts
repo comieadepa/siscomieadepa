@@ -19,6 +19,8 @@ function sanitizeSearchTerm(term: string): string {
  * Em conformidade com a LGPD e as regras de segurança do SISCOMIEADEPA:
  * - NUNCA retorna CPFs, telefones, e-mails ou documentos de ninguém.
  * - NUNCA expõe dados pessoais da esposa nesta rota (mesmo com busca por ID).
+ * - Identifica cadastro efetivo AEMADEPA pelos campos formais existentes (ex: CPF da esposa cadastrado),
+ *   não confundindo uma simples menção do nome civil do cônjuge na ficha ministerial com cadastro ativo.
  * - Retorna apenas metadados públicos essenciais para localização do ministro.
  */
 export async function GET(request: NextRequest) {
@@ -34,10 +36,10 @@ export async function GET(request: NextRequest) {
     const supabase = createServerClient();
     const qDigits = onlyDigits(q);
 
-    // Seleciona apenas os campos estritamente necessários para identificação visual
+    // Seleciona campos essenciais para identificação visual e verificação cadastral
     let query = supabase
       .from('members')
-      .select('id, name, matricula, cargo_ministerial, status, jubilado, custom_fields, nome_conjuge')
+      .select('id, name, matricula, cargo_ministerial, status, jubilado, custom_fields, nome_conjuge, cpf_conjuge')
       .limit(25);
 
     const orClauses: string[] = [
@@ -60,8 +62,12 @@ export async function GET(request: NextRequest) {
 
     const ministros = (rows || []).map((m: any) => {
       const cf = m.custom_fields && typeof m.custom_fields === 'object' ? m.custom_fields : {};
-      const nomeEsposa = String(m.nome_conjuge || cf.nomeConjuge || '').trim();
-      const temEsposa = Boolean(nomeEsposa && nomeEsposa.length > 0);
+      
+      // Cadastro efetivo AEMADEPA: requer indicador formal existente (CPF do cônjuge preenchido ou número AEMADEPA formal)
+      const cpfConjugeDigits = onlyDigits(m.cpf_conjuge || cf.cpfConjuge);
+      const numeroAemadepa = String(m.numero_aemadepa || cf.numero_aemadepa || cf.numeroAemadepa || '').trim();
+      
+      const temCadastroEfetivo = Boolean((cpfConjugeDigits && cpfConjugeDigits.length === 11) || numeroAemadepa.length > 0);
 
       return {
         id: m.id,
@@ -70,7 +76,7 @@ export async function GET(request: NextRequest) {
         cargo: String(m.cargo_ministerial || cf.cargoMinisterial || 'PASTOR').trim(),
         campo: String(cf.campo || '').trim(),
         supervisao: String(cf.supervisao || '').trim(),
-        temEsposaCadastrada: temEsposa,
+        temEsposaCadastrada: temCadastroEfetivo,
         status: m.jubilado ? 'JUBILADO' : String(m.status || 'ATIVO').toUpperCase(),
       };
     });
