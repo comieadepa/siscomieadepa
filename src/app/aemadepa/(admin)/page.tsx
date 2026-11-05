@@ -97,13 +97,74 @@ export default function AemadepaPage() {
   const [associadaFicha, setAssociadaFicha] = useState<AssociadaAemadepa | null>(null);
   const [associadaFinanceiroModal, setAssociadaFinanceiroModal] = useState<AssociadaAemadepa | null>(null);
 
-  // Estado para Modal do Link Público de Cadastro
+  // Estado para Modal do Link Público de Cadastro e Cópia
   const [modalLinkPublicoAberto, setModalLinkPublicoAberto] = useState(false);
   const [linkCopiado, setLinkCopiado] = useState(false);
+  const [copiandoLink, setCopiandoLink] = useState(false);
+  const [erroCopia, setErroCopia] = useState<string | null>(null);
 
   // Aba ativa: associadas ou pedidos de carteirinhas
   const [abaAtiva, setAbaAtiva] = useState<'associadas' | 'pedidos'>('associadas');
 
+  // Função resiliente de cópia de link com fallback (clipboard API -> execCommand -> modal com input selecionável)
+  const copiarLinkCadastro = useCallback(async (abrirModalAoFinal = false) => {
+    if (copiandoLink) return;
+    setCopiandoLink(true);
+    setErroCopia(null);
+
+    const url = typeof window !== 'undefined'
+      ? `${window.location.origin}/aemadepa/cadastro`
+      : 'https://www.siscomieadepa.org/aemadepa/cadastro';
+
+    let copiadoComSucesso = false;
+
+    // 1. Tentar API moderna navigator.clipboard
+    if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      try {
+        await navigator.clipboard.writeText(url);
+        copiadoComSucesso = true;
+      } catch {
+        copiadoComSucesso = false;
+      }
+    }
+
+    // 2. Fallback para document.execCommand('copy') caso a API moderna falhe ou seja bloqueada por permissão
+    if (!copiadoComSucesso && typeof document !== 'undefined') {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = url;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '-9999px';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const resultado = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (resultado) {
+          copiadoComSucesso = true;
+        }
+      } catch {
+        copiadoComSucesso = false;
+      }
+    }
+
+    setCopiandoLink(false);
+
+    if (copiadoComSucesso) {
+      setLinkCopiado(true);
+      setTimeout(() => setLinkCopiado(false), 3000);
+      if (abrirModalAoFinal) {
+        setModalLinkPublicoAberto(true);
+      }
+    } else {
+      // Se não conseguiu copiar automaticamente, abre o modal exibindo o campo selecionável com aviso claro
+      setErroCopia('Acesso à área de transferência bloqueado pelo navegador. Por favor, utilize o atalho de cópia manual abaixo.');
+      setModalLinkPublicoAberto(true);
+    }
+  }, [copiandoLink]);
   // Carrega associadas da tabela dedicada aemadepa_associadas com vínculo ministerial
   const carregarDados = useCallback(async () => {
     setLoading(true);
@@ -308,15 +369,35 @@ export default function AemadepaPage() {
             </div>
 
             <div className="flex flex-wrap gap-2.5 items-center">
-              <button
-                type="button"
-                onClick={() => setModalLinkPublicoAberto(true)}
-                className="px-4 py-2.5 bg-white/20 hover:bg-white/30 text-white font-bold text-sm rounded-xl border border-white/30 backdrop-blur-md transition flex items-center gap-2 cursor-pointer shadow-sm"
-                title="Gerar e compartilhar link público de cadastro para as esposas"
-              >
-                <LinkIcon className="w-4 h-4" />
-                <span>Link de Cadastro</span>
-              </button>
+              <div className="flex items-center rounded-xl overflow-hidden border border-white/30 backdrop-blur-md shadow-sm bg-white/20">
+                <button
+                  type="button"
+                  onClick={() => void copiarLinkCadastro(false)}
+                  disabled={copiandoLink}
+                  className="px-3.5 py-2.5 hover:bg-white/30 text-white font-bold text-sm transition flex items-center gap-2 cursor-pointer disabled:opacity-60"
+                  title="Copiar link público de auto-cadastro para a área de transferência"
+                >
+                  {linkCopiado ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-300" />
+                      <span className="text-emerald-100">Link Copiado!</span>
+                    </>
+                  ) : (
+                    <>
+                      <LinkIcon className="w-4 h-4" />
+                      <span>{copiandoLink ? 'Copiando...' : 'Link de Cadastro'}</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalLinkPublicoAberto(true)}
+                  className="px-2.5 py-2.5 hover:bg-white/30 text-white/80 hover:text-white border-l border-white/20 transition cursor-pointer text-xs font-semibold"
+                  title="Ver QR Code e opções de compartilhamento do link de cadastro"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </button>
+              </div>
 
               <button
                 onClick={abrirModalNova}
@@ -476,24 +557,33 @@ export default function AemadepaPage() {
                   Compartilhe este link com as esposas dos ministros para que elas mesmas possam preencher o cadastro oficial da AEMADEPA pelo celular ou computador.
                 </p>
 
-                {/* Card do Link com Botão Copiar */}
+                {/* Alerta de erro de cópia se o navegador bloqueou */}
+                {erroCopia && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5 text-xs text-amber-800 animate-in fade-in">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <span>{erroCopia}</span>
+                  </div>
+                )}
+
+                {/* Card do Link com Botão Copiar Resiliente e Input Selecionável */}
                 <div className="bg-white border border-rose-200 rounded-2xl p-4 shadow-xs space-y-2.5">
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide">
                     Endereço da Página Pública
                   </label>
-                  <div className="flex items-center gap-2 bg-slate-50 border border-gray-200 rounded-xl p-2.5">
-                    <span className="text-xs font-mono text-gray-700 truncate select-all flex-1">
-                      {typeof window !== 'undefined' ? `${window.location.origin}/aemadepa/cadastro` : 'https://www.siscomieadepa.org/aemadepa/cadastro'}
-                    </span>
+                  <div className="flex items-center gap-2 bg-slate-50 border border-gray-200 rounded-xl p-1.5 focus-within:ring-2 focus-within:ring-rose-500 focus-within:border-transparent">
+                    <input
+                      type="text"
+                      readOnly
+                      value={typeof window !== 'undefined' ? `${window.location.origin}/aemadepa/cadastro` : 'https://www.siscomieadepa.org/aemadepa/cadastro'}
+                      onClick={(e) => (e.target as HTMLInputElement).select()}
+                      className="w-full bg-transparent px-2 text-xs font-mono text-gray-700 select-all border-none focus:outline-none"
+                      aria-label="Link de cadastro AEMADEPA"
+                    />
                     <button
                       type="button"
-                      onClick={() => {
-                        const url = typeof window !== 'undefined' ? `${window.location.origin}/aemadepa/cadastro` : 'https://www.siscomieadepa.org/aemadepa/cadastro';
-                        navigator.clipboard.writeText(url);
-                        setLinkCopiado(true);
-                        setTimeout(() => setLinkCopiado(false), 2500);
-                      }}
-                      className={`px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                      onClick={() => void copiarLinkCadastro(false)}
+                      disabled={copiandoLink}
+                      className={`px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-50 ${
                         linkCopiado
                           ? 'bg-emerald-600 text-white shadow-xs'
                           : 'bg-rose-600 hover:bg-rose-700 text-white shadow-xs'
@@ -507,7 +597,7 @@ export default function AemadepaPage() {
                       ) : (
                         <>
                           <Copy className="w-3.5 h-3.5" />
-                          <span>Copiar</span>
+                          <span>{copiandoLink ? 'Copiando...' : 'Copiar'}</span>
                         </>
                       )}
                     </button>
