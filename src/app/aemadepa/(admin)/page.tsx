@@ -8,6 +8,7 @@ import ModalAemadepa, { MinistroAemadepaInfo, DadosEsposaForm } from '@/componen
 import CartaoAemadepa from '@/components/CartaoAemadepa';
 import FichaAemadepa from '@/components/FichaAemadepa';
 import PainelPedidosAemadepa from '@/components/PainelPedidosAemadepa';
+import ModalFinanceiroAemadepa from '@/components/ModalFinanceiroAemadepa';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { authenticatedFetch } from '@/lib/api-client';
 import { QRCodeSVG } from 'qrcode.react';
@@ -32,6 +33,7 @@ import {
   Share2,
   Check,
   X,
+  DollarSign,
 } from 'lucide-react';
 
 interface AssociadaAemadepa {
@@ -62,6 +64,15 @@ interface AssociadaAemadepa {
   numeroAemadepa: string;
   temEsposaCadastrada: boolean;
   statusMinistro: string;
+  associadaId?: string;
+  financeiro?: {
+    status: string;
+    formaPagamento?: string | null;
+    via: number;
+    pago: boolean;
+    podeImprimir: boolean;
+    motivoBloqueio?: string | null;
+  };
 }
 
 export default function AemadepaPage() {
@@ -84,6 +95,7 @@ export default function AemadepaPage() {
   // Estados para Carteirinha e Ficha Cadastral AEMADEPA
   const [associadaCartao, setAssociadaCartao] = useState<AssociadaAemadepa | null>(null);
   const [associadaFicha, setAssociadaFicha] = useState<AssociadaAemadepa | null>(null);
+  const [associadaFinanceiroModal, setAssociadaFinanceiroModal] = useState<AssociadaAemadepa | null>(null);
 
   // Estado para Modal do Link Público de Cadastro
   const [modalLinkPublicoAberto, setModalLinkPublicoAberto] = useState(false);
@@ -138,6 +150,8 @@ export default function AemadepaPage() {
           numeroAemadepa: String(item.numero_aemadepa || '').trim(),
           temEsposaCadastrada: true,
           statusMinistro: String(m.status || 'active').toLowerCase(),
+          associadaId: item.id,
+          financeiro: item.financeiro,
         };
       });
 
@@ -631,6 +645,24 @@ export default function AemadepaPage() {
           />
         )}
 
+        {/* Modal Financeiro & Credencial AEMADEPA */}
+        {associadaFinanceiroModal && (
+          <ModalFinanceiroAemadepa
+            associadaId={associadaFinanceiroModal.associadaId || associadaFinanceiroModal.id}
+            associadaNome={associadaFinanceiroModal.nomeEsposa}
+            associadaCpf={associadaFinanceiroModal.cpfEsposa}
+            ministroNome={associadaFinanceiroModal.ministroNome}
+            temFoto={Boolean(associadaFinanceiroModal.fotoEsposaUrl)}
+            onClose={() => setAssociadaFinanceiroModal(null)}
+            onAtualizarStatus={() => void carregarDados()}
+            onAbrirCredencial={() => {
+              const assoc = associadaFinanceiroModal;
+              setAssociadaFinanceiroModal(null);
+              setAssociadaCartao(assoc);
+            }}
+          />
+        )}
+
         {/* Barra de Filtros e Pesquisa */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 space-y-4">
           <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
@@ -875,12 +907,36 @@ export default function AemadepaPage() {
                             <Printer className="w-4 h-4" />
                           </button>
 
-                          {/* Emissão de Carteirinha */}
+                          {/* Botão Financeiro (Antes de Credencial) */}
+                          <button
+                            type="button"
+                            onClick={() => setAssociadaFinanceiroModal(item)}
+                            disabled={!item.temEsposaCadastrada}
+                            className={`p-1.5 rounded-lg transition ${
+                              item.temEsposaCadastrada
+                                ? item.financeiro?.pago
+                                  ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 cursor-pointer'
+                                  : 'text-amber-700 bg-amber-50 hover:bg-amber-100 cursor-pointer'
+                                : 'text-gray-300 opacity-40 cursor-not-allowed'
+                            }`}
+                            title={
+                              !item.temEsposaCadastrada
+                                ? "Cadastre a esposa antes de acessar o financeiro"
+                                : item.financeiro?.pago
+                                ? `Financeiro Regularizado (${item.financeiro.via}ª Via - ${item.financeiro.formaPagamento || 'Pago'})`
+                                : "Financeiro Pendente (Clique para regularizar via PIX, À Vista ou Cortesia)"
+                            }
+                            aria-label="Financeiro da Associada"
+                          >
+                            <DollarSign className="w-4 h-4" />
+                          </button>
+
+                          {/* Emissão de Carteirinha (Condicionada a Foto e Quitação da Via) */}
                           <button
                             onClick={() => setAssociadaCartao(item)}
-                            disabled={!item.temEsposaCadastrada || !item.fotoEsposaUrl}
+                            disabled={!item.temEsposaCadastrada || !item.financeiro?.podeImprimir}
                             className={`p-1.5 rounded-lg transition ${
-                              item.temEsposaCadastrada && item.fotoEsposaUrl
+                              item.temEsposaCadastrada && item.financeiro?.podeImprimir
                                 ? 'text-purple-600 hover:bg-purple-50 cursor-pointer'
                                 : 'text-gray-300 opacity-40 cursor-not-allowed'
                             }`}
@@ -888,7 +944,9 @@ export default function AemadepaPage() {
                               !item.temEsposaCadastrada
                                 ? "Cadastre a esposa antes de emitir a carteirinha"
                                 : !item.fotoEsposaUrl
-                                ? "Credencial indisponível (sem foto cadastrada)"
+                                ? "Credencial bloqueada (foto não cadastrada)"
+                                : !item.financeiro?.pago
+                                ? "Credencial bloqueada (regularização financeira pendente)"
                                 : "Emitir Carteirinha AEMADEPA"
                             }
                             aria-label="Emitir Carteirinha AEMADEPA"
