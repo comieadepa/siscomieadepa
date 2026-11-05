@@ -82,7 +82,15 @@ export default function CartaoAemadepa({ associada, onClose }: CartaoAemadepaPro
         );
 
         if (ativo) {
-          templateCarregado = ativo;
+          templateCarregado = {
+            ...ativo,
+            elementos: (ativo.elementos || []).filter((el: any) => {
+              // Remove matrícula posicionado abaixo do nome do esposo
+              if (el.id === "179029411160991pi1pkwp") return false;
+              if (el.texto && el.texto.includes("{ministroMatricula}")) return false;
+              return true;
+            }),
+          };
         } else {
           const { getTemplatesPorTipo, converterParaTemplateEditavel } = require('@/lib/card-templates');
           const padroes = getTemplatesPorTipo('aemadepa');
@@ -146,10 +154,10 @@ export default function CartaoAemadepa({ associada, onClose }: CartaoAemadepaPro
     email: associada.emailEsposa,
     fotoUrl: associada.fotoEsposaUrl,
     fotoEsposaUrl: associada.fotoEsposaUrl,
-    matricula: associada.numeroAemadepa,
-    numeroAemadepa: associada.numeroAemadepa,
+    matricula: associada.ministroMatricula || associada.numeroAemadepa || "",
+    numeroAemadepa: associada.ministroMatricula || associada.numeroAemadepa || "",
     ministroNome: associada.ministroNome,
-    ministroMatricula: associada.ministroMatricula,
+    ministroMatricula: "",
     cargoMinisterial: associada.cargoMinisterial,
     cargo_ministerial: associada.cargoMinisterial,
     campo: associada.campo,

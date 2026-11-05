@@ -145,7 +145,7 @@ export function substituirPlaceholders(texto: string, membro: any, nomenclaturas
       valor = membro.nomeEsposa || membro.nome_esposa || '';
     }
     if ((ph.campo === 'numeroAemadepa' || ph.campo === 'matriculaAemadepa') && !valor) {
-      valor = membro.numeroAemadepa || membro.numero_aemadepa || membro.matricula || '';
+      valor = membro.numeroAemadepa || membro.numero_aemadepa || membro.ministroMatricula || membro.ministro_matricula || membro.matricula || '';
     }
     if ((ph.campo === 'ministroNome' || ph.campo === 'ministroVinculado') && !valor) {
       valor = membro.ministroNome || membro.ministro_nome || membro.nomeMinistro || '';
