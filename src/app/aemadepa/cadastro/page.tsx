@@ -18,6 +18,7 @@ import {
   Lock,
   ArrowRight,
 } from 'lucide-react';
+import SecaoCarteirinhaAemadepa from '@/components/SecaoCarteirinhaAemadepa';
 
 interface MinistroItem {
   id: string;
@@ -370,6 +371,22 @@ export default function PublicAemadepaCadastroPage() {
               <p><strong>Ministro Vinculado:</strong> {ministroSelecionado?.nome} ({ministroSelecionado?.matricula})</p>
               {ministroSelecionado?.campo && <p><strong>Campo:</strong> {ministroSelecionado?.campo}</p>}
             </div>
+
+            {/* Opção Facultativa de Solicitação de Carteirinha na Tela de Sucesso */}
+            {ministroSelecionado && (
+              <div className="max-w-xl mx-auto pt-2 text-left">
+                <SecaoCarteirinhaAemadepa
+                  ministroId={ministroSelecionado.id}
+                  token={tokenAutorizacao}
+                  dadosEsposaPreenchidos={{
+                    nome: formData.nome,
+                    cpf: formData.cpf,
+                    dataNascimento: formData.data_nascimento,
+                    fotoUrl: formData.foto_url,
+                  }}
+                />
+              </div>
+            )}
 
             <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
               <button
@@ -874,6 +891,20 @@ export default function PublicAemadepaCadastroPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Seção Facultativa de Carteirinha (na edição / parte inferior da ficha) */}
+                {ministroSelecionado && autorizado && (
+                  <SecaoCarteirinhaAemadepa
+                    ministroId={ministroSelecionado.id}
+                    token={tokenAutorizacao}
+                    dadosEsposaPreenchidos={{
+                      nome: formData.nome,
+                      cpf: formData.cpf,
+                      dataNascimento: formData.data_nascimento,
+                      fotoUrl: formData.foto_url,
+                    }}
+                  />
+                )}
 
                 {/* Botão de Envio */}
                 <div className="pt-2">

@@ -1,0 +1,461 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import {
+  Printer,
+  RefreshCw,
+  Search,
+  CheckCircle2,
+  Clock,
+  Truck,
+  DollarSign,
+  X,
+  Check,
+} from 'lucide-react';
+import { authenticatedFetch } from '@/lib/api-client';
+
+export interface PedidoCarteirinhaItem {
+  id: string;
+  associadaId: string;
+  ministroId: string;
+  valor: number;
+  via: number;
+  status: string;
+  asaasPaymentId: string | null;
+  solicitadoEm: string;
+  pagoEm: string | null;
+  impressoEm: string | null;
+  entregueEm: string | null;
+  entreguePara: string | null;
+  observacoes: string | null;
+  associada: {
+    id: string;
+    uniqueId?: string;
+    nomeEsposa: string;
+    cpfEsposa: string;
+    rgEsposa: string;
+    orgaoEmissorEsposa: string;
+    dataNascimentoEsposa: string;
+    nacionalidadeEsposa: string;
+    naturalidadeEsposa: string;
+    nomePaiEsposa: string;
+    nomeMaeEsposa: string;
+    tituloEleitoralEsposa: string;
+    foneEsposa: string;
+    emailEsposa: string;
+    tipoSanguineoEsposa: string;
+    fotoEsposaUrl: string | null;
+    numeroAemadepa: string;
+    ministroNome: string;
+    ministroMatricula: string;
+    ministroCpf: string;
+    cargoMinisterial: string;
+    campo: string;
+    supervisao: string;
+  };
+}
+
+interface ResumoFinanceiro {
+  totalPedidos: number;
+  pedidosPagos: number;
+  totalArrecadado: number;
+  aguardandoPagamento: number;
+  emFilaImpressao: number;
+  impressos: number;
+  entregues: number;
+}
+
+interface PainelPedidosAemadepaProps {
+  onImprimirCarteirinha: (associada: PedidoCarteirinhaItem['associada']) => void;
+}
+
+export default function PainelPedidosAemadepa({ onImprimirCarteirinha }: PainelPedidosAemadepaProps) {
+  const [pedidos, setPedidos] = useState<PedidoCarteirinhaItem[]>([]);
+  const [resumo, setResumo] = useState<ResumoFinanceiro>({
+    totalPedidos: 0,
+    pedidosPagos: 0,
+    totalArrecadado: 0,
+    aguardandoPagamento: 0,
+    emFilaImpressao: 0,
+    impressos: 0,
+    entregues: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [statusFiltro, setStatusFiltro] = useState<string>('todos');
+  const [busca, setBusca] = useState('');
+  const [atualizandoId, setAtualizandoId] = useState<string | null>(null);
+  const [modalEntregaPedido, setModalEntregaPedido] = useState<PedidoCarteirinhaItem | null>(null);
+  const [entregueParaNome, setEntregueParaNome] = useState('');
+
+  const carregarPedidos = useCallback(async () => {
+    setLoading(true);
+    try {
+      const url =
+        statusFiltro === 'todos'
+          ? '/api/v1/secretaria/aemadepa/pedidos'
+          : `/api/v1/secretaria/aemadepa/pedidos?status=${statusFiltro}`;
+      const res = await authenticatedFetch(url);
+      const data = await res.json().catch(() => null);
+
+      if (res.ok && data?.pedidos) {
+        setPedidos(data.pedidos);
+        if (data.resumo) setResumo(data.resumo);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar pedidos:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFiltro]);
+
+  useEffect(() => {
+    void carregarPedidos();
+  }, [carregarPedidos]);
+
+  const atualizarStatus = async (
+    id: string,
+    novoStatus: string,
+    entreguePara?: string
+  ) => {
+    setAtualizandoId(id);
+    try {
+      const res = await authenticatedFetch('/api/v1/secretaria/aemadepa/pedidos', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          novoStatus,
+          entreguePara,
+        }),
+      });
+
+      if (res.ok) {
+        void carregarPedidos();
+        setModalEntregaPedido(null);
+      }
+    } catch (err) {
+      console.error('Erro ao atualizar status do pedido:', err);
+    } finally {
+      setAtualizandoId(null);
+    }
+  };
+
+  const pedidosFiltrados = pedidos.filter((p) => {
+    if (!busca) return true;
+    const termo = busca.toLowerCase();
+    return (
+      p.associada.nomeEsposa.toLowerCase().includes(termo) ||
+      p.associada.ministroNome.toLowerCase().includes(termo) ||
+      p.associada.ministroMatricula.toLowerCase().includes(termo) ||
+      p.associada.campo.toLowerCase().includes(termo)
+    );
+  });
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300">
+      {/* Cards de Métricas Financeiras e Operacionais */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-emerald-100 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Total Arrecadado</p>
+            <p className="text-2xl font-black text-emerald-700 mt-1">
+              R$ {resumo.totalArrecadado.toFixed(2)}
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">{resumo.pedidosPagos} pagamentos confirmados</p>
+          </div>
+          <div className="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 shadow-inner">
+            <DollarSign className="w-6 h-6" />
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-blue-100 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">Fila de Impressão</p>
+            <p className="text-2xl font-black text-blue-700 mt-1">{resumo.emFilaImpressao}</p>
+            <p className="text-xs text-gray-500 mt-0.5">Pagas prontas para imprimir</p>
+          </div>
+          <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 shadow-inner">
+            <Printer className="w-6 h-6" />
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-purple-100 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-bold text-purple-600 uppercase tracking-wider">Cartões Impressos</p>
+            <p className="text-2xl font-black text-purple-700 mt-1">{resumo.impressos}</p>
+            <p className="text-xs text-gray-500 mt-0.5">Aguardando entrega/retirada</p>
+          </div>
+          <div className="w-12 h-12 bg-purple-50 rounded-xl flex items-center justify-center text-purple-600 shadow-inner">
+            <CheckCircle2 className="w-6 h-6" />
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-amber-100 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-bold text-amber-600 uppercase tracking-wider">Aguardando PIX</p>
+            <p className="text-2xl font-black text-amber-700 mt-1">{resumo.aguardandoPagamento}</p>
+            <p className="text-xs text-gray-500 mt-0.5">Cobranças geradas</p>
+          </div>
+          <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center text-amber-600 shadow-inner">
+            <Clock className="w-6 h-6" />
+          </div>
+        </div>
+      </div>
+
+      {/* Barra de Filtros e Pesquisa */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 space-y-3">
+        <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar por associada, pastor, matrícula ou campo..."
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-rose-500"
+            />
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={statusFiltro}
+              onChange={(e) => setStatusFiltro(e.target.value)}
+              className="border border-gray-300 rounded-lg text-xs font-bold px-3 py-2 bg-white text-gray-700"
+            >
+              <option value="todos">Todos os Pedidos</option>
+              <option value="pago,em_impressao">Fila de Impressão (Pagas)</option>
+              <option value="impressa">Impressas (Prontas)</option>
+              <option value="entregue">Entregues</option>
+              <option value="aguardando_pagamento">Aguardando PIX</option>
+              <option value="cancelada">Canceladas</option>
+            </select>
+
+            <button
+              onClick={() => void carregarPedidos()}
+              disabled={loading}
+              className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <span>Atualizar</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabela de Pedidos */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200 text-gray-600 font-extrabold uppercase tracking-wider">
+                <th className="py-3 px-4">Associada (Esposa)</th>
+                <th className="py-3 px-4">Pastor Vinculado</th>
+                <th className="py-3 px-4">Via / Valor</th>
+                <th className="py-3 px-4">Status</th>
+                <th className="py-3 px-4">Data Pagamento</th>
+                <th className="py-3 px-4 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-gray-500">
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-rose-600 mb-2" />
+                    Carregando pedidos de carteirinhas...
+                  </td>
+                </tr>
+              ) : pedidosFiltrados.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-gray-500">
+                    Nenhum pedido encontrado para os filtros selecionados.
+                  </td>
+                </tr>
+              ) : (
+                pedidosFiltrados.map((p) => {
+                  const podeImprimir = ['pago', 'em_impressao', 'impressa', 'entregue'].includes(p.status);
+                  return (
+                    <tr key={p.id} className="hover:bg-rose-50/40 transition">
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-3">
+                          {p.associada.fotoEsposaUrl ? (
+                            <img
+                              src={p.associada.fotoEsposaUrl}
+                              alt=""
+                              className="w-9 h-9 rounded-full object-cover border border-rose-200 shadow-xs"
+                            />
+                          ) : (
+                            <div className="w-9 h-9 rounded-full bg-rose-100 text-rose-600 font-bold flex items-center justify-center text-xs">
+                              {p.associada.nomeEsposa.slice(0, 2).toUpperCase()}
+                            </div>
+                          )}
+                          <div>
+                            <p className="font-bold text-gray-900 text-sm">{p.associada.nomeEsposa}</p>
+                            <p className="text-gray-500 font-mono">{p.associada.cpfEsposa}</p>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-4">
+                        <p className="font-semibold text-gray-800">{p.associada.ministroNome}</p>
+                        <p className="text-gray-500">
+                          Mat: <strong>{p.associada.ministroMatricula || '—'}</strong> • {p.associada.campo}
+                        </p>
+                      </td>
+
+                      <td className="py-3 px-4">
+                        <span className="font-bold text-gray-700">{p.via}ª Via</span>
+                        <p className="font-black text-rose-700 text-sm">R$ {p.valor.toFixed(2)}</p>
+                      </td>
+
+                      <td className="py-3 px-4">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${
+                            p.status === 'pago'
+                              ? 'bg-blue-100 text-blue-800'
+                              : p.status === 'em_impressao'
+                              ? 'bg-indigo-100 text-indigo-800'
+                              : p.status === 'impressa'
+                              ? 'bg-purple-100 text-purple-800'
+                              : p.status === 'entregue'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : p.status === 'cancelada'
+                              ? 'bg-gray-100 text-gray-600'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
+                          {p.status === 'aguardando_pagamento' && 'Aguardando PIX'}
+                          {p.status === 'pago' && 'Pago (Fila)'}
+                          {p.status === 'em_impressao' && 'Em Impressão'}
+                          {p.status === 'impressa' && 'Impressa'}
+                          {p.status === 'entregue' && 'Entregue'}
+                          {p.status === 'cancelada' && 'Cancelada'}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-4 text-gray-600">
+                        {p.pagoEm ? new Date(p.pagoEm).toLocaleDateString('pt-BR') : '—'}
+                      </td>
+
+                      <td className="py-3 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* Botão de Impressão integrado ao CartaoAemadepa existente */}
+                          <button
+                            type="button"
+                            onClick={() => onImprimirCarteirinha(p.associada)}
+                            disabled={!podeImprimir}
+                            className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg transition title='Imprimir Carteirinha' disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                            title={podeImprimir ? 'Imprimir Carteirinha AEMADEPA' : 'Aguardando pagamento'}
+                          >
+                            <Printer className="w-4 h-4" />
+                          </button>
+
+                          {/* Transição de Impressão */}
+                          {p.status === 'pago' && (
+                            <button
+                              type="button"
+                              onClick={() => atualizarStatus(p.id, 'em_impressao')}
+                              disabled={atualizandoId === p.id}
+                              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition cursor-pointer"
+                              title="Marcar em impressão"
+                            >
+                              Iniciar Impressão
+                            </button>
+                          )}
+
+                          {p.status === 'em_impressao' && (
+                            <button
+                              type="button"
+                              onClick={() => atualizarStatus(p.id, 'impressa')}
+                              disabled={atualizandoId === p.id}
+                              className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition cursor-pointer"
+                              title="Marcar como impressa"
+                            >
+                              Concluir Cartão
+                            </button>
+                          )}
+
+                          {p.status === 'impressa' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setModalEntregaPedido(p);
+                                setEntregueParaNome(p.associada.ministroNome);
+                              }}
+                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                              title="Registrar entrega"
+                            >
+                              <Truck className="w-3.5 h-3.5" />
+                              <span>Entregar</span>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Modal de Registro de Entrega */}
+      {modalEntregaPedido && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2.5 text-emerald-700">
+                <Truck className="w-5 h-5" />
+                <h3 className="font-extrabold text-base">Registrar Entrega da Carteirinha</h3>
+              </div>
+              <button
+                onClick={() => setModalEntregaPedido(null)}
+                className="text-gray-400 hover:text-gray-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="text-xs text-gray-600 space-y-1.5 bg-gray-50 p-3.5 rounded-xl border border-gray-200">
+              <p><strong>Associada:</strong> {modalEntregaPedido.associada.nomeEsposa}</p>
+              <p><strong>Pastor:</strong> {modalEntregaPedido.associada.ministroNome}</p>
+              <p><strong>Via:</strong> {modalEntregaPedido.via}ª Via</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-gray-700">Entregue para quem?</label>
+              <input
+                type="text"
+                value={entregueParaNome}
+                onChange={(e) => setEntregueParaNome(e.target.value)}
+                placeholder="Ex: Pastor, Esposa ou Representante da Região"
+                className="w-full text-xs border border-gray-300 rounded-lg px-3 py-2 text-gray-800"
+              />
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setModalEntregaPedido(null)}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-lg cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  atualizarStatus(modalEntregaPedido.id, 'entregue', entregueParaNome)
+                }
+                disabled={atualizandoId === modalEntregaPedido.id}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>Confirmar Entrega</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

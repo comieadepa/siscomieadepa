@@ -7,6 +7,7 @@ import PageLayout from '@/components/PageLayout';
 import ModalAemadepa, { MinistroAemadepaInfo, DadosEsposaForm } from '@/components/ModalAemadepa';
 import CartaoAemadepa from '@/components/CartaoAemadepa';
 import FichaAemadepa from '@/components/FichaAemadepa';
+import PainelPedidosAemadepa from '@/components/PainelPedidosAemadepa';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { authenticatedFetch } from '@/lib/api-client';
 import { QRCodeSVG } from 'qrcode.react';
@@ -87,6 +88,9 @@ export default function AemadepaPage() {
   // Estado para Modal do Link Público de Cadastro
   const [modalLinkPublicoAberto, setModalLinkPublicoAberto] = useState(false);
   const [linkCopiado, setLinkCopiado] = useState(false);
+
+  // Aba ativa: associadas ou pedidos de carteirinhas
+  const [abaAtiva, setAbaAtiva] = useState<'associadas' | 'pedidos'>('associadas');
 
   // Carrega associadas da tabela dedicada aemadepa_associadas com vínculo ministerial
   const carregarDados = useCallback(async () => {
@@ -320,8 +324,72 @@ export default function AemadepaPage() {
           </div>
         </div>
 
-        {/* Cards de Métricas */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Navegação por Abas: Associadas vs Pedidos de Carteirinhas */}
+        <div className="flex items-center gap-2 border-b border-gray-200 pb-3">
+          <button
+            type="button"
+            onClick={() => setAbaAtiva('associadas')}
+            className={`px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
+              abaAtiva === 'associadas'
+                ? 'bg-rose-700 text-white shadow-sm'
+                : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            <span>Cadastros das Associadas ({associadas.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setAbaAtiva('pedidos')}
+            className={`px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
+              abaAtiva === 'pedidos'
+                ? 'bg-rose-700 text-white shadow-sm'
+                : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'
+            }`}
+          >
+            <CreditCard className="w-4 h-4" />
+            <span>Solicitações de Carteirinhas (Fila PIX & Entrega)</span>
+          </button>
+        </div>
+
+        {abaAtiva === 'pedidos' ? (
+          <PainelPedidosAemadepa
+            onImprimirCarteirinha={(assoc) => {
+              setAssociadaCartao({
+                id: assoc.id,
+                ministroId: assoc.id,
+                uniqueId: assoc.uniqueId,
+                ministroNome: assoc.ministroNome,
+                ministroMatricula: assoc.ministroMatricula,
+                ministroCpf: assoc.ministroCpf,
+                cargoMinisterial: assoc.cargoMinisterial,
+                campo: assoc.campo,
+                supervisao: assoc.supervisao,
+                nomeEsposa: assoc.nomeEsposa,
+                cpfEsposa: assoc.cpfEsposa,
+                rgEsposa: assoc.rgEsposa,
+                orgaoEmissorEsposa: assoc.orgaoEmissorEsposa,
+                dataNascimentoEsposa: assoc.dataNascimentoEsposa,
+                nacionalidadeEsposa: assoc.nacionalidadeEsposa,
+                naturalidadeEsposa: assoc.naturalidadeEsposa,
+                nomePaiEsposa: assoc.nomePaiEsposa,
+                nomeMaeEsposa: assoc.nomeMaeEsposa,
+                tituloEleitoralEsposa: assoc.tituloEleitoralEsposa,
+                foneEsposa: assoc.foneEsposa,
+                emailEsposa: assoc.emailEsposa,
+                tipoSanguineoEsposa: assoc.tipoSanguineoEsposa,
+                fotoEsposaUrl: assoc.fotoEsposaUrl,
+                numeroAemadepa: assoc.numeroAemadepa,
+                temEsposaCadastrada: true,
+                statusMinistro: 'active',
+              });
+            }}
+          />
+        ) : (
+          <>
+            {/* Cards de Métricas */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-200 flex items-center justify-between">
             <div>
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Ministros</p>
@@ -865,6 +933,8 @@ export default function AemadepaPage() {
             </div>
           </div>
         </div>
+          </>
+        )}
       </div>
     </PageLayout>
   );
