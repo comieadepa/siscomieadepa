@@ -89,12 +89,15 @@ export async function requireRole(
 
 export async function requireModuleAccess(
   request: NextRequest,
-  moduleKey: ModuleKey
+  moduleKey: ModuleKey | readonly ModuleKey[]
 ): Promise<{ ok: true; ctx: AuthContext } | { ok: false; response: NextResponse }> {
   const auth = await requireUser(request);
   if (!auth.ok) return auth;
 
-  if (!canAccessModule(auth.ctx.role, moduleKey)) {
+  const modules = Array.isArray(moduleKey) ? moduleKey : [moduleKey];
+  const hasAccess = modules.some((m) => canAccessModule(auth.ctx.role, m));
+
+  if (!hasAccess) {
     return {
       ok: false,
       response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }),

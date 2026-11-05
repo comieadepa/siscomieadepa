@@ -4,7 +4,7 @@ import { createServerClient } from '@/lib/supabase-server';
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireModuleAccess(request, 'secretaria');
+    const auth = await requireModuleAccess(request, 'aemadepa');
     if (!auth.ok) return auth.response;
 
     const supabase = createServerClient();

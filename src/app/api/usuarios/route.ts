@@ -9,7 +9,7 @@ type UsuarioResponse = {
   nome: string;
   email: string;
   email_confirmed: boolean;
-  nivel: 'super' | 'administrador' | 'cgadb' | 'comissao' | 'inscricao' | 'financeiro';
+  nivel: 'super' | 'administrador' | 'cgadb' | 'comissao' | 'inscricao' | 'financeiro' | 'aemadepa';
   congregacao?: string;
   congregacao_id?: string | null;
   status: 'ativo' | 'inativo';
@@ -41,6 +41,7 @@ function mapNivel(role: string | null | undefined): UsuarioResponse['nivel'] {
   if (normalized === 'comissao') return 'comissao';
   if (normalized === 'inscricao') return 'inscricao';
   if (normalized === 'financeiro') return 'financeiro';
+  if (normalized === 'aemadepa') return 'aemadepa';
   return 'administrador';
 }
 
@@ -68,6 +69,7 @@ function mapRoleFromNivel(nivel: UsuarioResponse['nivel']): string {
     case 'comissao': return 'comissao';
     case 'inscricao': return 'inscricao';
     case 'financeiro': return 'financeiro';
+    case 'aemadepa': return 'aemadepa';
     default: return 'admin';
   }
 }

@@ -1,4 +1,4 @@
-export type CanonicalRole = 'super' | 'administrador' | 'cgadb' | 'comissao' | 'inscricao' | 'financeiro';
+export type CanonicalRole = 'super' | 'administrador' | 'cgadb' | 'comissao' | 'inscricao' | 'financeiro' | 'aemadepa';
 
 export type ModuleKey =
   | 'cgadb'
@@ -13,7 +13,8 @@ export type ModuleKey =
   | 'documentos'
   | 'permutas'
   | 'eventos'
-  | 'configuracoes';
+  | 'configuracoes'
+  | 'aemadepa';
 
 export type ApiKey = 'financeiro' | 'members' | 'employees' | 'documentos' | 'permutas';
 
@@ -24,6 +25,7 @@ const CANONICAL_ROLES = new Set<CanonicalRole>([
   'comissao',
   'inscricao',
   'financeiro',
+  'aemadepa',
 ]);
 
 const ROLE_ALIASES: Record<string, CanonicalRole> = {
@@ -47,6 +49,8 @@ const ROLE_ALIASES: Record<string, CanonicalRole> = {
   inscricao: 'inscricao',
   financeiro: 'financeiro',
   financial: 'financeiro',
+  aemadepa: 'aemadepa',
+  esposas: 'aemadepa',
 };
 
 function normalizeKey(value: string): string {
@@ -107,6 +111,7 @@ const MODULE_ACCESS: Record<ModuleKey, CanonicalRole[]> = {
   permutas: ['super', 'administrador', 'financeiro'],
   eventos: ['super', 'inscricao'],
   configuracoes: ['super', 'administrador'],
+  aemadepa: ['super', 'administrador', 'aemadepa'],
 };
 
 const API_ACCESS: Record<ApiKey, CanonicalRole[]> = {

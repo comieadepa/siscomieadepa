@@ -18,7 +18,7 @@ interface Usuario {
   nome: string;
   email: string;
   email_confirmed?: boolean;
-  nivel: 'super' | 'administrador' | 'cgadb' | 'comissao' | 'inscricao' | 'financeiro';
+  nivel: 'super' | 'administrador' | 'cgadb' | 'comissao' | 'inscricao' | 'financeiro' | 'aemadepa';
   congregacao?: string;
   congregacao_id?: string | null;
   supervisao?: string;
@@ -149,6 +149,13 @@ export default function UsuariosPage() {
       descricao: 'Acesso ao módulo Financeiro',
       icon: '💳',
       cor: 'bg-blue-100 border-blue-300',
+    },
+    {
+      id: 'aemadepa',
+      nome: 'AEMADEPA',
+      descricao: 'Gestão de Associadas, Pedidos e Carteirinhas AEMADEPA',
+      icon: '💖',
+      cor: 'bg-rose-100 border-rose-300',
     },
   ];
 

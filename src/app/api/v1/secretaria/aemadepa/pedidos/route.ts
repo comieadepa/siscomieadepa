@@ -12,7 +12,7 @@ import { requireModuleAccess } from '@/lib/auth/require-auth';
 import { logDB } from '@/lib/audit';
 
 export async function GET(request: NextRequest) {
-  const auth = await requireModuleAccess(request, 'secretaria');
+  const auth = await requireModuleAccess(request, 'aemadepa');
   if (!auth.ok) return auth.response;
 
   const supabase = createServerClient();
@@ -149,7 +149,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await requireModuleAccess(request, 'secretaria');
+  const auth = await requireModuleAccess(request, 'aemadepa');
   if (!auth.ok) return auth.response;
 
   try {
