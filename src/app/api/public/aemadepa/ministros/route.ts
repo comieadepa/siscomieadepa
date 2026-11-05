@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     // Seleciona campos essenciais para identificação visual e verificação cadastral
     let query = supabase
       .from('members')
-      .select('id, name, matricula, cargo_ministerial, status, jubilado, custom_fields, nome_conjuge, cpf_conjuge')
+      .select('id, name, matricula, cargo_ministerial, status, jubilado, custom_fields, nome_conjuge, cpf_conjuge, aemadepa_associadas(id, cpf, status)')
       .limit(25);
 
     const orClauses: string[] = [
@@ -63,11 +63,15 @@ export async function GET(request: NextRequest) {
     const ministros = (rows || []).map((m: any) => {
       const cf = m.custom_fields && typeof m.custom_fields === 'object' ? m.custom_fields : {};
       
-      // Cadastro efetivo AEMADEPA: requer indicador formal existente (CPF do cônjuge preenchido ou número AEMADEPA formal)
+      // Cadastro efetivo AEMADEPA:
+      // 1. Prioriza a presença na tabela oficial aemadepa_associadas
+      // 2. Fallback de compatibilidade para cpf_conjuge de 11 dígitos ou numero_aemadepa
+      const associada = m.aemadepa_associadas;
+      const temAssociadaTabela = Boolean(associada && (associada.id || associada.cpf));
       const cpfConjugeDigits = onlyDigits(m.cpf_conjuge || cf.cpfConjuge);
-      const numeroAemadepa = String(m.numero_aemadepa || cf.numero_aemadepa || cf.numeroAemadepa || '').trim();
+      const numeroAemadepa = String(cf.numero_aemadepa || cf.numeroAemadepa || '').trim();
       
-      const temCadastroEfetivo = Boolean((cpfConjugeDigits && cpfConjugeDigits.length === 11) || numeroAemadepa.length > 0);
+      const temCadastroEfetivo = Boolean(temAssociadaTabela || (cpfConjugeDigits && cpfConjugeDigits.length === 11) || numeroAemadepa.length > 0);
 
       return {
         id: m.id,

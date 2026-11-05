@@ -88,52 +88,51 @@ export default function AemadepaPage() {
   const [modalLinkPublicoAberto, setModalLinkPublicoAberto] = useState(false);
   const [linkCopiado, setLinkCopiado] = useState(false);
 
-  // Carrega ministros e mapeia para a visão AEMADEPA
+  // Carrega associadas da tabela dedicada aemadepa_associadas com vínculo ministerial
   const carregarDados = useCallback(async () => {
     setLoading(true);
     try {
-      // Busca ministros (limite alto para carregar o conjunto completo)
-      const res = await authenticatedFetch('/api/v1/members?limit=5000&tipoCadastro=ministro');
+      const res = await authenticatedFetch('/api/v1/secretaria/aemadepa');
       const payload = await res.json().catch(() => null as any);
 
       if (!res.ok) {
-        throw new Error(payload?.error || 'Erro ao carregar dados dos ministros');
+        throw new Error(payload?.error || 'Erro ao carregar dados das associadas AEMADEPA');
       }
 
       const rows: any[] = payload?.data || [];
 
-      const listaMapeada: AssociadaAemadepa[] = rows.map((m: any) => {
-        const cf = m.custom_fields && typeof m.custom_fields === 'object' ? m.custom_fields : {};
-        const nomeEsposa = String(m.nome_conjuge || cf.nomeConjuge || '').trim();
-        const temEsposa = Boolean(nomeEsposa && nomeEsposa.length > 0);
+      const listaMapeada: AssociadaAemadepa[] = rows.map((item: any) => {
+        const m = item.members || {};
+        const cfMinistro = m.custom_fields && typeof m.custom_fields === 'object' ? m.custom_fields : {};
+        const nomeEsposa = String(item.nome || '').trim();
 
         return {
-          id: m.id,
-          ministroId: m.id,
-          uniqueId: m.unique_id || cf.unique_id || cf.uniqueId || undefined,
-          ministroNome: String(m.name || m.nome || cf.nome || '').trim(),
-          ministroMatricula: String(m.matricula || cf.matricula || '').trim(),
-          ministroCpf: String(m.cpf || cf.cpf || '').trim(),
-          cargoMinisterial: String(m.cargo_ministerial || cf.cargoMinisterial || m.profissao || '').trim(),
-          campo: String(cf.campo || m.cidade || '').trim(),
-          supervisao: String(cf.supervisao || '').trim(),
+          id: item.id, // ID da associada
+          ministroId: item.ministro_id,
+          uniqueId: m.unique_id || cfMinistro.unique_id || cfMinistro.uniqueId || undefined,
+          ministroNome: String(m.name || cfMinistro.nome || '').trim(),
+          ministroMatricula: String(m.matricula || cfMinistro.matricula || '').trim(),
+          ministroCpf: String(m.cpf || cfMinistro.cpf || '').trim(),
+          cargoMinisterial: String(m.cargo_ministerial || cfMinistro.cargoMinisterial || 'PASTOR').trim(),
+          campo: String(cfMinistro.campo || '').trim(),
+          supervisao: String(cfMinistro.supervisao || '').trim(),
           // Esposa / Associada
-          nomeEsposa: nomeEsposa || 'Não cadastrada',
-          cpfEsposa: String(m.cpf_conjuge || cf.cpfConjuge || '').trim(),
-          rgEsposa: String(m.conjuge_rg || cf.conjugeRg || '').trim(),
-          orgaoEmissorEsposa: String(m.conjuge_orgao_emissor || cf.conjugeOrgaoEmissor || '').trim(),
-          dataNascimentoEsposa: String(m.data_nascimento_conjuge || cf.dataNascimentoConjuge || '').trim(),
-          nacionalidadeEsposa: String(m.conjuge_nacionalidade || cf.conjugeNacionalidade || 'BRASILEIRA').trim(),
-          naturalidadeEsposa: String(m.conjuge_naturalidade || cf.conjugeNaturalidade || '').trim(),
-          nomePaiEsposa: String(m.conjuge_nome_pai || cf.conjugeNomePai || '').trim(),
-          nomeMaeEsposa: String(m.conjuge_nome_mae || cf.conjugeNomeMae || '').trim(),
-          tituloEleitoralEsposa: String(m.conjuge_titulo_eleitoral || cf.conjugeTituloEleitoral || '').trim(),
-          foneEsposa: String(m.conjuge_fone || cf.conjugeFone || '').trim(),
-          emailEsposa: String(m.conjuge_email || cf.conjugeEmail || '').trim(),
-          tipoSanguineoEsposa: String(m.conjuge_tipo_sanguineo || cf.conjugeTipoSanguineo || '').trim(),
-          fotoEsposaUrl: m.conjuge_foto_url || cf.conjugeFotoUrl || null,
-          numeroAemadepa: String(m.numero_aemadepa || cf.numero_aemadepa || cf.numeroAemadepa || '').trim(),
-          temEsposaCadastrada: temEsposa,
+          nomeEsposa: nomeEsposa,
+          cpfEsposa: String(item.cpf || '').trim(),
+          rgEsposa: String(item.rg || '').trim(),
+          orgaoEmissorEsposa: String(item.orgao_emissor || '').trim(),
+          dataNascimentoEsposa: String(item.data_nascimento || '').trim(),
+          nacionalidadeEsposa: String(item.nacionalidade || 'BRASILEIRA').trim(),
+          naturalidadeEsposa: String(item.naturalidade || '').trim(),
+          nomePaiEsposa: String(item.nome_pai || '').trim(),
+          nomeMaeEsposa: String(item.nome_mae || '').trim(),
+          tituloEleitoralEsposa: String(item.titulo_eleitoral || '').trim(),
+          foneEsposa: String(item.fone || '').trim(),
+          emailEsposa: String(item.email || '').trim(),
+          tipoSanguineoEsposa: String(item.tipo_sanguineo || '').trim(),
+          fotoEsposaUrl: item.foto_url || null,
+          numeroAemadepa: String(item.numero_aemadepa || '').trim(),
+          temEsposaCadastrada: true,
           statusMinistro: String(m.status || 'active').toLowerCase(),
         };
       });

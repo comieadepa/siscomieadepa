@@ -118,55 +118,84 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 3. Mescla os custom_fields preservando todos os campos existentes do ministro
+    const inputCpfDigits = onlyDigits(cpf);
+    if (!inputCpfDigits || inputCpfDigits.length !== 11) {
+      return NextResponse.json({ error: 'O CPF da esposa deve conter 11 dígitos numéricos.' }, { status: 400 });
+    }
+
+    if (!data_nascimento || String(data_nascimento).trim().length < 8) {
+      return NextResponse.json({ error: 'A data de nascimento da esposa é obrigatória.' }, { status: 400 });
+    }
+
+    // 3. Validação da Operação Autorizada pelo Token HMAC
+    const operacaoAutorizada = tokenVerification.operacao; // 'primeiro_cadastro' ou 'edicao_esposa'
+
+    // 4. Verificação de Integridade e Antiusurpação de Vínculo:
+    // Se o CPF já existe na AEMADEPA, deve obrigatoriamente pertencer a este mesmo ministro!
+    const { data: associadaExistente, error: checkErr } = await supabaseAdmin
+      .from('aemadepa_associadas')
+      .select('id, ministro_id, status, numero_aemadepa, custom_fields')
+      .eq('cpf', inputCpfDigits)
+      .maybeSingle();
+
+    if (checkErr) {
+      console.error('Erro ao verificar associada por CPF:', checkErr);
+      return NextResponse.json({ error: 'Erro ao validar cadastro.' }, { status: 500 });
+    }
+
+    if (associadaExistente && associadaExistente.ministro_id !== ministroId) {
+      return NextResponse.json(
+        {
+          error: 'Este CPF já está cadastrado para a esposa de outro ministro. Caso precise de regularização, procure a Secretaria da COMIEADEPA.',
+        },
+        { status: 409 }
+      );
+    }
+
     const customFieldsExistente =
       ministroAtual.custom_fields && typeof ministroAtual.custom_fields === 'object'
         ? ministroAtual.custom_fields
         : {};
 
-    const novosCustomFields = {
-      ...customFieldsExistente,
-      nomeConjuge: String(nome).trim(),
-      cpfConjuge: onlyDigits(cpf) || null,
-      dataNascimentoConjuge: data_nascimento || null,
-      conjugeRg: rg ? String(rg).trim() : null,
-      conjugeOrgaoEmissor: orgao_emissor ? String(orgao_emissor).trim() : null,
-      conjugeNacionalidade: nacionalidade ? String(nacionalidade).trim() : 'BRASILEIRA',
-      conjugeNaturalidade: naturalidade ? String(naturalidade).trim() : null,
-      conjugeNomePai: nome_pai ? String(nome_pai).trim() : null,
-      conjugeNomeMae: nome_mae ? String(nome_mae).trim() : null,
-      conjugeTituloEleitoral: titulo_eleitoral ? String(titulo_eleitoral).trim() : null,
-      conjugeFone: fone ? String(fone).trim() : null,
-      conjugeEmail: email ? String(email).trim() : null,
-      conjugeTipoSanguineo: tipo_sanguineo || null,
-      conjugeFotoUrl: fotoFinalUrl || customFieldsExistente.conjugeFotoUrl || null,
-    };
+    const numeroAemadepaAtual = String(
+      associadaExistente?.numero_aemadepa ||
+      customFieldsExistente.numero_aemadepa ||
+      customFieldsExistente.numeroAemadepa ||
+      ''
+    ).trim() || null;
 
-    // 4. Atualiza o registro no banco
-    const { error: updateErr } = await supabaseAdmin
-      .from('members')
-      .update({
-        nome_conjuge: String(nome).trim(),
-        cpf_conjuge: onlyDigits(cpf) || null,
-        data_nascimento_conjuge: data_nascimento || null,
-        conjuge_rg: rg ? String(rg).trim() : null,
-        conjuge_orgao_emissor: orgao_emissor ? String(orgao_emissor).trim() : null,
-        conjuge_nacionalidade: nacionalidade ? String(nacionalidade).trim() : 'BRASILEIRA',
-        conjuge_naturalidade: naturalidade ? String(naturalidade).trim() : null,
-        conjuge_nome_pai: nome_pai ? String(nome_pai).trim() : null,
-        conjuge_nome_mae: nome_mae ? String(nome_mae).trim() : null,
-        conjuge_titulo_eleitoral: titulo_eleitoral ? String(titulo_eleitoral).trim() : null,
-        conjuge_fone: fone ? String(fone).trim() : null,
-        conjuge_email: email ? String(email).trim() : null,
-        conjuge_tipo_sanguineo: tipo_sanguineo || null,
-        conjuge_foto_url: fotoFinalUrl || ministroAtual.conjuge_foto_url || null,
-        custom_fields: novosCustomFields,
-      })
-      .eq('id', ministroId);
+    // 5. Execução Exclusiva via RPC Atômica Transacional no PostgreSQL
+    // Não utiliza fallback de gravações separadas: a atomicidade com rollback integral é garantida no banco.
+    const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc('salvar_cadastro_aemadepa_transacional', {
+      p_ministro_id: ministroId,
+      p_operacao: operacaoAutorizada,
+      p_nome: String(nome).trim(),
+      p_cpf: inputCpfDigits,
+      p_data_nascimento: data_nascimento,
+      p_rg: rg ? String(rg).trim() : null,
+      p_orgao_emissor: orgao_emissor ? String(orgao_emissor).trim() : null,
+      p_nacionalidade: nacionalidade ? String(nacionalidade).trim() : 'BRASILEIRA',
+      p_naturalidade: naturalidade ? String(naturalidade).trim() : null,
+      p_tipo_sanguineo: tipo_sanguineo || null,
+      p_nome_pai: nome_pai ? String(nome_pai).trim() : null,
+      p_nome_mae: nome_mae ? String(nome_mae).trim() : null,
+      p_titulo_eleitoral: titulo_eleitoral ? String(titulo_eleitoral).trim() : null,
+      p_fone: fone ? String(fone).trim() : null,
+      p_email: email ? String(email).trim() : null,
+      p_foto_url: fotoFinalUrl || ministroAtual.conjuge_foto_url || null,
+      p_numero_aemadepa: numeroAemadepaAtual,
+    });
 
-    if (updateErr) {
-      console.error('Erro ao salvar cadastro AEMADEPA:', updateErr);
-      return NextResponse.json({ error: updateErr.message || 'Erro ao salvar cadastro.' }, { status: 500 });
+    if (rpcErr || !rpcRes) {
+      console.error('Falha na RPC transacional salvar_cadastro_aemadepa_transacional:', rpcErr);
+      return NextResponse.json(
+        { error: 'Não foi possível salvar o cadastro de forma atômica no servidor. Tente novamente mais tarde.' },
+        { status: 500 }
+      );
+    }
+
+    if (!rpcRes.success) {
+      return NextResponse.json({ error: rpcRes.error || 'Falha ao processar cadastro.' }, { status: 400 });
     }
 
     return NextResponse.json({

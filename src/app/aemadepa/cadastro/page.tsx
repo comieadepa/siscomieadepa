@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import './aemadepa.css';
 import {
   HeartHandshake,
   Search,
@@ -328,8 +329,8 @@ export default function PublicAemadepaCadastroPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-rose-50 via-slate-50 to-pink-50 py-8 px-4 sm:px-6 lg:px-8 text-gray-800">
-      <div className="max-w-3xl mx-auto">
+    <div className="aemadepa-cadastro-page min-h-screen bg-gradient-to-b from-rose-50 via-slate-50 to-pink-50 py-8 px-4 sm:px-6 lg:px-8 text-gray-800">
+      <div className="max-w-3xl mx-auto w-full">
         {/* Cabeçalho Oficial */}
         <div className="text-center mb-8 space-y-3">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-rose-600 via-pink-600 to-purple-700 text-white shadow-xl shadow-rose-600/20 mb-1">

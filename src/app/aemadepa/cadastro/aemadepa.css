@@ -1,0 +1,29 @@
+/* Estilos isolados para a página pública de cadastro AEMADEPA (/aemadepa/cadastro)
+ * Prevenção de zoom automático de inputs no Safari/iOS e navegadores móveis,
+ * bloqueio de ampliação por toque duplo/pinça desordenada mantendo rolagem vertical fluida.
+ */
+
+.aemadepa-cadastro-page {
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+  touch-action: pan-y;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Garante tamanho mínimo de 16px em TODOS os campos no mobile/tablet para evitar zoom do iOS/Android */
+.aemadepa-cadastro-page input,
+.aemadepa-cadastro-page select,
+.aemadepa-cadastro-page textarea {
+  font-size: 16px !important;
+  touch-action: manipulation;
+  max-width: 100%;
+}
+
+/* Evita delay e duplo-toque ampliado nos botões mantendo clique e teclado operacionais */
+.aemadepa-cadastro-page button,
+.aemadepa-cadastro-page a,
+.aemadepa-cadastro-page [role="button"] {
+  touch-action: manipulation;
+}

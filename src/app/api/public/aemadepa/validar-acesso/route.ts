@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
     const supabase = createServerClient();
     const { data: membro, error } = await supabase
       .from('members')
-      .select('*')
+      .select('*, aemadepa_associadas(*)')
       .eq('id', ministroId)
       .single();
 
@@ -120,8 +120,9 @@ export async function POST(request: NextRequest) {
     const cf = membro.custom_fields && typeof membro.custom_fields === 'object' ? membro.custom_fields : {};
     
     // Classificação idêntica à rota de busca pública:
-    // Uma menção histórica a nome_conjuge NÃO constitui cadastro efetivo se não houver identificador formal.
-    const dbCpfEsposa = onlyDigits(membro.cpf_conjuge || cf.cpfConjuge);
+    // Consulta prioritariamente aemadepa_associadas e mantém fallback para members
+    const associada = membro.aemadepa_associadas;
+    const dbCpfEsposa = onlyDigits(associada?.cpf || membro.cpf_conjuge || cf.cpfConjuge);
     const numeroAemadepa = String(membro.numero_aemadepa || cf.numero_aemadepa || cf.numeroAemadepa || '').trim();
     const temCadastroEfetivo = Boolean((dbCpfEsposa && dbCpfEsposa.length === 11) || numeroAemadepa.length > 0);
 
@@ -131,7 +132,7 @@ export async function POST(request: NextRequest) {
     if (temCadastroEfetivo) {
       // CENÁRIO A: Cadastro efetivo existente
       // Validação estrita e exclusiva: CPF e Data de Nascimento DELA
-      const dbDataNascEsposa = normalizeDate(membro.data_nascimento_conjuge || cf.dataNascimentoConjuge);
+      const dbDataNascEsposa = normalizeDate(associada?.data_nascimento || membro.data_nascimento_conjuge || cf.dataNascimentoConjuge);
 
       if (dbCpfEsposa && dbDataNascEsposa) {
         if (inputCpfDigits === dbCpfEsposa && inputDataNorm === dbDataNascEsposa) {
@@ -175,24 +176,24 @@ export async function POST(request: NextRequest) {
 
     // Se for edição, libera os dados cadastrais da esposa
     let dadosEsposa = null;
-    const nomeEsposa = String(membro.nome_conjuge || cf.nomeConjuge || '').trim();
+    const nomeEsposa = String(associada?.nome || membro.nome_conjuge || cf.nomeConjuge || '').trim();
 
     if (operacao === 'edicao_esposa') {
       dadosEsposa = {
         nome: nomeEsposa,
-        cpf: String(membro.cpf_conjuge || cf.cpfConjuge || '').trim(),
-        rg: String(membro.conjuge_rg || cf.conjugeRg || '').trim(),
-        orgao_emissor: String(membro.conjuge_orgao_emissor || cf.conjugeOrgaoEmissor || '').trim(),
-        data_nascimento: normalizeDate(membro.data_nascimento_conjuge || cf.dataNascimentoConjuge),
-        nacionalidade: String(membro.conjuge_nacionalidade || cf.conjugeNacionalidade || 'BRASILEIRA').trim(),
-        naturalidade: String(membro.conjuge_naturalidade || cf.conjugeNaturalidade || '').trim(),
-        nome_pai: String(membro.conjuge_nome_pai || cf.conjugeNomePai || '').trim(),
-        nome_mae: String(membro.conjuge_nome_mae || cf.conjugeNomeMae || '').trim(),
-        titulo_eleitoral: String(membro.conjuge_titulo_eleitoral || cf.conjugeTituloEleitoral || '').trim(),
-        fone: String(membro.conjuge_fone || cf.conjugeFone || '').trim(),
-        email: String(membro.conjuge_email || cf.conjugeEmail || '').trim(),
-        tipo_sanguineo: String(membro.conjuge_tipo_sanguineo || cf.conjugeTipoSanguineo || '').trim(),
-        foto_url: membro.conjuge_foto_url || cf.conjugeFotoUrl || null,
+        cpf: String(associada?.cpf || membro.cpf_conjuge || cf.cpfConjuge || '').trim(),
+        rg: String(associada?.rg || membro.conjuge_rg || cf.conjugeRg || '').trim(),
+        orgao_emissor: String(associada?.orgao_emissor || membro.conjuge_orgao_emissor || cf.conjugeOrgaoEmissor || '').trim(),
+        data_nascimento: normalizeDate(associada?.data_nascimento || membro.data_nascimento_conjuge || cf.dataNascimentoConjuge),
+        nacionalidade: String(associada?.nacionalidade || membro.conjuge_nacionalidade || cf.conjugeNacionalidade || 'BRASILEIRA').trim(),
+        naturalidade: String(associada?.naturalidade || membro.conjuge_naturalidade || cf.conjugeNaturalidade || '').trim(),
+        nome_pai: String(associada?.nome_pai || membro.conjuge_nome_pai || cf.conjugeNomePai || '').trim(),
+        nome_mae: String(associada?.nome_mae || membro.conjuge_nome_mae || cf.conjugeNomeMae || '').trim(),
+        titulo_eleitoral: String(associada?.titulo_eleitoral || membro.conjuge_titulo_eleitoral || cf.conjugeTituloEleitoral || '').trim(),
+        fone: String(associada?.fone || membro.conjuge_fone || cf.conjugeFone || '').trim(),
+        email: String(associada?.email || membro.conjuge_email || cf.conjugeEmail || '').trim(),
+        tipo_sanguineo: String(associada?.tipo_sanguineo || membro.conjuge_tipo_sanguineo || cf.conjugeTipoSanguineo || '').trim(),
+        foto_url: associada?.foto_url || membro.conjuge_foto_url || cf.conjugeFotoUrl || null,
       };
     } else if (operacao === 'primeiro_cadastro' && nomeEsposa) {
       // Se for primeiro cadastro e houver menção ao nome da esposa na ficha do ministro,
