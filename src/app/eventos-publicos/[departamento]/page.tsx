@@ -1,14 +1,14 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { Playfair_Display, Sora } from 'next/font/google';
+// Fontes tipográficas resilientes sem dependência de download externo durante o build na Vercel
+const sora = { className: 'font-sans' };
+const playfair = { className: 'font-serif' };
 import PublicAssistenteWidget from '@/components/PublicAssistenteWidget';
 import { APP_URL, PUBLIC_URL } from '@/lib/urls';
 import { fetchOpenEvents, getDepartamentoBySlug, type DepartamentoKey } from '@/lib/public-portal';
 
 export const dynamic = 'force-dynamic';
 
-const sora = Sora({ subsets: ['latin'], weight: ['400', '500', '600', '700'] });
-const playfair = Playfair_Display({ subsets: ['latin'], weight: ['600', '700'] });
 
 const baseUrl = PUBLIC_URL || APP_URL || 'http://localhost:3000';
 
