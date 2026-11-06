@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { verifyAemadepaToken } from '@/lib/aemadepa-token';
+import { cleanCpf, isValidCpf } from '@/lib/cpf';
 import {
   getOrCreateAsaasCustomerForAemadepa,
   createAemadepaPixCharge,
@@ -65,18 +66,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. Validação de completude: exige dados obrigatórios e foto cadastrada
+    // 3. Validação de completude: exige dados obrigatórios, foto cadastrada e CPF matematicamente válido
     const temNome = Boolean(associada.nome && associada.nome.trim().length >= 3);
-    const temCpf = Boolean(associada.cpf && associada.cpf.replace(/\D/g, '').length === 11);
+    const cpfLimpo = cleanCpf(associada.cpf);
+    const temCpfValido = Boolean(cpfLimpo && cpfLimpo.length === 11 && isValidCpf(cpfLimpo));
     const temNascimento = Boolean(associada.data_nascimento);
     const temFoto = Boolean(associada.foto_url && associada.foto_url.trim().length > 0);
 
-    if (!temNome || !temCpf || !temNascimento || !temFoto) {
+    if (!temNome || !temCpfValido || !temNascimento || !temFoto) {
+      const msgErro = !temCpfValido
+        ? 'O CPF da associada está ausente ou é inválido. Por favor, atualize os dados com um CPF válido antes de solicitar a carteirinha.'
+        : 'Para solicitar a carteirinha, complete o cadastro da associada (nome, CPF, nascimento e foto 3x4).';
       return NextResponse.json(
         {
-          error:
-            'Para solicitar a carteirinha, complete o cadastro da associada (nome, CPF, nascimento e foto 3x4).',
-          detalhes: { temNome, temCpf, temNascimento, temFoto },
+          error: msgErro,
+          detalhes: { temNome, temCpf: temCpfValido, temNascimento, temFoto },
         },
         { status: 422 }
       );

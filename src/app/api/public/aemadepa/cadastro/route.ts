@@ -2,13 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { createServerClient } from '@/lib/supabase-server';
 import { verifyAemadepaToken } from '@/lib/aemadepa-token';
+import { cleanCpf, isValidCpf } from '@/lib/cpf';
 
 const BUCKET = 'membros-fotos';
 const MAX_BYTES = 2 * 1024 * 1024; // 2MB
-
-function onlyDigits(value: string | null | undefined): string {
-  return (value || '').replace(/\D/g, '');
-}
 
 async function ensureBucket(supabaseAdmin: any) {
   try {
@@ -118,9 +115,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const inputCpfDigits = onlyDigits(cpf);
-    if (!inputCpfDigits || inputCpfDigits.length !== 11) {
-      return NextResponse.json({ error: 'O CPF da esposa deve conter 11 dígitos numéricos.' }, { status: 400 });
+    const inputCpfDigits = cleanCpf(cpf);
+    if (!inputCpfDigits || inputCpfDigits.length !== 11 || !isValidCpf(inputCpfDigits)) {
+      return NextResponse.json({ error: 'O CPF informado é inválido. Digite um CPF válido com 11 dígitos.' }, { status: 400 });
     }
 
     if (!data_nascimento || String(data_nascimento).trim().length < 8) {

@@ -1,3 +1,4 @@
+import { cleanCpf, isValidCpf } from '@/lib/cpf';
 import { asaasFetch, createOrFindAsaasCustomer } from '@/lib/asaas';
 
 export interface AsaasPixResponse {
@@ -21,7 +22,7 @@ export function formatPixDueDate(daysAhead = 3): string {
 
 /**
  * Cria ou localiza cliente ASAAS para a Associada AEMADEPA
- * Reutiliza createOrFindAsaasCustomer com sanitização, lookup por CPF e fallback mínimo resiliente.
+ * Valida rigorosamente o CPF da própria associada e reutiliza createOrFindAsaasCustomer com fallback mínimo.
  */
 export async function getOrCreateAsaasCustomerForAemadepa(params: {
   nome: string;
@@ -29,16 +30,16 @@ export async function getOrCreateAsaasCustomerForAemadepa(params: {
   email?: string | null;
   fone?: string | null;
 }): Promise<string> {
-  const cleanCpf = params.cpf.replace(/\D/g, '');
-  if (!cleanCpf || cleanCpf.length !== 11) {
-    throw new Error('CPF da associada inválido para processamento ASAAS');
+  const digits = cleanCpf(params.cpf);
+  if (!digits || digits.length !== 11 || !isValidCpf(digits)) {
+    throw new Error('CPF da associada ausente ou inválido. Corrija o documento no cadastro antes de gerar cobrança ASAAS.');
   }
 
   try {
     return await createOrFindAsaasCustomer({
       nome: params.nome.trim(),
       email: params.email?.trim() || null,
-      cpf: cleanCpf,
+      cpf: digits,
       whatsapp: params.fone || null,
     });
   } catch (err: any) {

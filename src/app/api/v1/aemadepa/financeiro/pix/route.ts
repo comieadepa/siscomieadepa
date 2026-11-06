@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { requireModuleAccess } from '@/lib/auth/require-auth';
+import { cleanCpf, isValidCpf } from '@/lib/cpf';
 import {
   getOrCreateAsaasCustomerForAemadepa,
   createAemadepaPixCharge,
@@ -41,6 +42,14 @@ export async function POST(request: NextRequest) {
     if (!associada.foto_url || associada.foto_url.trim().length === 0) {
       return NextResponse.json(
         { error: 'Não é possível gerar cobrança para associada sem foto 3x4 cadastrada.' },
+        { status: 422 }
+      );
+    }
+
+    const cpfLimpo = cleanCpf(associada.cpf);
+    if (!cpfLimpo || cpfLimpo.length !== 11 || !isValidCpf(cpfLimpo)) {
+      return NextResponse.json(
+        { error: 'O CPF da associada está ausente ou é inválido. Por favor, regularize os dados cadastrais antes de gerar a cobrança PIX.' },
         { status: 422 }
       );
     }
