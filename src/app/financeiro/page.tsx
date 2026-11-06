@@ -2,6 +2,7 @@
 
 import PageLayout from '@/components/PageLayout';
 import AccessRestricted from '@/components/AccessRestricted';
+import LoadingTransition from '@/components/LoadingTransition';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useUserRole } from '@/hooks/useUserRole';
 import { canAccessModule } from '@/lib/auth/roles';
@@ -14,11 +15,7 @@ export default function FinanceiroDashboardPage() {
   const podeAcessar = canAccessModule(role, 'financeiro');
 
   if (authLoading || roleLoading) {
-    return (
-      <PageLayout title="Financeiro" description="" activeMenu="financeiro">
-        <div className="flex items-center justify-center py-20 text-gray-400 text-sm">Carregando...</div>
-      </PageLayout>
-    );
+    return <LoadingTransition mensagem="Carregando Módulo Financeiro..." subtitulo="SISCOMIEADEPA" fullScreen={true} />;
   }
 
   if (!podeAcessar) {

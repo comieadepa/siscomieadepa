@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
+import LoadingTransition from '@/components/LoadingTransition';
 import {
   ResponsiveContainer,
   PieChart,
@@ -248,7 +249,7 @@ export default function DashboardPage() {
 
   const CORES_CGADB = ['#C0392B', '#16A34A', '#F39C12'];
 
-  if (authLoading) return <div className="p-8">Carregando...</div>;
+  if (authLoading) return <LoadingTransition mensagem="Carregando painel principal..." subtitulo="SISCOMIEADEPA" fullScreen={true} />;
 
   const toolbarItems: { label: string; icon: string; path: string; isImg?: boolean }[] = [
     { label: 'AGO',        icon: '🏛️',  path: '/eventos',              },

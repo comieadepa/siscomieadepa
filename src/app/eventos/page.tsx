@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import PageLayout from '@/components/PageLayout';
+import LoadingTransition from '@/components/LoadingTransition';
 import AccessRestricted from '@/components/AccessRestricted';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useEventosPerfil } from '@/hooks/useEventosPerfil';
@@ -615,7 +616,7 @@ export default function EventosPage() {
     setFiltroCampo('');
   }
 
-  if (authLoading || perfil.loading || roleLoading) return <div className="p-8 text-gray-500">Carregando...</div>;
+  if (authLoading || perfil.loading || roleLoading) return <LoadingTransition mensagem="Carregando Eventos e AGO..." subtitulo="SISCOMIEADEPA" fullScreen={true} />;
 
   if (!podeAcessar) {
     return (

@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useMemo, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
+import LoadingTransition from '@/components/LoadingTransition';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { createClient } from '@/lib/supabase-client';
 import { authenticatedFetch } from '@/lib/api-client';
@@ -257,7 +258,7 @@ export default function UsuariosPage() {
     loadCongregacoes();
   }, [authLoading, roleLoading, podeAcessar, supabase]);
 
-  if (authLoading || roleLoading) return <div className="p-8">Carregando...</div>;
+  if (authLoading || roleLoading) return <LoadingTransition mensagem="Carregando Gestão de Usuários..." subtitulo="SISCOMIEADEPA" fullScreen={true} />;
 
   if (!podeAcessar) {
     return (
