@@ -15,6 +15,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
+import { cleanCpf, isValidCpf } from '@/lib/cpf';
 
 export interface MinistroAemadepaInfo {
   id: string; // member_id do ministro
@@ -27,6 +28,7 @@ export interface MinistroAemadepaInfo {
 }
 
 export interface DadosEsposaForm {
+  associada_id?: string;
   nome: string;
   cpf: string;
   rg: string;
@@ -55,6 +57,7 @@ interface ModalAemadepaProps {
 }
 
 const FORM_VAZIO: DadosEsposaForm = {
+  associada_id: undefined,
   nome: '',
   cpf: '',
   rg: '',
@@ -113,7 +116,7 @@ export default function ModalAemadepa({
 
   if (!isOpen) return null;
 
-  const onlyDigits = (val: string) => val.replace(/\D/g, '');
+  const onlyDigits = (val: string) => cleanCpf(val);
 
   const formatCpf = (cpf: string) => {
     const digits = onlyDigits(cpf).slice(0, 11);
@@ -139,11 +142,15 @@ export default function ModalAemadepa({
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      setErro('Por favor, selecione um arquivo de imagem válido (JPG, PNG).');
+      setErro('Por favor, selecione um arquivo de imagem válido.');
       return;
     }
 
-    // Leitura e compressão em Canvas
+    if (file.size > 5 * 1024 * 1024) {
+      setErro('A imagem deve ter no máximo 5MB.');
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = async (event) => {
       const dataUrl = event.target?.result as string;
@@ -232,87 +239,69 @@ export default function ModalAemadepa({
       return;
     }
 
-    if (!formData.nome.trim()) {
-      setErro('O nome completo da esposa é obrigatório.');
+    const nomeFormatado = formData.nome.trim().toUpperCase();
+    if (!nomeFormatado || nomeFormatado.length < 3) {
+      setErro('O nome completo da esposa é obrigatório (mínimo de 3 caracteres).');
+      return;
+    }
+
+    const cpfLimpo = cleanCpf(formData.cpf);
+    if (!cpfLimpo || cpfLimpo.length !== 11) {
+      setErro('O CPF da associada deve conter exatamente 11 dígitos.');
+      return;
+    }
+
+    if (!isValidCpf(cpfLimpo)) {
+      setErro('O CPF informado é matematicamente inválido. Por favor, verifique os dígitos.');
+      return;
+    }
+
+    if (!formData.data_nascimento) {
+      setErro('A data de nascimento da esposa é obrigatória.');
       return;
     }
 
     setSalvando(true);
     try {
-      // 1. Busca os dados atuais do ministro para preservar 100% de seus campos e custom_fields
-      const resAtual = await authenticatedFetch(`/api/v1/members/${targetMinistro.id}`);
-      const membroAtual = await resAtual.json().catch(() => null as any);
-
-      if (!resAtual.ok || !membroAtual) {
-        throw new Error(membroAtual?.error || 'Erro ao consultar cadastro do ministro.');
-      }
-
-      // 2. Faz upload da foto se for base64
+      // 1. Faz upload da foto se for base64
       let fotoFinalUrl = formData.foto_url;
       if (fotoFinalUrl && fotoFinalUrl.startsWith('data:image/')) {
         fotoFinalUrl = await uploadFotoSeNecessario(targetMinistro.id);
       }
 
-      // 3. Monta os custom_fields preservando todos os campos existentes do ministro
-      const customFieldsExistente = membroAtual.custom_fields && typeof membroAtual.custom_fields === 'object'
-        ? membroAtual.custom_fields
-        : {};
-
-      const novosCustomFields = {
-        ...customFieldsExistente,
-        nomeConjuge: formData.nome.trim(),
-        cpfConjuge: onlyDigits(formData.cpf) || null,
-        dataNascimentoConjuge: formData.data_nascimento || null,
-        conjugeRg: formData.rg.trim() || null,
-        conjugeOrgaoEmissor: formData.orgao_emissor.trim() || null,
-        conjugeNacionalidade: formData.nacionalidade.trim() || 'BRASILEIRA',
-        conjugeNaturalidade: formData.naturalidade.trim() || null,
-        conjugeNomePai: formData.nome_pai.trim() || null,
-        conjugeNomeMae: formData.nome_mae.trim() || null,
-        conjugeTituloEleitoral: formData.titulo_eleitoral.trim() || null,
-        conjugeFone: formData.fone.trim() || null,
-        conjugeEmail: formData.email.trim() || null,
-        conjugeTipoSanguineo: formData.tipo_sanguineo || null,
-        conjugeFotoUrl: fotoFinalUrl || null,
+      // 2. Monta o payload para persistência na rota oficial da AEMADEPA
+      const payloadAemadepa = {
+        associada_id: formData.associada_id || undefined,
+        ministro_id: targetMinistro.id,
+        nome: nomeFormatado,
+        cpf: cpfLimpo,
+        rg: formData.rg.trim().toUpperCase() || null,
+        orgao_emissor: formData.orgao_emissor.trim().toUpperCase() || null,
+        data_nascimento: formData.data_nascimento,
+        nacionalidade: formData.nacionalidade.trim().toUpperCase() || 'BRASILEIRA',
+        naturalidade: formData.naturalidade.trim().toUpperCase() || null,
+        nome_pai: formData.nome_pai.trim().toUpperCase() || null,
+        nome_mae: formData.nome_mae.trim().toUpperCase() || null,
+        titulo_eleitoral: formData.titulo_eleitoral.trim() || null,
+        fone: formData.fone.trim() || null,
+        email: formData.email.trim().toLowerCase() || null,
+        tipo_sanguineo: formData.tipo_sanguineo || null,
+        foto_url: fotoFinalUrl || null,
         numero_aemadepa: formData.numero_aemadepa.trim() || null,
-        numeroAemadepa: formData.numero_aemadepa.trim() || null,
       };
 
-      // 4. Monta o payload completo para PUT /api/v1/members/[id] preservando todos os campos do ministro
-      const payloadPut = {
-        ...membroAtual,
-        // Campos diretos da esposa no banco
-        nome_conjuge: formData.nome.trim(),
-        cpf_conjuge: onlyDigits(formData.cpf) || null,
-        data_nascimento_conjuge: formData.data_nascimento || null,
-        conjuge_rg: formData.rg.trim() || null,
-        conjuge_orgao_emissor: formData.orgao_emissor.trim() || null,
-        conjuge_nacionalidade: formData.nacionalidade.trim() || 'BRASILEIRA',
-        conjuge_naturalidade: formData.naturalidade.trim() || null,
-        conjuge_nome_pai: formData.nome_pai.trim() || null,
-        conjuge_nome_mae: formData.nome_mae.trim() || null,
-        conjuge_titulo_eleitoral: formData.titulo_eleitoral.trim() || null,
-        conjuge_fone: formData.fone.trim() || null,
-        conjuge_email: formData.email.trim() || null,
-        conjuge_tipo_sanguineo: formData.tipo_sanguineo || null,
-        conjuge_foto_url: fotoFinalUrl || null,
-        numero_aemadepa: formData.numero_aemadepa.trim() || null,
-        // Custom fields preservados e mesclados
-        custom_fields: novosCustomFields,
-      };
-
-      const resUpdate = await authenticatedFetch(`/api/v1/members/${targetMinistro.id}`, {
+      const resUpdate = await authenticatedFetch('/api/v1/secretaria/aemadepa', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payloadPut),
+        body: JSON.stringify(payloadAemadepa),
       });
 
       const jsonUpdate = await resUpdate.json().catch(() => null as any);
-      if (!resUpdate.ok) {
-        throw new Error(jsonUpdate?.error || 'Erro ao salvar dados da associada.');
+      if (!resUpdate.ok || !jsonUpdate?.success) {
+        throw new Error(jsonUpdate?.error || 'Erro ao salvar dados da associada AEMADEPA.');
       }
 
-      setSucesso('Dados da associada AEMADEPA salvos com sucesso!');
+      setSucesso('Dados da associada AEMADEPA salvos e persistidos com sucesso!');
       setTimeout(() => {
         onSaved();
         onClose();
@@ -563,14 +552,15 @@ export default function ModalAemadepa({
 
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">
-                    CPF
+                    CPF *
                   </label>
                   <input
                     type="text"
+                    required
                     value={formData.cpf}
                     onChange={e => setFormData(prev => ({ ...prev, cpf: formatCpf(e.target.value) }))}
                     placeholder="000.000.000-00"
-                    className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 font-mono font-medium"
                   />
                 </div>
               </div>
@@ -603,10 +593,11 @@ export default function ModalAemadepa({
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">
-                    Data de Nascimento
+                    Data de Nascimento *
                   </label>
                   <input
                     type="date"
+                    required
                     value={formData.data_nascimento}
                     onChange={e => setFormData(prev => ({ ...prev, data_nascimento: e.target.value }))}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"

@@ -91,6 +91,7 @@ export default function AemadepaPage() {
   const [modalAemadepaAberto, setModalAemadepaAberto] = useState(false);
   const [ministroSelecionadoModal, setMinistroSelecionadoModal] = useState<MinistroAemadepaInfo | null>(null);
   const [dadosIniciaisModal, setDadosIniciaisModal] = useState<Partial<DadosEsposaForm> | null>(null);
+  const [ministrosDisponiveis, setMinistrosDisponiveis] = useState<MinistroAemadepaInfo[]>([]);
 
   // Estados para Carteirinha e Ficha Cadastral AEMADEPA
   const [associadaCartao, setAssociadaCartao] = useState<AssociadaAemadepa | null>(null);
@@ -226,6 +227,15 @@ export default function AemadepaPage() {
 
   useEffect(() => {
     void carregarDados();
+    // Carrega catálogo de ministros para cadastro de novas associadas
+    authenticatedFetch('/api/v1/secretaria/aemadepa?scope=ministros')
+      .then(res => res.json())
+      .then(payload => {
+        if (payload?.data && Array.isArray(payload.data)) {
+          setMinistrosDisponiveis(payload.data);
+        }
+      })
+      .catch(err => console.warn('Aviso ao carregar catálogo de ministros:', err));
   }, [carregarDados]);
 
   // Lista de ministros convertida para o Modal
@@ -254,6 +264,7 @@ export default function AemadepaPage() {
     });
 
     setDadosIniciaisModal({
+      associada_id: item.associadaId || item.id,
       nome: item.temEsposaCadastrada ? item.nomeEsposa : '',
       cpf: item.cpfEsposa,
       rg: item.rgEsposa,
@@ -670,7 +681,7 @@ export default function AemadepaPage() {
           onSaved={() => void carregarDados()}
           ministro={ministroSelecionadoModal}
           dadosIniciais={dadosIniciaisModal}
-          todosMinistros={todosMinistrosInfo}
+          todosMinistros={ministrosDisponiveis.length > 0 ? ministrosDisponiveis : todosMinistrosInfo}
         />
 
         {/* Modal de Emissão da Carteirinha AEMADEPA */}
