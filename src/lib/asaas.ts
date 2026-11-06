@@ -40,7 +40,10 @@ export const asaasFetch = async (path: string, init: RequestInit) => {
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const detail = data?.errors?.[0]?.detail || data?.message || 'Erro ASAAS';
+    const errorList = Array.isArray(data?.errors)
+      ? data.errors.map((e: any) => e.description || e.detail).filter(Boolean).join('; ')
+      : null;
+    const detail = errorList || data?.message || data?.error || 'Erro ASAAS';
     console.error('[ASAAS] Erro na requisição:', {
       path,
       status: response.status,

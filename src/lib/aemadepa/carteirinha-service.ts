@@ -1,4 +1,4 @@
-import { asaasFetch, createAsaasCustomer } from '@/lib/asaas';
+import { asaasFetch, createOrFindAsaasCustomer } from '@/lib/asaas';
 
 export interface AsaasPixResponse {
   paymentId: string;
@@ -21,6 +21,7 @@ export function formatPixDueDate(daysAhead = 3): string {
 
 /**
  * Cria ou localiza cliente ASAAS para a Associada AEMADEPA
+ * Reutiliza createOrFindAsaasCustomer com sanitização, lookup por CPF e fallback mínimo resiliente.
  */
 export async function getOrCreateAsaasCustomerForAemadepa(params: {
   nome: string;
@@ -33,36 +34,15 @@ export async function getOrCreateAsaasCustomerForAemadepa(params: {
     throw new Error('CPF da associada inválido para processamento ASAAS');
   }
 
-  // 1. Tenta buscar cliente existente por CPF
   try {
-    const existing = await asaasFetch(`/customers?cpfCnpj=${cleanCpf}&limit=1`, {
-      method: 'GET',
+    return await createOrFindAsaasCustomer({
+      nome: params.nome.trim(),
+      email: params.email?.trim() || null,
+      cpf: cleanCpf,
+      whatsapp: params.fone || null,
     });
-    const first = Array.isArray(existing?.data) ? existing.data[0] : null;
-    if (first?.id) return String(first.id);
   } catch (err: any) {
-    console.warn('[ASAAS AEMADEPA] Busca de cliente existente ignorada:', err.message);
-  }
-
-  // 2. Cria cliente com dados sanitizados
-  const rawEmail = params.email?.trim() || '';
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const email = emailRegex.test(rawEmail) ? rawEmail : `aemadepa-${cleanCpf}@comieadepa.org.br`;
-
-  const rawPhone = (params.fone || '').replace(/\D/g, '');
-  const mobilePhone = rawPhone.length >= 10 && rawPhone.length <= 11 ? rawPhone : undefined;
-
-  try {
-    const created = await createAsaasCustomer({
-      name: params.nome.trim(),
-      email,
-      cpfCnpj: cleanCpf,
-      mobilePhone,
-    });
-    if (!created?.id) throw new Error('ASAAS não retornou ID do cliente');
-    return String(created.id);
-  } catch (err: any) {
-    console.error('[ASAAS AEMADEPA] Erro ao cadastrar cliente:', err.message);
+    console.error('[ASAAS AEMADEPA] Erro ao cadastrar pagadora:', err.message);
     throw new Error(`Erro ASAAS ao cadastrar pagadora: ${err.message}`);
   }
 }
