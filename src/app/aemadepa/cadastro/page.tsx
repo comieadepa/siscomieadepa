@@ -87,42 +87,61 @@ export default function PublicAemadepaCadastroPage() {
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [erroBusca, setErroBusca] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Debounce na busca de ministros
+  // Debounce na busca de ministros com AbortController e timeout de resiliência
   useEffect(() => {
-    if (!busca || busca.trim().length < 2) {
+    const termo = busca.trim();
+    if (!termo || termo.length < 2) {
       setResultados([]);
+      setErroBusca(null);
+      setBuscando(false);
       return;
     }
 
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       setBuscando(true);
+      setErroBusca(null);
       try {
-        const res = await fetch(`/api/public/aemadepa/ministros?q=${encodeURIComponent(busca.trim())}`);
-        const data = await res.json();
-        if (res.ok && data.ministros) {
+        const res = await fetch(`/api/public/aemadepa/ministros?q=${encodeURIComponent(termo)}`, {
+          signal: controller.signal,
+        });
+        const data = await res.json().catch(() => null);
+
+        if (res.ok && data?.ministros) {
           setResultados(data.ministros);
+          setErroBusca(null);
         } else {
           setResultados([]);
+          setErroBusca(data?.error || 'Não foi possível carregar os ministros no momento.');
         }
-      } catch (e) {
+      } catch (e: any) {
+        if (e.name === 'AbortError') return;
         console.error('Erro ao buscar ministros:', e);
         setResultados([]);
+        setErroBusca('Falha na conexão ao buscar ministros. Tente novamente em instantes.');
       } finally {
-        setBuscando(false);
+        if (!controller.signal.aborted) {
+          setBuscando(false);
+        }
       }
-    }, 300);
+    }, 280);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [busca]);
 
   // Ao selecionar um ministro na lista de busca
   const selecionarMinistro = (min: MinistroItem) => {
     setMinistroSelecionado(min);
     setResultados([]);
+    setErroBusca(null);
     setBusca('');
     setDesafioCpf('');
     setDesafioDataNasc('');
@@ -136,6 +155,7 @@ export default function PublicAemadepaCadastroPage() {
 
   const trocarMinistro = () => {
     setMinistroSelecionado(null);
+    setErroBusca(null);
     setDesafioCpf('');
     setDesafioDataNasc('');
     setDesafioErro(null);
@@ -469,9 +489,17 @@ export default function PublicAemadepaCadastroPage() {
                     </div>
                   )}
 
-                  {busca.trim().length >= 2 && !buscando && resultados.length === 0 && (
-                    <p className="text-xs text-amber-700 bg-amber-50 p-3 rounded-xl border border-amber-200">
-                      Nenhum ministro encontrado com os termos pesquisados. Verifique o nome ou número de matrícula.
+                  {erroBusca && !buscando && (
+                    <p className="text-xs text-red-700 bg-red-50 p-3 rounded-xl border border-red-200 flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
+                      <span>{erroBusca}</span>
+                    </p>
+                  )}
+
+                  {!erroBusca && busca.trim().length >= 2 && !buscando && resultados.length === 0 && (
+                    <p className="text-xs text-amber-700 bg-amber-50 p-3 rounded-xl border border-amber-200 flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-amber-500" />
+                      <span>Nenhum ministro encontrado com os termos pesquisados. Verifique o nome ou número de matrícula.</span>
                     </p>
                   )}
                 </div>

@@ -22,6 +22,7 @@ function sanitizeSearchTerm(term: string): string {
  * - Identifica cadastro efetivo AEMADEPA pelos campos formais existentes (ex: CPF da esposa cadastrado),
  *   não confundindo uma simples menção do nome civil do cônjuge na ficha ministerial com cadastro ativo.
  * - Retorna apenas metadados públicos essenciais para localização do ministro.
+ * - Filtra ministros falecidos (deceased) e prioriza ministros ativos e jubilados.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -36,56 +37,79 @@ export async function GET(request: NextRequest) {
     const supabase = createServerClient();
     const qDigits = onlyDigits(q);
 
-    // Seleciona campos essenciais para identificação visual e verificação cadastral
-    let query = supabase
-      .from('members')
-      .select('id, name, matricula, cargo_ministerial, status, jubilado, custom_fields, nome_conjuge, cpf_conjuge, aemadepa_associadas(id, cpf, status)')
-      .limit(25);
-
+    // Constrói cláusulas OR otimizadas sem duplicidade
     const orClauses: string[] = [
       `name.ilike.%${q}%`,
       `matricula.ilike.%${q}%`,
     ];
 
-    if (qDigits && qDigits.length >= 4) {
+    if (qDigits && qDigits.length >= 4 && qDigits !== q) {
       orClauses.push(`matricula.ilike.%${qDigits}%`);
     }
 
-    query = query.or(orClauses.join(','));
+    // Seleciona campos essenciais para identificação visual e verificação cadastral
+    // Exclui falecidos para não poluir os resultados do cadastro
+    let query = supabase
+      .from('members')
+      .select('id, name, matricula, cargo_ministerial, status, jubilado, custom_fields, nome_conjuge, cpf_conjuge, aemadepa_associadas(id, cpf, status)')
+      .neq('status', 'deceased')
+      .or(orClauses.join(','))
+      .order('name', { ascending: true })
+      .limit(30);
 
     const { data: rows, error } = await query;
 
     if (error) {
       console.error('Erro na query de ministros AEMADEPA:', error);
-      return NextResponse.json({ error: 'Erro ao consultar ministros' }, { status: 500 });
+      return NextResponse.json({ error: 'Erro ao consultar ministros no banco de dados' }, { status: 500 });
     }
 
-    const ministros = (rows || []).map((m: any) => {
-      const cf = m.custom_fields && typeof m.custom_fields === 'object' ? m.custom_fields : {};
-      
-      // Cadastro efetivo AEMADEPA:
-      // 1. Prioriza a presença na tabela oficial aemadepa_associadas
-      // 2. Fallback de compatibilidade para cpf_conjuge de 11 dígitos ou numero_aemadepa
-      const associada = m.aemadepa_associadas;
-      const temAssociadaTabela = Boolean(associada && (associada.id || associada.cpf));
-      const cpfConjugeDigits = onlyDigits(m.cpf_conjuge || cf.cpfConjuge);
-      const numeroAemadepa = String(cf.numero_aemadepa || cf.numeroAemadepa || '').trim();
-      
-      const temCadastroEfetivo = Boolean(temAssociadaTabela || (cpfConjugeDigits && cpfConjugeDigits.length === 11) || numeroAemadepa.length > 0);
+    // Mapeia e prioriza ministros ativos e jubilados no topo
+    const ministros = (rows || [])
+      .map((m: any) => {
+        const cf = m.custom_fields && typeof m.custom_fields === 'object' ? m.custom_fields : {};
 
-      return {
-        id: m.id,
-        nome: String(m.name || cf.nome || '').trim(),
-        matricula: String(m.matricula || cf.matricula || '').trim(),
-        cargo: String(m.cargo_ministerial || cf.cargoMinisterial || 'PASTOR').trim(),
-        campo: String(cf.campo || '').trim(),
-        supervisao: String(cf.supervisao || '').trim(),
-        temEsposaCadastrada: temCadastroEfetivo,
-        status: m.jubilado ? 'JUBILADO' : String(m.status || 'ATIVO').toUpperCase(),
-      };
-    });
+        // Cadastro efetivo AEMADEPA:
+        // 1. Prioriza a presença na tabela oficial aemadepa_associadas
+        // 2. Fallback de compatibilidade para cpf_conjuge de 11 dígitos ou numero_aemadepa
+        const associada = m.aemadepa_associadas;
+        const temAssociadaTabela = Boolean(associada && (associada.id || associada.cpf));
+        const cpfConjugeDigits = onlyDigits(m.cpf_conjuge || cf.cpfConjuge);
+        const numeroAemadepa = String(cf.numero_aemadepa || cf.numeroAemadepa || '').trim();
 
-    return NextResponse.json({ ministros });
+        const temCadastroEfetivo = Boolean(
+          temAssociadaTabela || (cpfConjugeDigits && cpfConjugeDigits.length === 11) || numeroAemadepa.length > 0
+        );
+
+        const statusRaw = String(m.status || 'active').toLowerCase();
+        const isJubilado = Boolean(m.jubilado || statusRaw === 'jubilado');
+        const isAtivo = statusRaw === 'active';
+
+        return {
+          id: m.id,
+          nome: String(m.name || cf.nome || '').trim(),
+          matricula: String(m.matricula || cf.matricula || '').trim(),
+          cargo: String(m.cargo_ministerial || cf.cargoMinisterial || 'PASTOR').trim(),
+          campo: String(cf.campo || cf.campo_atual || '').trim(),
+          supervisao: String(cf.supervisao || '').trim(),
+          temEsposaCadastrada: temCadastroEfetivo,
+          status: isJubilado ? 'JUBILADO' : isAtivo ? 'ATIVO' : statusRaw.toUpperCase(),
+          prioridade: isAtivo || isJubilado ? 0 : 1,
+        };
+      })
+      .sort((a, b) => {
+        if (a.prioridade !== b.prioridade) return a.prioridade - b.prioridade;
+        return a.nome.localeCompare(b.nome, 'pt-BR');
+      });
+
+    return NextResponse.json(
+      { ministros },
+      {
+        headers: {
+          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120',
+        },
+      }
+    );
   } catch (err: any) {
     console.error('Erro na rota pública de ministros AEMADEPA:', err);
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });
