@@ -13,6 +13,7 @@ import {
   Building2,
   AlertCircle,
   CheckCircle2,
+  Lock,
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
 import { cleanCpf, isValidCpf } from '@/lib/cpf';
@@ -101,10 +102,13 @@ export default function ModalAemadepa({
 
   useEffect(() => {
     if (isOpen) {
-      setMinistroSelecionado(ministroProp);
+      const min = ministroProp || null;
+      setMinistroSelecionado(min);
+      const matriculaEsposo = min?.matricula ? String(min.matricula).trim() : '';
       setFormData({
         ...FORM_VAZIO,
         ...(dadosIniciais || {}),
+        numero_aemadepa: matriculaEsposo || dadosIniciais?.numero_aemadepa || '',
         nacionalidade: dadosIniciais?.nacionalidade || 'BRASILEIRA',
       });
       setFotoPreview(dadosIniciais?.foto_url || null);
@@ -434,6 +438,9 @@ export default function ModalAemadepa({
                         key={m.id}
                         onClick={() => {
                           setMinistroSelecionado(m);
+                          if (m.matricula) {
+                            setFormData(prev => ({ ...prev, numero_aemadepa: String(m.matricula).trim() }));
+                          }
                           setBuscaMinistro('');
                         }}
                         className="w-full text-left px-3.5 py-2 hover:bg-rose-50 transition flex items-center justify-between text-xs"
@@ -537,16 +544,23 @@ export default function ModalAemadepa({
               {/* No AEMADEPA e CPF */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-purple-900 mb-1 flex items-center gap-1">
-                    <CreditCard className="w-3.5 h-3.5 text-purple-600" />
-                    Número / Matrícula AEMADEPA
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-purple-900 flex items-center gap-1">
+                      <CreditCard className="w-3.5 h-3.5 text-purple-600" />
+                      Número / Matrícula AEMADEPA
+                    </label>
+                    <span className="text-[10px] text-purple-600 font-medium flex items-center gap-0.5">
+                      <Lock className="w-2.5 h-2.5" /> Vinculado ao ministro
+                    </span>
+                  </div>
                   <input
                     type="text"
+                    readOnly
+                    tabIndex={-1}
                     value={formData.numero_aemadepa}
-                    onChange={e => setFormData(prev => ({ ...prev, numero_aemadepa: e.target.value.toUpperCase() }))}
-                    placeholder="EX: 1234"
-                    className="w-full px-3.5 py-2 text-sm border border-purple-300 rounded-lg bg-purple-50/30 focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono font-bold text-purple-800"
+                    placeholder="Matrícula do ministro"
+                    title="Preenchido dinamicamente com o número de registro do esposo. Campo travado para edição."
+                    className="w-full px-3.5 py-2 text-sm border border-purple-200 rounded-lg bg-purple-50/60 font-mono font-bold text-purple-800 cursor-not-allowed select-all focus:outline-none"
                   />
                 </div>
 
