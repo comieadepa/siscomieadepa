@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { requireModuleAccess } from '@/lib/auth/require-auth';
 import { logDB } from '@/lib/audit';
+import { deleteAsaasPayment } from '@/lib/asaas';
 
 /**
  * GET /api/v1/aemadepa/financeiro
@@ -474,6 +475,72 @@ export async function POST(request: NextRequest) {
         sucesso: true,
         mensagem: `Nova via (${novaVia}ª via) iniciada. Efetue o pagamento via PIX, À Vista ou conceda Cortesia.`,
         solicitacao: novaSolicitacao,
+      });
+    }
+
+    if (acao === 'cancelar_cobranca') {
+      // 1. Busca solicitação pendente que possua cobrança ASAAS ou PIX ativo
+      const { data: pendente, error: penErr } = await supabase
+        .from('aemadepa_carteirinhas_solicitacoes')
+        .select('*')
+        .eq('associada_id', associadaId)
+        .in('status', ['processando_cobranca', 'aguardando_pagamento'])
+        .order('via', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (penErr) return NextResponse.json({ error: penErr.message }, { status: 500 });
+
+      if (!pendente) {
+        return NextResponse.json({ error: 'Nenhuma cobrança pendente encontrada para cancelamento.' }, { status: 404 });
+      }
+
+      // 2. Se houver payment ID no ASAAS, solicita cancelamento na API oficial
+      const paymentId = pendente.asaas_payment_id;
+      if (paymentId && paymentId.trim().length > 0) {
+        try {
+          await deleteAsaasPayment(paymentId);
+          console.log(`[AEMADEPA CANCELAR COBRANCA] Cobrança ${paymentId} cancelada no gateway ASAAS com sucesso.`);
+        } catch (delErr: any) {
+          console.warn(`[AEMADEPA CANCELAR COBRANCA] Aviso ao cancelar no ASAAS (${paymentId}):`, delErr?.message);
+        }
+      }
+
+      // 3. Limpa os vínculos de cobrança no banco de dados
+      const agora = new Date().toISOString();
+      const { data: cancelada, error: updErr } = await supabase
+        .from('aemadepa_carteirinhas_solicitacoes')
+        .update({
+          asaas_payment_id: null,
+          pix_copia_cola: null,
+          pix_qr_code_url: null,
+          invoice_url: null,
+          status: 'aguardando_pagamento',
+          observacoes: pendente.observacoes
+            ? `${pendente.observacoes}\n[Cancelamento de Cobrança] Cobrança PIX (${paymentId || 'pendente'}) cancelada pelo operador para liberação de cortesia/quitação manual.`
+            : `[Cancelamento de Cobrança] Cobrança PIX (${paymentId || 'pendente'}) cancelada pelo operador para liberação de cortesia/quitação manual.`,
+          updated_at: agora,
+        })
+        .eq('id', pendente.id)
+        .select()
+        .single();
+
+      if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+
+      void logDB({
+        acao: 'cancelar_cobranca_pix',
+        modulo: 'secretaria',
+        entidade: 'aemadepa_carteirinhas_solicitacoes',
+        entidadeId: pendente.id,
+        descricao: `Cobrança PIX ASAAS (${paymentId || 'sem_id'}) cancelada pelo operador para ${associada.nome}`,
+        status: 'sucesso',
+        detalhes: { associadaId, paymentId, operadorId },
+      });
+
+      return NextResponse.json({
+        sucesso: true,
+        mensagem: 'Cobrança PIX cancelada com sucesso. A cortesia ou quitação manual agora está liberada.',
+        solicitacao: cancelada,
       });
     }
 

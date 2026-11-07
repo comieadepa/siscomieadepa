@@ -31,6 +31,7 @@ interface SolicitacaoItem {
   motivo_cortesia?: string | null;
   pix_copia_cola?: string | null;
   pix_qr_code_url?: string | null;
+  asaas_payment_id?: string | null;
   solicitado_em?: string;
   pago_em?: string | null;
   impresso_em?: string | null;
@@ -186,6 +187,38 @@ export default function ModalFinanceiroAemadepa({
       await carregarDadosFinanceiros();
       setTab('status');
       onAtualizarStatus?.();
+    } catch (err: any) {
+      setErro(err.message);
+    } finally {
+      setProcessando(false);
+    }
+  };
+
+  // Ação: Cancelar Cobrança PIX / ASAAS pendente
+  const handleCancelarCobranca = async (aposCancelamento?: () => Promise<void>) => {
+    setProcessando(true);
+    setErro(null);
+    setSucessoMsg(null);
+    try {
+      const res = await authenticatedFetch('/api/v1/aemadepa/financeiro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ acao: 'cancelar_cobranca', associadaId }),
+      });
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(data?.error || 'Erro ao cancelar cobrança PIX');
+      }
+
+      await carregarDadosFinanceiros();
+      onAtualizarStatus?.();
+
+      if (aposCancelamento) {
+        await aposCancelamento();
+      } else {
+        setSucessoMsg('Cobrança PIX cancelada com sucesso. Agora você pode conceder a cortesia ou registrar pagamento à vista.');
+      }
     } catch (err: any) {
       setErro(err.message);
     } finally {
@@ -717,6 +750,38 @@ export default function ModalFinanceiroAemadepa({
               {/* ABA 3: PAGAMENTO À VISTA */}
               {tab === 'avista' && (
                 <div className="space-y-4">
+                  {/* Banner Amigável quando já existe cobrança PIX/ASAAS ativa */}
+                  {solicitacaoAtiva?.status === 'aguardando_pagamento' && Boolean(solicitacaoAtiva?.asaas_payment_id || solicitacaoAtiva?.pix_copia_cola) && (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3 text-xs text-amber-900 animate-in fade-in duration-200">
+                      <div className="flex items-start gap-2.5">
+                        <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="space-y-1">
+                          <p className="font-bold text-sm text-amber-900">
+                            Existe uma cobrança PIX ASAAS pendente (R$ 20,00)
+                          </p>
+                          <p className="text-amber-800 leading-relaxed">
+                            Identificamos que já foi gerado um código PIX para esta associada. Para registrar a quitação presencial à vista, a cobrança pendente deve ser cancelada para evitar pagamentos duplicados no banco.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 border-t border-amber-200/80">
+                        <span className="text-[11px] text-amber-700">
+                          Deseja cancelar o PIX agora e confirmar o recebimento à vista?
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void handleCancelarCobranca()}
+                          disabled={processando}
+                          className="px-3.5 py-1.5 bg-amber-700 hover:bg-amber-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0"
+                        >
+                          {processando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                          <span>Sim, Cancelar PIX e Liberar À Vista</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="p-4 bg-teal-50 border border-teal-200 rounded-xl space-y-2 text-xs text-teal-900">
                     <p className="font-bold flex items-center gap-1.5 text-sm">
                       <Banknote className="w-4 h-4 text-teal-700" />
@@ -747,6 +812,38 @@ export default function ModalFinanceiroAemadepa({
               {/* ABA 4: CORTESIA */}
               {tab === 'cortesia' && (
                 <div className="space-y-4">
+                  {/* Banner Amigável quando já existe cobrança PIX/ASAAS ativa */}
+                  {solicitacaoAtiva?.status === 'aguardando_pagamento' && Boolean(solicitacaoAtiva?.asaas_payment_id || solicitacaoAtiva?.pix_copia_cola) && (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3 text-xs text-amber-900 animate-in fade-in duration-200">
+                      <div className="flex items-start gap-2.5">
+                        <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="space-y-1">
+                          <p className="font-bold text-sm text-amber-900">
+                            Existe uma cobrança PIX ASAAS pendente (R$ 20,00)
+                          </p>
+                          <p className="text-amber-800 leading-relaxed">
+                            Identificamos que já foi gerado um código PIX para esta associada. Para emitir como cortesia, a cobrança pendente deve ser cancelada para evitar pagamentos duplicados no banco.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 border-t border-amber-200/80">
+                        <span className="text-[11px] text-amber-700">
+                          Deseja cancelar a cobrança PIX agora e liberar a cortesia?
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void handleCancelarCobranca()}
+                          disabled={processando}
+                          className="px-3.5 py-1.5 bg-amber-700 hover:bg-amber-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0"
+                        >
+                          {processando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                          <span>Sim, Cancelar PIX e Liberar Cortesia</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-xl space-y-2 text-xs text-indigo-900">
                     <p className="font-bold flex items-center gap-1.5 text-sm">
                       <Gift className="w-4 h-4 text-indigo-700" />
