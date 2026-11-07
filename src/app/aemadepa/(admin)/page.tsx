@@ -379,13 +379,13 @@ export default function AemadepaPage() {
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-2.5 items-center">
-              <div className="flex items-center rounded-xl overflow-hidden border border-white/30 backdrop-blur-md shadow-sm bg-white/20">
+            <div className="flex flex-nowrap items-center gap-2.5 shrink-0 overflow-x-auto">
+              <div className="flex items-center rounded-xl overflow-hidden border border-white/30 backdrop-blur-md shadow-sm bg-white/20 shrink-0">
                 <button
                   type="button"
                   onClick={() => void copiarLinkCadastro(false)}
                   disabled={copiandoLink}
-                  className="px-3.5 py-2.5 hover:bg-white/30 text-white font-bold text-sm transition flex items-center gap-2 cursor-pointer disabled:opacity-60"
+                  className="px-3.5 py-2.5 hover:bg-white/30 text-white font-bold text-sm transition flex items-center gap-2 cursor-pointer disabled:opacity-60 whitespace-nowrap"
                   title="Copiar link público de auto-cadastro para a área de transferência"
                 >
                   {linkCopiado ? (
@@ -412,7 +412,7 @@ export default function AemadepaPage() {
 
               <button
                 onClick={abrirModalNova}
-                className="px-5 py-2.5 bg-white text-rose-800 hover:bg-rose-50 font-bold text-sm rounded-xl shadow-md hover:shadow-lg transition flex items-center gap-2 cursor-pointer"
+                className="px-4 py-2.5 bg-white text-rose-800 hover:bg-rose-50 font-bold text-sm rounded-xl shadow-md hover:shadow-lg transition flex items-center gap-2 cursor-pointer shrink-0 whitespace-nowrap"
               >
                 <UserPlus className="w-4 h-4" />
                 Nova Esposa
@@ -420,7 +420,7 @@ export default function AemadepaPage() {
               <button
                 onClick={() => void carregarDados()}
                 disabled={loading}
-                className="px-4 py-2.5 bg-rose-800/60 hover:bg-rose-800/80 text-white font-semibold text-sm rounded-xl border border-white/20 transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                className="px-4 py-2.5 bg-rose-800/60 hover:bg-rose-800/80 text-white font-semibold text-sm rounded-xl border border-white/20 transition flex items-center gap-2 cursor-pointer disabled:opacity-50 shrink-0 whitespace-nowrap"
                 title="Atualizar lista"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
