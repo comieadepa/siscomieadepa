@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { CreditCard, Copy, Check, AlertCircle, RefreshCw, Sparkles, CheckCircle2 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface SolicitacaoData {
   id: string;
@@ -179,15 +180,29 @@ export default function SecaoCarteirinhaAemadepa({
                   Escaneie o QR Code abaixo pelo aplicativo do seu banco ou use a chave Copia e Cola para efetuar o pagamento.
                 </p>
 
-                {solicitacao.pix_qr_code && (
-                  <div className="flex justify-center p-3 bg-rose-50/50 rounded-xl border border-rose-100">
+                <div className="flex justify-center p-3 bg-rose-50/50 rounded-xl border border-rose-100">
+                  {solicitacao.pix_qr_code ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
                     <img
-                      src={`data:image/png;base64,${solicitacao.pix_qr_code}`}
+                      src={
+                        solicitacao.pix_qr_code.startsWith('data:')
+                          ? solicitacao.pix_qr_code
+                          : `data:image/png;base64,${solicitacao.pix_qr_code}`
+                      }
                       alt="QR Code PIX AEMADEPA"
                       className="w-48 h-48 object-contain rounded-lg shadow-sm"
                     />
-                  </div>
-                )}
+                  ) : solicitacao.pix_copia_cola ? (
+                    <div className="p-3 bg-white rounded-lg shadow-sm">
+                      <QRCodeSVG
+                        value={solicitacao.pix_copia_cola}
+                        size={192}
+                        level="M"
+                        className="w-48 h-48"
+                      />
+                    </div>
+                  ) : null}
+                </div>
 
                 {solicitacao.pix_copia_cola && (
                   <div className="space-y-1.5">

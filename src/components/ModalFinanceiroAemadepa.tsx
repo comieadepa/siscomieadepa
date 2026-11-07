@@ -20,6 +20,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface SolicitacaoItem {
   id: string;
@@ -631,16 +632,33 @@ export default function ModalFinanceiroAemadepa({
                 <div className="space-y-4">
                   {solicitacaoAtiva?.pix_copia_cola ? (
                     <div className="flex flex-col sm:flex-row items-center gap-5 p-4 bg-gray-50 border border-gray-200 rounded-xl">
-                      {solicitacaoAtiva.pix_qr_code_url && (
-                        <div className="p-2 bg-white rounded-lg border border-gray-300 shadow-xs">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {/* Renderização do QR Code PIX com suporte a Data-URI, Base64 cru e QRCodeSVG a partir do Copia e Cola */}
+                      <div className="p-2.5 bg-white rounded-xl border border-gray-300 shadow-sm shrink-0 flex items-center justify-center min-w-[160px] min-h-[160px]">
+                        {solicitacaoAtiva.pix_qr_code_url ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
                           <img
-                            src={solicitacaoAtiva.pix_qr_code_url}
+                            src={
+                              solicitacaoAtiva.pix_qr_code_url.startsWith('data:')
+                                ? solicitacaoAtiva.pix_qr_code_url
+                                : `data:image/png;base64,${solicitacaoAtiva.pix_qr_code_url}`
+                            }
                             alt="QR Code PIX"
-                            className="w-40 h-40 object-contain"
+                            className="w-36 h-36 object-contain"
                           />
-                        </div>
-                      )}
+                        ) : solicitacaoAtiva.pix_copia_cola ? (
+                          <QRCodeSVG
+                            value={solicitacaoAtiva.pix_copia_cola}
+                            size={144}
+                            level="M"
+                            className="w-36 h-36"
+                          />
+                        ) : (
+                          <div className="w-36 h-36 flex flex-col items-center justify-center text-gray-400 text-[11px] text-center p-2">
+                            <QrCode className="w-8 h-8 mb-1 text-gray-300" />
+                            <span>QR Code Indisponível</span>
+                          </div>
+                        )}
+                      </div>
 
                       <div className="flex-1 space-y-2 text-xs">
                         <p className="font-bold text-gray-800">PIX ASAAS — Valor: R$ 20,00</p>
