@@ -1,8 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { logDB } from '@/lib/audit';
 import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
 import { criarNotificacaoMinistro } from '@/lib/notificacoes-ministro';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 const resolveToken = (request: NextRequest) => {
   const direct = request.headers.get('asaas-access-token') || request.headers.get('access_token');
@@ -64,8 +67,20 @@ export async function POST(request: NextRequest) {
     // ── Lote de inscrições AGO (esposa / grupo) ──────────────────────────────
     const externalRef = String(payment?.externalReference || '');
     if (externalRef.startsWith('lote:') && (event === 'PAYMENT_CONFIRMED' || event === 'PAYMENT_RECEIVED')) {
-      const loteId = externalRef.replace('lote:', '');
+      const loteId = externalRef.replace('lote:', '').trim();
       if (loteId) {
+        // Idempotência: verifica se o lote já consta como pago
+        const { data: loteCurrent } = await supabase
+          .from('evento_lotes_inscricao')
+          .select('id, status_pagamento')
+          .eq('id', loteId)
+          .maybeSingle();
+
+        if (loteCurrent?.status_pagamento === 'pago') {
+          return NextResponse.json({ received: true, already_processed: true });
+        }
+
+        // Atualização atômica imediata das tabelas financeiras
         await supabase
           .from('evento_inscricoes')
           .update({ status_pagamento: 'pago', forma_pagamento: 'pix' })
@@ -75,17 +90,28 @@ export async function POST(request: NextRequest) {
           .update({ status_pagamento: 'pago', asaas_payment_id: asaasPaymentId })
           .eq('id', loteId);
 
-        // Executa autoalocação automática para os participantes do lote
-        const { data: loteIns } = await supabase
-          .from('evento_inscricoes')
-          .select('id')
-          .eq('lote_id', loteId);
+        // Alocação de leitos transferida para after() para responder imediatamente (< 200ms) ao ASAAS
+        after(async () => {
+          try {
+            const asyncClient = createServerClient();
+            const { data: loteIns } = await asyncClient
+              .from('evento_inscricoes')
+              .select('id')
+              .eq('lote_id', loteId);
 
-        for (const li of loteIns ?? []) {
-          await alocarLeitoParaInscricao(supabase, li.id);
-        }
+            for (const li of loteIns ?? []) {
+              try {
+                await alocarLeitoParaInscricao(asyncClient, li.id);
+              } catch (alocErr: any) {
+                console.error(`[ASAAS WEBHOOK] Falha na autoalocação do lote ${loteId} (inscricao: ${li.id}):`, alocErr?.message);
+              }
+            }
+          } catch (bgErr: any) {
+            console.error(`[ASAAS WEBHOOK] Erro em background pós-lote ${loteId}:`, bgErr?.message);
+          }
+        });
       }
-      return NextResponse.json({ received: true });
+      return NextResponse.json({ received: true, loteId });
     }
 
     // ── Credencial impressão ─────────────────────────────────────────────────
@@ -121,57 +147,62 @@ export async function POST(request: NextRequest) {
             detalhes: { event, asaasPaymentId, externalRef },
           });
 
-          // Dispara notificação automática (In-App e E-mail via Resend)
-          try {
-            await criarNotificacaoMinistro({
-              ministroId: updatedSolicitacao.ministro_id,
-              tipo: 'credencial',
-              titulo: 'Pagamento da Credencial Confirmado',
-              mensagem: 'O pagamento da sua taxa de impressão foi confirmado com sucesso. Sua credencial física foi encaminhada para a fila de produção da Secretaria.',
-              linkAcao: '/portal-ministro/credencial',
-              canal: 'ambos',
-            });
-          } catch (notifErr: any) {
-            console.error('[ASAAS WEBHOOK] Erro ao disparar notificação de pagamento:', notifErr?.message);
-          }
+          // Dispara notificações em background via after() sem reter a resposta HTTP para o ASAAS
+          after(async () => {
+            const asyncClient = createServerClient();
 
-          // Notificação administrativa para a equipe da Secretaria
-          try {
-            const { data: notifExiste } = await supabase
-              .from('admin_notifications')
-              .select('id')
-              .eq('type', 'credencial_impressao')
-              .contains('data', { solicitacao_id: solicitacaoId })
-              .maybeSingle();
+            // Dispara notificação automática (In-App e E-mail via Resend)
+            try {
+              await criarNotificacaoMinistro({
+                ministroId: updatedSolicitacao.ministro_id,
+                tipo: 'credencial',
+                titulo: 'Pagamento da Credencial Confirmado',
+                mensagem: 'O pagamento da sua taxa de impressão foi confirmado com sucesso. Sua credencial física foi encaminhada para a fila de produção da Secretaria.',
+                linkAcao: '/portal-ministro/credencial',
+                canal: 'ambos',
+              });
+            } catch (notifErr: any) {
+              console.error('[ASAAS WEBHOOK] Erro ao disparar notificação de pagamento:', notifErr?.message);
+            }
 
-            if (!notifExiste) {
-              const { data: membro } = await supabase
-                .from('members')
-                .select('name')
-                .eq('id', updatedSolicitacao.ministro_id)
+            // Notificação administrativa para a equipe da Secretaria
+            try {
+              const { data: notifExiste } = await asyncClient
+                .from('admin_notifications')
+                .select('id')
+                .eq('type', 'credencial_impressao')
+                .contains('data', { solicitacao_id: solicitacaoId })
                 .maybeSingle();
 
-              const ministroNome = membro?.name || 'Ministro';
+              if (!notifExiste) {
+                const { data: membro } = await asyncClient
+                  .from('members')
+                  .select('name')
+                  .eq('id', updatedSolicitacao.ministro_id)
+                  .maybeSingle();
 
-              await supabase
-                .from('admin_notifications')
-                .insert({
-                  type: 'credencial_impressao',
-                  title: 'Nova Credencial Pronta para Impressão',
-                  message: `O ministro ${ministroNome} efetuou o pagamento da taxa de impressão da credencial física.`,
-                  data: {
-                    solicitacao_id: solicitacaoId,
-                    ministro_id: updatedSolicitacao.ministro_id,
-                    ministro_nome: ministroNome,
-                    asaas_payment_id: asaasPaymentId,
-                    link: '/secretaria/impressoes-credenciais',
-                  },
-                  is_read: false,
-                });
+                const ministroNome = membro?.name || 'Ministro';
+
+                await asyncClient
+                  .from('admin_notifications')
+                  .insert({
+                    type: 'credencial_impressao',
+                    title: 'Nova Credencial Pronta para Impressão',
+                    message: `O ministro ${ministroNome} efetuou o pagamento da taxa de impressão da credencial física.`,
+                    data: {
+                      solicitacao_id: solicitacaoId,
+                      ministro_id: updatedSolicitacao.ministro_id,
+                      ministro_nome: ministroNome,
+                      asaas_payment_id: asaasPaymentId,
+                      link: '/secretaria/impressoes-credenciais',
+                    },
+                    is_read: false,
+                  });
+              }
+            } catch (adminNotifErr: any) {
+              console.error('[ASAAS WEBHOOK] Erro ao criar notificação administrativa:', adminNotifErr?.message);
             }
-          } catch (adminNotifErr: any) {
-            console.error('[ASAAS WEBHOOK] Erro ao criar notificação administrativa:', adminNotifErr?.message);
-          }
+          });
         }
 
         return NextResponse.json({ received: true });
@@ -284,53 +315,56 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: updErr.message }, { status: 500 });
         }
 
-        // Auditoria
-        void logDB({
-          acao: 'baixa_financeira',
-          modulo: 'secretaria',
-          entidade: 'aemadepa_carteirinhas_solicitacoes',
-          entidadeId: solicitacao.id,
-          descricao: `Pagamento de Carteirinha AEMADEPA (${solicitacao.via}ª Via) confirmado via ASAAS: R$ ${valorEsperado.toFixed(2)}`,
-          status: 'sucesso',
-          detalhes: {
-            solicitacaoId: solicitacao.id,
-            associadaId: solicitacao.associada_id,
-            ministroId: solicitacao.ministro_id,
-            via: solicitacao.via,
-            valor: valorRecebido,
-            asaasPaymentId,
-            event,
-            pagoEm: dataPagamento,
-          },
-        });
-
-        // Notificação administrativa para a Secretaria
-        try {
-          const { data: associada } = await supabase
-            .from('aemadepa_associadas')
-            .select('nome')
-            .eq('id', solicitacao.associada_id)
-            .maybeSingle();
-
-          const nomeAssociada = associada?.nome || 'Associada';
-
-          await supabase.from('admin_notifications').insert({
-            type: 'aemadepa_carteirinha',
-            title: 'Nova Carteirinha AEMADEPA Pronta para Impressão',
-            message: `Pagamento confirmado da ${solicitacao.via}ª via da carteirinha de ${nomeAssociada}. Disponível na fila de impressão da Secretaria.`,
-            data: {
-              solicitacao_id: solicitacao.id,
-              associada_id: solicitacao.associada_id,
-              ministro_id: solicitacao.ministro_id,
-              nome_associada: nomeAssociada,
+        // Auditoria e notificação em background para responder imediatamente (< 200ms)
+        after(async () => {
+          const asyncClient = createServerClient();
+          void logDB({
+            acao: 'baixa_financeira',
+            modulo: 'secretaria',
+            entidade: 'aemadepa_carteirinhas_solicitacoes',
+            entidadeId: solicitacao.id,
+            descricao: `Pagamento de Carteirinha AEMADEPA (${solicitacao.via}ª Via) confirmado via ASAAS: R$ ${valorEsperado.toFixed(2)}`,
+            status: 'sucesso',
+            detalhes: {
+              solicitacaoId: solicitacao.id,
+              associadaId: solicitacao.associada_id,
+              ministroId: solicitacao.ministro_id,
               via: solicitacao.via,
-              link: '/secretaria/aemadepa',
+              valor: valorRecebido,
+              asaasPaymentId,
+              event,
+              pagoEm: dataPagamento,
             },
-            is_read: false,
           });
-        } catch (notifErr: any) {
-          console.error('[ASAAS WEBHOOK AEMADEPA] Falha ao registrar notificação administrativa:', notifErr.message);
-        }
+
+          // Notificação administrativa para a Secretaria
+          try {
+            const { data: associada } = await asyncClient
+              .from('aemadepa_associadas')
+              .select('nome')
+              .eq('id', solicitacao.associada_id)
+              .maybeSingle();
+
+            const nomeAssociada = associada?.nome || 'Associada';
+
+            await asyncClient.from('admin_notifications').insert({
+              type: 'aemadepa_carteirinha',
+              title: 'Nova Carteirinha AEMADEPA Pronta para Impressão',
+              message: `Pagamento confirmado da ${solicitacao.via}ª via da carteirinha de ${nomeAssociada}. Disponível na fila de impressão da Secretaria.`,
+              data: {
+                solicitacao_id: solicitacao.id,
+                associada_id: solicitacao.associada_id,
+                ministro_id: solicitacao.ministro_id,
+                nome_associada: nomeAssociada,
+                via: solicitacao.via,
+                link: '/secretaria/aemadepa',
+              },
+              is_read: false,
+            });
+          } catch (notifErr: any) {
+            console.error('[ASAAS WEBHOOK AEMADEPA] Falha ao registrar notificação administrativa:', notifErr.message);
+          }
+        });
 
         return NextResponse.json({ received: true, solicitacaoId: solicitacao.id, status: 'pago' });
       }
