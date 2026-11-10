@@ -174,8 +174,12 @@ export async function POST(
   let targetQrToken = qrToken;
   let inscricao = byTokenRes.data as any;
 
-  // Se não encontrou a inscrição diretamente pelo token, tenta buscar se o token é uma Credencial de Ministro permanente
+  // Se não encontrou a inscrição diretamente pelo token, tenta buscar se o token é uma Credencial de Ministro permanente ou credencial digital
   if (!inscricao) {
+    let ministroIdResolvido: string | null = null;
+    let ministroCpfResolvido: string | null = null;
+
+    // A) Verifica se é um token em credencial_qr_tokens
     const { data: qrTokenRecord } = (await supabase
       .from('credencial_qr_tokens')
       .select('ministro_id')
@@ -183,12 +187,28 @@ export async function POST(
       .maybeSingle()) as any;
 
     if (qrTokenRecord?.ministro_id) {
+      ministroIdResolvido = qrTokenRecord.ministro_id;
+    } else {
+      // B) Verifica se o token informado é o unique_id ou id ou matricula de um membro em members
+      const { data: memRec } = (await supabase
+        .from('members')
+        .select('id, cpf')
+        .or(`unique_id.eq.${qrToken},id.eq.${qrToken},matricula.eq.${qrToken}`)
+        .maybeSingle()) as any;
+
+      if (memRec?.id) {
+        ministroIdResolvido = memRec.id;
+        ministroCpfResolvido = memRec.cpf || null;
+      }
+    }
+
+    if (ministroIdResolvido) {
       // 1. Tenta buscar direto por ministro_id na tabela evento_inscricoes
       const { data: byMinistro } = await supabase
         .from('evento_inscricoes')
         .select(SELECT_INSC)
         .eq('evento_id', eventoId)
-        .eq('ministro_id', qrTokenRecord.ministro_id)
+        .eq('ministro_id', ministroIdResolvido)
         .maybeSingle() as any;
 
       if (byMinistro) {
@@ -196,14 +216,18 @@ export async function POST(
         targetQrToken = byMinistro.qr_code || targetQrToken;
       } else {
         // 2. Se não achar por ministro_id, tenta buscar por CPF obtido do members (tolerante a formato)
-        const { data: ministro } = (await supabase
-          .from('members')
-          .select('cpf')
-          .eq('id', qrTokenRecord.ministro_id)
-          .maybeSingle()) as any;
+        let cpfCandidato = ministroCpfResolvido;
+        if (!cpfCandidato) {
+          const { data: ministro } = (await supabase
+            .from('members')
+            .select('cpf')
+            .eq('id', ministroIdResolvido)
+            .maybeSingle()) as any;
+          cpfCandidato = ministro?.cpf || null;
+        }
 
-        if (ministro?.cpf) {
-          const cpfLimpo = String(ministro.cpf).replace(/\D/g, '');
+        if (cpfCandidato) {
+          const cpfLimpo = String(cpfCandidato).replace(/\D/g, '');
           if (cpfLimpo) {
             const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
             const { data: byCpf } = await supabase

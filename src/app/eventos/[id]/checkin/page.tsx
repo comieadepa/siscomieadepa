@@ -230,7 +230,14 @@ const MIN_BUSCA_MANUAL = 3;
 const DEBOUNCE_MANUAL_MS = 350;
 
 function extractQrToken(raw: string): string | null {
-  const value = decodeURIComponent(raw.trim()).trim();
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return null;
+  let value = trimmed;
+  try {
+    value = decodeURIComponent(trimmed).trim();
+  } catch {
+    value = trimmed;
+  }
   if (!value) return null;
 
   if (!/^https?:\/\//i.test(value)) {
@@ -246,8 +253,12 @@ function extractQrToken(raw: string): string | null {
       url.searchParams.get('code');
     if (fromQuery) return fromQuery.trim();
 
-    const match = url.pathname.match(/\/qr\/([^/?#]+)/i);
-    if (match?.[1]) return decodeURIComponent(match[1]).trim();
+    // Casos especiais conhecidos: /qr/{token} ou /autentica_qrcode-05985642/{uid}
+    const matchQr = url.pathname.match(/\/qr\/([^/?#]+)/i);
+    if (matchQr?.[1]) return decodeURIComponent(matchQr[1]).trim();
+
+    const matchAutentica = url.pathname.match(/\/autentica_qrcode-[^/?#]+\/([^/?#]+)/i);
+    if (matchAutentica?.[1]) return decodeURIComponent(matchAutentica[1]).trim();
 
     const parts = url.pathname.split('/').filter(Boolean);
     if (parts.length) return decodeURIComponent(parts[parts.length - 1]).trim();
@@ -852,7 +863,15 @@ export default function CheckinMobilePage() {
       };
 
       const config = {
-        fps: 15,
+        fps: 20,
+        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+          const edge = Math.min(viewfinderWidth, viewfinderHeight);
+          const size = Math.floor(edge * 0.75);
+          return {
+            width: Math.max(Math.min(size, 320), 220),
+            height: Math.max(Math.min(size, 320), 220),
+          };
+        },
         aspectRatio: 1.0,
         disableFlip: true,
         videoConstraints: {
@@ -936,7 +955,14 @@ export default function CheckinMobilePage() {
       const headers: Record<string, string> = {};
       if (equipeSessao?.equipeId) headers['x-evento-equipe-id'] = equipeSessao.equipeId;
 
-      const res = await fetch(`/api/eventos/${id}/checkin/lookup?${params}`, { headers });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      let res: Response;
+      try {
+        res = await fetch(`/api/eventos/${id}/checkin/lookup?${params}`, { headers, signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       const json = await res.json().catch(() => ({}));
 
       if (!res.ok) {
@@ -960,6 +986,10 @@ export default function CheckinMobilePage() {
         });
         emitirSom('erro');
         vibrar('erro');
+        if (autoLiberarTimerRef.current) clearTimeout(autoLiberarTimerRef.current);
+        autoLiberarTimerRef.current = setTimeout(() => {
+          voltarParaScan();
+        }, 4000);
         return;
       }
 
@@ -973,6 +1003,10 @@ export default function CheckinMobilePage() {
         });
         emitirSom('erro');
         vibrar('erro');
+        if (autoLiberarTimerRef.current) clearTimeout(autoLiberarTimerRef.current);
+        autoLiberarTimerRef.current = setTimeout(() => {
+          voltarParaScan();
+        }, 4000);
         return;
       }
 
@@ -994,6 +1028,10 @@ export default function CheckinMobilePage() {
         });
         emitirSom('erro');
         vibrar('erro');
+        if (autoLiberarTimerRef.current) clearTimeout(autoLiberarTimerRef.current);
+        autoLiberarTimerRef.current = setTimeout(() => {
+          voltarParaScan();
+        }, 4000);
         return;
       }
 
@@ -1009,6 +1047,10 @@ export default function CheckinMobilePage() {
         });
         emitirSom('erro');
         vibrar('erro');
+        if (autoLiberarTimerRef.current) clearTimeout(autoLiberarTimerRef.current);
+        autoLiberarTimerRef.current = setTimeout(() => {
+          voltarParaScan();
+        }, 4000);
         return;
       }
 
@@ -1026,6 +1068,10 @@ export default function CheckinMobilePage() {
         });
         emitirSom('erro');
         vibrar('erro');
+        if (autoLiberarTimerRef.current) clearTimeout(autoLiberarTimerRef.current);
+        autoLiberarTimerRef.current = setTimeout(() => {
+          voltarParaScan();
+        }, 4000);
         return;
       }
 
@@ -1038,14 +1084,22 @@ export default function CheckinMobilePage() {
         contexto: ctx,
       });
 
-    } catch {
+    } catch (err: any) {
+      const isTimeout = err?.name === 'AbortError';
       setResultado({
         estado: 'invalid',
-        message: 'Erro de conexão ao consultar inscrição.',
-        bloqueadoMotivo: 'Falha de comunicação com o servidor de check-in.',
+        message: isTimeout ? 'Tempo limite esgotado ao consultar.' : 'Erro de conexão ao consultar inscrição.',
+        bloqueadoMotivo: isTimeout
+          ? 'O servidor demorou para responder. Verifique o sinal da internet e tente novamente.'
+          : 'Falha de comunicação com o servidor de check-in.',
       });
       emitirSom('erro');
       vibrar('erro');
+      // Autoliberação da tela de erro após 4s para não travar a fila
+      if (autoLiberarTimerRef.current) clearTimeout(autoLiberarTimerRef.current);
+      autoLiberarTimerRef.current = setTimeout(() => {
+        voltarParaScan();
+      }, 4000);
     } finally {
       setProcessando(false);
       setCapturandoCodigo(false);
@@ -1113,17 +1167,25 @@ export default function CheckinMobilePage() {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (equipeSessao?.equipeId) headers['x-evento-equipe-id'] = equipeSessao.equipeId;
 
-      const res = await fetch(`/api/eventos/${id}/checkin/registrar`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          qr: qrToken,
-          equipe_id: equipeSessao?.equipeId,
-          tipo_checkin: modoCheckin,
-          data_plenaria: contexto.data_plenaria,
-          sessao: contexto.sessao,
-        }),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      let res: Response;
+      try {
+        res = await fetch(`/api/eventos/${id}/checkin/registrar`, {
+          method: 'POST',
+          headers,
+          signal: controller.signal,
+          body: JSON.stringify({
+            qr: qrToken,
+            equipe_id: equipeSessao?.equipeId,
+            tipo_checkin: modoCheckin,
+            data_plenaria: contexto.data_plenaria,
+            sessao: contexto.sessao,
+          }),
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       const json = await res.json().catch(() => ({}));
 
       setPendingConfirm(null);
@@ -1650,13 +1712,13 @@ export default function CheckinMobilePage() {
             )}
           </div>
 
-          {/* Botão Novo Check-in */}
+          {/* Botão Próximo Participante (Liberação Imediata) */}
           <button
             onClick={voltarParaScan}
-            className="w-full bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white font-black py-4 rounded-2xl shadow-lg shadow-emerald-500/25 transition flex items-center justify-center gap-2 mt-6 text-sm"
+            className="w-full bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white font-black py-4 rounded-2xl shadow-lg shadow-emerald-500/25 transition flex items-center justify-center gap-2 mt-6 text-base cursor-pointer"
           >
-            <Square className="w-4 h-4" />
-            <span>Novo Check-in</span>
+            <Check className="w-5 h-5" />
+            <span>Próximo Participante (Liberar Agora)</span>
           </button>
         </div>
       </div>
@@ -1743,13 +1805,16 @@ export default function CheckinMobilePage() {
             </p>
           </div>
 
-          {/* Botão Voltar */}
+          {/* Botão Voltar Imediato com aviso de retorno automático */}
           <button
             onClick={voltarParaScan}
-            className="w-full bg-slate-800 hover:bg-slate-700 active:scale-95 text-white font-semibold py-4 rounded-2xl border border-white/10 transition mt-6 text-sm"
+            className="w-full bg-slate-800 hover:bg-slate-700 active:scale-95 text-white font-bold py-4 rounded-2xl border border-white/10 transition mt-6 text-sm cursor-pointer"
           >
-            Voltar para câmera
+            Voltar para câmera agora
           </button>
+          <p className="text-[11px] text-slate-500 mt-2">
+            A câmera reabrirá automaticamente em instantes para o próximo participante.
+          </p>
         </div>
       </div>
     );
