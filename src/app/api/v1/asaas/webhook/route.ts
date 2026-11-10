@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { logDB } from '@/lib/audit';
+import { enqueueWebhookJobs, processPendingWebhookJobs } from '@/lib/jobs/webhook-jobs';
 import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
 import { criarNotificacaoMinistro } from '@/lib/notificacoes-ministro';
 
@@ -69,18 +70,7 @@ export async function POST(request: NextRequest) {
     if (externalRef.startsWith('lote:') && (event === 'PAYMENT_CONFIRMED' || event === 'PAYMENT_RECEIVED')) {
       const loteId = externalRef.replace('lote:', '').trim();
       if (loteId) {
-        // Idempotência: verifica se o lote já consta como pago
-        const { data: loteCurrent } = await supabase
-          .from('evento_lotes_inscricao')
-          .select('id, status_pagamento')
-          .eq('id', loteId)
-          .maybeSingle();
-
-        if (loteCurrent?.status_pagamento === 'pago') {
-          return NextResponse.json({ received: true, already_processed: true });
-        }
-
-        // Atualização atômica imediata das tabelas financeiras
+        // Idempotência financeira atômica: atualiza apenas se ainda não estiver pago
         await supabase
           .from('evento_inscricoes')
           .update({ status_pagamento: 'pago', forma_pagamento: 'pix' })
@@ -90,20 +80,59 @@ export async function POST(request: NextRequest) {
           .update({ status_pagamento: 'pago', asaas_payment_id: asaasPaymentId })
           .eq('id', loteId);
 
-        // Alocação de leitos transferida para after() para responder imediatamente (< 200ms) ao ASAAS
+        // Enfileiramento durável em webhook_jobs com chave única (idempotência estrita)
+        const { data: loteIns } = await supabase
+          .from('evento_inscricoes')
+          .select('id')
+          .eq('lote_id', loteId);
+
+        let enqueuedIds: string[] = [];
+        if (loteIns && loteIns.length > 0) {
+          const jobs = loteIns.flatMap((li) => [
+            {
+              job_type: 'ALLOCATE_ACCOMMODATION',
+              entity_type: 'inscricao',
+              entity_id: li.id,
+              external_event_id: String(payload?.id ?? ''),
+              external_payment_id: asaasPaymentId,
+            },
+            {
+              job_type: 'SEND_CONFIRMATION_EMAIL',
+              entity_type: 'inscricao',
+              entity_id: li.id,
+              external_event_id: String(payload?.id ?? ''),
+              external_payment_id: asaasPaymentId,
+            },
+            {
+              job_type: 'REGISTER_MINISTERIAL_HISTORY',
+              entity_type: 'inscricao',
+              entity_id: li.id,
+              external_event_id: String(payload?.id ?? ''),
+              external_payment_id: asaasPaymentId,
+            },
+          ]);
+
+          try {
+            enqueuedIds = await enqueueWebhookJobs(supabase, jobs);
+          } catch (qErr: any) {
+            console.error(`[ASAAS WEBHOOK] Falha ao persistir jobs duráveis para lote ${loteId}:`, qErr?.message);
+          }
+        }
+
+        // Processamento imediato em after() sem bloquear o HTTP 200 do ASAAS
         after(async () => {
           try {
             const asyncClient = createServerClient();
-            const { data: loteIns } = await asyncClient
-              .from('evento_inscricoes')
-              .select('id')
-              .eq('lote_id', loteId);
-
-            for (const li of loteIns ?? []) {
-              try {
-                await alocarLeitoParaInscricao(asyncClient, li.id);
-              } catch (alocErr: any) {
-                console.error(`[ASAAS WEBHOOK] Falha na autoalocação do lote ${loteId} (inscricao: ${li.id}):`, alocErr?.message);
+            if (enqueuedIds.length > 0) {
+              await processPendingWebhookJobs(asyncClient, { onlyJobIds: enqueuedIds });
+            } else if (loteIns && loteIns.length > 0) {
+              // Fallback direto caso upsert tenha sido absorvido ou falhado
+              for (const li of loteIns) {
+                try {
+                  await alocarLeitoParaInscricao(asyncClient, li.id);
+                } catch (alocErr: any) {
+                  console.error(`[ASAAS WEBHOOK] Erro alocação leito lote ${loteId}:`, alocErr?.message);
+                }
               }
             }
           } catch (bgErr: any) {
