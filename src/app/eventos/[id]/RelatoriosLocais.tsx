@@ -1,4 +1,5 @@
 'use client';
+import { matchCpf } from '@/lib/cpf';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
@@ -159,10 +160,9 @@ export function RelatorioPresencasPlenaria({
     let list = data.registros;
     if (buscaNome.trim()) {
       const q = buscaNome.trim().toLowerCase();
-      const qCpf = q.replace(/\D/g, '');
-      list = list.filter(r =>
+            list = list.filter(r =>
         r.nome_inscrito.toLowerCase().includes(q) ||
-        (r.cpf && r.cpf.includes(qCpf || q)) ||
+        matchCpf(r.cpf, buscaNome) ||
         (r.matricula && r.matricula.toLowerCase().includes(q))
       );
     }
@@ -577,10 +577,9 @@ export function RelatorioConsumoRestaurante({
     let list = data.registros;
     if (buscaNome.trim()) {
       const q = buscaNome.trim().toLowerCase();
-      const qCpf = q.replace(/\D/g, '');
-      list = list.filter(r =>
+            list = list.filter(r =>
         r.nome_inscrito.toLowerCase().includes(q) ||
-        (r.cpf && r.cpf.includes(qCpf || q)) ||
+        matchCpf(r.cpf, buscaNome) ||
         (r.matricula && r.matricula.toLowerCase().includes(q))
       );
     }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireEventoPermission } from '@/lib/evento-guard';
+import { getCpfSearchVariants } from '@/lib/cpf';
 
 export async function GET(
   request: NextRequest,
@@ -18,7 +19,6 @@ export async function GET(
 
   const supabase = guard.ctx.supabaseAdmin;
 
-  const cleanQ = q.replace(/\D/g, '');
   let query = supabase
     .from('evento_inscricoes')
     .select(`
@@ -30,13 +30,15 @@ export async function GET(
       hosp_possui_comorbidade, hosp_descricao_comorbidade,
       grupo_hospedagem
     `)
-    .eq('evento_id', eventoId);
+    .eq('evento_id', eventoId)
+    .eq('status_pagamento', 'pago');
 
-  if (cleanQ.length === 11) {
-    query = query.eq('cpf', cleanQ).eq('status_pagamento', 'pago');
-  } else {
-    query = query.ilike('nome_inscrito', `%${q}%`).eq('status_pagamento', 'pago');
+  const cpfVariants = getCpfSearchVariants(q);
+  const orClauses = [`nome_inscrito.ilike.%${q}%`];
+  for (const variant of cpfVariants) {
+    orClauses.push(`cpf.ilike.%${variant}%`);
   }
+  query = query.or(orClauses.join(','));
 
   const { data: inscricoes, error } = await query.limit(20);
 

@@ -10,6 +10,7 @@ import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { normalizePayloadUppercase } from '@/lib/text';
 import { EventBadge } from '@/components/EventBadge';
 import { authenticatedFetch } from '@/lib/api-client';
+import { matchCpf, formatCpf } from '@/lib/cpf';
 import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
 import { resolveGrupoHospedagemAGO } from '@/lib/hospedagem-helpers';
 import {
@@ -981,7 +982,7 @@ export default function BalcaoPage() {
             .from('evento_inscricoes')
             .select('id,nome_inscrito')
             .eq('evento_id', id)
-            .eq('cpf', cpfLimpo)
+            .or('cpf.eq.' + cpfLimpo + ',cpf.eq.' + formatCpf(cpfLimpo))
             .limit(1)
         : Promise.resolve({ data: [] as { id: string; nome_inscrito: string }[] }),
     ]);
@@ -1593,7 +1594,7 @@ export default function BalcaoPage() {
     return inscricoesLista.filter(i => {
       if (q) {
         const nomeOk = i.nome_inscrito.toLowerCase().includes(q);
-        const cpfOk = (i.cpf || '').includes(q);
+        const cpfOk = matchCpf(i.cpf, buscaLista);
         const wppOk = (i.whatsapp || '').includes(q);
         if (!nomeOk && !cpfOk && !wppOk) return false;
       }

@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase-client';
 import { clearEquipeSession, getEquipeSession, setEquipeSession } from '@/lib/equipe-session';
 import type { EquipeSession } from '@/lib/equipe-session';
 import { authenticatedFetch } from '@/lib/api-client';
+import { getCpfSearchVariants } from '@/lib/cpf';
 import {
   Menu,
   X,
@@ -1302,13 +1303,15 @@ export default function CheckinMobilePage() {
       setBuscandoManual(true);
       try {
         const q = qRaw;
-        const cpfLimpo = q.replace(/\D/g, '');
-        const filtros = [
+                const filtros = [
           `nome_inscrito.ilike.%${q}%`,
           `email.ilike.%${q}%`,
         ];
-        if (cpfLimpo.length >= MIN_BUSCA_MANUAL) {
-          filtros.push(`cpf.ilike.%${cpfLimpo}%`);
+        const cpfVariants = getCpfSearchVariants(q);
+        for (const v of cpfVariants) {
+          if (v.replace(/\D/g, '').length >= MIN_BUSCA_MANUAL || v.length >= MIN_BUSCA_MANUAL) {
+            filtros.push('cpf.ilike.%' + v + '%');
+          }
         }
         const { data } = await supabase
           .from('evento_inscricoes')

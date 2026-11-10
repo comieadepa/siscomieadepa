@@ -29,6 +29,7 @@ import ModalConciliacaoAsaas from './ModalConciliacaoAsaas';
 import GerenciadorLocaisCheckin from './GerenciadorLocaisCheckin';
 import { RelatorioPresencasPlenaria, RelatorioConsumoRestaurante } from './RelatoriosLocais';
 import { calcularValorFinanceiroInscricao, formatarValorUI, identificarResponsavelFinanceiro } from '@/lib/eventos/financeiro-lote-utils';
+import { matchCpf, getCpfSearchVariants } from '@/lib/cpf';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────
 interface Supervisao { id: string; nome: string; }
@@ -1192,7 +1193,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   const filtrados = useMemo(() => {
     let list = inscricoes.filter(i => {
       if (busca && !i.nome_inscrito.toLowerCase().includes(busca.toLowerCase()) &&
-          !(i.cpf || '').includes(busca) && !(i.whatsapp || '').includes(busca)) return false;
+          !matchCpf(i.cpf, busca) && !(i.whatsapp || '').includes(busca)) return false;
       if (filtroSup   && i.supervisao_id !== filtroSup)      return false;
       if (filtroCampo && i.campo_id      !== filtroCampo)    return false;
       if (filtroPag   && i.status_pagamento !== filtroPag)   return false;
@@ -3158,7 +3159,7 @@ function TabCheckin({ eventoId, evento, inscricoes, loading, nomeSup, nomeCampo,
     const q = busca.toLowerCase();
     return inscricoes.filter(i =>
       (i.status_pagamento === 'pago' || i.status_pagamento === 'isento') &&
-      (i.nome_inscrito.toLowerCase().includes(q) || (i.cpf || '').includes(busca))
+      (i.nome_inscrito.toLowerCase().includes(q) || matchCpf(i.cpf, busca))
     ).slice(0, 10);
   }, [inscricoes, busca]);
 
@@ -4936,7 +4937,7 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
   const filtradas = useMemo(() => {
     return inscricoes.filter(i => {
       if (busca && !i.nome_inscrito.toLowerCase().includes(busca.toLowerCase()) &&
-          !(i.cpf || '').includes(busca) && !(i.whatsapp || '').includes(busca)) return false;
+          !matchCpf(i.cpf, busca) && !(i.whatsapp || '').includes(busca)) return false;
       if (filtroSup   && i.supervisao_id !== filtroSup)    return false;
       if (filtroCampo && i.campo_id      !== filtroCampo)  return false;
       if (filtroPag   && i.status_pagamento !== filtroPag) return false;
@@ -6324,11 +6325,22 @@ function TabComunicacao({ eventoId, supabase }: { eventoId: string; supabase: Re
     setBuscandoInscrito(true);
     setResultadosBusca([]);
     setReenvioMsg(null);
+
+    const cpfVariants = getCpfSearchVariants(buscaInscrito);
+    const orClauses = [
+      `nome_inscrito.ilike.%${buscaInscrito}%`,
+      `email.ilike.%${buscaInscrito}%`,
+      `whatsapp.ilike.%${buscaInscrito}%`,
+    ];
+    for (const v of cpfVariants) {
+      orClauses.push(`cpf.ilike.%${v}%`);
+    }
+
     const { data } = await supabase
       .from('evento_inscricoes')
       .select('id,nome_inscrito,cpf,email,whatsapp,status_pagamento')
       .eq('evento_id', eventoId)
-      .or(`nome_inscrito.ilike.%${buscaInscrito}%,cpf.ilike.%${buscaInscrito}%,email.ilike.%${buscaInscrito}%,whatsapp.ilike.%${buscaInscrito}%`)
+      .or(orClauses.join(','))
       .limit(10);
     setResultadosBusca((data ?? []) as typeof resultadosBusca);
     setBuscandoInscrito(false);

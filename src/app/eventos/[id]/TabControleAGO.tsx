@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { matchCpf } from '@/lib/cpf';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 interface Cards {
@@ -274,7 +275,7 @@ V. Sa. dispõe de um prazo regulamentar para protocolar a justificativa de suas 
       if (oficialBusca) {
         const busca = oficialBusca.toLowerCase();
         const nomeMatch = String(m.nome ?? '').toLowerCase().includes(busca);
-        const cpfMatch = String(m.cpf ?? '').includes(busca);
+        const cpfMatch = matchCpf(m.cpf, oficialBusca);
         const matMatch = String(m.matricula ?? '').includes(busca);
         if (!nomeMatch && !cpfMatch && !matMatch) return false;
       }
@@ -330,7 +331,7 @@ V. Sa. dispõe de um prazo regulamentar para protocolar a justificativa de suas 
     if (!data) return [];
     return data.matriz.filter(r => {
       if (mBusca    && !r.nome.toLowerCase().includes(mBusca.toLowerCase())
-                    && !(r.cpf ?? '').includes(mBusca)) return false;
+                    && !matchCpf(r.cpf, mBusca)) return false;
       if (mCategoria && r.categoria !== mCategoria) return false;
       if (mSup      && r.supervisao_id !== mSup) return false;
       if (mCampo    && r.campo_id !== mCampo)    return false;

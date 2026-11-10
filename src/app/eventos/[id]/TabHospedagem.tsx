@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/lib/supabase-client';
 import { getEquipeSession } from '@/lib/equipe-session';
+import { matchCpf } from '@/lib/cpf';
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 interface Evento {
@@ -441,11 +442,9 @@ export default function TabHospedagem({
     if (filtroPend)    list = list.filter(h => (h.pendencias ?? []).includes(filtroPend));
     if (busca.trim()) {
       const q = normalizarTexto(busca);
-      const qCPF = busca.replace(/\D/g, '');
       list = list.filter(h => {
         const nomeNorm = normalizarTexto(h.nome_inscrito);
-        const cpfNorm = String(h.cpf ?? '').replace(/\D/g, '');
-        return nomeNorm.includes(q) || (qCPF !== '' && cpfNorm.includes(qCPF));
+        return nomeNorm.includes(q) || matchCpf(h.cpf, busca);
       });
     }
     return list;
