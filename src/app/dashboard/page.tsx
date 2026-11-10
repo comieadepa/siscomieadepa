@@ -127,6 +127,11 @@ export default function DashboardPage() {
         const nomeLogado = data.user.user_metadata?.full_name || data.user.email || 'Usuário';
         const emailLogado = data.user.email || '';
 
+        if (nivel === 'aemadepa') {
+          router.replace('/aemadepa');
+          return;
+        }
+
         setUsuarioLogado({ nome: nomeLogado, email: emailLogado, nivel });
 
         // Buscar matrícula na tabela members pelo e-mail

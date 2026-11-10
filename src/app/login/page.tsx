@@ -81,7 +81,7 @@ export default function LoginPage() {
       if (!authError && authData?.user) {
         const rawRole = authData.user.user_metadata?.nivel || authData.user.user_metadata?.role || authData.user.app_metadata?.role;
         const normalizedRole = typeof rawRole === 'string' ? rawRole.toLowerCase().trim() : '';
-        const isOfficialUser = ['super', 'administrador', 'super_admin', 'superadmin', 'admin', 'administrator', 'cgadb', 'comissao', 'inscricao', 'financeiro'].includes(normalizedRole);
+        const isOfficialUser = ['super', 'administrador', 'super_admin', 'superadmin', 'admin', 'administrator', 'cgadb', 'comissao', 'inscricao', 'financeiro', 'aemadepa'].includes(normalizedRole);
         const nivel = (authData.user.user_metadata?.nivel || normalizedRole) as string | undefined;
 
         // Permitir se for usuário oficial (inscricao, cgadb, financeiro, admin, super) OU se estiver cadastrado na tabela de usuários do CRM
@@ -125,6 +125,7 @@ export default function LoginPage() {
           nivel === 'inscricao' ? '/eventos' :
           nivel === 'cgadb'     ? '/secretaria/cgadb' :
           nivel === 'financeiro'? '/financeiro' :
+          nivel === 'aemadepa'  ? '/aemadepa' :
           '/dashboard';
         router.push(destino);
         return;
