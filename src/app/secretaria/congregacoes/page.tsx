@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import PageLayout from '@/components/PageLayout';
+import LoadingTransition from '@/components/LoadingTransition';
 import Tabs from '@/components/Tabs';
 import Section from '@/components/Section';
 import { createClient } from '@/lib/supabase-client';
@@ -2257,7 +2258,7 @@ export default function CongregacoesPage() {
     }
   };
 
-  if (loading) return <div className="p-8">Carregando...</div>;
+  if (loading) return <LoadingTransition mensagem="Carregando Supervisões e Campos..." subtitulo="SISCOMIEADEPA — Secretaria Geral" fullScreen={true} />;
 
   const tabs = [
     { id: 'divisao2', label: 'Campos', icon: '📍' },
