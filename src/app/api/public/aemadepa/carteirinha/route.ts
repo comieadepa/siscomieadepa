@@ -8,6 +8,7 @@ import {
   findAsaasPaymentByExternalReference,
 } from '@/lib/aemadepa/carteirinha-service';
 import { getAsaasPixQrCode } from '@/lib/asaas';
+import { VALOR_CARTEIRINHA_AEMADEPA } from '@/lib/aemadepa/constants';
 
 /**
  * POST /api/public/aemadepa/carteirinha
@@ -222,7 +223,7 @@ export async function POST(request: NextRequest) {
       .insert({
         associada_id: associada.id,
         ministro_id: associada.ministro_id,
-        valor: 20.0,
+        valor: VALOR_CARTEIRINHA_AEMADEPA,
         via: proximaVia,
         status: 'aguardando_pagamento',
         idempotency_key: idempotencyKey,
@@ -319,7 +320,7 @@ async function gerarCobrancaParaPedidoExistente(
         id: lockAdquirido.id,
         via: lockAdquirido.via,
         status: 'aguardando_pagamento',
-        valor: 20.0,
+        valor: Number(solicitacao?.valor || VALOR_CARTEIRINHA_AEMADEPA),
         pix_copia_cola: lockAdquirido.pix_copia_cola,
         pix_qr_code: lockAdquirido.pix_qr_code_url,
         invoice_url: lockAdquirido.invoice_url,
@@ -379,7 +380,7 @@ async function gerarCobrancaParaPedidoExistente(
           id: solicitacao.id,
           via: solicitacao.via,
           status: 'aguardando_pagamento',
-          valor: 20.0,
+          valor: Number(solicitacao?.valor || VALOR_CARTEIRINHA_AEMADEPA),
           pix_copia_cola: existenteNoGateway.pixCopiaECola,
           pix_qr_code: existenteNoGateway.pixQrCode,
           invoice_url: existenteNoGateway.invoiceUrl,
@@ -419,7 +420,7 @@ async function gerarCobrancaParaPedidoExistente(
         id: solicitacao.id,
         via: solicitacao.via,
         status: 'aguardando_pagamento',
-        valor: 20.0,
+        valor: Number(solicitacao?.valor || VALOR_CARTEIRINHA_AEMADEPA),
         pix_copia_cola: charge.pixCopiaECola,
         pix_qr_code: charge.pixQrCode,
         invoice_url: charge.invoiceUrl,

@@ -1,5 +1,6 @@
 import { cleanCpf, isValidCpf } from '@/lib/cpf';
 import { asaasFetch, createOrFindAsaasCustomer } from '@/lib/asaas';
+import { VALOR_CARTEIRINHA_AEMADEPA } from './constants';
 
 export interface AsaasPixResponse {
   paymentId: string;
@@ -109,7 +110,7 @@ export async function createAemadepaPixCharge(params: {
     body: JSON.stringify({
       customer: params.customerId,
       billingType: 'PIX',
-      value: 20.0,
+      value: VALOR_CARTEIRINHA_AEMADEPA,
       dueDate,
       description,
       externalReference,
@@ -138,7 +139,7 @@ export async function createAemadepaPixCharge(params: {
     pixQrCode,
     pixCopiaECola,
     invoiceUrl: payment.invoiceUrl ?? null,
-    value: Number(payment.value || 20.0),
+    value: Number(payment.value || VALOR_CARTEIRINHA_AEMADEPA),
     status: String(payment.status || 'PENDING'),
   };
 }

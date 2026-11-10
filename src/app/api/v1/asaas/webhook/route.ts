@@ -4,6 +4,7 @@ import { logDB } from '@/lib/audit';
 import { enqueueWebhookJobs, processPendingWebhookJobs } from '@/lib/jobs/webhook-jobs';
 import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
 import { criarNotificacaoMinistro } from '@/lib/notificacoes-ministro';
+import { VALOR_CARTEIRINHA_AEMADEPA } from '@/lib/aemadepa/constants';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -239,7 +240,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true });
     }
 
-    // ── Carteirinha AEMADEPA (Emissão R$ 20,00) ──────────────────────────────
+    // ── Carteirinha AEMADEPA (Emissão Oficial) ──────────────────────────────
     if (externalRef.startsWith('aemadepa_carteirinha:')) {
       const solicitacaoId = externalRef.replace('aemadepa_carteirinha:', '').trim();
       if (!solicitacaoId) {
@@ -281,11 +282,11 @@ export async function POST(request: NextRequest) {
         event === 'PAYMENT_REFUNDED';
 
       if (isPaidEvent) {
-        // Validação estrita do valor fixo (R$ 20,00)
+        // Validação estrita do valor esperado da solicitação (R$ 25,00 novo / R$ 20,00 legado)
         const valorRecebido = Number(payment?.value || 0);
-        const valorEsperado = Number(solicitacao.valor || 20.0);
+        const valorEsperado = Number(solicitacao.valor || VALOR_CARTEIRINHA_AEMADEPA);
         if (Math.abs(valorRecebido - valorEsperado) > 0.05) {
-          console.error('[ASAAS WEBHOOK AEMADEPA] Valor divergente do fixo de R$ 20,00:', {
+          console.error('[ASAAS WEBHOOK AEMADEPA] Valor divergente do esperado da carteirinha:', {
             recebido: valorRecebido,
             esperado: valorEsperado,
           });

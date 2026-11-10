@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { CreditCard, Copy, Check, AlertCircle, RefreshCw, Sparkles, CheckCircle2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { VALOR_CARTEIRINHA_AEMADEPA_FORMATADO } from '@/lib/aemadepa/constants';
 
 interface SolicitacaoData {
   id: string;
@@ -129,7 +130,7 @@ export default function SecaoCarteirinhaAemadepa({
               </span>
             </div>
             <p className="text-xs text-gray-500">
-              Taxa de emissão física com acabamento especial e identificação oficial: <strong>R$ 20,00</strong>
+              Taxa de emissão física com acabamento especial e identificação oficial: <strong>{VALOR_CARTEIRINHA_AEMADEPA_FORMATADO}</strong>
             </p>
           </div>
         </div>
@@ -258,7 +259,7 @@ export default function SecaoCarteirinhaAemadepa({
         <div className="space-y-4">
           <div className="bg-white rounded-xl border border-rose-100 p-4 text-xs text-gray-600 space-y-2">
             <p>
-              A carteirinha física da AEMADEPA é emitida mediante taxa única de <strong>R$ 20,00</strong>, destinada aos custos operacionais e confecção do cartão institucional com chip/QR Code.
+              A carteirinha física da AEMADEPA é emitida mediante taxa única de <strong>{VALOR_CARTEIRINHA_AEMADEPA_FORMATADO}</strong>, destinada aos custos operacionais e confecção do cartão institucional com chip/QR Code.
             </p>
             {!cadastroCompleto && (
               <p className="text-amber-700 font-semibold flex items-center gap-1.5">
@@ -281,7 +282,7 @@ export default function SecaoCarteirinhaAemadepa({
               htmlFor="confirmar-solicitacao-cart"
               className="text-xs text-gray-700 font-medium cursor-pointer"
             >
-              Desejo solicitar a emissão da carteirinha oficial da AEMADEPA no valor de <strong>R$ 20,00</strong> via PIX.
+              Desejo solicitar a emissão da carteirinha oficial da AEMADEPA no valor de <strong>{VALOR_CARTEIRINHA_AEMADEPA_FORMATADO}</strong> via PIX.
             </label>
           </div>
 
@@ -301,8 +302,8 @@ export default function SecaoCarteirinhaAemadepa({
                 <Sparkles className="w-4 h-4" />
                 <span>
                   {elegibilidade.tipoVia === 'segunda_via'
-                    ? 'Solicitar Segunda Via — R$ 20,00'
-                    : 'Solicitar Carteirinha — R$ 20,00'}
+                    ? `Solicitar Segunda Via — ${VALOR_CARTEIRINHA_AEMADEPA_FORMATADO}`
+                    : `Solicitar Carteirinha — ${VALOR_CARTEIRINHA_AEMADEPA_FORMATADO}`}
                 </span>
               </>
             )}

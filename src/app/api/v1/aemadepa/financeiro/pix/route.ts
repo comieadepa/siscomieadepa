@@ -8,6 +8,7 @@ import {
   findAsaasPaymentByExternalReference,
 } from '@/lib/aemadepa/carteirinha-service';
 import { getAsaasPixQrCode } from '@/lib/asaas';
+import { VALOR_CARTEIRINHA_AEMADEPA } from '@/lib/aemadepa/constants';
 import { logDB } from '@/lib/audit';
 
 /**
@@ -105,7 +106,7 @@ export async function POST(request: NextRequest) {
         .insert({
           associada_id: associadaId,
           ministro_id: associada.ministro_id,
-          valor: 20.00,
+          valor: VALOR_CARTEIRINHA_AEMADEPA,
           via: proximaVia,
           forma_pagamento: 'pix_asaas',
           idempotency_key: idempotencyKey,
@@ -191,7 +192,7 @@ export async function POST(request: NextRequest) {
       entidadeId: solicitacao.id,
       descricao: `Cobrança PIX gerada via painel para ${associada.nome} (${solicitacao.via}ª via)`,
       status: 'sucesso',
-      detalhes: { associadaId, paymentId, valor: 20.00 },
+      detalhes: { associadaId, paymentId, valor: Number(solicitacaoFinal.valor || VALOR_CARTEIRINHA_AEMADEPA) },
     });
 
     return NextResponse.json({

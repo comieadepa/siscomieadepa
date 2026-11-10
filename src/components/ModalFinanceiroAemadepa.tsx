@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
 import { QRCodeSVG } from 'qrcode.react';
+import { VALOR_CARTEIRINHA_AEMADEPA_FORMATADO } from '@/lib/aemadepa/constants';
 
 interface SolicitacaoItem {
   id: string;
@@ -162,9 +163,10 @@ export default function ModalFinanceiroAemadepa({
     }
   };
 
-  // Ação: Confirmar Pagamento À Vista (R$ 20,00)
+  // Ação: Confirmar Pagamento À Vista
   const handleConfirmarAVista = async () => {
-    if (!confirm(`Confirma o recebimento de R$ 20,00 em dinheiro/balcão para a carteirinha de ${associadaNome}?`)) {
+    const valorEsperadoTxt = solicitacaoAtiva?.valor ? `R$ ${Number(solicitacaoAtiva.valor).toFixed(2).replace('.', ',')}` : VALOR_CARTEIRINHA_AEMADEPA_FORMATADO;
+    if (!confirm(`Confirma o recebimento de ${valorEsperadoTxt} em dinheiro/balcão para a carteirinha de ${associadaNome}?`)) {
       return;
     }
 
@@ -436,7 +438,7 @@ export default function ModalFinanceiroAemadepa({
             }`}
           >
             <QrCode className="w-3.5 h-3.5" />
-            <span>PIX ASAAS (R$ 20)</span>
+            <span>PIX ASAAS (R$ 25)</span>
           </button>
 
           <button
@@ -448,7 +450,7 @@ export default function ModalFinanceiroAemadepa({
             }`}
           >
             <Banknote className="w-3.5 h-3.5" />
-            <span>À Vista (R$ 20)</span>
+            <span>À Vista (R$ 25)</span>
           </button>
 
           <button
@@ -534,7 +536,7 @@ export default function ModalFinanceiroAemadepa({
                       <div>
                         <p className="text-gray-400">Valor Cobrado:</p>
                         <p className="font-bold text-gray-800">
-                          {solicitacaoAtiva ? `R$ ${Number(solicitacaoAtiva.valor).toFixed(2)}` : 'R$ 20,00'}
+                          {solicitacaoAtiva ? `R$ ${Number(solicitacaoAtiva.valor).toFixed(2).replace('.', ',')}` : VALOR_CARTEIRINHA_AEMADEPA_FORMATADO}
                         </p>
                       </div>
                       <div>
@@ -694,7 +696,7 @@ export default function ModalFinanceiroAemadepa({
                       </div>
 
                       <div className="flex-1 space-y-2 text-xs">
-                        <p className="font-bold text-gray-800">PIX ASAAS — Valor: R$ 20,00</p>
+                        <p className="font-bold text-gray-800">PIX ASAAS — Valor: {solicitacaoAtiva?.valor ? `R$ ${Number(solicitacaoAtiva.valor).toFixed(2).replace('.', ',')}` : VALOR_CARTEIRINHA_AEMADEPA_FORMATADO}</p>
                         <p className="text-gray-500">
                           Apresente o QR Code acima para leitura no app do banco ou copie o código Copia e Cola abaixo.
                         </p>
@@ -730,7 +732,7 @@ export default function ModalFinanceiroAemadepa({
                       <div>
                         <h4 className="font-bold text-gray-800 text-sm">Gerar Cobrança PIX Oficial</h4>
                         <p className="text-xs text-gray-500 max-w-md mx-auto">
-                          Gera a cobrança de R$ 20,00 integrada ao ASAAS oficial da convenção com QR Code dinâmico.
+                          Gera a cobrança de {VALOR_CARTEIRINHA_AEMADEPA_FORMATADO} integrada ao ASAAS oficial da convenção com QR Code dinâmico.
                         </p>
                       </div>
                       <button
@@ -740,7 +742,7 @@ export default function ModalFinanceiroAemadepa({
                         className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition inline-flex items-center gap-2 cursor-pointer shadow-xs"
                       >
                         {processando ? <Loader2 className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />}
-                        <span>Gerar PIX R$ 20,00</span>
+                        <span>Gerar PIX {VALOR_CARTEIRINHA_AEMADEPA_FORMATADO}</span>
                       </button>
                     </div>
                   )}
@@ -757,7 +759,7 @@ export default function ModalFinanceiroAemadepa({
                         <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                         <div className="space-y-1">
                           <p className="font-bold text-sm text-amber-900">
-                            Existe uma cobrança PIX ASAAS pendente (R$ 20,00)
+                            Existe uma cobrança PIX ASAAS pendente ({solicitacaoAtiva?.valor ? `R$ ${Number(solicitacaoAtiva.valor).toFixed(2).replace('.', ',')}` : VALOR_CARTEIRINHA_AEMADEPA_FORMATADO})
                           </p>
                           <p className="text-amber-800 leading-relaxed">
                             Identificamos que já foi gerado um código PIX para esta associada. Para registrar a quitação presencial à vista, a cobrança pendente deve ser cancelada para evitar pagamentos duplicados no banco.
@@ -785,7 +787,7 @@ export default function ModalFinanceiroAemadepa({
                   <div className="p-4 bg-teal-50 border border-teal-200 rounded-xl space-y-2 text-xs text-teal-900">
                     <p className="font-bold flex items-center gap-1.5 text-sm">
                       <Banknote className="w-4 h-4 text-teal-700" />
-                      <span>Quitação Presencial / Dinheiro em Espécie (R$ 20,00)</span>
+                      <span>Quitação Presencial / Dinheiro em Espécie ({solicitacaoAtiva?.valor ? `R$ ${Number(solicitacaoAtiva.valor).toFixed(2).replace('.', ',')}` : VALOR_CARTEIRINHA_AEMADEPA_FORMATADO})</span>
                     </p>
                     <p>
                       Utilize esta opção quando a associada efetuar o pagamento diretamente na tesouraria ou balcão da secretaria.
@@ -803,7 +805,7 @@ export default function ModalFinanceiroAemadepa({
                       className="px-4 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer"
                     >
                       {processando ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                      <span>Confirmar Recebimento R$ 20,00</span>
+                      <span>Confirmar Recebimento {solicitacaoAtiva?.valor ? `R$ ${Number(solicitacaoAtiva.valor).toFixed(2).replace('.', ',')}` : VALOR_CARTEIRINHA_AEMADEPA_FORMATADO}</span>
                     </button>
                   </div>
                 </div>
@@ -819,7 +821,7 @@ export default function ModalFinanceiroAemadepa({
                         <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                         <div className="space-y-1">
                           <p className="font-bold text-sm text-amber-900">
-                            Existe uma cobrança PIX ASAAS pendente (R$ 20,00)
+                            Existe uma cobrança PIX ASAAS pendente ({solicitacaoAtiva?.valor ? `R$ ${Number(solicitacaoAtiva.valor).toFixed(2).replace('.', ',')}` : VALOR_CARTEIRINHA_AEMADEPA_FORMATADO})
                           </p>
                           <p className="text-amber-800 leading-relaxed">
                             Identificamos que já foi gerado um código PIX para esta associada. Para emitir como cortesia, a cobrança pendente deve ser cancelada para evitar pagamentos duplicados no banco.

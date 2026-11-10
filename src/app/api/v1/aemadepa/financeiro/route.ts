@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase-server';
 import { requireModuleAccess } from '@/lib/auth/require-auth';
 import { logDB } from '@/lib/audit';
 import { deleteAsaasPayment } from '@/lib/asaas';
+import { VALOR_CARTEIRINHA_AEMADEPA, VALOR_CARTEIRINHA_AEMADEPA_FORMATADO } from '@/lib/aemadepa/constants';
 
 /**
  * GET /api/v1/aemadepa/financeiro
@@ -198,7 +199,7 @@ export async function POST(request: NextRequest) {
           entidadeId: rpcRes.solicitacao_id,
           descricao: acao === 'cortesia'
             ? `Cortesia concedida para ${associada.nome} (${rpcRes.via}ª via): ${justificativa}`
-            : `Pagamento à vista (R$ 20,00) registrado para ${associada.nome} (${rpcRes.via}ª via)`,
+            : `Pagamento à vista (${VALOR_CARTEIRINHA_AEMADEPA_FORMATADO}) registrado para ${associada.nome} (${rpcRes.via}ª via)`,
           status: 'sucesso',
           detalhes: { associadaId, via: rpcRes.via, operadorId, acao },
         });
@@ -254,7 +255,7 @@ export async function POST(request: NextRequest) {
             .from('aemadepa_carteirinhas_solicitacoes')
             .update({
               status: 'pago',
-              valor: 20.00,
+              valor: VALOR_CARTEIRINHA_AEMADEPA,
               forma_pagamento: 'a_vista',
               operador_aprovacao_id: operadorId,
               pago_em: agora,
@@ -274,9 +275,9 @@ export async function POST(request: NextRequest) {
             modulo: 'secretaria',
             entidade: 'aemadepa_carteirinhas_solicitacoes',
             entidadeId: solicitacao.id,
-            descricao: `Pagamento à vista (R$ 20,00) registrado para ${associada.nome} (${solicitacao.via}ª via)`,
+            descricao: `Pagamento à vista (${VALOR_CARTEIRINHA_AEMADEPA_FORMATADO}) registrado para ${associada.nome} (${solicitacao.via}ª via)`,
             status: 'sucesso',
-            detalhes: { associadaId, via: solicitacao.via, operadorId, valor: 20.00, formaPagamento: 'a_vista' },
+            detalhes: { associadaId, via: solicitacao.via, operadorId, valor: VALOR_CARTEIRINHA_AEMADEPA, formaPagamento: 'a_vista' },
           });
 
           return NextResponse.json({ sucesso: true, mensagem: 'Pagamento à vista confirmado com sucesso.', solicitacao: atualizada });
@@ -297,7 +298,7 @@ export async function POST(request: NextRequest) {
             .insert({
               associada_id: associadaId,
               ministro_id: ministroId,
-              valor: 20.00,
+              valor: VALOR_CARTEIRINHA_AEMADEPA,
               via: proximaVia,
               forma_pagamento: 'a_vista',
               operador_aprovacao_id: operadorId,
@@ -319,7 +320,7 @@ export async function POST(request: NextRequest) {
             entidadeId: nova.id,
             descricao: `Nova via com pagamento à vista registrada para ${associada.nome} (${proximaVia}ª via)`,
             status: 'sucesso',
-            detalhes: { associadaId, via: proximaVia, operadorId, valor: 20.00, formaPagamento: 'a_vista' },
+            detalhes: { associadaId, via: proximaVia, operadorId, valor: VALOR_CARTEIRINHA_AEMADEPA, formaPagamento: 'a_vista' },
           });
 
           return NextResponse.json({ sucesso: true, mensagem: 'Pagamento à vista registrado com sucesso.', solicitacao: nova });
@@ -448,7 +449,7 @@ export async function POST(request: NextRequest) {
         .insert({
           associada_id: associadaId,
           ministro_id: ministroId,
-          valor: 20.00,
+          valor: VALOR_CARTEIRINHA_AEMADEPA,
           via: novaVia,
           forma_pagamento: 'pix_asaas',
           idempotency_key: idempotencyKey,
