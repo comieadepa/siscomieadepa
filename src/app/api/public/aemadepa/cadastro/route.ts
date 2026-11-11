@@ -120,8 +120,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'O CPF informado é inválido. Digite um CPF válido com 11 dígitos.' }, { status: 400 });
     }
 
-    if (!data_nascimento || String(data_nascimento).trim().length < 8) {
-      return NextResponse.json({ error: 'A data de nascimento da esposa é obrigatória.' }, { status: 400 });
+    // Validação rigorosa de data de nascimento real (aceita YYYY-MM-DD ou DD/MM/YYYY)
+    const rawDataNasc = String(data_nascimento || '').trim();
+    let dataNascimentoValida: string | null = null;
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(rawDataNasc)) {
+      const [ano, mes, dia] = rawDataNasc.split('-').map(Number);
+      const d = new Date(Date.UTC(ano, mes - 1, dia));
+      if (d.getUTCFullYear() === ano && d.getUTCMonth() === mes - 1 && d.getUTCDate() === dia) {
+        if (ano >= 1900 && ano <= new Date().getFullYear()) {
+          dataNascimentoValida = rawDataNasc;
+        }
+      }
+    } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(rawDataNasc)) {
+      const [dia, mes, ano] = rawDataNasc.split('/').map(Number);
+      const d = new Date(Date.UTC(ano, mes - 1, dia));
+      if (d.getUTCFullYear() === ano && d.getUTCMonth() === mes - 1 && d.getUTCDate() === dia) {
+        if (ano >= 1900 && ano <= new Date().getFullYear()) {
+          dataNascimentoValida = `${ano}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+        }
+      }
+    }
+
+    if (!dataNascimentoValida) {
+      return NextResponse.json(
+        { error: 'Data de nascimento inválida. Informe uma data real no formato DD/MM/AAAA.' },
+        { status: 400 }
+      );
     }
 
     // 3. Validação da Operação Autorizada pelo Token HMAC
@@ -168,7 +193,7 @@ export async function POST(request: NextRequest) {
       p_operacao: operacaoAutorizada,
       p_nome: String(nome).trim(),
       p_cpf: inputCpfDigits,
-      p_data_nascimento: data_nascimento,
+      p_data_nascimento: dataNascimentoValida,
       p_rg: rg ? String(rg).trim() : null,
       p_orgao_emissor: orgao_emissor ? String(orgao_emissor).trim() : null,
       p_nacionalidade: nacionalidade ? String(nacionalidade).trim() : 'BRASILEIRA',
@@ -192,7 +217,12 @@ export async function POST(request: NextRequest) {
     }
 
     if (!rpcRes.success) {
-      return NextResponse.json({ error: rpcRes.error || 'Falha ao processar cadastro.' }, { status: 400 });
+      console.error('Erro retornado pela RPC transacional:', rpcRes.error);
+      // Não expõe mensagem interna de erro SQL cru para o usuário
+      const friendlyMsg = typeof rpcRes.error === 'string' && !rpcRes.error.includes('column') && !rpcRes.error.includes('syntax')
+        ? rpcRes.error
+        : 'Ocorreu uma inconsistência ao registrar os dados. Por favor, revise as informações e tente novamente.';
+      return NextResponse.json({ error: friendlyMsg }, { status: 400 });
     }
 
     return NextResponse.json({

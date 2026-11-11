@@ -76,7 +76,9 @@ export default function PublicAemadepaCadastroPage() {
 
   // 2. Desafio de Segurança LGPD (CPF + Data de Nascimento)
   const [desafioCpf, setDesafioCpf] = useState('');
-  const [desafioDataNasc, setDesafioDataNasc] = useState('');
+  const [desafioDia, setDesafioDia] = useState('');
+  const [desafioMes, setDesafioMes] = useState('');
+  const [desafioAno, setDesafioAno] = useState('');
   const [validandoDesafio, setValidandoDesafio] = useState(false);
   const [desafioErro, setDesafioErro] = useState<string | null>(null);
   const [tokenAutorizacao, setTokenAutorizacao] = useState<string | null>(null);
@@ -84,6 +86,9 @@ export default function PublicAemadepaCadastroPage() {
 
   // 3. Formulário Principal da Esposa
   const [formData, setFormData] = useState<DadosFormulario>(FORM_INICIAL);
+  const [esposaDia, setEsposaDia] = useState('');
+  const [esposaMes, setEsposaMes] = useState('');
+  const [esposaAno, setEsposaAno] = useState('');
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -91,6 +96,45 @@ export default function PublicAemadepaCadastroPage() {
   const [sucesso, setSucesso] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const desafioMesRef = useRef<HTMLInputElement>(null);
+  const desafioAnoRef = useRef<HTMLInputElement>(null);
+  const esposaMesRef = useRef<HTMLInputElement>(null);
+  const esposaAnoRef = useRef<HTMLInputElement>(null);
+
+  // Helper de validação de data real de calendário (considera anos bissextos)
+  const validarEConverterData = (diaStr: string, mesStr: string, anoStr: string): { valida: boolean; ymd: string; erro?: string } => {
+    const dLimpo = diaStr.replace(/\D/g, '');
+    const mLimpo = mesStr.replace(/\D/g, '');
+    const aLimpo = anoStr.replace(/\D/g, '');
+
+    if (!dLimpo || !mLimpo || !aLimpo) {
+      return { valida: false, ymd: '', erro: 'Preencha o Dia, Mês e Ano completos.' };
+    }
+
+    const d = parseInt(dLimpo, 10);
+    const m = parseInt(mLimpo, 10);
+    const a = parseInt(aLimpo, 10);
+
+    const anoAtual = new Date().getFullYear();
+    if (a < 1900 || a > anoAtual) {
+      return { valida: false, ymd: '', erro: `Ano deve estar entre 1900 e ${anoAtual}.` };
+    }
+
+    if (m < 1 || m > 12) {
+      return { valida: false, ymd: '', erro: 'Mês inválido (deve ser entre 1 e 12).' };
+    }
+
+    // Dias máximos por mês considerando ano bissexto
+    const diasPorMes = [31, (a % 4 === 0 && (a % 100 !== 0 || a % 400 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const maxDia = diasPorMes[m - 1];
+
+    if (d < 1 || d > maxDia) {
+      return { valida: false, ymd: '', erro: `Dia inválido para o mês ${String(m).padStart(2, '0')}/${a} (máximo ${maxDia} dias).` };
+    }
+
+    const ymd = `${a}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    return { valida: true, ymd };
+  };
 
   // Debounce na busca de ministros com AbortController e timeout de resiliência
   useEffect(() => {
@@ -144,11 +188,16 @@ export default function PublicAemadepaCadastroPage() {
     setErroBusca(null);
     setBusca('');
     setDesafioCpf('');
-    setDesafioDataNasc('');
+    setDesafioDia('');
+    setDesafioMes('');
+    setDesafioAno('');
     setDesafioErro(null);
     setTokenAutorizacao(null);
     setAutorizado(false);
     setFormData(FORM_INICIAL);
+    setEsposaDia('');
+    setEsposaMes('');
+    setEsposaAno('');
     setFotoPreview(null);
     setErro(null);
   };
@@ -157,11 +206,16 @@ export default function PublicAemadepaCadastroPage() {
     setMinistroSelecionado(null);
     setErroBusca(null);
     setDesafioCpf('');
-    setDesafioDataNasc('');
+    setDesafioDia('');
+    setDesafioMes('');
+    setDesafioAno('');
     setDesafioErro(null);
     setTokenAutorizacao(null);
     setAutorizado(false);
     setFormData(FORM_INICIAL);
+    setEsposaDia('');
+    setEsposaMes('');
+    setEsposaAno('');
     setFotoPreview(null);
     setErro(null);
   };
@@ -172,6 +226,14 @@ export default function PublicAemadepaCadastroPage() {
     if (!ministroSelecionado) return;
 
     setDesafioErro(null);
+
+    // Validação de calendário estrita
+    const resData = validarEConverterData(desafioDia, desafioMes, desafioAno);
+    if (!resData.valida) {
+      setDesafioErro(resData.erro || 'Data de nascimento inválida. Digite Dia, Mês e Ano válidos.');
+      return;
+    }
+
     setValidandoDesafio(true);
 
     try {
@@ -181,7 +243,7 @@ export default function PublicAemadepaCadastroPage() {
         body: JSON.stringify({
           ministroId: ministroSelecionado.id,
           cpf: desafioCpf,
-          dataNascimento: desafioDataNasc,
+          dataNascimento: resData.ymd,
         }),
       });
 
@@ -214,9 +276,25 @@ export default function PublicAemadepaCadastroPage() {
           tipo_sanguineo: d.tipo_sanguineo || '',
           foto_url: d.foto_url || null,
         });
+
+        // Preenche campos dia/mes/ano da esposa preservando formato
+        if (d.data_nascimento && /^\d{4}-\d{2}-\d{2}$/.test(d.data_nascimento)) {
+          const [ano, mes, dia] = d.data_nascimento.split('-');
+          setEsposaDia(dia);
+          setEsposaMes(mes);
+          setEsposaAno(ano);
+        } else {
+          setEsposaDia('');
+          setEsposaMes('');
+          setEsposaAno('');
+        }
+
         setFotoPreview(d.foto_url || null);
       } else {
         setFormData(FORM_INICIAL);
+        setEsposaDia('');
+        setEsposaMes('');
+        setEsposaAno('');
         setFotoPreview(null);
       }
     } catch (err: any) {
@@ -319,6 +397,13 @@ export default function PublicAemadepaCadastroPage() {
       return;
     }
 
+    // Validação estrita da data de nascimento da esposa
+    const resDataEsposa = validarEConverterData(esposaDia, esposaMes, esposaAno);
+    if (!resDataEsposa.valida) {
+      setErro(resDataEsposa.erro || 'Data de nascimento da esposa inválida. Preencha Dia, Mês e Ano válidos.');
+      return;
+    }
+
     setEnviando(true);
     try {
       const res = await fetch('/api/public/aemadepa/cadastro', {
@@ -331,6 +416,7 @@ export default function PublicAemadepaCadastroPage() {
           ministroId: ministroSelecionado.id,
           token: tokenAutorizacao,
           ...formData,
+          data_nascimento: resDataEsposa.ymd,
         }),
       });
 
@@ -608,20 +694,68 @@ export default function PublicAemadepaCadastroPage() {
                       />
                     </div>
 
-                    {/* Campo Data de Nascimento */}
+                    {/* Campo Data de Nascimento (Mobile-Friendly: Dia, Mês, Ano) */}
                     <div>
                       <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
                         {ministroSelecionado.temEsposaCadastrada
                           ? 'Data de Nascimento da Esposa *'
                           : 'Data de Nascimento do Ministro (Esposo) *'}
                       </label>
-                      <input
-                        type="date"
-                        required
-                        value={desafioDataNasc}
-                        onChange={(e) => setDesafioDataNasc(e.target.value)}
-                        className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-sm text-gray-900 shadow-xs focus:border-rose-500 focus:outline-none focus:ring-3 focus:ring-rose-500/20 transition"
-                      />
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            required
+                            placeholder="Dia (DD)"
+                            maxLength={2}
+                            value={desafioDia}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+                              setDesafioDia(val);
+                              if (val.length === 2) desafioMesRef.current?.focus();
+                            }}
+                            className="w-full text-center rounded-xl border border-gray-300 bg-white px-2 py-2.5 text-sm font-semibold text-gray-900 shadow-xs focus:border-rose-500 focus:outline-none focus:ring-3 focus:ring-rose-500/20 transition"
+                          />
+                        </div>
+                        <div>
+                          <input
+                            ref={desafioMesRef}
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            required
+                            placeholder="Mês (MM)"
+                            maxLength={2}
+                            value={desafioMes}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+                              setDesafioMes(val);
+                              if (val.length === 2) desafioAnoRef.current?.focus();
+                            }}
+                            className="w-full text-center rounded-xl border border-gray-300 bg-white px-2 py-2.5 text-sm font-semibold text-gray-900 shadow-xs focus:border-rose-500 focus:outline-none focus:ring-3 focus:ring-rose-500/20 transition"
+                          />
+                        </div>
+                        <div>
+                          <input
+                            ref={desafioAnoRef}
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            required
+                            placeholder="Ano (AAAA)"
+                            maxLength={4}
+                            value={desafioAno}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                              setDesafioAno(val);
+                            }}
+                            className="w-full text-center rounded-xl border border-gray-300 bg-white px-2 py-2.5 text-sm font-semibold text-gray-900 shadow-xs focus:border-rose-500 focus:outline-none focus:ring-3 focus:ring-rose-500/20 transition"
+                          />
+                        </div>
+                      </div>
+                      <span className="block text-[11px] text-gray-500 mt-1">Formato: DD/MM/AAAA (ex: 25 / 03 / 1980)</span>
                     </div>
                   </div>
 
@@ -633,7 +767,7 @@ export default function PublicAemadepaCadastroPage() {
 
                     <button
                       type="submit"
-                      disabled={validandoDesafio || !desafioCpf || !desafioDataNasc}
+                      disabled={validandoDesafio || !desafioCpf || !desafioDia || !desafioMes || !desafioAno}
                       className="w-full sm:w-auto px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {validandoDesafio ? (
@@ -765,17 +899,66 @@ export default function PublicAemadepaCadastroPage() {
                       />
                     </div>
 
-                    {/* Data de Nascimento */}
+                    {/* Data de Nascimento da Esposa (Mobile-Friendly: Dia, Mês, Ano) */}
                     <div>
                       <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
-                        Data de Nascimento
+                        Data de Nascimento da Esposa *
                       </label>
-                      <input
-                        type="date"
-                        value={formData.data_nascimento}
-                        onChange={(e) => setFormData({ ...formData, data_nascimento: e.target.value })}
-                        className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-sm text-gray-900 shadow-xs focus:border-rose-500 focus:outline-none focus:ring-3 focus:ring-rose-500/20 transition"
-                      />
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            required
+                            placeholder="Dia (DD)"
+                            maxLength={2}
+                            value={esposaDia}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+                              setEsposaDia(val);
+                              if (val.length === 2) esposaMesRef.current?.focus();
+                            }}
+                            className="w-full text-center rounded-xl border border-gray-300 bg-white px-2 py-2.5 text-sm font-semibold text-gray-900 shadow-xs focus:border-rose-500 focus:outline-none focus:ring-3 focus:ring-rose-500/20 transition"
+                          />
+                        </div>
+                        <div>
+                          <input
+                            ref={esposaMesRef}
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            required
+                            placeholder="Mês (MM)"
+                            maxLength={2}
+                            value={esposaMes}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+                              setEsposaMes(val);
+                              if (val.length === 2) esposaAnoRef.current?.focus();
+                            }}
+                            className="w-full text-center rounded-xl border border-gray-300 bg-white px-2 py-2.5 text-sm font-semibold text-gray-900 shadow-xs focus:border-rose-500 focus:outline-none focus:ring-3 focus:ring-rose-500/20 transition"
+                          />
+                        </div>
+                        <div>
+                          <input
+                            ref={esposaAnoRef}
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            required
+                            placeholder="Ano (AAAA)"
+                            maxLength={4}
+                            value={esposaAno}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                              setEsposaAno(val);
+                            }}
+                            className="w-full text-center rounded-xl border border-gray-300 bg-white px-2 py-2.5 text-sm font-semibold text-gray-900 shadow-xs focus:border-rose-500 focus:outline-none focus:ring-3 focus:ring-rose-500/20 transition"
+                          />
+                        </div>
+                      </div>
+                      <span className="block text-[11px] text-gray-500 mt-1">Formato: DD/MM/AAAA (ex: 15 / 08 / 1985)</span>
                     </div>
 
                     {/* RG */}

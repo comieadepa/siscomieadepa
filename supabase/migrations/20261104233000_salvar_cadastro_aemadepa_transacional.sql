@@ -193,7 +193,7 @@ BEGIN
     SET
         nome_conjuge = v_clean_nome,
         cpf_conjuge = v_clean_cpf,
-        data_nascimento_conjuge = p_data_nascimento::text,
+        data_nascimento_conjuge = p_data_nascimento,
         conjuge_rg = nullif(trim(p_rg), ''),
         conjuge_orgao_emissor = nullif(trim(p_orgao_emissor), ''),
         conjuge_nacionalidade = COALESCE(nullif(trim(p_nacionalidade), ''), 'BRASILEIRA'),
