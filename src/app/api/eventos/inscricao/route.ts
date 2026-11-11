@@ -9,6 +9,7 @@ import { normalizePayloadUppercase } from '@/lib/text';
 import { logDB } from '@/lib/audit';
 import { cleanCpf, isValidCpf } from '@/lib/cpf';
 import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
+import { avaliarElegibilidadeAemadepa } from '@/lib/aemadepa/eventos-integracao';
 import {
   calcularPrioridadeHospedagem,
   resolveCamaInferiorAutomatica,
@@ -383,6 +384,97 @@ export async function POST(request: NextRequest) {
     const usaTipos = !!(evento as Record<string, unknown>).usar_tipos_inscricao;
 
     const cpfLimpoInput = cpf?.replace(/\D/g, '') || null;
+
+    // ── Resolução AEMADEPA no backend ──
+    const aemadepaPorCpf = new Map<string, any>();
+    const resolverAemadepaPorCpf = async (cpfParaValidar: string | null | undefined) => {
+      const cpfNorm = String(cpfParaValidar || '').replace(/\D/g, '');
+      if (cpfNorm.length !== 11) return null;
+      if (aemadepaPorCpf.has(cpfNorm)) return aemadepaPorCpf.get(cpfNorm);
+
+      const { data: assoc, error: aemErr } = await supabase
+        .from('aemadepa_associadas')
+        .select('id, nome, cpf, data_nascimento, ministro_id, custom_fields')
+        .eq('cpf', cpfNorm)
+        .maybeSingle();
+
+      if (aemErr) {
+        throw new Error(`Falha ao consultar AEMADEPA: ${aemErr.message}`);
+      }
+
+      if (!assoc) {
+        aemadepaPorCpf.set(cpfNorm, null);
+        return null;
+      }
+
+      let ministroRow: any = null;
+      let isCampoMissionarioAssoc = false;
+
+      if (assoc.ministro_id) {
+        const { data: mRow } = await supabase
+          .from('members')
+          .select('id, name, status, pastor_presidente, pastor_auxiliar, jubilado, congregacao_id, congregacoes!congregacao_id(campo_id), custom_fields')
+          .eq('id', assoc.ministro_id)
+          .maybeSingle();
+        ministroRow = mRow;
+
+        if (mRow) {
+          const campoIdFk = (mRow.congregacoes as any)?.campo_id || null;
+          let campoIdM = campoIdFk;
+          if (!campoIdM && mRow.custom_fields) {
+            const cf = mRow.custom_fields as Record<string, any>;
+            const cNome = cf.campo || cf.Campo || null;
+            if (typeof cNome === 'string' && cNome.trim()) {
+              const { data: cRow } = await supabase
+                .from('campos')
+                .select('id, is_campo_missionario')
+                .ilike('nome', cNome.trim())
+                .maybeSingle();
+              if (cRow) {
+                campoIdM = cRow.id;
+                isCampoMissionarioAssoc = !!cRow.is_campo_missionario;
+              }
+            }
+          }
+          if (campoIdM && !isCampoMissionarioAssoc) {
+            const { data: cRow } = await supabase
+              .from('campos')
+              .select('is_campo_missionario')
+              .eq('id', campoIdM)
+              .maybeSingle();
+            if (cRow) isCampoMissionarioAssoc = !!cRow.is_campo_missionario;
+          }
+        }
+      }
+
+      const elegibilidade = avaliarElegibilidadeAemadepa({
+        associada: assoc,
+        ministro: ministroRow ? {
+          id: ministroRow.id,
+          name: ministroRow.name,
+          status: ministroRow.status,
+          pastor_presidente: ministroRow.pastor_presidente,
+          pastor_auxiliar: ministroRow.pastor_auxiliar,
+          jubilado: ministroRow.jubilado,
+          is_campo_missionario: isCampoMissionarioAssoc,
+        } : null,
+      });
+
+      const resAem = {
+        associada: assoc,
+        elegibilidade,
+        isCampoMissionario: isCampoMissionarioAssoc,
+      };
+
+      aemadepaPorCpf.set(cpfNorm, resAem);
+      return resAem;
+    };
+
+    let aemadepaTitular: any = null;
+    if (usaTipos && evento.departamento === 'AGO' && cpfLimpoInput) {
+      aemadepaTitular = await resolverAemadepaPorCpf(cpfLimpoInput);
+    }
+
     const vinculoEsposaJubiladoPorCpf = new Map<string, { ministroId: string; ministroNome: string | null } | null>();
     const resolverVinculoEsposaJubilado = async (cpfParaValidar: string | null | undefined) => {
       const cpfNorm = String(cpfParaValidar || '').replace(/\D/g, '');
@@ -700,24 +792,108 @@ export async function POST(request: NextRequest) {
       quantidade_refeicoes: tipoRefeicoes,
     });
 
+    const confAgo = (evento as any).configuracoes_ago as Record<string, unknown> | null;
+    const cmConfig = parseCampoMissionarioConfig(confAgo);
+    const campoMissionarioEnabled = !!cmConfig?.enabled;
+    const valorCmPastorConfigurado = cmConfig
+      ? (typeof cmConfig.valor_pastor_presidente === 'number' ? cmConfig.valor_pastor_presidente : parseFloat(String(cmConfig.valor_pastor_presidente)) || 0)
+      : 0;
+    const valorCmEsposaConfigurado = cmConfig
+      ? (typeof cmConfig.valor_esposa === 'number' ? cmConfig.valor_esposa : parseFloat(String(cmConfig.valor_esposa)) || 0)
+      : 0;
+
     const solicitouEsposaJubilado = ehTipoEsposaJubilado(tipo_inscricao as string | null | undefined)
       || ehTipoEsposaJubilado(tipoNome);
+    const solicitouViuva = ehTipoEsposaOuViuva(tipo_inscricao as string | null | undefined) && norm(tipo_inscricao).includes('viuva');
+    const solicitouEsposaPres = ehTipoEsposaPastorPresidente(tipo_inscricao as string | null | undefined) || ehTipoEsposaPastorPresidente(tipoNome);
+    const solicitouEsposaAux = ehTipoEsposaOuViuva(tipo_inscricao as string | null | undefined) && norm(tipo_inscricao).includes('auxiliar');
+    const ehQualquerEsposaOuViuva = ehTipoEsposaOuViuva(tipo_inscricao as string | null | undefined) || ehTipoEsposaOuViuva(tipoNome);
 
     if (usaTipos && evento.departamento === 'AGO') {
-      if (solicitouEsposaJubilado && !vinculoEsposaJubiladoTitular) {
-        return buildErrorResponse(400, {
-          error: 'Categoria Esposa de Pastor Jubilado exige validação pelo CPF do cônjuge no cadastro do Pastor Jubilado.',
-          stage: 'validacao_esposa_jubilado_portal',
-          code: 'ESPOSA_JUBILADO_SEM_VINCULO_CPF_CONJUGE',
-          payloadResumo: { ...payloadResumo, evento_id: evento.id },
-        });
+      // REGRA AEMADEPA 1: Se solicitou categoria de Esposa ou Viúva, DEVE constar na AEMADEPA
+      if (ehQualquerEsposaOuViuva) {
+        if (!aemadepaTitular && !vinculoEsposaJubiladoTitular) {
+          return buildErrorResponse(400, {
+            error: 'Inscrição em categoria de esposa ou viúva exige cadastro oficial ativo na AEMADEPA.',
+            stage: 'validacao_aemadepa_obrigatoria',
+            code: 'AEMADEPA_CADASTRO_NAO_ENCONTRADO',
+            payloadResumo: { ...payloadResumo, evento_id: evento.id },
+          });
+        }
       }
 
-      if (vinculoEsposaJubiladoTitular && !ehTipoEsposaJubilado(tipoNome)) {
+      // REGRA AEMADEPA 2: Validação de conformidade de status da associada
+      if (aemadepaTitular) {
+        const catAem = aemadepaTitular.elegibilidade.categoriaAemadepa;
+        const regAem = aemadepaTitular.elegibilidade.cadastroRegularizado;
+        const gratAem = aemadepaTitular.elegibilidade.elegivelGratuidade;
+        const isCMAem = aemadepaTitular.isCampoMissionario;
+
+        if (catAem === 'esposa_presidente') {
+          if (!solicitouEsposaPres) {
+            return buildErrorResponse(400, {
+              error: 'Associada cadastrada como Esposa de Pastor Presidente deve se inscrever nessa categoria.',
+              stage: 'validacao_aemadepa_categoria_divergente',
+              code: 'AEMADEPA_CATEGORIA_PRESIDENTE_OBRIGATORIA',
+              payloadResumo: { ...payloadResumo, evento_id: evento.id },
+            });
+          }
+          if (isCMAem && valorCmEsposaConfigurado > 0) {
+            valorBase = valorCmEsposaConfigurado;
+          }
+        } else if (catAem === 'esposa_auxiliar') {
+          if (!solicitouEsposaAux) {
+            return buildErrorResponse(400, {
+              error: 'Associada cadastrada como Esposa de Pastor Auxiliar deve se inscrever nessa categoria.',
+              stage: 'validacao_aemadepa_categoria_divergente',
+              code: 'AEMADEPA_CATEGORIA_AUXILIAR_OBRIGATORIA',
+              payloadResumo: { ...payloadResumo, evento_id: evento.id },
+            });
+          }
+        } else if (catAem === 'esposa_jubilado') {
+          if (!solicitouEsposaJubilado) {
+            return buildErrorResponse(400, {
+              error: 'Associada cadastrada como Esposa de Pastor Jubilado deve se inscrever nessa categoria.',
+              stage: 'validacao_aemadepa_categoria_divergente',
+              code: 'AEMADEPA_CATEGORIA_JUBILADO_OBRIGATORIA',
+              payloadResumo: { ...payloadResumo, evento_id: evento.id },
+            });
+          }
+          if (!regAem || !gratAem) {
+            return buildErrorResponse(400, {
+              error: `Cadastro AEMADEPA requer regularização (${aemadepaTitular.elegibilidade.motivoIrregularidade || 'dados inconsistentes'}). Gratuidade automática não autorizada.`,
+              stage: 'validacao_aemadepa_irregular',
+              code: 'AEMADEPA_CADASTRO_IRREGULAR',
+              payloadResumo: { ...payloadResumo, evento_id: evento.id },
+            });
+          }
+          valorBase = 0;
+        } else if (catAem === 'esposa_falecido') {
+          if (!solicitouViuva) {
+            return buildErrorResponse(400, {
+              error: 'Associada cadastrada como Viúva deve se inscrever nessa categoria.',
+              stage: 'validacao_aemadepa_categoria_divergente',
+              code: 'AEMADEPA_CATEGORIA_VIUVA_OBRIGATORIA',
+              payloadResumo: { ...payloadResumo, evento_id: evento.id },
+            });
+          }
+          if (!regAem || !gratAem) {
+            return buildErrorResponse(400, {
+              error: `Cadastro AEMADEPA requer regularização (${aemadepaTitular.elegibilidade.motivoIrregularidade || 'dados inconsistentes'}). Gratuidade automática não autorizada.`,
+              stage: 'validacao_aemadepa_irregular',
+              code: 'AEMADEPA_CADASTRO_IRREGULAR',
+              payloadResumo: { ...payloadResumo, evento_id: evento.id },
+            });
+          }
+          valorBase = 0;
+        }
+      }
+
+      if (solicitouEsposaJubilado && !aemadepaTitular && !vinculoEsposaJubiladoTitular) {
         return buildErrorResponse(400, {
-          error: 'CPF vinculado a cônjuge de Pastor Jubilado ativo. A inscrição deve usar a categoria Esposa de Pastor Jubilado.',
-          stage: 'validacao_esposa_jubilado_tipo_obrigatorio',
-          code: 'ESPOSA_JUBILADO_TIPO_OBRIGATORIO',
+          error: 'Categoria Esposa de Pastor Jubilado exige validação no cadastro oficial da AEMADEPA.',
+          stage: 'validacao_esposa_jubilado_portal',
+          code: 'ESPOSA_JUBILADO_SEM_VINCULO_AEMADEPA',
           payloadResumo: { ...payloadResumo, evento_id: evento.id },
         });
       }
@@ -728,16 +904,6 @@ export async function POST(request: NextRequest) {
     let valorFinal = valorBase;
     let cupomUsado = null as string | null;
     let cupomId    = null as string | null;
-
-    const confAgo = (evento as any).configuracoes_ago as Record<string, unknown> | null;
-    const cmConfig = parseCampoMissionarioConfig(confAgo);
-    const campoMissionarioEnabled = !!cmConfig?.enabled;
-    const valorCmPastorConfigurado = cmConfig
-      ? (typeof cmConfig.valor_pastor_presidente === 'number' ? cmConfig.valor_pastor_presidente : parseFloat(String(cmConfig.valor_pastor_presidente)) || 0)
-      : 0;
-    const valorCmEsposaConfigurado = cmConfig
-      ? (typeof cmConfig.valor_esposa === 'number' ? cmConfig.valor_esposa : parseFloat(String(cmConfig.valor_esposa)) || 0)
-      : 0;
 
     stage = 'calculo_valor';
     if (cupom_codigo) {
@@ -1123,6 +1289,15 @@ export async function POST(request: NextRequest) {
     }
 
     const sexoTitularNorm = normalizarSexo(sexo);
+    if (sexoTitularNorm === 'F' && evento.departamento === 'AGO' && !aemadepaTitular && ehQualquerEsposaOuViuva) {
+      return buildErrorResponse(400, {
+        error: 'CPF feminino não cadastrado na AEMADEPA pode se inscrever somente como Visitante ou Juventude COMIEADEPA.',
+        stage: 'validacao_cpf_feminino_sem_aemadepa',
+        code: 'FEMININO_SEM_AEMADEPA_SOMENTE_VISITANTE_JUVENTUDE',
+        payloadResumo: { ...payloadResumo, evento_id: evento.id },
+      });
+    }
+
     if (sexoTitularNorm === 'M' && ehCategoriaFeminina(tipoNome)) {
       return buildErrorResponse(400, {
         error: 'Categoria feminina inválida para sexo masculino.',

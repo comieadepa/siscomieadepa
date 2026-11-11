@@ -11,6 +11,7 @@ import { createOrFindAsaasCustomer, createEventoPayment } from '@/lib/asaas';
 import { cleanCpf } from '@/lib/cpf';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
+import { avaliarElegibilidadeAemadepa } from '@/lib/aemadepa/eventos-integracao';
 import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
 
 const VENCIMENTO_DIAS = 3;
@@ -379,6 +380,87 @@ export async function POST(
     // CPF limpo
     const cpfLimpo = cpf ? String(cpf).replace(/\D/g, '') : null;
 
+    // ── Resolução AEMADEPA Balcão ──
+    const resolverAemadepa = async (cpfParaValidar: string | null | undefined) => {
+      const cpfNorm = String(cpfParaValidar || '').replace(/\D/g, '');
+      if (cpfNorm.length !== 11) return null;
+
+      const { data: assoc, error: aemErr } = await supabase
+        .from('aemadepa_associadas')
+        .select('id, nome, cpf, data_nascimento, ministro_id, custom_fields')
+        .eq('cpf', cpfNorm)
+        .maybeSingle();
+
+      if (aemErr) {
+        throw new Error(`Falha ao consultar AEMADEPA no balcão: ${aemErr.message}`);
+      }
+
+      if (!assoc) return null;
+
+      let ministroRow: any = null;
+      let isCampoMissionarioAssoc = false;
+
+      if (assoc.ministro_id) {
+        const { data: mRow } = await supabase
+          .from('members')
+          .select('id, name, status, pastor_presidente, pastor_auxiliar, jubilado, congregacao_id, congregacoes!congregacao_id(campo_id), custom_fields')
+          .eq('id', assoc.ministro_id)
+          .maybeSingle();
+        ministroRow = mRow;
+
+        if (mRow) {
+          const campoIdFk = (mRow.congregacoes as any)?.campo_id || null;
+          let campoIdM = campoIdFk;
+          if (!campoIdM && mRow.custom_fields) {
+            const cf = mRow.custom_fields as Record<string, any>;
+            const cNome = cf.campo || cf.Campo || null;
+            if (typeof cNome === 'string' && cNome.trim()) {
+              const { data: cRow } = await supabase
+                .from('campos')
+                .select('id, is_campo_missionario')
+                .ilike('nome', cNome.trim())
+                .maybeSingle();
+              if (cRow) {
+                campoIdM = cRow.id;
+                isCampoMissionarioAssoc = !!cRow.is_campo_missionario;
+              }
+            }
+          }
+          if (campoIdM && !isCampoMissionarioAssoc) {
+            const { data: cRow } = await supabase
+              .from('campos')
+              .select('is_campo_missionario')
+              .eq('id', campoIdM)
+              .maybeSingle();
+            if (cRow) isCampoMissionarioAssoc = !!cRow.is_campo_missionario;
+          }
+        }
+      }
+
+      const elegibilidade = avaliarElegibilidadeAemadepa({
+        associada: assoc,
+        ministro: ministroRow ? {
+          id: ministroRow.id,
+          name: ministroRow.name,
+          status: ministroRow.status,
+          pastor_presidente: ministroRow.pastor_presidente,
+          pastor_auxiliar: ministroRow.pastor_auxiliar,
+          jubilado: ministroRow.jubilado,
+          is_campo_missionario: isCampoMissionarioAssoc,
+        } : null,
+      });
+
+      return {
+        associada: assoc,
+        elegibilidade,
+        isCampoMissionario: isCampoMissionarioAssoc,
+      };
+    };
+
+    const aemadepaTitular = (evento as any).departamento === 'AGO' && cpfLimpo
+      ? await resolverAemadepa(cpfLimpo)
+      : null;
+
     const resolverVinculoEsposaJubilado = async (cpfParaValidar: string | null | undefined) => {
       const cpfNorm = String(cpfParaValidar || '').replace(/\D/g, '');
       if (cpfNorm.length !== 11) return null;
@@ -727,10 +809,109 @@ export async function POST(
       }
     }
 
+    const nTipo = norm(tipoNome);
+    const solicitouEsposaJubilado = ehTipoEsposaJubilado(tipoNome);
+    const solicitouViuva = ehTipoEsposaOuViuva(tipoNome) && nTipo.includes('viuva');
+    const solicitouEsposaPres = nTipo.includes('esposa') && nTipo.includes('pastor presidente');
+    const solicitouEsposaAux = ehTipoEsposaOuViuva(tipoNome) && nTipo.includes('auxiliar');
+    const ehQualquerEsposaOuViuva = ehTipoEsposaOuViuva(tipoNome);
+
+    if ((evento as any).departamento === 'AGO') {
+      const sexoTitularNorm = normalizarSexo(sexo);
+
+      if (ehQualquerEsposaOuViuva) {
+        if (!aemadepaTitular && !vinculoEsposaJubiladoTitular) {
+          return NextResponse.json(
+            { error: 'Inscrição em categoria de esposa ou viúva exige cadastro oficial na AEMADEPA.' },
+            { status: 400 },
+          );
+        }
+      }
+
+      if (sexoTitularNorm === 'F' && !aemadepaTitular && ehQualquerEsposaOuViuva) {
+        return NextResponse.json(
+          { error: 'CPF feminino não cadastrado na AEMADEPA pode se inscrever somente como Visitante ou Juventude COMIEADEPA.' },
+          { status: 400 },
+        );
+      }
+
+      if (aemadepaTitular) {
+        const catAem = aemadepaTitular.elegibilidade.categoriaAemadepa;
+        const regAem = aemadepaTitular.elegibilidade.cadastroRegularizado;
+        const gratAem = aemadepaTitular.elegibilidade.elegivelGratuidade;
+        const isCMAem = aemadepaTitular.isCampoMissionario;
+
+        if (catAem === 'esposa_presidente') {
+          if (!solicitouEsposaPres) {
+            return NextResponse.json(
+              { error: 'Associada cadastrada como Esposa de Pastor Presidente deve se inscrever nessa categoria.' },
+              { status: 400 },
+            );
+          }
+          if (isCMAem) {
+            const valorCmEsposa = cmConfig
+              ? (typeof cmConfig.valor_esposa === 'number' ? cmConfig.valor_esposa : parseFloat(String(cmConfig.valor_esposa)) || 0)
+              : 0;
+            if (valorCmEsposa > 0) {
+              vOriginal = valorCmEsposa;
+              vFinal = Math.max(0, vOriginal - vDesconto);
+              recalcularPagamento();
+            }
+          }
+        } else if (catAem === 'esposa_auxiliar') {
+          if (!solicitouEsposaAux) {
+            return NextResponse.json(
+              { error: 'Associada cadastrada como Esposa de Pastor Auxiliar deve se inscrever nessa categoria.' },
+              { status: 400 },
+            );
+          }
+        } else if (catAem === 'esposa_jubilado') {
+          if (!solicitouEsposaJubilado) {
+            return NextResponse.json(
+              { error: 'Associada cadastrada como Esposa de Pastor Jubilado deve se inscrever nessa categoria.' },
+              { status: 400 },
+            );
+          }
+          if (!regAem || !gratAem) {
+            return NextResponse.json(
+              { error: `Cadastro AEMADEPA requer regularização (${aemadepaTitular.elegibilidade.motivoIrregularidade || 'dados inconsistentes'}). Gratuidade automática não autorizada.` },
+              { status: 400 },
+            );
+          }
+          vOriginal = 0;
+          vFinal = 0;
+          isGratuito = true;
+          isAsaas = false;
+          isPresencial = false;
+          recalcularPagamento();
+        } else if (catAem === 'esposa_falecido') {
+          if (!solicitouViuva) {
+            return NextResponse.json(
+              { error: 'Associada cadastrada como Viúva deve se inscrever nessa categoria.' },
+              { status: 400 },
+            );
+          }
+          if (!regAem || !gratAem) {
+            return NextResponse.json(
+              { error: `Cadastro AEMADEPA requer regularização (${aemadepaTitular.elegibilidade.motivoIrregularidade || 'dados inconsistentes'}). Gratuidade automática não autorizada.` },
+              { status: 400 },
+            );
+          }
+          vOriginal = 0;
+          vFinal = 0;
+          isGratuito = true;
+          isAsaas = false;
+          isPresencial = false;
+          recalcularPagamento();
+        }
+      }
+    }
+
     const esposaJubiladoManualSemVinculo =
       (evento as any).departamento === 'AGO'
       && ehTipoEsposaJubilado(tipoNome)
-      && !vinculoEsposaJubiladoTitular;
+      && !vinculoEsposaJubiladoTitular
+      && !aemadepaTitular;
 
     const tipoNorm = norm(tipoNome);
     const tipoEhCampoMissionarioExclusivo =

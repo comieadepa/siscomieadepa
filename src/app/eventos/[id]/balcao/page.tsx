@@ -289,6 +289,7 @@ export default function BalcaoPage() {
   const [inscricaoDuplicada, setInscricaoDuplicada] = useState<{ id: string; nome: string } | null>(null);
   const [ministroInfo,             setMinistroInfo]             = useState<MinistroInfo | null>(null);
   const [esposaJubiladoAuto, setEsposaJubiladoAuto] = useState<{ ministroId: string | null; ministroNome: string | null } | null>(null);
+  const [aemadepaInfo, setAemadepaInfo] = useState<any | null>(null);
   const [cpfStatus,                setCpfStatus]                = useState<'idle' | 'encontrado' | 'nao_encontrado'>('idle');
   const [descontoCampoMissionario, setDescontoCampoMissionario] = useState(false);
 
@@ -436,13 +437,16 @@ export default function BalcaoPage() {
       pastorPresidente: !!ministroInfo?.isPastorPresidente,
       pastorAuxiliar: !!ministroInfo?.isPastorAuxiliar,
       jubilado: !!ministroInfo?.isJubilado,
-      isCampoMissionario: !!ministroInfo?.isCampoMissionario,
+      isCampoMissionario: !!(ministroInfo?.isCampoMissionario || aemadepaInfo?.is_campo_missionario),
+      isAemadepa: !!aemadepaInfo,
+      categoriaAemadepa: aemadepaInfo?.categoria ?? null,
+      aemadepaRegularizada: aemadepaInfo ? aemadepaInfo.cadastro_regularizado : true,
     });
 
     // Ministro ativo mas sem nenhum tipo ministerial compatível → perfil indefinido
     const semPerfil = evento.departamento === 'AGO' && ativo && filtered.length === 0;
     return { ministroAtivo: ativo, ministroInativo: inativo, tiposParaExibir: [...filtered, virtualEquipeApoio], ministroSemPerfil: semPerfil };
-  }, [cpfStatus, ministroInfo, form.sexo, form.data_nascimento, tipos, evento, jubiladoAutomaticoAtivo, tipoJubiladoAutomatico, esposaJubiladoAutomaticoAtivo, tipoEsposaJubiladoAutomatico]);
+  }, [cpfStatus, ministroInfo, aemadepaInfo, form.sexo, form.data_nascimento, tipos, evento, jubiladoAutomaticoAtivo, tipoJubiladoAutomatico, esposaJubiladoAutomaticoAtivo, tipoEsposaJubiladoAutomatico]);
 
   useEffect(() => {
     if (!jubiladoAutomaticoAtivo || !tipoJubiladoAutomatico) return;
@@ -455,6 +459,17 @@ export default function BalcaoPage() {
     if (form.tipo_id === tipoEsposaJubiladoAutomatico.id) return;
     setField('tipo_id', tipoEsposaJubiladoAutomatico.id);
   }, [esposaJubiladoAutomaticoAtivo, tipoEsposaJubiladoAutomatico, form.tipo_id]);
+
+  useEffect(() => {
+    if (!evento || evento.departamento !== 'AGO') return;
+    if (aemadepaInfo) {
+      // tiposParaExibir contém os tipos válidos e virtualEquipeApoio
+      const tiposValidos = tiposParaExibir.filter(t => t.id !== 'equipe_apoio');
+      if (tiposValidos.length === 1 && form.tipo_id !== tiposValidos[0].id) {
+        setField('tipo_id', tiposValidos[0].id);
+      }
+    }
+  }, [evento, aemadepaInfo, tiposParaExibir, form.tipo_id]);
 
   const grupoHospedagemPrevisto = resolveGrupoHospedagemAGO({
     sexo: form.sexo || null,
@@ -897,6 +912,7 @@ export default function BalcaoPage() {
     setInscricaoDuplicada(null);
     setMinistroInfo(null);
     setEsposaJubiladoAuto(null);
+    setAemadepaInfo(null);
     setCpfStatus('idle');
     setDescontoCampoMissionario(false);
     setIncluirEsposa(false);
@@ -998,7 +1014,20 @@ export default function BalcaoPage() {
       // Resposta: { encontrado, nome, sexo, data_nascimento, supervisao_id, campo_id, campo_nome, matricula, ... }
       const payload = (lookupJson ?? {}) as {
         encontrado?: boolean;
-        lookup_kind?: 'ministro' | 'conjuge_jubilado' | null;
+        lookup_kind?: 'ministro' | 'conjuge_jubilado' | 'aemadepa' | null;
+        aemadepa?: {
+          id: string;
+          numero_aemadepa: string | null;
+          categoria: 'esposa_presidente' | 'esposa_auxiliar' | 'esposa_jubilado' | 'esposa_falecido';
+          categoria_label: string;
+          cadastro_regularizado: boolean;
+          motivo_irregularidade: string | null;
+          elegivel_gratuidade: boolean;
+          ministro_id: string | null;
+          ministro_nome: string | null;
+          ministro_status: string | null;
+          is_campo_missionario: boolean;
+        } | null;
         conjuge_jubilado_validado?: boolean;
         conjuge_de_ministro_id?: string | null;
         conjuge_de_nome?: string | null;
@@ -1053,6 +1082,32 @@ export default function BalcaoPage() {
         const campoMissionario = payload.is_campo_missionario ?? campoEncontrado?.is_campo_missionario ?? false;
         const confAgo = evento.configuracoes_ago;
         setDescontoCampoMissionario(!!(confAgo?.habilitar_desconto_campo_missionario) && campoMissionario);
+
+        if (payload.lookup_kind === 'aemadepa' && payload.aemadepa) {
+          const infoAemadepa = payload.aemadepa;
+          setAemadepaInfo(infoAemadepa);
+          setMinistroInfo(null);
+          setEsposaJubiladoAuto(null);
+          setIncluirEsposa(false);
+          setFormEsposa({ ...FORM_ESPOSA_VAZIO });
+          setHospEsposa({ ...HOSP_ESPOSA_VAZIO });
+
+          setForm(f => ({
+            ...f,
+            nome: nome || f.nome,
+            cpf: cpfLimpo,
+            sexo: 'F',
+            data_nascimento: payload.data_nascimento || f.data_nascimento,
+            supervisao_id: sup?.id || f.supervisao_id,
+            campo_id: campoEncontrado?.id || payload.campo_id || f.campo_id,
+            email: payload.email || f.email,
+            whatsapp: payload.whatsapp || payload.telefone || f.whatsapp,
+          }));
+
+          return;
+        }
+
+        setAemadepaInfo(null);
 
         if (conjugeJubiladoAuto) {
           setEsposaJubiladoAuto({
@@ -1143,6 +1198,7 @@ export default function BalcaoPage() {
       } else {
         setCpfStatus('nao_encontrado');
         setEsposaJubiladoAuto(null);
+        setAemadepaInfo(null);
         setForm(f => ({
           ...f,
           cpf: cpfLimpo,
@@ -2331,6 +2387,40 @@ export default function BalcaoPage() {
                 <span>Esposa de Pastor Jubilado identificada por CPF do cônjuge. Cortesia aplicada automaticamente.</span>
               </div>
             )}
+            {/* Alerta AEMADEPA Balcão */}
+            {evento.departamento === 'AGO' && cpfStatus === 'encontrado' && aemadepaInfo && (
+              <div className="mt-2 bg-pink-950/60 border border-pink-500/40 rounded-xl p-4 text-pink-100">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🌸</span>
+                    <span className="font-bold text-sm text-pink-200 uppercase tracking-wide">
+                      Cadastro Oficial AEMADEPA Localizado
+                    </span>
+                  </div>
+                  <span className="bg-pink-900/80 text-pink-200 border border-pink-400/50 px-2.5 py-0.5 rounded-full text-xs font-bold">
+                    {aemadepaInfo.categoria_label}
+                  </span>
+                </div>
+                <div className="text-xs space-y-1 text-pink-200/90">
+                  <p><strong>Associada:</strong> {form.nome}</p>
+                  {aemadepaInfo.numero_aemadepa && <p><strong>Nº AEMADEPA:</strong> {aemadepaInfo.numero_aemadepa}</p>}
+                  {aemadepaInfo.ministro_nome && <p><strong>Cônjuge:</strong> {aemadepaInfo.ministro_nome}</p>}
+                  {aemadepaInfo.is_campo_missionario && (
+                    <span className="inline-block mt-1 bg-green-900/60 text-green-300 border border-green-500/40 px-2 py-0.5 rounded-full text-xs font-semibold">
+                      🌿 Campo Missionário
+                    </span>
+                  )}
+                </div>
+                {!aemadepaInfo.cadastro_regularizado && (
+                  <div className="mt-3 p-3 bg-amber-950/80 border border-amber-500/50 rounded-lg text-xs text-amber-200">
+                    <p className="font-bold mb-1">⚠️ Cadastro AEMADEPA requer regularização:</p>
+                    <p>{aemadepaInfo.motivo_irregularidade || 'Informações cadastrais inconsistentes.'}</p>
+                    <p className="mt-1 text-amber-300">A gratuidade automática só pode ser concedida após a regularização cadastral.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Alerta de CPF já inscrito neste evento */}
             {inscricaoDuplicada && (
               <div className="mt-3 bg-amber-900/70 border-2 border-amber-500/60 rounded-xl px-4 py-3 flex items-start gap-3">

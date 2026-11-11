@@ -52,7 +52,20 @@ interface MinistroInfo {
 
 interface MemberLookupPayload {
   encontrado?: boolean;
-  lookup_kind?: 'ministro' | 'conjuge_jubilado' | null;
+  lookup_kind?: 'ministro' | 'conjuge_jubilado' | 'aemadepa' | null;
+  aemadepa?: {
+    id: string;
+    numero_aemadepa: string | null;
+    categoria: 'esposa_presidente' | 'esposa_auxiliar' | 'esposa_jubilado' | 'esposa_falecido';
+    categoria_label: string;
+    cadastro_regularizado: boolean;
+    motivo_irregularidade: string | null;
+    elegivel_gratuidade: boolean;
+    ministro_id: string | null;
+    ministro_nome: string | null;
+    ministro_status: string | null;
+    is_campo_missionario: boolean;
+  } | null;
   conjuge_jubilado_validado?: boolean;
   conjuge_de_ministro_id?: string | null;
   conjuge_de_nome?: string | null;
@@ -345,6 +358,7 @@ export default function InscricaoPublicaPage() {
   // Dados ministeriais (AGO — preenchidos após consulta de CPF)
   const [ministroInfo, setMinistroInfo] = useState<MinistroInfo | null>(null);
   const [esposaJubiladoAuto, setEsposaJubiladoAuto] = useState<{ ministroId: string | null; ministroNome: string | null } | null>(null);
+  const [aemadepaInfo, setAemadepaInfo] = useState<MemberLookupPayload['aemadepa'] | null>(null);
   // Hospedagem AGO: solicitada pelo usuário mesmo quando tipo não inclui automaticamente
   const [solicitaHospedagem, setSolicitaHospedagem] = useState(false);
 
@@ -491,6 +505,7 @@ export default function InscricaoPublicaPage() {
     setBuscandoCPF(true);
     setCpfStatus('idle');
     setEsposaJubiladoAuto(null);
+    setAemadepaInfo(null);
 
     const isAGO = evento.departamento === 'AGO';
     const query = new URLSearchParams({ cpf: limpo });
@@ -503,10 +518,7 @@ export default function InscricaoPublicaPage() {
     if (payload.encontrado) {
       const nome = (payload.nome ?? '') as string;
       setCpfStatus('encontrado');
-      const conjugeJubiladoAuto = isAGO && (
-        payload.lookup_kind === 'conjuge_jubilado'
-        || !!payload.conjuge_jubilado_validado
-      );
+
       const sup = supervisoes.find(s => s.id === payload.supervisao_id);
       const whatsappLookup = payload.whatsapp ?? payload.celular ?? payload.telefone ?? payload.phone ?? null;
       let camposDaSup: Campo[] = [];
@@ -522,6 +534,40 @@ export default function InscricaoPublicaPage() {
       } else {
         setCampos([]);
       }
+
+      // TRATAMENTO AEMADEPA
+      if (payload.lookup_kind === 'aemadepa' && payload.aemadepa) {
+        const infoAemadepa = payload.aemadepa;
+        setAemadepaInfo(infoAemadepa);
+        setMinistroInfo(null);
+        setEsposaJubiladoAuto(null);
+        setIncluirEsposa(false);
+        setFormEsposa({ ...FORM_ESPOSA_VAZIO });
+        setHospEsposa({ ...HOSP_ESPOSA_VAZIO });
+
+        const isCM = !!infoAemadepa.is_campo_missionario;
+        setDescontoCampoMissionario(isCM);
+
+        setForm(f => ({
+          ...f,
+          nome_inscrito: nome || f.nome_inscrito,
+          email: payload.email || f.email,
+          whatsapp: whatsappLookup || f.whatsapp,
+          supervisao_id: sup?.id || payload.supervisao_id || f.supervisao_id,
+          campo_id: campoSelecionado?.id || payload.campo_id || '',
+          sexo: 'F',
+          data_nascimento: payload.data_nascimento ? formatYmdToDma(payload.data_nascimento) : f.data_nascimento,
+        }));
+
+        // Se for categoria com tipo único
+        return;
+      }
+
+      setAemadepaInfo(null);
+      const conjugeJubiladoAuto = isAGO && (
+        payload.lookup_kind === 'conjuge_jubilado'
+        || !!payload.conjuge_jubilado_validado
+      );
 
       const confAgo = evento.configuracoes_ago;
       const descontoHabilitado = !!(confAgo?.habilitar_desconto_campo_missionario);
@@ -625,6 +671,7 @@ export default function InscricaoPublicaPage() {
       setCpfStatus('nao_encontrado');
       setMinistroInfo(null);
       setEsposaJubiladoAuto(null);
+      setAemadepaInfo(null);
       setDescontoCampoMissionario(false);
       if (!isEventoAvulso) {
         setIncluirEsposa(false);
@@ -985,7 +1032,7 @@ export default function InscricaoPublicaPage() {
   const ministroAtivo = cpfStatus === 'encontrado' && ministroInfo !== null &&
     ['active', 'ativo'].includes((ministroInfo.status ?? '').toLowerCase());
   const ministroInativo = cpfStatus === 'encontrado' && ministroInfo !== null && !ministroAtivo;
-  const dadosMinisteriaisBloqueados = evento?.departamento === 'AGO' && (ministroAtivo || !!esposaJubiladoAuto);
+  const dadosMinisteriaisBloqueados = evento?.departamento === 'AGO' && (ministroAtivo || !!esposaJubiladoAuto || !!aemadepaInfo);
   const sexoTitularRaw = String(form.sexo || '').trim().toUpperCase();
   const sexoTitularNorm = sexoTitularRaw.startsWith('M') ? 'M' : sexoTitularRaw.startsWith('F') ? 'F' : '';
 
@@ -1021,7 +1068,10 @@ export default function InscricaoPublicaPage() {
       pastorPresidente: !!ministroInfo?.isPastorPresidente,
       pastorAuxiliar: !!ministroInfo?.isPastorAuxiliar,
       jubilado: !!ministroInfo?.isJubilado,
-      isCampoMissionario: !!ministroInfo?.isCampoMissionario,
+      isCampoMissionario: !!(ministroInfo?.isCampoMissionario || aemadepaInfo?.is_campo_missionario),
+      isAemadepa: !!aemadepaInfo,
+      categoriaAemadepa: aemadepaInfo?.categoria ?? null,
+      aemadepaRegularizada: aemadepaInfo ? aemadepaInfo.cadastro_regularizado : true,
     });
 
     return filtered;
@@ -1119,6 +1169,20 @@ export default function InscricaoPublicaPage() {
     });
   };
   const ministroSemPerfil = evento?.departamento === 'AGO' && ministroAtivo && tiposParaExibir.length === 0;
+
+  // Auto-selecionar quando houver apenas 1 tipo disponível (ex: AEMADEPA)
+  useEffect(() => {
+    if (!evento || evento.departamento !== 'AGO') return;
+    if (aemadepaInfo && tiposParaExibir.length === 1) {
+      const unico = tiposParaExibir[0];
+      if (tipoSelecionado?.id !== unico.id) {
+        setTipoSelecionado(unico);
+        setCupomStatus('idle');
+        setCupomDesconto(0);
+        setCupomMeta(null);
+      }
+    }
+  }, [evento, aemadepaInfo, tiposParaExibir, tipoSelecionado?.id]);
 
   useEffect(() => {
     if (!fluxoCampoMissionarioEspecial) return;
@@ -1856,6 +1920,42 @@ export default function InscricaoPublicaPage() {
               )}
 
             </div>
+
+            {/* Card da Associada AEMADEPA — AGO */}
+            {evento.departamento === 'AGO' && cpfStatus === 'encontrado' && aemadepaInfo && (
+              <div className="mb-5 p-4 rounded-xl border bg-pink-50/70 border-pink-200">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">🌸</span>
+                    <p className="text-xs font-bold uppercase tracking-wide text-pink-900">
+                      Cadastro Oficial AEMADEPA Localizado
+                    </p>
+                  </div>
+                  <span className="bg-pink-100 text-pink-800 border border-pink-300 px-2.5 py-0.5 rounded-full text-xs font-bold">
+                    {aemadepaInfo.categoria_label}
+                  </span>
+                </div>
+
+                <div className="text-xs space-y-1 text-gray-700 mt-2">
+                  <p><strong>Associada:</strong> {form.nome_inscrito}</p>
+                  {aemadepaInfo.numero_aemadepa && <p><strong>Nº AEMADEPA:</strong> {aemadepaInfo.numero_aemadepa}</p>}
+                  {aemadepaInfo.ministro_nome && <p><strong>Cônjuge:</strong> {aemadepaInfo.ministro_nome}</p>}
+                  {aemadepaInfo.is_campo_missionario && (
+                    <span className="inline-block mt-1 bg-green-100 text-green-800 border border-green-300 px-2 py-0.5 rounded-full text-xs font-semibold">
+                      🌿 Campo Missionário
+                    </span>
+                  )}
+                </div>
+
+                {!aemadepaInfo.cadastro_regularizado && (
+                  <div className="mt-3 p-3 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-900">
+                    <p className="font-bold mb-1">⚠️ Cadastro AEMADEPA requer regularização:</p>
+                    <p>{aemadepaInfo.motivo_irregularidade || 'Informações cadastrais inconsistentes.'}</p>
+                    <p className="mt-1 text-amber-800">Por segurança cadastral, a gratuidade automática só pode ser concedida após a regularização com a Secretaria COMIEADEPA.</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Card do ministro — AGO: exibe dados ministeriais após CPF encontrado */}
             {evento.departamento === 'AGO' && cpfStatus === 'encontrado' && ministroInfo && (

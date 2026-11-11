@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { checkRateLimit } from '@/lib/rate-limit';
+import { avaliarElegibilidadeAemadepa } from '@/lib/aemadepa/eventos-integracao';
 
 const LIMIT = 30;
 const WINDOW_MS = 60_000;
@@ -67,6 +68,154 @@ export async function GET(request: NextRequest) {
   }
 
   if (!data || data.length === 0) {
+    // ── 2. Busca na base oficial de associadas AEMADEPA ───────────────────
+    const { data: assocRows, error: assocErr } = await supabase
+      .from('aemadepa_associadas')
+      .select('id, ministro_id, nome, cpf, data_nascimento, fone, email, foto_url, rg, custom_fields')
+      .eq('cpf', cpf)
+      .limit(1);
+
+    if (assocErr) {
+      console.error('[LOOKUP PUBLIC] Erro ao consultar aemadepa_associadas:', assocErr);
+      return NextResponse.json({ error: 'Falha ao consultar cadastro AEMADEPA' }, { status: 500 });
+    }
+
+    if (assocRows && assocRows.length > 0) {
+      const assoc = assocRows[0];
+      let ministroVinculado: any = null;
+
+      if (assoc.ministro_id) {
+        const { data: minRow, error: minErr } = await supabase
+          .from('members')
+          .select('id, name, status, cargo_ministerial, pastor_presidente, pastor_auxiliar, jubilado, supervisao_id, congregacao_id, congregacoes!congregacao_id(nome, campo_id), custom_fields')
+          .eq('id', assoc.ministro_id)
+          .maybeSingle();
+
+        if (minErr) {
+          console.error('[LOOKUP PUBLIC] Erro ao buscar ministro da associada:', minErr);
+          return NextResponse.json({ error: 'Falha ao consultar vínculo ministerial' }, { status: 500 });
+        }
+        ministroVinculado = minRow;
+      }
+
+      // Determina Campo e Supervisão do Ministro vinculado
+      let campoIdAssoc = ministroVinculado?.congregacoes?.campo_id || null;
+      let campoNomeAssoc = readCustomField(ministroVinculado?.custom_fields, ['campo']);
+      let supervisaoNomeAssoc = readCustomField(ministroVinculado?.custom_fields, ['supervisao']);
+      let isCampoMissionarioAssoc = false;
+
+      if (ministroVinculado?.supervisao_id) {
+        const { data: supRow } = await supabase
+          .from('supervisoes')
+          .select('nome')
+          .eq('id', ministroVinculado.supervisao_id)
+          .maybeSingle();
+        if (supRow?.nome) supervisaoNomeAssoc = supRow.nome.trim();
+      }
+
+      if (campoIdAssoc) {
+        const { data: cRow } = await supabase
+          .from('campos')
+          .select('nome, is_campo_missionario')
+          .eq('id', campoIdAssoc)
+          .maybeSingle();
+        if (cRow) {
+          campoNomeAssoc = cRow.nome?.trim() || campoNomeAssoc;
+          isCampoMissionarioAssoc = !!cRow.is_campo_missionario;
+        }
+      } else if (campoNomeAssoc) {
+        let campoQuery = supabase
+          .from('campos')
+          .select('id, nome, is_campo_missionario')
+          .ilike('nome', campoNomeAssoc.trim());
+
+        if (ministroVinculado?.supervisao_id) {
+          campoQuery = campoQuery.eq('supervisao_id', ministroVinculado.supervisao_id);
+        }
+
+        const { data: campoRows } = await campoQuery.limit(1);
+        let cRow = campoRows && campoRows.length > 0 ? campoRows[0] : null;
+
+        if (!cRow && ministroVinculado?.supervisao_id) {
+          const { data: fallbackRows } = await supabase
+            .from('campos')
+            .select('id, nome, is_campo_missionario')
+            .ilike('nome', campoNomeAssoc.trim())
+            .limit(1);
+          if (fallbackRows && fallbackRows.length > 0) {
+            cRow = fallbackRows[0];
+          }
+        }
+
+        if (cRow) {
+          campoIdAssoc = cRow.id;
+          campoNomeAssoc = cRow.nome?.trim() || campoNomeAssoc;
+          isCampoMissionarioAssoc = !!cRow.is_campo_missionario;
+        }
+      }
+
+      const elegibilidade = avaliarElegibilidadeAemadepa({
+        associada: {
+          id: assoc.id,
+          nome: assoc.nome,
+          cpf: assoc.cpf,
+          data_nascimento: assoc.data_nascimento,
+        },
+        ministro: ministroVinculado ? {
+          id: ministroVinculado.id,
+          name: ministroVinculado.name,
+          status: ministroVinculado.status,
+          pastor_presidente: ministroVinculado.pastor_presidente,
+          pastor_auxiliar: ministroVinculado.pastor_auxiliar,
+          jubilado: ministroVinculado.jubilado,
+          is_campo_missionario: isCampoMissionarioAssoc,
+        } : null,
+      });
+
+      return NextResponse.json({
+        encontrado: true,
+        lookup_kind: 'aemadepa',
+        nome: assoc.nome || null,
+        cpf: assoc.cpf,
+        email: assoc.email || null,
+        whatsapp: assoc.fone || null,
+        telefone: assoc.fone || null,
+        celular: assoc.fone || null,
+        phone: assoc.fone || null,
+        sexo: 'F',
+        data_nascimento: assoc.data_nascimento || null,
+        supervisao_id: ministroVinculado?.supervisao_id || null,
+        supervisao_nome: supervisaoNomeAssoc,
+        campo_id: campoIdAssoc,
+        campo_nome: campoNomeAssoc,
+        is_campo_missionario: isCampoMissionarioAssoc,
+        congregacao_id: ministroVinculado?.congregacao_id || null,
+        congregacao_nome: ministroVinculado?.congregacoes?.nome?.trim() || readCustomField(ministroVinculado?.custom_fields, ['congregacao']),
+        // Informações e Trava AEMADEPA
+        aemadepa: {
+          id: assoc.id,
+          numero_aemadepa: (assoc as any).numero_aemadepa || null,
+          categoria: elegibilidade.categoriaAemadepa,
+          categoria_label: elegibilidade.categoriaLabel,
+          cadastro_regularizado: elegibilidade.cadastroRegularizado,
+          motivo_irregularidade: elegibilidade.motivoIrregularidade,
+          elegivel_gratuidade: elegibilidade.elegivelGratuidade,
+          ministro_id: elegibilidade.ministroId,
+          ministro_nome: elegibilidade.ministroNome,
+          ministro_status: elegibilidade.ministroStatus,
+          is_campo_missionario: isCampoMissionarioAssoc,
+        },
+        // Compatibilidade de flags
+        conjuge_jubilado_validado: elegibilidade.categoriaAemadepa === 'esposa_jubilado' && elegibilidade.elegivelGratuidade,
+        conjuge_de_ministro_id: elegibilidade.ministroId,
+        conjuge_de_nome: elegibilidade.ministroNome,
+        jubilado: false,
+        pastor_presidente: false,
+        pastor_auxiliar: false,
+      });
+    }
+
+    // ── 3. Contingência secundária legada (conjuge em members com jubilado=true) ──
     const { data: conjugeRows, error: conjugeErr } = await supabase
       .from('members')
       .select('id,name,status,jubilado,estado_civil,nome_conjuge,cpf_conjuge,data_nascimento_conjuge,supervisao_id,congregacao_id,congregacoes!congregacao_id(nome,campo_id),custom_fields')
