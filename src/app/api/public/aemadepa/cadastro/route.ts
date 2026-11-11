@@ -228,6 +228,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'Cadastro da esposa realizado com sucesso!',
+      associadaId: rpcRes.associada_id || associadaExistente?.id || null,
       fotoUrl: fotoFinalUrl,
     });
   } catch (err: any) {

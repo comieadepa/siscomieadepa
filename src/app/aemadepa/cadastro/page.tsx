@@ -94,6 +94,7 @@ export default function PublicAemadepaCadastroPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [erroBusca, setErroBusca] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState(false);
+  const [associadaIdSalvo, setAssociadaIdSalvo] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const desafioMesRef = useRef<HTMLInputElement>(null);
@@ -194,6 +195,7 @@ export default function PublicAemadepaCadastroPage() {
     setDesafioErro(null);
     setTokenAutorizacao(null);
     setAutorizado(false);
+    setAssociadaIdSalvo(null);
     setFormData(FORM_INICIAL);
     setEsposaDia('');
     setEsposaMes('');
@@ -212,6 +214,7 @@ export default function PublicAemadepaCadastroPage() {
     setDesafioErro(null);
     setTokenAutorizacao(null);
     setAutorizado(false);
+    setAssociadaIdSalvo(null);
     setFormData(FORM_INICIAL);
     setEsposaDia('');
     setEsposaMes('');
@@ -381,27 +384,26 @@ export default function PublicAemadepaCadastroPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // Submissão do formulário final com token
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Função centralizada para salvar o cadastro da associada e obter o associadaId retornado pela RPC
+  const salvarCadastro = async (): Promise<string | null> => {
     setErro(null);
 
     if (!ministroSelecionado || !tokenAutorizacao) {
       setErro('Sessão de validação expirada. Por favor, confirme seus dados de acesso novamente.');
       setAutorizado(false);
-      return;
+      return null;
     }
 
     if (!formData.nome.trim()) {
       setErro('Por favor, preencha o seu nome completo.');
-      return;
+      return null;
     }
 
     // Validação estrita da data de nascimento da esposa
     const resDataEsposa = validarEConverterData(esposaDia, esposaMes, esposaAno);
     if (!resDataEsposa.valida) {
       setErro(resDataEsposa.erro || 'Data de nascimento da esposa inválida. Preencha Dia, Mês e Ano válidos.');
-      return;
+      return null;
     }
 
     setEnviando(true);
@@ -425,13 +427,27 @@ export default function PublicAemadepaCadastroPage() {
         throw new Error(data.error || 'Falha ao processar cadastro.');
       }
 
-      setSucesso(true);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (data.associadaId) {
+        setAssociadaIdSalvo(data.associadaId);
+      }
+
+      return data.associadaId || associadaIdSalvo || null;
     } catch (err: any) {
       console.error('Erro ao enviar cadastro:', err);
       setErro(err.message || 'Ocorreu um erro ao enviar seu cadastro. Tente novamente.');
+      return null;
     } finally {
       setEnviando(false);
+    }
+  };
+
+  // Submissão do formulário final com token
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const idSalvo = await salvarCadastro();
+    if (idSalvo) {
+      setSucesso(true);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
@@ -483,6 +499,7 @@ export default function PublicAemadepaCadastroPage() {
               <div className="max-w-xl mx-auto pt-2 text-left">
                 <SecaoCarteirinhaAemadepa
                   ministroId={ministroSelecionado.id}
+                  associadaId={associadaIdSalvo}
                   token={tokenAutorizacao}
                   dadosEsposaPreenchidos={{
                     nome: formData.nome,
@@ -490,6 +507,7 @@ export default function PublicAemadepaCadastroPage() {
                     dataNascimento: formData.data_nascimento,
                     fotoUrl: formData.foto_url,
                   }}
+                  onGarantirCadastroSalvo={salvarCadastro}
                 />
               </div>
             )}
@@ -502,6 +520,7 @@ export default function PublicAemadepaCadastroPage() {
                   setMinistroSelecionado(null);
                   setAutorizado(false);
                   setTokenAutorizacao(null);
+                  setAssociadaIdSalvo(null);
                   setFormData(FORM_INICIAL);
                   setFotoPreview(null);
                 }}
@@ -1127,6 +1146,7 @@ export default function PublicAemadepaCadastroPage() {
                 {ministroSelecionado && autorizado && (
                   <SecaoCarteirinhaAemadepa
                     ministroId={ministroSelecionado.id}
+                    associadaId={associadaIdSalvo}
                     token={tokenAutorizacao}
                     dadosEsposaPreenchidos={{
                       nome: formData.nome,
@@ -1134,6 +1154,7 @@ export default function PublicAemadepaCadastroPage() {
                       dataNascimento: formData.data_nascimento,
                       fotoUrl: formData.foto_url,
                     }}
+                    onGarantirCadastroSalvo={salvarCadastro}
                   />
                 )}
 

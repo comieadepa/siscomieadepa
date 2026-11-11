@@ -25,6 +25,7 @@ interface ElegibilidadeData {
 
 interface SecaoCarteirinhaAemadepaProps {
   ministroId: string;
+  associadaId?: string | null;
   token: string | null;
   dadosEsposaPreenchidos: {
     nome: string;
@@ -35,15 +36,18 @@ interface SecaoCarteirinhaAemadepaProps {
   solicitacaoInicial?: SolicitacaoData | null;
   elegibilidadeInicial?: ElegibilidadeData | null;
   onSolicitacaoCriada?: (solicitacao: SolicitacaoData) => void;
+  onGarantirCadastroSalvo?: () => Promise<string | null>;
 }
 
 export default function SecaoCarteirinhaAemadepa({
   ministroId,
+  associadaId,
   token,
   dadosEsposaPreenchidos,
   solicitacaoInicial,
   elegibilidadeInicial,
   onSolicitacaoCriada,
+  onGarantirCadastroSalvo,
 }: SecaoCarteirinhaAemadepaProps) {
   const [solicitacao, setSolicitacao] = useState<SolicitacaoData | null>(solicitacaoInicial || null);
   const elegibilidade =
@@ -74,6 +78,16 @@ export default function SecaoCarteirinhaAemadepa({
     setErro(null);
 
     try {
+      let idFinalAssociada = associadaId || null;
+
+      // Se for primeiro cadastro ou associadaId ainda não conhecido e houver callback de salvamento prévio:
+      if (!idFinalAssociada && onGarantirCadastroSalvo) {
+        idFinalAssociada = await onGarantirCadastroSalvo();
+        if (!idFinalAssociada) {
+          throw new Error('Não foi possível confirmar o salvamento do cadastro da associada antes de gerar a carteirinha.');
+        }
+      }
+
       const res = await fetch('/api/public/aemadepa/carteirinha', {
         method: 'POST',
         headers: {
@@ -82,6 +96,7 @@ export default function SecaoCarteirinhaAemadepa({
         },
         body: JSON.stringify({
           ministroId,
+          associadaId: idFinalAssociada,
           confirmacao: true,
         }),
       });

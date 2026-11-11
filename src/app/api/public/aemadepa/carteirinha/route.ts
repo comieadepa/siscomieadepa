@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Parâmetros inválidos' }, { status: 400 });
     }
 
-    const { ministroId, confirmacao } = body;
+    const { ministroId, associadaId, confirmacao } = body;
     const token = request.headers.get('x-aemadepa-token') || body.token;
 
     if (!ministroId) {
@@ -53,17 +53,31 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServerClient();
 
-    // 2. Localiza a associada vinculada ao ministro
-    const { data: associada, error: assocErr } = await supabase
+    // 2. Localiza a associada vinculada ao ministro (priorizando associadaId direto quando fornecido)
+    let queryAssociada = supabase
       .from('aemadepa_associadas')
-      .select('id, ministro_id, nome, cpf, data_nascimento, fone, email, foto_url, status')
-      .eq('ministro_id', ministroId)
-      .maybeSingle();
+      .select('id, ministro_id, nome, cpf, data_nascimento, fone, email, foto_url, status');
+
+    if (associadaId && typeof associadaId === 'string' && associadaId.trim().length > 0) {
+      queryAssociada = queryAssociada.eq('id', associadaId.trim());
+    } else {
+      queryAssociada = queryAssociada.eq('ministro_id', ministroId);
+    }
+
+    const { data: associada, error: assocErr } = await queryAssociada.maybeSingle();
 
     if (assocErr || !associada) {
       return NextResponse.json(
         { error: 'Cadastro de associada não localizado para o ministro informado.' },
         { status: 404 }
+      );
+    }
+
+    // Antiusurpação: se associada foi buscada por associadaId, valida estritamente o vínculo com o ministro autenticado
+    if (String(associada.ministro_id) !== String(ministroId)) {
+      return NextResponse.json(
+        { error: 'Vínculo ministerial da associada divergente do ministro autenticado.' },
+        { status: 403 }
       );
     }
 
@@ -463,6 +477,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const ministroId = searchParams.get('ministroId');
+    const associadaId = searchParams.get('associadaId');
     const token = request.headers.get('x-aemadepa-token') || searchParams.get('token');
 
     if (!ministroId) {
@@ -480,14 +495,24 @@ export async function GET(request: NextRequest) {
 
     const supabase = createServerClient();
 
-    const { data: associada } = await supabase
+    let queryAssociada = supabase
       .from('aemadepa_associadas')
-      .select('id, status, nome, cpf, data_nascimento, foto_url')
-      .eq('ministro_id', ministroId)
-      .maybeSingle();
+      .select('id, status, nome, cpf, data_nascimento, foto_url, ministro_id');
+
+    if (associadaId && typeof associadaId === 'string' && associadaId.trim().length > 0) {
+      queryAssociada = queryAssociada.eq('id', associadaId.trim());
+    } else {
+      queryAssociada = queryAssociada.eq('ministro_id', ministroId);
+    }
+
+    const { data: associada } = await queryAssociada.maybeSingle();
 
     if (!associada) {
       return NextResponse.json({ error: 'Associada não encontrada.' }, { status: 404 });
+    }
+
+    if (String(associada.ministro_id) !== String(ministroId)) {
+      return NextResponse.json({ error: 'Acesso não autorizado para esta associada.' }, { status: 403 });
     }
 
     const { data: pedidos, error: pErr } = await supabase
