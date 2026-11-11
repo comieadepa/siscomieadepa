@@ -6,7 +6,11 @@ import { useParams } from 'next/navigation';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { normalizePayloadUppercase } from '@/lib/text';
 import AssistenteWidget from '@/components/AssistenteWidget';
-import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
+import {
+  parseCampoMissionarioConfig,
+  resolveValorPastorMissionario,
+  resolveValorEsposa,
+} from '@/lib/ago-regras';
 import { resolveGrupoHospedagemAGO } from '@/lib/hospedagem-helpers';
 import {
   filtrarTiposAgo,
@@ -14,6 +18,7 @@ import {
   findTipoPastorJubilado,
   ehTipoPastorAuxiliar,
   ehTipoPastorPresidente,
+  ehTipoEsposaPresidente,
   ehTipoPastorJubilado,
   ehTipoVisitante,
 } from '@/lib/ago-inscricao-regras';
@@ -856,6 +861,23 @@ export default function InscricaoPublicaPage() {
 
   function getValorExibicaoTipo(tipo: TipoInscricao | null | undefined): number {
     if (!tipo) return 0;
+    if (evento?.departamento === 'AGO' && configCM?.enabled) {
+      const tipoNorm = normalizarComparacao(tipo.nome);
+      const ehEsposa = tipoNorm.includes('esposa') || tipoNorm.includes('viuva') || tipoNorm.includes('viúva');
+      const ehPastorPresidente = tipoNorm.includes('pastor presidente') && !ehEsposa;
+
+      if (ehPastorPresidente && fluxoCampoMissionarioEspecial) {
+        const vPP = resolveValorPastorMissionario(configCM);
+        if (vPP > 0) return vPP;
+      }
+
+      const ehEsposaCM = (aemadepaInfo?.categoria === 'esposa_presidente' && aemadepaInfo?.is_campo_missionario)
+        || tipoNorm.includes('campo mission');
+      if (ehEsposa && ehEsposaCM && (ehTipoEsposaPresidente(tipo.nome) || tipoNorm.includes('esposa de pastor presidente'))) {
+        const vEsposa = resolveValorEsposa(configCM);
+        if (vEsposa > 0) return vEsposa;
+      }
+    }
     return tipo.valor;
   }
 
@@ -2266,6 +2288,27 @@ export default function InscricaoPublicaPage() {
                       Esposa de Pastor Jubilado identificada pelo cadastro ministerial. Cortesia aplicada automaticamente.
                     </div>
                   )}
+
+                  {/* Card discreto e não bloqueante para incentivo ao cadastro na AEMADEPA */}
+                  {evento.departamento === 'AGO' && sexoTitularNorm === 'F' && !aemadepaInfo && (
+                    <div className="mb-4 p-3.5 bg-pink-50/80 border border-pink-200 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-pink-950">
+                      <div className="flex items-start gap-2.5">
+                        <span className="text-base flex-shrink-0">🌸</span>
+                        <p className="leading-relaxed">
+                          Você é esposa de pastor? Mantenha seu cadastro atualizado na <strong>AEMADEPA</strong> para facilitar sua identificação e acesso aos serviços da associação.
+                        </p>
+                      </div>
+                      <a
+                        href="https://www.siscomieadepa.org/aemadepa/cadastro"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white font-semibold rounded-lg text-xs whitespace-nowrap transition shadow-sm flex-shrink-0"
+                      >
+                        Cadastrar na AEMADEPA
+                        <span className="text-[10px]">↗</span>
+                      </a>
+                    </div>
+                  )}
                   {/* Lista de tipos para AGO */}
                   {tiposParaExibir.length > 0 && (
                     <div className="space-y-2 mt-3">
@@ -2282,6 +2325,12 @@ export default function InscricaoPublicaPage() {
                             <div>
                               <p className="text-sm font-semibold text-gray-800 flex items-center gap-2">
                                 {t.nome}
+                                {((fluxoCampoMissionarioEspecial && (ehTipoPastorPresidente(t.nome) || /campo\s*mission/i.test(t.nome))) ||
+                                  (aemadepaInfo?.categoria === 'esposa_presidente' && aemadepaInfo?.is_campo_missionario && ehTipoEsposaPresidente(t.nome))) && (
+                                  <span className="text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded-full">
+                                    🌿 Campo Missionário
+                                  </span>
+                                )}
                                 {t.cortesia && (
                                   <span className="text-xs font-bold bg-green-100 text-green-700 border border-green-300 px-1.5 py-0.5 rounded-full">
                                     🎁 Cortesia

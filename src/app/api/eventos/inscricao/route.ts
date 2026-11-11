@@ -807,14 +807,13 @@ export async function POST(request: NextRequest) {
     const solicitouViuva = ehTipoEsposaOuViuva(tipo_inscricao as string | null | undefined) && norm(tipo_inscricao).includes('viuva');
     const solicitouEsposaPres = ehTipoEsposaPastorPresidente(tipo_inscricao as string | null | undefined) || ehTipoEsposaPastorPresidente(tipoNome);
     const solicitouEsposaAux = ehTipoEsposaOuViuva(tipo_inscricao as string | null | undefined) && norm(tipo_inscricao).includes('auxiliar');
-    const ehQualquerEsposaOuViuva = ehTipoEsposaOuViuva(tipo_inscricao as string | null | undefined) || ehTipoEsposaOuViuva(tipoNome);
-
+    
     if (usaTipos && evento.departamento === 'AGO') {
-      // REGRA AEMADEPA 1: Se solicitou categoria de Esposa ou Viúva, DEVE constar na AEMADEPA
-      if (ehQualquerEsposaOuViuva) {
+      // REGRA AEMADEPA 1: Categorias de cortesia/gratuidade restrita (Viúva e Esposa de Jubilado) exigem cadastro oficial / vínculo
+      if (solicitouViuva || solicitouEsposaJubilado) {
         if (!aemadepaTitular && !vinculoEsposaJubiladoTitular) {
           return buildErrorResponse(400, {
-            error: 'Inscrição em categoria de esposa ou viúva exige cadastro oficial ativo na AEMADEPA.',
+            error: 'Inscrição na categoria de Viúva ou Esposa de Pastor Jubilado exige cadastro oficial ativo na AEMADEPA.',
             stage: 'validacao_aemadepa_obrigatoria',
             code: 'AEMADEPA_CADASTRO_NAO_ENCONTRADO',
             payloadResumo: { ...payloadResumo, evento_id: evento.id },
@@ -1289,11 +1288,13 @@ export async function POST(request: NextRequest) {
     }
 
     const sexoTitularNorm = normalizarSexo(sexo);
-    if (sexoTitularNorm === 'F' && evento.departamento === 'AGO' && !aemadepaTitular && ehQualquerEsposaOuViuva) {
+    // Para sexo feminino sem cadastro na AEMADEPA, são permitidas: Esposa de Pastor Presidente, Esposa de Pastor Auxiliar, Visitante e Juventude.
+    // Categorias de gratuidade restrita (Viúva e Esposa de Pastor Jubilado) continuam exigindo comprovação oficial.
+    if (sexoTitularNorm === 'F' && evento.departamento === 'AGO' && !aemadepaTitular && (solicitouViuva || solicitouEsposaJubilado)) {
       return buildErrorResponse(400, {
-        error: 'CPF feminino não cadastrado na AEMADEPA pode se inscrever somente como Visitante ou Juventude COMIEADEPA.',
+        error: 'Inscrição na categoria de Viúva ou Esposa de Pastor Jubilado exige cadastro oficial na AEMADEPA.',
         stage: 'validacao_cpf_feminino_sem_aemadepa',
-        code: 'FEMININO_SEM_AEMADEPA_SOMENTE_VISITANTE_JUVENTUDE',
+        code: 'FEMININO_SEM_AEMADEPA_GRATUIDADE_BLOQUEADA',
         payloadResumo: { ...payloadResumo, evento_id: evento.id },
       });
     }

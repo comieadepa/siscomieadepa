@@ -700,7 +700,8 @@ export async function POST(
       (evento as any).departamento === 'AGO'
       && campoMissionarioEnabled
       && ministroAtivo
-      && (isPP || cargoEhPastor);
+      && (isPP || cargoEhPastor)
+      && isCM;
 
     if (ehCategoriaCampoMissionario) {
       if (fluxoCampoMissionarioEspecial) {
@@ -814,23 +815,24 @@ export async function POST(
     const solicitouViuva = ehTipoEsposaOuViuva(tipoNome) && nTipo.includes('viuva');
     const solicitouEsposaPres = nTipo.includes('esposa') && nTipo.includes('pastor presidente');
     const solicitouEsposaAux = ehTipoEsposaOuViuva(tipoNome) && nTipo.includes('auxiliar');
-    const ehQualquerEsposaOuViuva = ehTipoEsposaOuViuva(tipoNome);
-
+    
     if ((evento as any).departamento === 'AGO') {
       const sexoTitularNorm = normalizarSexo(sexo);
 
-      if (ehQualquerEsposaOuViuva) {
+      // Para categorias de gratuidade restrita (Viúva e Esposa de Jubilado), exige comprovação AEMADEPA / vínculo
+      if (solicitouViuva || solicitouEsposaJubilado) {
         if (!aemadepaTitular && !vinculoEsposaJubiladoTitular) {
           return NextResponse.json(
-            { error: 'Inscrição em categoria de esposa ou viúva exige cadastro oficial na AEMADEPA.' },
+            { error: 'Inscrição na categoria de Viúva ou Esposa de Pastor Jubilado exige cadastro oficial na AEMADEPA.' },
             { status: 400 },
           );
         }
       }
 
-      if (sexoTitularNorm === 'F' && !aemadepaTitular && ehQualquerEsposaOuViuva) {
+      // Para sexo feminino sem cadastro na AEMADEPA, são permitidas: Esposa de Pastor Presidente, Esposa de Pastor Auxiliar, Visitante e Juventude.
+      if (sexoTitularNorm === 'F' && !aemadepaTitular && (solicitouViuva || solicitouEsposaJubilado)) {
         return NextResponse.json(
-          { error: 'CPF feminino não cadastrado na AEMADEPA pode se inscrever somente como Visitante ou Juventude COMIEADEPA.' },
+          { error: 'Inscrição na categoria de Viúva ou Esposa de Pastor Jubilado exige cadastro oficial na AEMADEPA.' },
           { status: 400 },
         );
       }
@@ -845,6 +847,12 @@ export async function POST(
           if (!solicitouEsposaPres) {
             return NextResponse.json(
               { error: 'Associada cadastrada como Esposa de Pastor Presidente deve se inscrever nessa categoria.' },
+              { status: 400 },
+            );
+          }
+          if (!isCMAem && norm(tipoNome).includes('campo mission')) {
+            return NextResponse.json(
+              { error: 'A categoria de Campo Missionário é restrita a associadas vinculadas a pastores de campos missionários.' },
               { status: 400 },
             );
           }
@@ -941,7 +949,7 @@ export async function POST(
       const valorCmPastor = cmConfig
         ? (typeof cmConfig.valor_pastor_presidente === 'number' ? cmConfig.valor_pastor_presidente : parseFloat(String(cmConfig.valor_pastor_presidente)) || 0)
         : 0;
-      if (valorCmPastor > 0 && tipoNome === 'CAMPO MISSIONÁRIO') {
+      if (valorCmPastor > 0 && (ehTipoPastorPresidente(tipoNome) || tipoNome === 'CAMPO MISSIONÁRIO' || /campo\s*mission/i.test(tipoNome ?? ''))) {
         vOriginal = valorCmPastor;
         vFinal = Math.max(0, vOriginal - vDesconto);
       }

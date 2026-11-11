@@ -11,12 +11,19 @@ import { normalizePayloadUppercase } from '@/lib/text';
 import { EventBadge } from '@/components/EventBadge';
 import { authenticatedFetch } from '@/lib/api-client';
 import { matchCpf, formatCpf } from '@/lib/cpf';
-import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
+import {
+  parseCampoMissionarioConfig,
+  resolveValorPastorMissionario,
+  resolveValorEsposa,
+} from '@/lib/ago-regras';
 import { resolveGrupoHospedagemAGO } from '@/lib/hospedagem-helpers';
 import {
   filtrarTiposAgo,
   findTipoEsposaJubilado,
   findTipoPastorJubilado,
+  normalizarTipoNome,
+  ehTipoPastorPresidente,
+  ehTipoEsposaPresidente,
 } from '@/lib/ago-inscricao-regras';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────
@@ -370,18 +377,55 @@ export default function BalcaoPage() {
     [form.tipo_id, tipos]
   );
 
+  // ── Configuração de Campo Missionário (AGO) ───────────────
+  const configCM = useMemo(
+    () => parseCampoMissionarioConfig(evento?.configuracoes_ago ?? null),
+    [evento]
+  );
+
+  const fluxoCampoMissionarioEspecial = useMemo(() => {
+    return !!evento
+      && evento.departamento === 'AGO'
+      && !!configCM?.enabled
+      && ['active', 'ativo'].includes((ministroInfo?.status ?? '').toLowerCase())
+      && !!ministroInfo?.isPastorPresidente
+      && !!ministroInfo?.isCampoMissionario;
+  }, [evento, configCM, ministroInfo]);
+
+  const getValorExibicaoTipo = useCallback((tipo: TipoInscricao | null | undefined): number => {
+    if (!tipo) return 0;
+    if (tipo.id === 'equipe_apoio') return 0;
+    if (evento?.departamento === 'AGO' && configCM?.enabled) {
+      const tipoNorm = normalizarTipoNome(tipo.nome);
+      const ehEsposa = tipoNorm.includes('esposa') || tipoNorm.includes('viuva');
+      const ehPastorPresidente = tipoNorm.includes('pastor presidente') && !ehEsposa;
+
+      if (ehPastorPresidente && fluxoCampoMissionarioEspecial) {
+        const vPP = resolveValorPastorMissionario(configCM);
+        if (vPP > 0) return vPP;
+      }
+
+      const ehEsposaCM = (aemadepaInfo?.categoria === 'esposa_presidente' && aemadepaInfo?.is_campo_missionario)
+        || tipoNorm.includes('campo mission');
+      if (ehEsposa && ehEsposaCM && ehTipoEsposaPresidente(tipo.nome)) {
+        const vEsposa = resolveValorEsposa(configCM);
+        if (vEsposa > 0) return vEsposa;
+      }
+    }
+    return tipo.valor;
+  }, [evento, configCM, fluxoCampoMissionarioEspecial, aemadepaInfo]);
+
   // ── Estado de valores ─────────────────────────────────────
   const valorBase = useMemo(() => {
-    return tipoSel?.valor ?? (evento?.valor_inscricao ?? 0);
-  }, [tipoSel, evento]);
+    if (tipoSel) return getValorExibicaoTipo(tipoSel);
+    return evento?.valor_inscricao ?? 0;
+  }, [tipoSel, evento, getValorExibicaoTipo]);
 
   // Valor da esposa (Campo Missionário)
   const valorEsposaBase = useMemo(() => {
-    if (!evento?.configuracoes_ago) return 0;
-    const cmConfig = parseCampoMissionarioConfig(evento.configuracoes_ago);
-    if (!cmConfig) return 0;
-    return typeof cmConfig.valor_esposa === 'number' ? cmConfig.valor_esposa : parseFloat(String(cmConfig.valor_esposa)) || 0;
-  }, [evento]);
+    if (!configCM) return 0;
+    return typeof configCM.valor_esposa === 'number' ? configCM.valor_esposa : parseFloat(String(configCM.valor_esposa)) || 0;
+  }, [configCM]);
 
   const valorFinal = Math.max(0, valorBase + (incluirEsposa ? (valorEsposaBase ?? 0) : 0) - cupomDesconto);
 
@@ -431,6 +475,7 @@ export default function BalcaoPage() {
       dataNascimento: form.data_nascimento,
       permitirViuvaEEsposaJubilado: true,
       permitirJubiladoManual: false,
+      somentePastorPresidente: fluxoCampoMissionarioEspecial,
       cpfLocalizado: cpfStatus === 'encontrado',
       ministroAtivo: ativo,
       cargoMinisterial: ministroInfo?.cargoMinisterial ?? null,
@@ -446,7 +491,18 @@ export default function BalcaoPage() {
     // Ministro ativo mas sem nenhum tipo ministerial compatível → perfil indefinido
     const semPerfil = evento.departamento === 'AGO' && ativo && filtered.length === 0;
     return { ministroAtivo: ativo, ministroInativo: inativo, tiposParaExibir: [...filtered, virtualEquipeApoio], ministroSemPerfil: semPerfil };
-  }, [cpfStatus, ministroInfo, aemadepaInfo, form.sexo, form.data_nascimento, tipos, evento, jubiladoAutomaticoAtivo, tipoJubiladoAutomatico, esposaJubiladoAutomaticoAtivo, tipoEsposaJubiladoAutomatico]);
+  }, [cpfStatus, ministroInfo, aemadepaInfo, form.sexo, form.data_nascimento, tipos, evento, jubiladoAutomaticoAtivo, tipoJubiladoAutomatico, esposaJubiladoAutomaticoAtivo, tipoEsposaJubiladoAutomatico, fluxoCampoMissionarioEspecial]);
+
+  useEffect(() => {
+    if (!fluxoCampoMissionarioEspecial) return;
+    const tipoPP = tiposParaExibir.find(t => {
+      const n = normalizarTipoNome(t.nome);
+      return n.includes('pastor presidente') && !n.includes('esposa') && !n.includes('viuva');
+    });
+    if (tipoPP && form.tipo_id !== tipoPP.id && form.tipo_id !== 'equipe_apoio') {
+      setField('tipo_id', tipoPP.id);
+    }
+  }, [fluxoCampoMissionarioEspecial, tiposParaExibir, form.tipo_id]);
 
   useEffect(() => {
     if (!jubiladoAutomaticoAtivo || !tipoJubiladoAutomatico) return;
@@ -2625,6 +2681,27 @@ export default function BalcaoPage() {
               </div>
             )}
 
+            {/* Card discreto e não bloqueante para incentivo ao cadastro na AEMADEPA */}
+            {evento?.departamento === 'AGO' && form.sexo === 'F' && !aemadepaInfo && (
+              <div className="mb-4 p-3.5 bg-pink-950/40 border border-pink-500/40 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-pink-200">
+                <div className="flex items-start gap-2.5">
+                  <span className="text-base flex-shrink-0">🌸</span>
+                  <p className="leading-relaxed">
+                    Você é esposa de pastor? Mantenha seu cadastro atualizado na <strong>AEMADEPA</strong> para facilitar sua identificação e acesso aos serviços da associação.
+                  </p>
+                </div>
+                <a
+                  href="https://www.siscomieadepa.org/aemadepa/cadastro"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white font-semibold rounded-lg text-xs whitespace-nowrap transition shadow-sm flex-shrink-0"
+                >
+                  Cadastrar na AEMADEPA
+                  <span className="text-[10px]">↗</span>
+                </a>
+              </div>
+            )}
+
             {/* Tipos de inscrição */}
             {temTipos && (
               <div className="mb-4">
@@ -2650,11 +2727,19 @@ export default function BalcaoPage() {
                           : 'border-white/20 hover:border-white/40 text-white/70'
                       }`}
                     >
-                      <p className="font-semibold text-sm">{t.nome}</p>
+                      <p className="font-semibold text-sm flex items-center gap-2">
+                        {t.nome}
+                        {((fluxoCampoMissionarioEspecial && (ehTipoPastorPresidente(t.nome) || /campo\s*mission/i.test(t.nome))) ||
+                          (aemadepaInfo?.categoria === 'esposa_presidente' && aemadepaInfo?.is_campo_missionario && ehTipoEsposaPresidente(t.nome))) && (
+                          <span className="text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40 px-1.5 py-0.5 rounded-full">
+                            🌿 Campo Missionário
+                          </span>
+                        )}
+                      </p>
                       <p className="text-xs mt-0.5 opacity-70">
                         {(() => {
                           if (t.id === 'equipe_apoio') return 'Gratuito';
-                          const vExib = t.valor;
+                          const vExib = getValorExibicaoTipo(t);
                           return vExib === 0 ? 'Gratuito' : fmtMoeda(vExib);
                         })()}
                         {t.id !== 'equipe_apoio' && t.inclui_alimentacao && ' · Alim.'}

@@ -178,16 +178,24 @@ export function filtrarTiposAgo<T extends TipoComNome>(tipos: T[], options: Filt
   }
 
   // ── CASO B: Não é associada AEMADEPA e é Sexo Feminino ──
-  // Conforme regra de negócio:
-  // "Se não encontrada em nenhuma base, preservar a identificação de sexo já existente. Para CPF feminino, oferecer SOMENTE Visitante e Juventude COMIEADEPA."
-  // Também bloqueia categoricamente qualquer tipo de Esposa ou Viúva caso a mulher não seja associada AEMADEPA.
+  // Desbloqueio das inscrições femininas: disponibilizar Esposa de Pastor Presidente,
+  // Esposa de Pastor Auxiliar, Visitante e Juventude COMIEADEPA (se idade <= 29).
+  // Preserva bloqueadas: Viúva, Esposa de Pastor Jubilado e categorias ministeriais masculinas.
   if (sexoNorm === 'F' && !isAemadepa) {
     return tipos.filter((t) => {
-      // Bloqueia qualquer categoria ministerial ou de esposa/viúva
-      if (ehTipoEsposa(t.nome) || ehTipoViuva(t.nome)) return false;
+      // Bloqueia categorias masculinas e gratuidades restritas (Viúva e Esposa de Jubilado)
+      if (ehTipoViuva(t.nome) || ehTipoEsposaJubilado(t.nome)) return false;
       if (ehTipoPastorPresidente(t.nome) || ehTipoPastorAuxiliar(t.nome) || ehTipoPastorJubilado(t.nome)) return false;
 
-      // Permite Juventude somente se idade <= 29
+      // Permite Esposa de Pastor Presidente (tipo padrão, excluindo tipo exclusivo CM com 'campo mission' no nome)
+      if (ehTipoEsposaPresidente(t.nome)) {
+        return !normalizarTipoNome(t.nome).includes('campo mission');
+      }
+
+      // Permite Esposa de Pastor Auxiliar
+      if (ehTipoEsposaAuxiliar(t.nome)) return true;
+
+      // Permite Juventude somente se idade informada for <= 29
       if (ehTipoJuventude(t.nome)) {
         if (idade === null) return false;
         return idade <= 29;
