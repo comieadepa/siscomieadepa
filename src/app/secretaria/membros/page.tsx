@@ -766,6 +766,35 @@ useEffect(() => {
     return Array.from(map.values());
   };
 
+  // Deduplicação específica para campos: campos homônimos pertencentes a supervisões distintas são entidades eclesiásticas distintas e não podem se anular.
+  const dedupCampos = (items: DivisaoOption[]): DivisaoOption[] => {
+    const map = new Map<string, DivisaoOption>();
+    const isUuid = (id?: string | null) => !!id && !id.startsWith('cfg-') && !id.startsWith('legacy-');
+
+    items.forEach((item) => {
+      const nome = sanitizeNome(item.nome);
+      if (!nome) return;
+
+      // Chave única: se tem supervisao_id ou UUID oficial, combina nome + supervisao_id para permitir homônimos em supervisões diferentes
+      const supKey = item.supervisao_id ? item.supervisao_id : (isUuid(item.id) ? item.id : 'no-sup');
+      const key = `${nome.toUpperCase()}::${supKey}`;
+      const existing = map.get(key);
+
+      if (!existing) {
+        map.set(key, { ...item, nome });
+        return;
+      }
+
+      const curScore = (isUuid(item.id) ? 4 : 0) + (item.supervisao_id ? 2 : 0) + (item.pastor_member_id ? 1 : 0);
+      const extScore = (isUuid(existing.id) ? 4 : 0) + (existing.supervisao_id ? 2 : 0) + (existing.pastor_member_id ? 1 : 0);
+
+      if (curScore > extScore) {
+        map.set(key, { ...item, nome });
+      }
+    });
+    return Array.from(map.values());
+  };
+
   const supervisoesFromNomenclaturas = ((orgNomenclaturasRaw?.divisaoPrincipal?.custom || []) as string[])
     .map((nome, idx) => ({ id: `cfg-s-${idx}-${nome}`, nome: sanitizeNome(nome) }))
     .filter((opt) => !!opt.nome);
@@ -778,7 +807,7 @@ useEffect(() => {
       .map((m: any, idx: number) => ({ id: `legacy-s-${idx}`, nome: sanitizeNome((m?.custom_fields as any)?.supervisao) }))
       .filter((opt: any) => !!opt.nome)
   );
-  const camposFromMembers = dedupByNome(
+  const camposFromMembers = dedupCampos(
     (membersApi || [])
       .map((m: any, idx: number) => {
         const cNome = sanitizeNome((m?.custom_fields as any)?.campo);
@@ -2017,7 +2046,7 @@ useEffect(() => {
     ...supervisoesFromNomenclaturas
   ]).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 
-  const camposOptions = dedupByNome([
+  const camposOptions = dedupCampos([
     ...campos,
     ...camposFromMembers,
     ...camposFromNomenclaturas
@@ -3051,11 +3080,18 @@ useEffect(() => {
                 className="h-9 px-3 border border-gray-300 rounded-lg text-sm font-semibold text-[#0D2B4E] bg-white focus:outline-none focus:border-[#0D2B4E] w-[160px]"
               >
                 <option value="TODOS">CAMPO</option>
-                {camposOptions
-                  .filter(c => supervisaoFilter === 'TODOS' || (c as any).supervisao_id === supervisoesOptions.find(s => s.nome === supervisaoFilter)?.id)
-                  .map(c => (
+                {(() => {
+                  const filtered = camposOptions.filter(
+                    c => supervisaoFilter === 'TODOS' || (c as any).supervisao_id === supervisoesOptions.find(s => s.nome.trim().toUpperCase() === supervisaoFilter.trim().toUpperCase())?.id
+                  );
+                  // Se TODOS estiver selecionado, deduplica por nome visualmente para o filtro da tabela não ter repetições
+                  const displayList = supervisaoFilter === 'TODOS'
+                    ? Array.from(new Map(filtered.map(c => [c.nome.toUpperCase(), c])).values())
+                    : filtered;
+                  return displayList.map(c => (
                     <option key={c.id} value={c.nome}>{c.nome.toUpperCase()}</option>
-                  ))}
+                  ));
+                })()}
               </select>
 
               {/* CARGO */}
@@ -3648,9 +3684,20 @@ useEffect(() => {
                               value={dadosPessoais.supervisao}
                               onChange={(e) => {
                                 const newSupervisao = e.target.value;
-                                const selectedSupervisaoId = supervisoesOptions.find((opt) => opt.nome === newSupervisao)?.id;
-                                const campoSelecionado = camposOptions.find((opt) => opt.nome === dadosPessoais.campo);
-                                const pertenceANovaSupervisao = selectedSupervisaoId && campoSelecionado && campoSelecionado.supervisao_id === selectedSupervisaoId;
+                                const selectedSupervisao = supervisoesOptions.find((opt) => opt.nome.trim().toUpperCase() === newSupervisao.trim().toUpperCase());
+                                const selectedSupervisaoId = selectedSupervisao?.id;
+
+                                // Verifica se o campo atual existe vinculado a essa nova supervisão
+                                const campoAtualNome = dadosPessoais.campo ? dadosPessoais.campo.trim().toUpperCase() : '';
+                                const pertenceANovaSupervisao = !!(
+                                  campoAtualNome &&
+                                  selectedSupervisaoId &&
+                                  camposOptions.some(
+                                    (opt) =>
+                                      opt.nome.trim().toUpperCase() === campoAtualNome &&
+                                      opt.supervisao_id === selectedSupervisaoId
+                                  )
+                                );
 
                                 setDadosPessoais({
                                   ...dadosPessoais,
@@ -3672,7 +3719,14 @@ useEffect(() => {
                               value={dadosPessoais.campo}
                               onChange={(e) => {
                                 const value = e.target.value;
-                                const campoSelecionado = camposOptions.find((opt) => opt.nome === value) || null;
+                                const selectSupNormalized = dadosPessoais.supervisao ? dadosPessoais.supervisao.trim().toUpperCase() : '';
+                                const selectedSupervisao = supervisoesOptions.find((s) => s.nome.trim().toUpperCase() === selectSupNormalized);
+                                
+                                // Prioriza encontrar o campo na supervisão atualmente selecionada
+                                const campoSelecionado = (selectedSupervisao
+                                  ? camposOptions.find((opt) => opt.nome === value && opt.supervisao_id === selectedSupervisao.id)
+                                  : null) || camposOptions.find((opt) => opt.nome === value) || null;
+
                                 const supervisaoRelacionada = campoSelecionado?.supervisao_id
                                   ? supervisoesOptions.find((opt) => opt.id === campoSelecionado.supervisao_id) || null
                                   : null;
@@ -3689,6 +3743,14 @@ useEffect(() => {
                                 .filter((opt) => {
                                   // Regra 2: Garantir que o campo atualmente selecionado sempre apareça na lista para evitar falhas de renderização
                                   if (dadosPessoais.campo && opt.nome.trim().toUpperCase() === dadosPessoais.campo.trim().toUpperCase()) {
+                                    // Se já há supervisão selecionada, só mantém o atual se ele for desta supervisão (ou sem supervisao_id)
+                                    if (dadosPessoais.supervisao && opt.supervisao_id) {
+                                      const selectSupNormalized = dadosPessoais.supervisao.trim().toUpperCase();
+                                      const selectedSupervisao = supervisoesOptions.find((s) => s.nome.trim().toUpperCase() === selectSupNormalized);
+                                      if (selectedSupervisao && opt.supervisao_id !== selectedSupervisao.id) {
+                                        return false;
+                                      }
+                                    }
                                     return true;
                                   }
 
@@ -3705,7 +3767,6 @@ useEffect(() => {
                                   }
 
                                   // 3. Fallback: Cruzamento resiliente pelo nome da supervisão associada ao campo
-                                  // Se o campo do banco tem uma supervisão associada de mesmo nome
                                   if (opt.supervisao_id) {
                                     const optSup = supervisoesOptions.find(s => s.id === opt.supervisao_id);
                                     if (optSup && optSup.nome.trim().toUpperCase() === selectSupNormalized) {
