@@ -451,7 +451,7 @@ export default function PublicAemadepaCadastroPage() {
                       type="text"
                       value={busca}
                       onChange={(e) => setBusca(e.target.value)}
-                      placeholder="Digite o nome ou número de matrícula do pastor..."
+                      placeholder="Digite o nome, CPF ou número de matrícula do pastor..."
                       className="w-full rounded-xl border border-gray-300 bg-white pl-10 pr-4 py-3 text-sm text-gray-900 shadow-xs focus:border-rose-500 focus:outline-none focus:ring-3 focus:ring-rose-500/20 transition"
                       autoFocus
                     />
@@ -475,6 +475,16 @@ export default function PublicAemadepaCadastroPage() {
                             </p>
                             <p className="text-xs text-gray-500 truncate mt-0.5">
                               Matrícula: <strong>{min.matricula || '—'}</strong> • {min.cargo} {min.campo ? `• ${min.campo}` : ''}
+                              {min.status === 'JUBILADO' && (
+                                <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 rounded-md">
+                                  Jubilado
+                                </span>
+                              )}
+                              {min.status === 'FALECIDO' && (
+                                <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-bold bg-gray-200 text-gray-700 rounded-md">
+                                  Falecido
+                                </span>
+                              )}
                             </p>
                           </div>
                           <button
@@ -499,7 +509,7 @@ export default function PublicAemadepaCadastroPage() {
                   {!erroBusca && busca.trim().length >= 2 && !buscando && resultados.length === 0 && (
                     <p className="text-xs text-amber-700 bg-amber-50 p-3 rounded-xl border border-amber-200 flex items-center gap-2">
                       <AlertCircle className="w-4 h-4 shrink-0 text-amber-500" />
-                      <span>Nenhum ministro encontrado com os termos pesquisados. Verifique o nome ou número de matrícula.</span>
+                      <span>Nenhum ministro encontrado com os termos pesquisados. Verifique o nome, CPF ou número de matrícula.</span>
                     </p>
                   )}
                 </div>
@@ -515,6 +525,16 @@ export default function PublicAemadepaCadastroPage() {
                     <p className="text-xs text-gray-600">
                       Matrícula: <strong>{ministroSelecionado.matricula || '—'}</strong> • {ministroSelecionado.cargo}
                       {ministroSelecionado.campo ? ` • Campo: ${ministroSelecionado.campo}` : ''}
+                      {ministroSelecionado.status === 'JUBILADO' && (
+                        <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 rounded-md">
+                          Jubilado
+                        </span>
+                      )}
+                      {ministroSelecionado.status === 'FALECIDO' && (
+                        <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-bold bg-gray-200 text-gray-700 rounded-md">
+                          Falecido
+                        </span>
+                      )}
                     </p>
                   </div>
 
