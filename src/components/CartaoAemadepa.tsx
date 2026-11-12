@@ -10,12 +10,15 @@ import {
   AlertTriangle,
   CreditCard,
   Layers,
+  Printer,
+  CheckCircle2,
 } from 'lucide-react';
 import { buildUrl, getAppBaseUrl } from '@/lib/urls';
 import { substituirPlaceholders } from '@/lib/cartoes-utils';
 import { createClient } from '@/lib/supabase-client';
 import { loadTemplatesForCurrentUser } from '@/lib/cartoes-templates-sync';
 import { loadOrgNomenclaturasFromSupabaseOrMigrate } from '@/lib/org-nomenclaturas';
+import { authenticatedFetch } from '@/lib/api-client';
 
 export interface CartaoAemadepaProps {
   associada: {
@@ -42,11 +45,26 @@ export interface CartaoAemadepaProps {
     campo?: string;
     supervisao?: string;
   };
+  pedidoId?: string;
+  statusPedido?: string;
   onClose: () => void;
+  onStatusAtualizado?: () => void;
 }
 
-export default function CartaoAemadepa({ associada, onClose }: CartaoAemadepaProps) {
+export default function CartaoAemadepa({
+  associada,
+  pedidoId,
+  statusPedido,
+  onClose,
+  onStatusAtualizado,
+}: CartaoAemadepaProps) {
   const [gerandoPDF, setGerandoPDF] = useState(false);
+  const [confirmandoImpressao, setConfirmandoImpressao] = useState(false);
+  const [modalReimpressaoAberto, setModalReimpressaoAberto] = useState(false);
+  const [motivoReimpressao, setMotivoReimpressao] = useState('');
+  const [erroAcao, setErroAcao] = useState<string | null>(null);
+  const [sucessoAcao, setSucessoAcao] = useState<string | null>(null);
+  const [statusAtual, setStatusAtual] = useState<string | undefined>(statusPedido);
   const [erroValidacao, setErroValidacao] = useState<string | null>(null);
   const [template, setTemplate] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -518,6 +536,62 @@ export default function CartaoAemadepa({ associada, onClose }: CartaoAemadepaPro
     }
   };
 
+  // Sincroniza status inicial recebido via prop
+  useEffect(() => {
+    setStatusAtual(statusPedido);
+  }, [statusPedido]);
+
+  // Função para confirmar conclusão da impressão física
+  const handleConfirmarImpressao = async (ehReimp: boolean, motivo?: string) => {
+    if (!pedidoId) return;
+    setConfirmandoImpressao(true);
+    setErroAcao(null);
+    setSucessoAcao(null);
+
+    try {
+      const payload: Record<string, any> = {
+        id: pedidoId,
+        novoStatus: statusAtual === 'entregue' ? 'entregue' : 'impressa',
+      };
+
+      if (ehReimp) {
+        payload.tipoImpressao = 'reimpressao';
+        payload.motivoReimpressao = motivo || motivoReimpressao;
+      }
+
+      const res = await authenticatedFetch('/api/v1/secretaria/aemadepa/pedidos', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(data?.error || 'Erro ao registrar impressão.');
+      }
+
+      if (statusAtual !== 'entregue') {
+        setStatusAtual('impressa');
+      }
+      setSucessoAcao(
+        ehReimp
+          ? 'Reimpressão registrada com sucesso no histórico de auditoria!'
+          : 'Impressão confirmada com sucesso! Carteirinha pronta para entrega.'
+      );
+      setModalReimpressaoAberto(false);
+      setMotivoReimpressao('');
+      if (onStatusAtualizado) {
+        onStatusAtualizado();
+      }
+    } catch (err: any) {
+      console.error('Erro ao confirmar impressão:', err);
+      setErroAcao(err.message || 'Falha ao confirmar impressão.');
+    } finally {
+      setConfirmandoImpressao(false);
+    }
+  };
+
   const isPortrait = template?.orientacao === 'portrait';
   const canvasWidth = isPortrait ? 291 : 465;
   const canvasHeight = isPortrait ? 465 : 291;
@@ -552,7 +626,22 @@ export default function CartaoAemadepa({ associada, onClose }: CartaoAemadepaPro
 
         {/* Conteúdo com Scroll */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-100">
-          {/* Mensagem de Erro se houver */}
+          {/* Mensagens de Sucesso ou Erro da Ação */}
+          {sucessoAcao && (
+            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center gap-2.5 text-emerald-800 text-xs font-semibold animate-in fade-in">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{sucessoAcao}</span>
+            </div>
+          )}
+
+          {erroAcao && (
+            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 flex items-center gap-2.5 text-rose-800 text-xs font-semibold animate-in fade-in">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{erroAcao}</span>
+            </div>
+          )}
+
+          {/* Mensagem de Erro de Validação se houver */}
           {erroValidacao && (
             <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-center gap-3 text-amber-900 text-sm">
               <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
@@ -624,27 +713,117 @@ export default function CartaoAemadepa({ associada, onClose }: CartaoAemadepaPro
         </div>
 
         {/* Footer com Ações */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-white flex-shrink-0">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-6 py-4 border-t border-gray-200 bg-white flex-shrink-0">
           <button
             onClick={onClose}
-            disabled={gerandoPDF}
-            className="px-5 py-2.5 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-100 font-semibold text-sm transition cursor-pointer disabled:opacity-50"
+            disabled={gerandoPDF || confirmandoImpressao}
+            className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-100 font-semibold text-sm transition cursor-pointer disabled:opacity-50"
           >
             Fechar
           </button>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-2.5 w-full sm:w-auto">
+            {/* Botão Baixar PDF (Visualização física/impressão térmica/PVC) */}
             <button
               onClick={handleGerarPDF}
               disabled={gerandoPDF || Boolean(erroValidacao) || loading}
-              className="px-6 py-2.5 bg-gradient-to-r from-rose-700 to-purple-800 hover:from-rose-800 hover:to-purple-900 text-white font-bold text-sm rounded-xl shadow-md hover:shadow-lg transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-sm rounded-xl border border-slate-300 transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              title="Baixar arquivo PDF frente e verso"
             >
-              <Download className="w-4 h-4" />
+              <Download className="w-4 h-4 text-slate-600" />
               {gerandoPDF ? 'Gerando...' : 'Baixar PDF'}
             </button>
+
+            {/* Ações de Controle Operacional de Impressão Integradas */}
+            {pedidoId && (!statusAtual || statusAtual === 'pago' || statusAtual === 'em_impressao') && (
+              <button
+                type="button"
+                onClick={() => void handleConfirmarImpressao(false)}
+                disabled={confirmandoImpressao || Boolean(erroValidacao)}
+                className="px-6 py-2.5 bg-gradient-to-r from-purple-700 to-indigo-800 hover:from-purple-800 hover:to-indigo-900 text-white font-bold text-sm rounded-xl shadow-md hover:shadow-lg transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                title="Registrar que o cartão foi fisicamente impresso"
+              >
+                <Printer className="w-4 h-4" />
+                {confirmandoImpressao ? 'Confirmando...' : 'Confirmar Impressão'}
+              </button>
+            )}
+
+            {pedidoId && (statusAtual === 'impressa' || statusAtual === 'entregue') && (
+              <button
+                type="button"
+                onClick={() => setModalReimpressaoAberto(true)}
+                disabled={confirmandoImpressao || Boolean(erroValidacao)}
+                className="px-4 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-sm rounded-xl border border-amber-300 transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                title="Registrar nova impressão física (exige justificativa)"
+              >
+                <Printer className="w-4 h-4 text-amber-700" />
+                <span>Reimprimir Cartão</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Modal de Justificativa para Reimpressão */}
+      {modalReimpressaoAberto && (
+        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2 text-amber-800">
+                <Printer className="w-5 h-5 text-amber-600" />
+                <h3 className="font-extrabold text-base">Registrar Reimpressão</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setModalReimpressaoAberto(false);
+                  setMotivoReimpressao('');
+                }}
+                className="text-gray-400 hover:text-gray-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-600">
+              Esta carteirinha já consta como impressa. Para realizar uma nova impressão física, informe o motivo para registro no histórico de auditoria:
+            </p>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">Motivo da Reimpressão *</label>
+              <textarea
+                rows={3}
+                value={motivoReimpressao}
+                onChange={(e) => setMotivoReimpressao(e.target.value)}
+                placeholder="Ex: Falha na fita da impressora PVC, cartão riscado, ajuste fotográfico..."
+                className="w-full text-xs border border-gray-300 rounded-lg p-2.5 text-gray-800 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+              />
+              <span className="text-[10px] text-gray-400">Mínimo de 5 caracteres.</span>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setModalReimpressaoAberto(false);
+                  setMotivoReimpressao('');
+                }}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-lg cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirmarImpressao(true, motivoReimpressao)}
+                disabled={confirmandoImpressao || motivoReimpressao.trim().length < 5}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                <Printer className="w-4 h-4" />
+                <span>{confirmandoImpressao ? 'Registrando...' : 'Confirmar Reimpressão'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ÁREA DE IMPRESSÃO OCULTA PARA PDF (Fora da tela visual com precisão de renderização) */}
       {template && (

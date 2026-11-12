@@ -14,10 +14,13 @@ import {
   QrCode,
   Download,
   Mail,
+  RotateCcw,
+  FileText,
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
 import ModalRecuperarPixAemadepa from '@/components/ModalRecuperarPixAemadepa';
 import ModalEnviarReciboAemadepa from '@/components/ModalEnviarReciboAemadepa';
+import { gerarRelatorioPedidosCarteirinhaPDF } from '@/lib/aemadepa/relatorio-pedidos-pdf';
 
 export interface PedidoCarteirinhaItem {
   id: string;
@@ -71,10 +74,15 @@ interface ResumoFinanceiro {
 }
 
 interface PainelPedidosAemadepaProps {
-  onImprimirCarteirinha: (associada: PedidoCarteirinhaItem['associada']) => void;
+  onImprimirCarteirinha: (
+    associada: PedidoCarteirinhaItem['associada'],
+    pedido?: { id: string; status: string }
+  ) => void;
 }
 
-export default function PainelPedidosAemadepa({ onImprimirCarteirinha }: PainelPedidosAemadepaProps) {
+export default function PainelPedidosAemadepa({
+  onImprimirCarteirinha,
+}: PainelPedidosAemadepaProps) {
   const [pedidos, setPedidos] = useState<PedidoCarteirinhaItem[]>([]);
   const [resumo, setResumo] = useState<ResumoFinanceiro>({
     totalPedidos: 0,
@@ -88,6 +96,9 @@ export default function PainelPedidosAemadepa({ onImprimirCarteirinha }: PainelP
   const [loading, setLoading] = useState(true);
   const [statusFiltro, setStatusFiltro] = useState<string>('todos');
   const [busca, setBusca] = useState('');
+  const [paginaAtual, setPaginaAtual] = useState(1);
+  const ITENS_POR_PAGINA = 15;
+  const [gerandoPdf, setGerandoPdf] = useState(false);
   const [atualizandoId, setAtualizandoId] = useState<string | null>(null);
   const [modalEntregaPedido, setModalEntregaPedido] = useState<PedidoCarteirinhaItem | null>(null);
   const [entregueParaNome, setEntregueParaNome] = useState('');
@@ -186,6 +197,14 @@ export default function PainelPedidosAemadepa({ onImprimirCarteirinha }: PainelP
     );
   });
 
+  // Paginação de exatamente 15 registros por página
+  const totalPaginas = Math.ceil(pedidosFiltrados.length / ITENS_POR_PAGINA) || 1;
+  const paginaSegura = Math.min(paginaAtual, totalPaginas);
+  const pedidosPaginados = pedidosFiltrados.slice(
+    (paginaSegura - 1) * ITENS_POR_PAGINA,
+    paginaSegura * ITENS_POR_PAGINA
+  );
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Cards de Métricas Financeiras e Operacionais */}
@@ -245,7 +264,10 @@ export default function PainelPedidosAemadepa({ onImprimirCarteirinha }: PainelP
             <input
               type="text"
               value={busca}
-              onChange={(e) => setBusca(e.target.value)}
+              onChange={(e) => {
+                setBusca(e.target.value);
+                setPaginaAtual(1);
+              }}
               placeholder="Buscar por associada, pastor, matrícula ou campo..."
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-rose-500"
             />
@@ -254,7 +276,10 @@ export default function PainelPedidosAemadepa({ onImprimirCarteirinha }: PainelP
           <div className="flex items-center gap-2 flex-wrap">
             <select
               value={statusFiltro}
-              onChange={(e) => setStatusFiltro(e.target.value)}
+              onChange={(e) => {
+                setStatusFiltro(e.target.value);
+                setPaginaAtual(1);
+              }}
               className="border border-gray-300 rounded-lg text-xs font-bold px-3 py-2 bg-white text-gray-700"
             >
               <option value="todos">Todos os Pedidos</option>
@@ -265,13 +290,64 @@ export default function PainelPedidosAemadepa({ onImprimirCarteirinha }: PainelP
               <option value="cancelada">Canceladas</option>
             </select>
 
+            {/* Botão Limpar Filtros */}
             <button
-              onClick={() => void carregarPedidos()}
-              disabled={loading}
-              className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                setBusca('');
+                setStatusFiltro('todos');
+                setPaginaAtual(1);
+              }}
+              disabled={!busca && statusFiltro === 'todos'}
+              className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-xs rounded-lg transition flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              title="Restaurar todos os filtros da fila de pedidos"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-              <span>Atualizar</span>
+              <RotateCcw className="w-3.5 h-3.5 text-gray-500" />
+              <span>Limpar</span>
+            </button>
+
+            {/* Botão Gerar PDF Operacional da Fila de Solicitações */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                if (gerandoPdf || pedidosFiltrados.length === 0) return;
+                setGerandoPdf(true);
+                try {
+                  const itensRelatorio = pedidosFiltrados.map((p) => ({
+                    id: p.id,
+                    associadaNome: p.associada.nomeEsposa,
+                    associadaMatricula: p.associada.numeroAemadepa || null,
+                    ministroNome: p.associada.ministroNome,
+                    ministroMatricula: p.associada.ministroMatricula || null,
+                    campo: p.associada.campo || null,
+                    via: p.via,
+                    valor: p.valor,
+                    status: p.status,
+                    pagoEm: p.pagoEm,
+                    solicitadoEm: p.solicitadoEm,
+                    impressoEm: p.impressoEm,
+                    entregueEm: p.entregueEm,
+                    entreguePara: p.entreguePara,
+                  }));
+
+                  gerarRelatorioPedidosCarteirinhaPDF(itensRelatorio, {
+                    busca,
+                    status: statusFiltro,
+                  });
+                } catch (err) {
+                  console.error('Erro ao gerar relatório PDF de pedidos:', err);
+                } finally {
+                  setGerandoPdf(false);
+                }
+              }}
+              disabled={gerandoPdf || pedidosFiltrados.length === 0}
+              className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-lg transition shadow-xs flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              title="Gerar e baixar relatório oficial em PDF com todos os pedidos filtrados"
+            >
+              <FileText className={`w-3.5 h-3.5 ${gerandoPdf ? 'animate-bounce' : ''}`} />
+              <span>{gerandoPdf ? 'Gerando...' : 'Gerar PDF'}</span>
             </button>
           </div>
         </div>
@@ -306,7 +382,7 @@ export default function PainelPedidosAemadepa({ onImprimirCarteirinha }: PainelP
                   </td>
                 </tr>
               ) : (
-                pedidosFiltrados.map((p) => {
+                pedidosPaginados.map((p) => {
                   const podeImprimir = ['pago', 'em_impressao', 'impressa', 'entregue'].includes(p.status);
                   return (
                     <tr key={p.id} className="hover:bg-rose-50/40 transition">
@@ -389,7 +465,7 @@ export default function PainelPedidosAemadepa({ onImprimirCarteirinha }: PainelP
                           {/* Botão de Impressão integrado ao CartaoAemadepa existente */}
                           <button
                             type="button"
-                            onClick={() => onImprimirCarteirinha(p.associada)}
+                            onClick={() => onImprimirCarteirinha(p.associada, { id: p.id, status: p.status })}
                             disabled={!podeImprimir}
                             className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg transition title='Imprimir Carteirinha' disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                             title={podeImprimir ? 'Imprimir Carteirinha AEMADEPA' : 'Aguardando pagamento'}
@@ -423,31 +499,7 @@ export default function PainelPedidosAemadepa({ onImprimirCarteirinha }: PainelP
                             </>
                           )}
 
-                          {/* Transição de Impressão */}
-                          {p.status === 'pago' && (
-                            <button
-                              type="button"
-                              onClick={() => atualizarStatus(p.id, 'em_impressao')}
-                              disabled={atualizandoId === p.id}
-                              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition cursor-pointer"
-                              title="Marcar em impressão"
-                            >
-                              Iniciar Impressão
-                            </button>
-                          )}
-
-                          {p.status === 'em_impressao' && (
-                            <button
-                              type="button"
-                              onClick={() => atualizarStatus(p.id, 'impressa')}
-                              disabled={atualizandoId === p.id}
-                              className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition cursor-pointer"
-                              title="Marcar como impressa"
-                            >
-                              Concluir Cartão
-                            </button>
-                          )}
-
+                          {/* Botão de Registro de Entrega (Apenas após a carteirinha estar impressa) */}
                           {p.status === 'impressa' && (
                             <button
                               type="button"
@@ -456,7 +508,7 @@ export default function PainelPedidosAemadepa({ onImprimirCarteirinha }: PainelP
                                 setEntregueParaNome(p.associada.ministroNome);
                               }}
                               className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-                              title="Registrar entrega"
+                              title="Registrar entrega física da carteirinha"
                             >
                               <Truck className="w-3.5 h-3.5" />
                               <span>Entregar</span>
@@ -470,6 +522,43 @@ export default function PainelPedidosAemadepa({ onImprimirCarteirinha }: PainelP
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Paginação da Fila de Pedidos (Exatamente 15 por página) */}
+        <div className="px-5 py-3.5 border-t border-gray-200 bg-gray-50 flex items-center justify-between text-xs text-gray-600">
+          <div>
+            Mostrando {pedidosFiltrados.length === 0 ? 0 : (paginaSegura - 1) * ITENS_POR_PAGINA + 1} até{' '}
+            {Math.min(paginaSegura * ITENS_POR_PAGINA, pedidosFiltrados.length)} de{' '}
+            {pedidosFiltrados.length} solicitação(ões)
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                setPaginaAtual((p) => Math.max(1, p - 1));
+              }}
+              disabled={paginaSegura <= 1}
+              className="px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+            >
+              Anterior
+            </button>
+            <span className="px-3 py-1 font-semibold text-gray-700">
+              {paginaSegura} / {totalPaginas}
+            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                setPaginaAtual((p) => Math.min(totalPaginas, p + 1));
+              }}
+              disabled={paginaSegura >= totalPaginas}
+              className="px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+            >
+              Próxima
+            </button>
+          </div>
         </div>
       </div>
 

@@ -34,7 +34,10 @@ import {
   Check,
   X,
   DollarSign,
+  FileText,
+  RotateCcw,
 } from 'lucide-react';
+import { gerarRelatorioAssociadasPDF } from '@/lib/aemadepa/relatorio-associadas-pdf';
 
 interface AssociadaAemadepa {
   id: string; // member_id do ministro
@@ -85,7 +88,8 @@ export default function AemadepaPage() {
   const [filtroSupervisao, setFiltroSupervisao] = useState('TODOS');
   const [filtroCampo, setFiltroCampo] = useState('TODOS');
   const [paginaAtual, setPaginaAtual] = useState(1);
-  const ITENS_POR_PAGINA = 25;
+  const ITENS_POR_PAGINA = 20;
+  const [gerandoPdf, setGerandoPdf] = useState(false);
 
   // Estado para modal de edição / cadastro AEMADEPA
   const [modalAemadepaAberto, setModalAemadepaAberto] = useState(false);
@@ -95,6 +99,7 @@ export default function AemadepaPage() {
 
   // Estados para Carteirinha e Ficha Cadastral AEMADEPA
   const [associadaCartao, setAssociadaCartao] = useState<AssociadaAemadepa | null>(null);
+  const [pedidoCartaoAtivo, setPedidoCartaoAtivo] = useState<{ id: string; status: string } | null>(null);
   const [associadaFicha, setAssociadaFicha] = useState<AssociadaAemadepa | null>(null);
   const [associadaFinanceiroModal, setAssociadaFinanceiroModal] = useState<AssociadaAemadepa | null>(null);
 
@@ -461,7 +466,8 @@ export default function AemadepaPage() {
 
         {abaAtiva === 'pedidos' ? (
           <PainelPedidosAemadepa
-            onImprimirCarteirinha={(assoc) => {
+            onImprimirCarteirinha={(assoc, ped) => {
+              setPedidoCartaoAtivo(ped || null);
               setAssociadaCartao({
                 id: assoc.id,
                 ministroId: assoc.id,
@@ -711,7 +717,15 @@ export default function AemadepaPage() {
               campo: associadaCartao.campo,
               supervisao: associadaCartao.supervisao,
             }}
-            onClose={() => setAssociadaCartao(null)}
+            pedidoId={pedidoCartaoAtivo?.id || (associadaCartao as any).solicitacaoAtiva?.id}
+            statusPedido={pedidoCartaoAtivo?.status || (associadaCartao as any).solicitacaoAtiva?.status || associadaCartao.financeiro?.status}
+            onClose={() => {
+              setAssociadaCartao(null);
+              setPedidoCartaoAtivo(null);
+            }}
+            onStatusAtualizado={() => {
+              void carregarDados();
+            }}
           />
         )}
 
@@ -832,21 +846,62 @@ export default function AemadepaPage() {
                 </select>
               )}
 
-              {/* Limpar Filtros */}
-              {(searchTerm || filtroStatusEsposa !== 'todos' || filtroSupervisao !== 'TODOS' || filtroCampo !== 'TODOS') && (
-                <button
-                  onClick={() => {
-                    setSearchTerm('');
-                    setFiltroStatusEsposa('todos');
-                    setFiltroSupervisao('TODOS');
-                    setFiltroCampo('TODOS');
-                    setPaginaAtual(1);
-                  }}
-                  className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold text-xs rounded-lg transition cursor-pointer"
-                >
-                  Limpar
-                </button>
-              )}
+              {/* Botão Limpar Filtros */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setSearchTerm('');
+                  setFiltroStatusEsposa('todos');
+                  setFiltroSupervisao('TODOS');
+                  setFiltroCampo('TODOS');
+                  setPaginaAtual(1);
+                }}
+                disabled={!searchTerm && filtroStatusEsposa === 'todos' && filtroSupervisao === 'TODOS' && filtroCampo === 'TODOS'}
+                className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-xs rounded-lg transition flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                title="Restaurar todos os filtros"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-gray-500" />
+                <span>Limpar</span>
+              </button>
+
+              {/* Botão Gerar PDF Institucional AEMADEPA */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (gerandoPdf || associadasFiltradas.length === 0) return;
+                  setGerandoPdf(true);
+                  try {
+                    const dadosFormatados = associadasFiltradas.map(a => ({
+                      nome: a.nomeEsposa || '—',
+                      numeroAemadepa: a.numeroAemadepa || null,
+                      ministroNome: a.ministroNome || '—',
+                      ministroMatricula: a.ministroMatricula || null,
+                      campo: a.campo || null,
+                      supervisao: a.supervisao || null,
+                      situacaoCadastral: a.temEsposaCadastrada ? 'Cadastrada' : 'Pendente',
+                    }));
+
+                    gerarRelatorioAssociadasPDF(dadosFormatados, {
+                      busca: searchTerm,
+                      situacao: filtroStatusEsposa,
+                      supervisao: filtroSupervisao,
+                      campo: filtroCampo,
+                    });
+                  } catch (err) {
+                    console.error('Erro ao gerar PDF de associadas:', err);
+                  } finally {
+                    setGerandoPdf(false);
+                  }
+                }}
+                disabled={gerandoPdf || associadasFiltradas.length === 0}
+                className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-lg transition shadow-xs flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                title="Gerar e baixar relatório oficial em PDF com todos os registros filtrados"
+              >
+                <FileText className={`w-3.5 h-3.5 ${gerandoPdf ? 'animate-bounce' : ''}`} />
+                <span>{gerandoPdf ? 'Gerando...' : 'Gerar PDF'}</span>
+              </button>
             </div>
           </div>
         </div>
@@ -1073,7 +1128,11 @@ export default function AemadepaPage() {
 
             <div className="flex items-center gap-1">
               <button
-                onClick={() => setPaginaAtual(p => Math.max(1, p - 1))}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setPaginaAtual(p => Math.max(1, p - 1));
+                }}
                 disabled={paginaSegura <= 1}
                 className="px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
               >
@@ -1083,7 +1142,11 @@ export default function AemadepaPage() {
                 {paginaSegura} / {totalPaginas}
               </span>
               <button
-                onClick={() => setPaginaAtual(p => Math.min(totalPaginas, p + 1))}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setPaginaAtual(p => Math.min(totalPaginas, p + 1));
+                }}
                 disabled={paginaSegura >= totalPaginas}
                 className="px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
               >

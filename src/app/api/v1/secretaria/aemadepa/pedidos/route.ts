@@ -261,7 +261,12 @@ export async function PATCH(request: NextRequest) {
 
     let ehReimpressao = tipoImpressao === 'reimpressao' || Boolean(pedidoAtual.impresso_em && novoStatus === 'impressa');
 
-    if (novoStatus === 'impressa') {
+    // Se já estiver entregue e for reimpressão, preserva o status 'entregue'
+    if (ehReimpressao && pedidoAtual.status === 'entregue') {
+      updatePayload.status = 'entregue';
+    }
+
+    if (novoStatus === 'impressa' || (ehReimpressao && pedidoAtual.status === 'entregue')) {
       updatePayload.impresso_em = agora;
 
       // Se já havia sido impressa anteriormente ou explicitamente marcado como reimpressão, exige motivo

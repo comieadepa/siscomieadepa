@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
 import { cleanCpf, isValidCpf } from '@/lib/cpf';
+import EditorFotoAemadepa from '@/components/EditorFotoAemadepa';
 
 export interface MinistroAemadepaInfo {
   id: string; // member_id do ministro
@@ -94,7 +95,8 @@ export default function ModalAemadepa({
 
   // Estados de upload e foto
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
-  const [enviandoFoto, setEnviandoFoto] = useState(false);
+  const [fotoParaRecortar, setFotoParaRecortar] = useState<string | null>(null);
+  const [modalEditorFotoAberto, setModalEditorFotoAberto] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Busca de ministro quando aberto sem ministro pré-selecionado
@@ -140,7 +142,7 @@ export default function ModalAemadepa({
     return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
   };
 
-  // Upload e redimensionamento de foto
+  // Upload e abertura do editor de foto 3:4 com interação direta
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -150,56 +152,33 @@ export default function ModalAemadepa({
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      setErro('A imagem deve ter no máximo 5MB.');
+    if (file.size > 10 * 1024 * 1024) {
+      setErro('A imagem deve ter no máximo 10MB.');
       return;
     }
 
     const reader = new FileReader();
-    reader.onload = async (event) => {
+    reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
       if (!dataUrl) return;
-
-      try {
-        setEnviandoFoto(true);
-        // Redimensionamento para 3:4 padrão (300x400)
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d');
-          const targetW = 300;
-          const targetH = 400;
-          canvas.width = targetW;
-          canvas.height = targetH;
-          if (ctx) {
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(0, 0, targetW, targetH);
-            const sourceRatio = img.width / img.height;
-            const targetRatio = targetW / targetH;
-            let drawW = targetW;
-            let drawH = targetH;
-            if (sourceRatio > targetRatio) {
-              drawH = targetH;
-              drawW = targetH * sourceRatio;
-            } else {
-              drawW = targetW;
-              drawH = targetW / sourceRatio;
-            }
-            ctx.drawImage(img, - (drawW - targetW) / 2, - (drawH - targetH) / 2, drawW, drawH);
-            const compressed = canvas.toDataURL('image/jpeg', 0.85);
-            setFotoPreview(compressed);
-            setFormData(prev => ({ ...prev, foto_url: compressed }));
-          }
-          setEnviandoFoto(false);
-        };
-        img.src = dataUrl;
-      } catch (err: any) {
-        console.error('Erro ao processar imagem:', err);
-        setErro('Erro ao processar imagem.');
-        setEnviandoFoto(false);
-      }
+      setFotoParaRecortar(dataUrl);
+      setModalEditorFotoAberto(true);
+      // Limpa input para permitir selecionar o mesmo arquivo se quiser
+      if (fileInputRef.current) fileInputRef.current.value = '';
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleConfirmarRecorte = (recortadaBase64: string) => {
+    setFotoPreview(recortadaBase64);
+    setFormData(prev => ({ ...prev, foto_url: recortadaBase64 }));
+    setModalEditorFotoAberto(false);
+    setFotoParaRecortar(null);
+  };
+
+  const handleCancelarRecorte = () => {
+    setModalEditorFotoAberto(false);
+    setFotoParaRecortar(null);
   };
 
   // Upload para o servidor (Supabase Storage via endpoint existente)
@@ -481,11 +460,6 @@ export default function ModalAemadepa({
                     <span className="text-[10px] font-medium block">Sem Foto</span>
                   </div>
                 )}
-                {enviandoFoto && (
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-white text-xs">
-                    Processando...
-                  </div>
-                )}
               </div>
 
               <input
@@ -503,20 +477,33 @@ export default function ModalAemadepa({
                   className="flex-1 py-1.5 px-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition"
                 >
                   <Upload className="w-3.5 h-3.5" />
-                  Carregar
+                  {fotoPreview ? 'Trocar' : 'Carregar'}
                 </button>
                 {fotoPreview && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFotoPreview(null);
-                      setFormData(prev => ({ ...prev, foto_url: null }));
-                    }}
-                    className="py-1.5 px-2.5 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-xs font-semibold transition"
-                    title="Remover foto"
-                  >
-                    ✕
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFotoParaRecortar(fotoPreview);
+                        setModalEditorFotoAberto(true);
+                      }}
+                      className="py-1.5 px-2 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-lg text-xs font-semibold transition"
+                      title="Reenquadrar foto atual"
+                    >
+                      Ajustar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFotoPreview(null);
+                        setFormData(prev => ({ ...prev, foto_url: null }));
+                      }}
+                      className="py-1.5 px-2.5 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-xs font-semibold transition"
+                      title="Remover foto"
+                    >
+                      ✕
+                    </button>
+                  </>
                 )}
               </div>
               <p className="text-[10px] text-gray-500 text-center">
@@ -765,6 +752,14 @@ export default function ModalAemadepa({
           </div>
         </form>
       </div>
+
+      {/* Editor Interativo de Foto 3x4 (arraste, zoom na roda e touch) */}
+      <EditorFotoAemadepa
+        isOpen={modalEditorFotoAberto}
+        imagemOriginal={fotoParaRecortar}
+        onConfirmar={handleConfirmarRecorte}
+        onCancelar={handleCancelarRecorte}
+      />
     </div>
   );
 }
