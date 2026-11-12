@@ -5,6 +5,8 @@ import { enqueueWebhookJobs, processPendingWebhookJobs } from '@/lib/jobs/webhoo
 import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
 import { criarNotificacaoMinistro } from '@/lib/notificacoes-ministro';
 import { VALOR_CARTEIRINHA_AEMADEPA } from '@/lib/aemadepa/constants';
+import { obterDadosReciboAemadepa } from '@/lib/aemadepa/recibo-service';
+import { enviarReciboAemadepaEmail } from '@/lib/aemadepa/recibo-email-service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -328,8 +330,9 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Atualização atômica idempotente com auditoria
-        const { error: updErr } = await supabase
+        // Atualização atômica idempotente com trava condicional (lock pessimista/otimista no UPDATE):
+        // Garante que se PAYMENT_CONFIRMED e PAYMENT_RECEIVED chegarem simultâneos, apenas a 1ª requisição altera a linha.
+        const { data: solAtualizada, error: updErr } = await supabase
           .from('aemadepa_carteirinhas_solicitacoes')
           .update({
             status: novoStatus,
@@ -338,11 +341,20 @@ export async function POST(request: NextRequest) {
             observacoes: solicitacao.observacoes ? `${solicitacao.observacoes}${obsAdicional}` : obsAdicional.trim(),
             updated_at: new Date().toISOString(),
           })
-          .eq('id', solicitacao.id);
+          .eq('id', solicitacao.id)
+          .in('status', ['aguardando_pagamento', 'processando_cobranca', 'cancelada'])
+          .select('id')
+          .maybeSingle();
 
         if (updErr) {
           console.error('[ASAAS WEBHOOK AEMADEPA] Erro ao atualizar status financeiro:', updErr.message);
           return NextResponse.json({ error: updErr.message }, { status: 500 });
+        }
+
+        // Se nenhuma linha foi atualizada, outra requisição concorrente já concluiu a transição financeira
+        if (!solAtualizada) {
+          console.log(`[ASAAS WEBHOOK AEMADEPA] Solicitação ${solicitacao.id} já transicionada concorrentemente para pago. Ignorando duplicata.`);
+          return NextResponse.json({ received: true, status: 'already_processed_concurrent' });
         }
 
         // Auditoria e notificação em background para responder imediatamente (< 200ms)
@@ -393,6 +405,56 @@ export async function POST(request: NextRequest) {
             });
           } catch (notifErr: any) {
             console.error('[ASAAS WEBHOOK AEMADEPA] Falha ao registrar notificação administrativa:', notifErr.message);
+          }
+
+          // Emissão e envio automático do Recibo Institucional AEMADEPA via Resend (em background com deduplicação)
+          try {
+            // Checa preventivamente se já houve envio com sucesso anotado nas observações para evitar disparo duplo em eventuais corridas
+            const { data: solAtualRec } = await asyncClient
+              .from('aemadepa_carteirinhas_solicitacoes')
+              .select('observacoes')
+              .eq('id', solicitacao.id)
+              .maybeSingle();
+
+            const jaEnviado = solAtualRec?.observacoes && solAtualRec.observacoes.includes('[Recibo Automático Emitido em');
+
+            if (jaEnviado) {
+              console.log(`[ASAAS WEBHOOK AEMADEPA] Recibo da solicitação ${solicitacao.id} já foi enviado anteriormente. Deduplicação aplicada.`);
+            } else {
+              const resDadosRecibo = await obterDadosReciboAemadepa(solicitacao.id);
+              if (resDadosRecibo.ok && resDadosRecibo.dados) {
+                const resEnvio = await enviarReciboAemadepaEmail(resDadosRecibo.dados);
+                const dataHoraStr = new Date().toLocaleString('pt-BR', { timeZone: 'America/Belem' });
+                const msgHistorico = resEnvio.sucesso
+                  ? `[Recibo Automático Emitido em ${dataHoraStr}] Nº ${resDadosRecibo.dados.numeroRecibo} enviado para ${resEnvio.destinatario} (ID: ${resEnvio.messageId || 'simulado'})`
+                  : `[Recibo Automático - Tentativa em ${dataHoraStr}] Nº ${resDadosRecibo.dados.numeroRecibo} para ${resEnvio.destinatario}: ${resEnvio.erro}`;
+
+                const obsBase = solAtualRec?.observacoes || '';
+                const novasObs = obsBase ? `${obsBase}\n${msgHistorico}` : msgHistorico;
+
+                await asyncClient
+                  .from('aemadepa_carteirinhas_solicitacoes')
+                  .update({ observacoes: novasObs, updated_at: new Date().toISOString() })
+                  .eq('id', solicitacao.id);
+
+                void logDB({
+                  acao: 'enviar_email',
+                  modulo: 'secretaria',
+                  entidade: 'aemadepa_recibo',
+                  entidadeId: solicitacao.id,
+                  descricao: `Recibo automático ${resDadosRecibo.dados.numeroRecibo} processado via webhook para ${resEnvio.destinatario}`,
+                  status: resEnvio.sucesso ? 'sucesso' : 'erro',
+                  detalhes: {
+                    solicitacaoId: solicitacao.id,
+                    numeroRecibo: resDadosRecibo.dados.numeroRecibo,
+                    destinatario: resEnvio.destinatario,
+                    sucesso: resEnvio.sucesso,
+                  },
+                });
+              }
+            }
+          } catch (reciboErr: any) {
+            console.error('[ASAAS WEBHOOK AEMADEPA] Falha ao emitir recibo automático:', reciboErr.message);
           }
         });
 

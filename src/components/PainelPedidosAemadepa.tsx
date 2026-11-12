@@ -11,8 +11,13 @@ import {
   DollarSign,
   X,
   Check,
+  QrCode,
+  Download,
+  Mail,
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
+import ModalRecuperarPixAemadepa from '@/components/ModalRecuperarPixAemadepa';
+import ModalEnviarReciboAemadepa from '@/components/ModalEnviarReciboAemadepa';
 
 export interface PedidoCarteirinhaItem {
   id: string;
@@ -86,6 +91,9 @@ export default function PainelPedidosAemadepa({ onImprimirCarteirinha }: PainelP
   const [atualizandoId, setAtualizandoId] = useState<string | null>(null);
   const [modalEntregaPedido, setModalEntregaPedido] = useState<PedidoCarteirinhaItem | null>(null);
   const [entregueParaNome, setEntregueParaNome] = useState('');
+  const [modalRecuperarPix, setModalRecuperarPix] = useState<PedidoCarteirinhaItem | null>(null);
+  const [modalEnviarRecibo, setModalEnviarRecibo] = useState<PedidoCarteirinhaItem | null>(null);
+  const [baixandoReciboId, setBaixandoReciboId] = useState<string | null>(null);
 
   const carregarPedidos = useCallback(async () => {
     setLoading(true);
@@ -137,6 +145,33 @@ export default function PainelPedidosAemadepa({ onImprimirCarteirinha }: PainelP
       console.error('Erro ao atualizar status do pedido:', err);
     } finally {
       setAtualizandoId(null);
+    }
+  };
+
+  const baixarRecibo = async (pedido: PedidoCarteirinhaItem) => {
+    if (baixandoReciboId) return;
+    setBaixandoReciboId(pedido.id);
+    try {
+      const res = await authenticatedFetch(`/api/v1/secretaria/aemadepa/pedidos/${pedido.id}/recibo`);
+      if (!res.ok) {
+        const erroJson = await res.json().catch(() => null);
+        throw new Error(erroJson?.error || 'Erro ao gerar recibo para download.');
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Recibo_AEMADEPA_${pedido.associada.nomeEsposa.replace(/\s+/g, '_')}_Via${pedido.via}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      console.error('Erro ao baixar recibo:', err);
+      alert(err.message || 'Não foi possível baixar o recibo.');
+    } finally {
+      setBaixandoReciboId(null);
     }
   };
 
@@ -338,6 +373,19 @@ export default function PainelPedidosAemadepa({ onImprimirCarteirinha }: PainelP
 
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {/* Botão Recuperar PIX para solicitações com status Aguardando PIX */}
+                          {['aguardando_pagamento', 'processando_cobranca'].includes(p.status) && (
+                            <button
+                              type="button"
+                              onClick={() => setModalRecuperarPix(p)}
+                              className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                              title="Recuperar dados do PIX e QR Code para pagamento"
+                            >
+                              <QrCode className="w-3.5 h-3.5 text-amber-600" />
+                              <span>Recuperar PIX</span>
+                            </button>
+                          )}
+
                           {/* Botão de Impressão integrado ao CartaoAemadepa existente */}
                           <button
                             type="button"
@@ -348,6 +396,32 @@ export default function PainelPedidosAemadepa({ onImprimirCarteirinha }: PainelP
                           >
                             <Printer className="w-4 h-4" />
                           </button>
+
+                          {/* Botões de Recibo Institucional (Apenas para solicitações pagas/confirmadas) */}
+                          {podeImprimir && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => void baixarRecibo(p)}
+                                disabled={baixandoReciboId === p.id}
+                                className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                                title="Baixar Recibo Oficial em PDF"
+                              >
+                                <Download className={`w-3.5 h-3.5 text-slate-600 ${baixandoReciboId === p.id ? 'animate-bounce' : ''}`} />
+                                <span className="hidden sm:inline">Recibo</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setModalEnviarRecibo(p)}
+                                className="p-1.5 bg-pink-50 hover:bg-pink-100 text-pink-700 border border-pink-200 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                                title="Enviar Recibo por E-mail (Resend)"
+                              >
+                                <Mail className="w-3.5 h-3.5 text-pink-600" />
+                                <span className="hidden sm:inline">Enviar</span>
+                              </button>
+                            </>
+                          )}
 
                           {/* Transição de Impressão */}
                           {p.status === 'pago' && (
@@ -455,6 +529,30 @@ export default function PainelPedidosAemadepa({ onImprimirCarteirinha }: PainelP
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal de Recuperação de PIX */}
+      {modalRecuperarPix && (
+        <ModalRecuperarPixAemadepa
+          pedidoId={modalRecuperarPix.id}
+          nomeAssociada={modalRecuperarPix.associada.nomeEsposa}
+          onFechar={() => setModalRecuperarPix(null)}
+        />
+      )}
+
+      {/* Modal de Envio de Recibo por E-mail */}
+      {modalEnviarRecibo && (
+        <ModalEnviarReciboAemadepa
+          pedidoId={modalEnviarRecibo.id}
+          nomeAssociada={modalEnviarRecibo.associada.nomeEsposa}
+          emailPadrao={modalEnviarRecibo.associada.emailEsposa}
+          via={modalEnviarRecibo.via}
+          valor={modalEnviarRecibo.valor}
+          onFechar={() => setModalEnviarRecibo(null)}
+          onEnviadoSucesso={() => {
+            void carregarPedidos();
+          }}
+        />
       )}
     </div>
   );
