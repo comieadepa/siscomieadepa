@@ -644,6 +644,17 @@ export default function MembrosPage() {
     return rawValue || value;
   };
 
+  const normalizeEstadoCivil = (rawValue?: string): string => {
+    const value = String(rawValue || '').trim().toUpperCase();
+    if (!value || value === '- ESCOLHA -' || value === 'NULL') return '';
+    if (value.startsWith('CASAD')) return 'casado';
+    if (value.startsWith('SOLTEIR')) return 'solteiro';
+    if (value.startsWith('VIUV') || value.startsWith('VIÚV')) return 'viuvo';
+    if (value.startsWith('DIVORCI')) return 'divorciado';
+    if (value.startsWith('SEPARAD')) return 'separado';
+    return rawValue?.toLowerCase() || '';
+  };
+
   // Nomenclaturas dinâmicas para as divisões
   const [, setNomenclaturasState] = useState({
     divisao1: 'IGREJA',
@@ -1350,7 +1361,7 @@ useEffect(() => {
       sexo: membro.sexo || 'MASCULINO',
       tipoSanguineo: membro.tipoSanguineo || '',
       escolaridade: membro.escolaridade || '',
-      estadoCivil: membro.estadoCivil || '',
+      estadoCivil: normalizeEstadoCivil(membro.estadoCivil),
       nomeConjuge: membro.nomeConjuge || '',
       cpfConjuge: membro.cpfConjuge || '',
       dataNascimentoConjuge: membro.dataNascimentoConjuge || '',
@@ -3903,18 +3914,26 @@ useEffect(() => {
                             className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                           >
                             <option value="">- Escolha -</option>
-                            <option value="solteiro">{dadosPessoais.sexo === 'FEMININO' ? 'Solteira' : 'Solteiro'}</option>
                             <option value="casado">{dadosPessoais.sexo === 'FEMININO' ? 'Casada' : 'Casado'}</option>
+                            <option value="solteiro">{dadosPessoais.sexo === 'FEMININO' ? 'Solteira' : 'Solteiro'}</option>
+                            <option value="viuvo">{dadosPessoais.sexo === 'FEMININO' ? 'Viúva' : 'Viúvo'}</option>
+                            <option value="divorciado">{dadosPessoais.sexo === 'FEMININO' ? 'Divorciada' : 'Divorciado'}</option>
+                            <option value="separado">{dadosPessoais.sexo === 'FEMININO' ? 'Separada' : 'Separado'}</option>
                           </select>
                         </div>
                       </div>
 
-
-
-                      {/* Dados do Cônjuge - Aparecem apenas se casado */}
-                      {dadosPessoais.estadoCivil === 'casado' && (
+                      {/* Dados do Cônjuge - Aparecem se casado OU se já houver dados cadastrados */}
+                      {(dadosPessoais.estadoCivil === 'casado' || Boolean(dadosPessoais.nomeConjuge?.trim() || dadosPessoais.cpfConjuge?.trim() || dadosPessoais.dataNascimentoConjuge?.trim())) && (
                         <div className="bg-blue-50 border border-blue-200 p-3 rounded-md">
-                          <h4 className="text-xs font-semibold text-blue-800 mb-3">👥 Dados do Cônjuge</h4>
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-xs font-semibold text-blue-800">👥 Dados do Cônjuge</h4>
+                            {dadosPessoais.estadoCivil !== 'casado' && Boolean(dadosPessoais.nomeConjuge?.trim() || dadosPessoais.cpfConjuge?.trim()) && (
+                              <span className="text-[11px] bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded font-medium">
+                                ℹ️ Cônjuge cadastrado no banco (Estado Civil atual: {dadosPessoais.estadoCivil ? dadosPessoais.estadoCivil.toUpperCase() : 'Não definido'})
+                              </span>
+                            )}
+                          </div>
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                             <div>
                               <label className="block text-xs font-semibold text-gray-700 mb-1">Nome do Cônjuge</label>
@@ -4593,10 +4612,17 @@ useEffect(() => {
                   {activeTab === 'familiar' && (
                     <div className="space-y-4">
 
-                      {/* Dados do Cônjuge — visível apenas se casado */}
-                      {dadosPessoais.estadoCivil === 'casado' ? (
+                      {/* Dados do Cônjuge — visível se casado OU se houver dados de cônjuge cadastrados */}
+                      {(dadosPessoais.estadoCivil === 'casado' || Boolean(dadosPessoais.nomeConjuge?.trim() || dadosPessoais.cpfConjuge?.trim() || dadosPessoais.dataNascimentoConjuge?.trim() || dadosConjuge.rg?.trim())) ? (
                         <div className="bg-blue-50 border border-blue-200 p-4 rounded-md">
-                          <h4 className="text-sm font-bold text-blue-800 mb-3">👥 Registro Familiar — Cônjuge</h4>
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-sm font-bold text-blue-800">👥 Registro Familiar — Cônjuge</h4>
+                            {dadosPessoais.estadoCivil !== 'casado' && Boolean(dadosPessoais.nomeConjuge?.trim() || dadosPessoais.cpfConjuge?.trim()) && (
+                              <span className="text-xs bg-amber-100 text-amber-800 border border-amber-300 px-2.5 py-1 rounded font-medium">
+                                ℹ️ Dados existentes no banco (Estado Civil na aba Dados: {dadosPessoais.estadoCivil ? dadosPessoais.estadoCivil.toUpperCase() : 'Não selecionado'})
+                              </span>
+                            )}
+                          </div>
 
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
                             <div className="md:col-span-2">
@@ -4688,7 +4714,7 @@ useEffect(() => {
                         </div>
                       )}
 
-                      {dadosPessoais.estadoCivil !== 'casado' && (
+                      {!(dadosPessoais.estadoCivil === 'casado' || Boolean(dadosPessoais.nomeConjuge?.trim() || dadosPessoais.cpfConjuge?.trim() || dadosPessoais.dataNascimentoConjuge?.trim() || dadosConjuge.rg?.trim())) && (
                         <div className="bg-gray-50 border border-gray-200 p-4 rounded-md">
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div>
