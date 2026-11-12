@@ -150,7 +150,7 @@ export async function GET(request: NextRequest) {
           emailEsposa: assoc?.email || '',
           tipoSanguineoEsposa: assoc?.tipo_sanguineo || '',
           fotoEsposaUrl: assoc?.foto_url || null,
-          numeroAemadepa: assoc?.numero_aemadepa || cfMin.numero_aemadepa || '',
+          numeroAemadepa: assoc?.numero_aemadepa || min?.matricula || cfMin.matricula || cfMin.numero_aemadepa || '',
           ministroNome: min?.name || '—',
           ministroMatricula: min?.matricula || cfMin.matricula || '',
           ministroCpf: min?.cpf || '',

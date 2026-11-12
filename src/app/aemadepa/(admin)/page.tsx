@@ -188,13 +188,17 @@ export default function AemadepaPage() {
         const m = item.members || {};
         const cfMinistro = m.custom_fields && typeof m.custom_fields === 'object' ? m.custom_fields : {};
         const nomeEsposa = String(item.nome || '').trim();
+        const matriculaOficialMinistro = String(m.matricula || cfMinistro.matricula || '').trim();
+        const numeroAemadepaPersistido = String(item.numero_aemadepa || '').trim();
+        // Fallback resiliente: prioriza o número persistido; se nulo/vazio, utiliza a matrícula do esposo
+        const numeroAemadepaEfetivo = numeroAemadepaPersistido || matriculaOficialMinistro;
 
         return {
           id: item.id, // ID da associada
           ministroId: item.ministro_id,
           uniqueId: m.unique_id || cfMinistro.unique_id || cfMinistro.uniqueId || undefined,
           ministroNome: String(m.name || cfMinistro.nome || '').trim(),
-          ministroMatricula: String(m.matricula || cfMinistro.matricula || '').trim(),
+          ministroMatricula: matriculaOficialMinistro,
           ministroCpf: String(m.cpf || cfMinistro.cpf || '').trim(),
           cargoMinisterial: String(m.cargo_ministerial || cfMinistro.cargoMinisterial || 'PASTOR').trim(),
           campo: String(cfMinistro.campo || '').trim(),
@@ -214,7 +218,7 @@ export default function AemadepaPage() {
           emailEsposa: String(item.email || '').trim(),
           tipoSanguineoEsposa: String(item.tipo_sanguineo || '').trim(),
           fotoEsposaUrl: item.foto_url || null,
-          numeroAemadepa: String(item.numero_aemadepa || '').trim(),
+          numeroAemadepa: numeroAemadepaEfetivo,
           temEsposaCadastrada: true,
           statusMinistro: String(m.status || 'active').toLowerCase(),
           associadaId: item.id,

@@ -179,12 +179,20 @@ export async function POST(request: NextRequest) {
         ? ministroAtual.custom_fields
         : {};
 
-    const numeroAemadepaAtual = String(
-      associadaExistente?.numero_aemadepa ||
+    // Prioridade estrita para o número da credencial AEMADEPA:
+    // 1. Matrícula oficial do esposo (members.matricula)
+    // 2. Matrícula em custom_fields do ministro
+    // 3. Número já existente da associada (para nunca apagar número válido se a matrícula do ministro for temporariamente nula)
+    // 4. Fallback de custom_fields histórico
+    const matriculaEsposo = String(ministroAtual.matricula || customFieldsExistente.matricula || '').trim();
+    const numeroExistente = String(associadaExistente?.numero_aemadepa || '').trim();
+    const numeroCustomFields = String(
       customFieldsExistente.numero_aemadepa ||
       customFieldsExistente.numeroAemadepa ||
       ''
-    ).trim() || null;
+    ).trim();
+
+    const numeroAemadepaAtual = matriculaEsposo || numeroExistente || numeroCustomFields || null;
 
     // 5. Execução Exclusiva via RPC Atômica Transacional no PostgreSQL
     // Não utiliza fallback de gravações separadas: a atomicidade com rollback integral é garantida no banco.
