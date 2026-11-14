@@ -909,7 +909,7 @@ export async function POST(req: NextRequest) {
     ]);
 
     // [TEMP] Log de intencoes para teste
-    console.log(`[Maia] INTENCAO_DETECTADA | mensagem: "${perguntaRaw}" | ctx: evento(${ctxEventoId?.slice(0,8) ?? '-'}) nome(${ctxEventoNome ?? '-'}) intent(${ctxUltimaIntencao ?? '-'}) | ${[
+    console.log(`[SARA] INTENCAO_DETECTADA | mensagem: "${perguntaRaw}" | ctx: evento(${ctxEventoId?.slice(0,8) ?? '-'}) nome(${ctxEventoNome ?? '-'}) intent(${ctxUltimaIntencao ?? '-'}) | ${[
       isSegundaVia && 'segunda_via',
       querConfirmarInscricao && 'confirmar_inscricao',
       isPagamento && 'consultar_pagamento',

@@ -50,7 +50,7 @@ function appendSuporte(msg: string, evento: Record<string, unknown>): string {
 }
 
 function appendAssinatura(msg: string): string {
-  return `${msg}\n\n— Maia 💙`;
+  return `${msg}\n\n— SARA 💙`;
 }
 
 type Intent = 'segunda_via' | 'consulta_inscricao' | 'hospedagem' | 'certificado' | null;
@@ -317,7 +317,7 @@ function respostaFallback(
 
   const social = detectarMensagemSocial(pergunta);
   if (social === 'saudacao') {
-    return 'Olá 😊\nSou a Maia. Como posso te ajudar?';
+    return 'Olá 😊\nSou a SARA. Como posso te ajudar?';
   }
   if (social === 'agradecimento') {
     return 'Por nada 😊\nFico feliz em ajudar.';
@@ -543,7 +543,7 @@ function respostaFallback(
 
   // ── Saudação ─────────────────────────────────────────────────
   if (hasAny(p, ['ola', 'oi', 'bom dia', 'boa', 'ajuda'])) {
-    return `Oi 😊\nSou a Maia e estou aqui para te ajudar com informações do evento *${evento.nome}*.\n\nPosso responder sobre:\n• Local e data\n• Sua inscrição (informe o CPF)\n• Segunda via de pagamento / link PIX\n• Hospedagem e brinde\n• Programação\n• Grupo do WhatsApp\n\nO que deseja saber?`;
+    return `Oi 😊\nSou a SARA e estou aqui para te ajudar com informações do evento *${evento.nome}*.\n\nPosso responder sobre:\n• Local e data\n• Sua inscrição (informe o CPF)\n• Segunda via de pagamento / link PIX\n• Hospedagem e brinde\n• Programação\n• Grupo do WhatsApp\n\nO que deseja saber?`;
   }
 
   // ── Fallback genérico ────────────────────────────────────────
@@ -844,7 +844,7 @@ ${inscricao.alimentacao || evento.departamento === 'AGO' ? `\nDados de Alimenta�
               : 'CPF não informado — não consulte dados de inscrição.',
         ].filter(Boolean).join('\n');
 
-        const systemPrompt = `Você é a Maia, assistente virtual do evento e parte da equipe de suporte da Comissão de Tecnologia. Responda de forma curta, humana, cordial e acolhedora.
+        const systemPrompt = `Você é a SARA, assistente virtual do evento e parte da equipe de suporte da Comissão de Tecnologia. Responda de forma curta, humana, cordial e acolhedora.
 
 REGRAS OBRIGATÓRIAS:
 1. Responda APENAS com base nas informações do contexto abaixo.
@@ -857,8 +857,8 @@ REGRAS OBRIGATÓRIAS:
 8. Se o status_pagamento for 'pendente', informe que o pagamento aguarda confirmação e NÃO mencione código de check-in.
 9. Para pedidos de segunda via / boleto / link PIX / "perdi o pagamento": use os campos invoice_url, pix_copia_cola, valor_final e asaas_due_date da inscrição para responder. NUNCA consulte a API ASAAS.
 10. Quando encaminhar ao suporte, use a frase: "Nossa equipe pode te ajudar rapidamente 🙏".
-11. Evite repetir o nome "Maia" em toda resposta; use apenas quando fizer sentido.
-12. A assinatura "— Maia 💙" pode aparecer apenas em algumas respostas importantes.
+11. Evite repetir o nome "SARA" em toda resposta; use apenas quando fizer sentido.
+12. A assinatura "— SARA 💙" pode aparecer apenas em algumas respostas importantes.
 13. Sempre que a consulta envolver hospedagem (alojamento, leito), utilize estritamente estes formatos/regras:
     - Se a hospedagem estiver alocada (status 'alocada'):
       👋 Encontrei sua hospedagem!

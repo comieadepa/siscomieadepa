@@ -41,16 +41,16 @@ type Props = {
 
 function buildInitialMessage(scope: PublicAssistenteScope, departamento?: DepartamentoConfig | null) {
   if (scope === 'departamento' && departamento) {
-    return `Oi! Eu sou a Maia :)\nPosso ajudar com inscricoes e eventos da ${departamento.nome}.`;
+    return `Oi! Eu sou a SARA :)\nPosso ajudar com inscricoes e eventos da ${departamento.nome}.`;
   }
-  return 'Oi! Eu sou a Maia :)\nPosso ajudar com inscricoes abertas, pagamentos e duvidas gerais dos eventos.';
+  return 'Oi! Eu sou a SARA :)\nPosso ajudar com inscricoes abertas, pagamentos e duvidas gerais dos eventos.';
 }
 
 function MaiaAvatar({ sizeClass, className }: { sizeClass: string; className?: string }) {
   return (
     <img
       src="/maia.png"
-      alt="Maia"
+      alt="SARA"
       className={`${sizeClass} rounded-full bg-white border border-blue-200 shadow-sm object-cover object-center ${className ?? ''}`.trim()}
     />
   );
@@ -117,7 +117,7 @@ export default function PublicAssistenteWidget({ scope, departamento }: Props) {
     fimRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [mensagens]);
 
-  // Restaurar foco no input após cada resposta da Maia (loading false → input reabilitado)
+  // Restaurar foco no input após cada resposta da SARA (loading false → input reabilitado)
   useEffect(() => {
     if (!loading && aberto) {
       inputRef.current?.focus();
@@ -369,7 +369,7 @@ export default function PublicAssistenteWidget({ scope, departamento }: Props) {
         <div className="bg-[#0D2B4E] px-4 py-3 flex items-center gap-3 flex-shrink-0">
           <MaiaAvatar sizeClass="w-9 h-9" />
           <div className="flex-1 min-w-0">
-            <p className="text-white font-bold text-sm leading-tight truncate">Maia</p>
+            <p className="text-white font-bold text-sm leading-tight truncate">SARA</p>
             <p className="text-white/60 text-xs truncate">{headerSubtitle}</p>
           </div>
           <div className="flex items-center gap-2">
