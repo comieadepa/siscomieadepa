@@ -1202,7 +1202,11 @@ export async function POST(request: NextRequest) {
           && isCampoMissionario
           && campoMissionarioEnabled;
 
-        if (fluxoCampoMissionarioEspecial && valorCmPastorConfigurado > 0 && tipoNome === 'CAMPO MISSIONÁRIO') {
+        if (
+          fluxoCampoMissionarioEspecial &&
+          valorCmPastorConfigurado > 0 &&
+          (ehTipoPastorPresidente(tipoNome) || tipoNome === 'CAMPO MISSIONÁRIO' || /campo\s*mission/i.test(tipoNome ?? ''))
+        ) {
           valorBase = valorCmPastorConfigurado;
           valorFinal = Math.max(0, valorBase - desconto);
         }
