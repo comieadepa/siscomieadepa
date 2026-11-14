@@ -95,6 +95,7 @@ export default function PublicAemadepaCadastroPage() {
   const [erroBusca, setErroBusca] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState(false);
   const [associadaIdSalvo, setAssociadaIdSalvo] = useState<string | null>(null);
+  const [comprimindoFoto, setComprimindoFoto] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const desafioMesRef = useRef<HTMLInputElement>(null);
@@ -136,6 +137,19 @@ export default function PublicAemadepaCadastroPage() {
     const ymd = `${a}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     return { valida: true, ymd };
   };
+
+  // Sincronização automática e reativa de Dia, Mês e Ano com formData.data_nascimento
+  useEffect(() => {
+    // Só sincroniza se ao menos um dos campos de dia/mês/ano estiver preenchido
+    if (esposaDia || esposaMes || esposaAno) {
+      const res = validarEConverterData(esposaDia, esposaMes, esposaAno);
+      if (res.valida) {
+        setFormData((prev) => (prev.data_nascimento !== res.ymd ? { ...prev, data_nascimento: res.ymd } : prev));
+      } else {
+        setFormData((prev) => (prev.data_nascimento ? { ...prev, data_nascimento: '' } : prev));
+      }
+    }
+  }, [esposaDia, esposaMes, esposaAno]);
 
   // Debounce na busca de ministros com AbortController e timeout de resiliência
   useEffect(() => {
@@ -326,56 +340,94 @@ export default function PublicAemadepaCadastroPage() {
     return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
   };
 
-  // Upload e compressão de foto em Canvas
+  // Upload e compressão de foto em Canvas com feedback visual e tratamento seguro de erros
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
       setErro('Por favor, selecione um arquivo de imagem válido (JPG, PNG).');
+      if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const dataUrl = event.target?.result as string;
-      if (!dataUrl) return;
+    setComprimindoFoto(true);
+    setErro(null);
 
-      const img = document.createElement('img');
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 600;
-        const MAX_HEIGHT = 800;
-        let width = img.width;
-        let height = img.height;
+    try {
+      const reader = new FileReader();
 
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
+      reader.onerror = () => {
+        setComprimindoFoto(false);
+        setErro('Falha ao ler o arquivo da foto no seu dispositivo. Tente novamente.');
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      };
+
+      reader.onload = async (event) => {
+        const dataUrl = event.target?.result as string;
+        if (!dataUrl) {
+          setComprimindoFoto(false);
+          setErro('Não foi possível carregar a imagem selecionada.');
+          return;
         }
 
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        const img = document.createElement('img');
+        img.onerror = () => {
+          setComprimindoFoto(false);
+          setErro('Formato de imagem não reconhecido ou arquivo corrompido.');
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        };
 
-        ctx.drawImage(img, 0, 0, width, height);
-        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.85);
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 600;
+            const MAX_HEIGHT = 800;
+            let width = img.width;
+            let height = img.height;
 
-        setFotoPreview(compressedBase64);
-        setFormData((prev) => ({ ...prev, foto_url: compressedBase64 }));
-        setErro(null);
+            if (width > height) {
+              if (width > MAX_WIDTH) {
+                height *= MAX_WIDTH / width;
+                width = MAX_WIDTH;
+              }
+            } else {
+              if (height > MAX_HEIGHT) {
+                width *= MAX_HEIGHT / height;
+                height = MAX_HEIGHT;
+              }
+            }
+
+            canvas.width = Math.round(width);
+            canvas.height = Math.round(height);
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              throw new Error('Não foi possível inicializar o processador de imagem.');
+            }
+
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.85);
+
+            setFotoPreview(compressedBase64);
+            setFormData((prev) => ({ ...prev, foto_url: compressedBase64 }));
+            setErro(null);
+          } catch (canvasErr: any) {
+            console.error('Erro na compressão da foto:', canvasErr);
+            setErro('Erro ao processar e otimizar a fotografia. Tente uma foto menor.');
+          } finally {
+            setComprimindoFoto(false);
+          }
+        };
+
+        img.src = dataUrl;
       };
-      img.src = dataUrl;
-    };
-    reader.readAsDataURL(file);
+
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      console.error('Erro no upload de foto:', err);
+      setComprimindoFoto(false);
+      setErro('Erro inesperado ao processar a foto.');
+    }
   };
 
   const handleRemoverFoto = () => {
@@ -430,6 +482,12 @@ export default function PublicAemadepaCadastroPage() {
       if (data.associadaId) {
         setAssociadaIdSalvo(data.associadaId);
       }
+
+      // Sincroniza explicitamente o estado formData com a data validada e salva
+      setFormData((prev) => ({
+        ...prev,
+        data_nascimento: resDataEsposa.ymd,
+      }));
 
       return data.associadaId || associadaIdSalvo || null;
     } catch (err: any) {
@@ -504,7 +562,7 @@ export default function PublicAemadepaCadastroPage() {
                   dadosEsposaPreenchidos={{
                     nome: formData.nome,
                     cpf: formData.cpf,
-                    dataNascimento: formData.data_nascimento,
+                    dataNascimento: formData.data_nascimento || validarEConverterData(esposaDia, esposaMes, esposaAno).ymd || '',
                     fotoUrl: formData.foto_url,
                   }}
                   onGarantirCadastroSalvo={salvarCadastro}
@@ -835,7 +893,12 @@ export default function PublicAemadepaCadastroPage() {
                   {/* Foto 3x4 da Esposa */}
                   <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 p-4 bg-slate-50/80 rounded-2xl border border-gray-200">
                     <div className="w-24 h-32 rounded-xl overflow-hidden bg-white border-2 border-dashed border-rose-300 flex items-center justify-center shrink-0 shadow-inner relative group">
-                      {fotoPreview ? (
+                      {comprimindoFoto ? (
+                        <div className="text-center p-2 text-rose-600 flex flex-col items-center justify-center gap-1.5 animate-pulse">
+                          <RefreshCw className="w-6 h-6 animate-spin text-rose-600" />
+                          <span className="text-[10px] font-bold leading-tight">Otimizando foto 3x4...</span>
+                        </div>
+                      ) : fotoPreview ? (
                         <>
                           <img
                             src={fotoPreview}
@@ -872,17 +935,37 @@ export default function PublicAemadepaCadastroPage() {
                         type="file"
                         accept="image/jpeg,image/png,image/webp"
                         onChange={handleFileChange}
+                        disabled={comprimindoFoto}
                         className="hidden"
                       />
 
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-rose-50 text-rose-700 font-bold text-xs rounded-xl border border-rose-300 shadow-2xs transition cursor-pointer"
-                      >
-                        <Upload className="w-3.5 h-3.5" />
-                        {fotoPreview ? 'Trocar Fotografia' : 'Escolher Foto do Celular/PC'}
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2 justify-center sm:justify-start">
+                        <button
+                          type="button"
+                          disabled={comprimindoFoto}
+                          onClick={() => fileInputRef.current?.click()}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-rose-50 text-rose-700 font-bold text-xs rounded-xl border border-rose-300 shadow-2xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {comprimindoFoto ? (
+                            <>
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-600" />
+                              <span>Otimizando foto 3x4...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="w-3.5 h-3.5" />
+                              <span>{fotoPreview ? 'Trocar Fotografia' : 'Escolher Foto do Celular/PC'}</span>
+                            </>
+                          )}
+                        </button>
+
+                        {comprimindoFoto && (
+                          <span className="text-xs text-rose-600 font-medium animate-pulse flex items-center gap-1">
+                            <Sparkles className="w-3.5 h-3.5" />
+                            Ajustando tamanho e resolução...
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -1151,7 +1234,7 @@ export default function PublicAemadepaCadastroPage() {
                     dadosEsposaPreenchidos={{
                       nome: formData.nome,
                       cpf: formData.cpf,
-                      dataNascimento: formData.data_nascimento,
+                      dataNascimento: formData.data_nascimento || validarEConverterData(esposaDia, esposaMes, esposaAno).ymd || '',
                       fotoUrl: formData.foto_url,
                     }}
                     onGarantirCadastroSalvo={salvarCadastro}
