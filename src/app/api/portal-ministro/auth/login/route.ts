@@ -1,8 +1,10 @@
 /**
  * POST /api/portal-ministro/auth/login
- * Autenticação exclusiva de ministro com senha (bcrypt.compare).
- * Suporta identificação por CPF (11 dígitos) ou E-mail previamente homologado.
- * Cria sessão de 24h e emite cookie ministro_token.
+ * Autenticação habitual exclusiva por E-mail e Senha (bcrypt.compare).
+ * Não solicita nem exige CPF ou matrícula no login regular.
+ * Impede login de contas com e-mail ainda pendente de confirmação.
+ * Suporta fallback transparente para contas migradas/existentes.
+ * Cria sessão de 24h (ou estendida) e emite cookie ministro_token.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -14,8 +16,6 @@ import bcrypt from 'bcrypt';
 
 const RATE_LIMIT_ATTEMPTS = 5;
 const RATE_LIMIT_WINDOW_MS = 60_000;
-
-const cleanCpf = (v: string) => v.replace(/\D/g, '');
 
 function getClientIp(request: NextRequest): string {
   const forwarded = request.headers.get('x-forwarded-for');
@@ -37,23 +37,19 @@ async function criarSessao(supabase: ReturnType<typeof createServerClient>, mini
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const tipo: string = String(body?.tipo || 'senha');
-    const rawIdentificador = String(body?.identificador || body?.email || body?.cpf || '').trim();
-    const cleanIdentificador = cleanCpf(rawIdentificador);
-    const isEmail = rawIdentificador.includes('@');
+    const rawEmail = String(body?.email || body?.identificador || '').trim().toLowerCase();
+    const senha = String(body?.senha || body?.password || '');
 
-    if (!rawIdentificador) {
-      return NextResponse.json({ error: 'Informe seu CPF ou E-mail.' }, { status: 400 });
+    if (!rawEmail || !rawEmail.includes('@')) {
+      return NextResponse.json({ error: 'Informe um endereço de e-mail válido.' }, { status: 400 });
     }
 
-    if (!isEmail && cleanIdentificador.length !== 11) {
-      return NextResponse.json({ error: 'CPF inválido.' }, { status: 400 });
+    if (!senha) {
+      return NextResponse.json({ error: 'Informe sua senha de acesso.' }, { status: 400 });
     }
 
     const ip = getClientIp(request);
-    const rateKey = isEmail
-      ? `portal-ministro:login:${ip}:${rawIdentificador.toLowerCase()}`
-      : `portal-ministro:login:${ip}:${cleanIdentificador}`;
+    const rateKey = `portal-ministro:login-email:${ip}:${rawEmail}`;
 
     const rate = await consumeDistributedRateLimit({
       key: rateKey,
@@ -63,112 +59,112 @@ export async function POST(request: NextRequest) {
 
     if (!rate.allowed) {
       return NextResponse.json(
-        { error: 'Muitas tentativas. Aguarde um minuto antes de tentar novamente.' },
+        { error: 'Muitas tentativas de login. Aguarde um minuto antes de tentar novamente.' },
         {
           status: 429,
-          headers: {
-            'Retry-After': String(rate.retryAfterSeconds),
-          },
+          headers: { 'Retry-After': String(rate.retryAfterSeconds) },
         },
       );
     }
 
     const supabase = createServerClient();
 
-    let query = supabase
-      .from('members')
-      .select('id, name, cpf, email, status, cargo_ministerial, pastor_presidente')
-      .in('status', ['active']);
+    // 1. Busca conta no portal por e-mail registrado na conta ou na tabela members
+    // Prioriza busca em ministro_portal_accounts
+    const { data: accountByEmail } = await supabase
+      .from('ministro_portal_accounts')
+      .select('ministro_id, senha_hash, email, email_confirmed')
+      .ilike('email', rawEmail)
+      .maybeSingle();
 
-    if (isEmail) {
-      query = query.ilike('email', rawIdentificador.toLowerCase());
-    } else {
-      query = query.eq('cpf', cleanIdentificador);
+    let account = accountByEmail;
+    let ministroId = account?.ministro_id;
+
+    // Se não encontrou pelo campo email de accounts (ex: conta legada criada antes da migration),
+    // busca pelo e-mail oficial em members
+    if (!account) {
+      const { data: member } = await supabase
+        .from('members')
+        .select('id, name, status, email')
+        .ilike('email', rawEmail)
+        .eq('status', 'active')
+        .maybeSingle();
+
+      if (member) {
+        ministroId = member.id;
+        const { data: acc } = await supabase
+          .from('ministro_portal_accounts')
+          .select('ministro_id, senha_hash, email, email_confirmed')
+          .eq('ministro_id', member.id)
+          .maybeSingle();
+
+        if (acc) {
+          account = acc;
+        }
+      }
     }
 
-    const { data: ministros, error: memberError } = await query;
-
-    if (memberError) {
-      console.error('[portal-ministro/login]', memberError.message);
-      return NextResponse.json({ error: 'Erro interno.' }, { status: 500 });
-    }
-
-    if (!ministros || ministros.length === 0) {
+    if (!account || !ministroId) {
+      // Prevenção de enumeração com mensagem amigável e segura
       return NextResponse.json(
-        { error: isEmail ? 'E-mail não encontrado no cadastro ministerial ativo.' : 'CPF não encontrado no cadastro ministerial ativo.' },
+        { error: 'E-mail ou senha incorretos. Se ainda não possui acesso, faça o Primeiro Acesso.' },
         { status: 401 },
       );
     }
 
-    // Se houver mais de um ministro com o mesmo e-mail (caso de duplicidade cadastral legada)
-    if (ministros.length > 1) {
+    // 2. Valida se a conta está com confirmação de e-mail pendente
+    if (account.email_confirmed === false) {
       return NextResponse.json(
-        { error: 'Mais de um cadastro localizado para este e-mail. Por favor, acesse utilizando seu CPF.' },
-        { status: 409 },
-      );
-    }
-
-    const ministro = ministros[0];
-
-    if (ministro.status !== 'active') {
-      return NextResponse.json(
-        { error: 'Seu acesso não está disponível. Procure a Secretaria Geral.' },
+        {
+          error: 'Seu cadastro ainda está pendente de confirmação. Por favor, acesse o link enviado para o seu e-mail para ativar sua conta.',
+          pendenteConfirmacao: true,
+        },
         { status: 403 },
       );
     }
 
-    // Rejeita tentativa de primeiro acesso nesta rota
-    if (tipo === 'primeiro_acesso') {
+    // 3. Valida a situação do ministro na convenção
+    const { data: ministro, error: mErr } = await supabase
+      .from('members')
+      .select('id, name, status')
+      .eq('id', ministroId)
+      .maybeSingle();
+
+    if (mErr || !ministro || ministro.status !== 'active') {
       return NextResponse.json(
-        { error: 'O primeiro acesso deve ser realizado exclusivamente pela etapa de ativação.' },
-        { status: 400 },
+        { error: 'Seu cadastro ministerial não está ativo. Procure a Secretaria Geral.' },
+        { status: 403 },
       );
     }
 
-    if (tipo !== 'senha') {
-      return NextResponse.json({ error: 'Tipo de autenticação inválido.' }, { status: 400 });
-    }
-
-    // ── Login com senha ───────────────────────────────────────────────────
-    const senha = String(body?.senha || '');
-    if (!senha) {
-      return NextResponse.json({ error: 'Senha obrigatória.' }, { status: 400 });
-    }
-
-    const { data: account } = await supabase
-      .from('ministro_portal_accounts')
-      .select('senha_hash')
-      .eq('ministro_id', ministro.id)
-      .maybeSingle();
-
-    if (!account) {
+    // 4. Validação da senha com bcrypt
+    const match = await bcrypt.compare(senha, account.senha_hash);
+    if (!match) {
       return NextResponse.json(
-        { error: 'Nenhuma senha cadastrada. Faça o primeiro acesso com seu CPF e Registro Convencional.' },
+        { error: 'E-mail ou senha incorretos.' },
         { status: 401 },
       );
     }
 
-    const match = await bcrypt.compare(senha, account.senha_hash);
-    if (!match) {
-      return NextResponse.json({ error: 'Senha incorreta.' }, { status: 401 });
+    // 5. Cria sessão segura e define cookie
+    const token = await criarSessao(supabase, ministro.id);
+    if (!token) {
+      return NextResponse.json({ error: 'Erro ao gerar sessão de acesso.' }, { status: 500 });
     }
 
-    const token = await criarSessao(supabase, ministro.id);
-    if (!token) return NextResponse.json({ error: 'Erro ao criar sessão.' }, { status: 500 });
-
     void logDB({
-      acao: 'login',
+      acao: 'login_email_sucesso',
       modulo: 'portal_ministro',
       entidade: 'ministro',
       entidadeId: ministro.id,
-      descricao: `Login no portal do ministro: ${ministro.name}`,
+      descricao: `Login efetuado com sucesso por e-mail: ${ministro.name}`,
       status: 'sucesso',
     });
 
     const res = NextResponse.json({ ok: true, nome: ministro.name });
     return setSessionCookie(res, token);
-  } catch (err: unknown) {
+  } catch (err) {
     console.error('[portal-ministro/login] Erro inesperado:', err);
-    return NextResponse.json({ error: 'Erro interno.' }, { status: 500 });
+    return NextResponse.json({ error: 'Erro interno ao autenticar.' }, { status: 500 });
   }
 }
