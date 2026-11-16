@@ -1195,8 +1195,8 @@ export default function ConsagracaoPage() {
     const contentWidth = pageWidth - marginX * 2;
     const rowHeight = 5;
     const headerHeight = 6;
-    const columnWidths = [22, 18, 62, 30, 32, 45, 30, 38];
-    const headers = ['Nº Processo', 'Data', 'Nome', 'CPF', 'Categoria', 'Tipo', 'Status', 'Documentação'];
+    const columnWidths = [22, 18, 57, 28, 40, 42, 33, 37];
+    const headers = ['Nº Processo', 'Data', 'Nome', 'CPF', 'Categoria', 'Tipo', 'Telefone', 'Documentação'];
 
     const toText = (value: unknown) => String(value ?? '—');
     const fitText = (value: unknown, maxWidth: number) => {
@@ -1323,10 +1323,10 @@ export default function ConsagracaoPage() {
               reg.numero_processo || '—',
               dataProc,
               reg.nome || '—',
-              reg.cpf || '—',
-              reg.regiao || '—',
+              reg.cpf ? formatCpf(reg.cpf) : '—',
+              reg.categoria_registro || '—',
               TIPO_REGISTRO_LABELS[reg.tipo_registro] || reg.tipo_registro || '—',
-              STATUS_LABELS[reg.status_processo] || reg.status_processo || '—',
+              reg.telefone ? formatPhone(reg.telefone) : '—',
               doc.label,
             ]
           : ['Nenhum registro encontrado.', '', '', '', '', '', '', ''];
@@ -2686,7 +2686,7 @@ export default function ConsagracaoPage() {
                     <th style={{ border: '1px solid #d1d5db', padding: '6px 8px', textAlign: 'left', background: '#e5e7eb', fontWeight: 700 }}>CPF</th>
                     <th style={{ border: '1px solid #d1d5db', padding: '6px 8px', textAlign: 'left', background: '#e5e7eb', fontWeight: 700 }}>Categoria</th>
                     <th style={{ border: '1px solid #d1d5db', padding: '6px 8px', textAlign: 'left', background: '#e5e7eb', fontWeight: 700 }}>Tipo</th>
-                    <th style={{ border: '1px solid #d1d5db', padding: '6px 8px', textAlign: 'left', background: '#e5e7eb', fontWeight: 700 }}>Status</th>
+                    <th style={{ border: '1px solid #d1d5db', padding: '6px 8px', textAlign: 'left', background: '#e5e7eb', fontWeight: 700 }}>Telefone</th>
                     <th style={{ border: '1px solid #d1d5db', padding: '6px 8px', textAlign: 'left', background: '#e5e7eb', fontWeight: 700 }}>Documentação</th>
                   </tr>
                 </thead>
@@ -2704,10 +2704,10 @@ export default function ConsagracaoPage() {
                         <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{reg.numero_processo || '—'}</td>
                         <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{dataProc}</td>
                         <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{reg.nome || '—'}</td>
-                        <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{reg.cpf || '—'}</td>
-                        <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{reg.regiao || '—'}</td>
+                        <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{reg.cpf ? formatCpf(reg.cpf) : '—'}</td>
+                        <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{reg.categoria_registro || '—'}</td>
                         <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{TIPO_REGISTRO_LABELS[reg.tipo_registro] || reg.tipo_registro || '—'}</td>
-                        <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{STATUS_LABELS[reg.status_processo] || reg.status_processo || '—'}</td>
+                        <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{reg.telefone ? formatPhone(reg.telefone) : '—'}</td>
                         <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{doc.label}</td>
                       </tr>
                     );
