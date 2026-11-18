@@ -70,13 +70,11 @@ const DDDS_BRASIL_VALIDOS = new Set([
   '91', '92', '93', '94', '95', '96', '97', '98', '99',
 ]);
 
-function formatarTelefonePdf(value: unknown): string {
-  if (!value) return '—';
-  let digits = String(value).replace(/\D/g, '');
-  if (!digits) return '—';
+function formatDigitsTelefone(val: unknown): string {
+  let digits = String(val || '').replace(/\D/g, '');
+  if (!digits) return '';
 
   // Remove DDI 55 somente quando houver 12 ou 13 dígitos e os 2 dígitos seguintes formarem um DDD brasileiro válido.
-  // Telefones de 10 ou 11 dígitos com DDD 55 (Santa Maria/RS) são estritamente preservados.
   if ((digits.length === 12 || digits.length === 13) && digits.startsWith('55')) {
     const possivelDdd = digits.slice(2, 4);
     if (DDDS_BRASIL_VALIDOS.has(possivelDdd)) {
@@ -94,8 +92,51 @@ function formatarTelefonePdf(value: unknown): string {
     return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
   }
 
+  return '';
+}
+
+function formatarTelefoneInput(value: unknown): string {
+  if (!value) return '';
+  const formatted = formatDigitsTelefone(value);
+  if (formatted) return formatted;
+  return formatPhone(String(value));
+}
+
+function formatarTelefonePdf(value: unknown, memberFallback?: unknown): string {
+  if (!value && !memberFallback) return '—';
+
+  const regDigits = String(value || '').replace(/\D/g, '');
+  const memberDigits = String(memberFallback || '').replace(/\D/g, '');
+
+  // Se o telefone do registro estiver vazio, usa o fallback do membro
+  if (!regDigits && memberDigits) {
+    const formatted = formatDigitsTelefone(memberDigits);
+    if (formatted) return formatted;
+  }
+
+  // Critério estrito de truncamento comprovado:
+  // 1. regDigits tem exatamente 11 dígitos
+  // 2. regDigits começa com "55"
+  // 3. regDigits tem DDD brasileiro válido nos dígitos 2 e 3
+  // 4. memberDigits tem 12 ou 13 dígitos começando com "55" e o prefixo coincide com regDigits
+  if (
+    regDigits.length === 11 &&
+    regDigits.startsWith('55') &&
+    DDDS_BRASIL_VALIDOS.has(regDigits.slice(2, 4)) &&
+    (memberDigits.length === 12 || memberDigits.length === 13) &&
+    memberDigits.startsWith('55') &&
+    memberDigits.startsWith(regDigits)
+  ) {
+    const formatted = formatDigitsTelefone(memberDigits);
+    if (formatted) return formatted;
+  }
+
+  // Se não foi truncamento comprovado, formata o valor de value
+  const formatted = formatDigitsTelefone(regDigits);
+  if (formatted) return formatted;
+
   // Valores fora do padrão não recebem máscara indevida
-  return String(value).trim() || '—';
+  return String(value || memberFallback || '').trim() || '—';
 }
 
 function normalizeDocumentoTipo(value: string): string {
@@ -877,7 +918,7 @@ export default function ConsagracaoPage() {
       naturalidade: (member as any).naturalidade || cf.naturalidade || prev.naturalidade,
       uf: (member as any).uf || cf.uf || prev.uf,
       email: (member as any).email || cf.email || prev.email,
-      telefone: formatPhone((member as any).celular || (member as any).phone || cf.celular || prev.telefone || ''),
+      telefone: formatarTelefoneInput((member as any).celular || (member as any).phone || cf.celular || prev.telefone || ''),
       nome_pai: (member as any).nome_pai || cf.nomePai || prev.nome_pai,
       nome_mae: (member as any).nome_mae || cf.nomeMae || prev.nome_mae,
       nome_conjuge: (member as any).nome_conjuge || cf.nomeConjuge || prev.nome_conjuge,
@@ -1366,7 +1407,7 @@ export default function ConsagracaoPage() {
               reg.cpf ? formatCpf(reg.cpf) : '—',
               reg.categoria_registro || '—',
               TIPO_REGISTRO_LABELS[reg.tipo_registro] || reg.tipo_registro || '—',
-              formatarTelefonePdf(reg.telefone),
+              formatarTelefonePdf(reg.telefone, reg.member_celular),
               doc.label,
             ]
           : ['Nenhum registro encontrado.', '', '', '', '', '', '', ''];
@@ -2747,7 +2788,7 @@ export default function ConsagracaoPage() {
                         <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{reg.cpf ? formatCpf(reg.cpf) : '—'}</td>
                         <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{reg.categoria_registro || '—'}</td>
                         <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{TIPO_REGISTRO_LABELS[reg.tipo_registro] || reg.tipo_registro || '—'}</td>
-                        <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{formatarTelefonePdf(reg.telefone)}</td>
+                        <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{formatarTelefonePdf(reg.telefone, reg.member_celular)}</td>
                         <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{doc.label}</td>
                       </tr>
                     );

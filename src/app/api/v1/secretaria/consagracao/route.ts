@@ -36,7 +36,83 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ data });
+  const rows = (data as any[]) || [];
+  if (rows.length === 0) {
+    return NextResponse.json({ data: [] });
+  }
+
+  // Recuperação segura e enriquecimento com celular original de members
+  // 1. Prioridade: member_id vinculado
+  // 2. Fallback: CPF com correspondência estrita e única
+  try {
+    const memberIds = Array.from(
+      new Set(rows.map((r) => r.member_id).filter(Boolean))
+    );
+    const candidateCpfs = Array.from(
+      new Set(
+        rows
+          .filter((r) => !r.member_id && r.cpf)
+          .map((r) => String(r.cpf).replace(/\D/g, ''))
+          .filter((c) => c.length === 11)
+      )
+    );
+
+    const memberPhoneMap = new Map<string, string | null>();
+    const cpfPhoneMap = new Map<string, string | null>();
+    const cpfCountMap = new Map<string, number>();
+
+    const chunkSize = 100;
+    for (let i = 0; i < memberIds.length; i += chunkSize) {
+      const chunk = memberIds.slice(i, i + chunkSize);
+      const { data: mData } = await supabase
+        .from('members')
+        .select('id, celular, phone')
+        .in('id', chunk);
+
+      if (mData) {
+        for (const m of mData) {
+          memberPhoneMap.set(m.id, m.celular || m.phone || null);
+        }
+      }
+    }
+
+    for (let i = 0; i < candidateCpfs.length; i += chunkSize) {
+      const chunk = candidateCpfs.slice(i, i + chunkSize);
+      const { data: mData } = await supabase
+        .from('members')
+        .select('id, cpf, celular, phone')
+        .in('cpf', chunk);
+
+      if (mData) {
+        for (const m of mData) {
+          const c = String(m.cpf || '').replace(/\D/g, '');
+          cpfCountMap.set(c, (cpfCountMap.get(c) || 0) + 1);
+          cpfPhoneMap.set(c, m.celular || m.phone || null);
+        }
+      }
+    }
+
+    const enriched = rows.map((reg) => {
+      let memberCelular: string | null = null;
+      if (reg.member_id && memberPhoneMap.has(reg.member_id)) {
+        memberCelular = memberPhoneMap.get(reg.member_id) || null;
+      } else if (reg.cpf) {
+        const c = String(reg.cpf).replace(/\D/g, '');
+        if (cpfCountMap.get(c) === 1) {
+          memberCelular = cpfPhoneMap.get(c) || null;
+        }
+      }
+      return {
+        ...reg,
+        member_celular: memberCelular,
+      };
+    });
+
+    return NextResponse.json({ data: enriched });
+  } catch (enrichError) {
+    console.error('Erro ao enriquecer telefones de consagração:', enrichError);
+    return NextResponse.json({ data: rows });
+  }
 }
 
 export async function POST(request: NextRequest) {
