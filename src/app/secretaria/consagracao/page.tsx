@@ -58,6 +58,46 @@ const CATEGORIA_REGISTRO_OPTIONS = [
 
 const DOCUMENTOS_OBRIGATORIOS_CANDIDATO = ['RG', 'CPF', 'COMPROVANTE DE RESIDENCIA'];
 
+const DDDS_BRASIL_VALIDOS = new Set([
+  '11', '12', '13', '14', '15', '16', '17', '18', '19',
+  '21', '22', '24', '27', '28',
+  '31', '32', '33', '34', '35', '37', '38',
+  '41', '42', '43', '44', '45', '46', '47', '48', '49',
+  '51', '53', '54', '55',
+  '61', '62', '63', '64', '65', '66', '67', '68', '69',
+  '71', '73', '74', '75', '77', '79',
+  '81', '82', '83', '84', '85', '86', '87', '88', '89',
+  '91', '92', '93', '94', '95', '96', '97', '98', '99',
+]);
+
+function formatarTelefonePdf(value: unknown): string {
+  if (!value) return '—';
+  let digits = String(value).replace(/\D/g, '');
+  if (!digits) return '—';
+
+  // Remove DDI 55 somente quando houver 12 ou 13 dígitos e os 2 dígitos seguintes formarem um DDD brasileiro válido.
+  // Telefones de 10 ou 11 dígitos com DDD 55 (Santa Maria/RS) são estritamente preservados.
+  if ((digits.length === 12 || digits.length === 13) && digits.startsWith('55')) {
+    const possivelDdd = digits.slice(2, 4);
+    if (DDDS_BRASIL_VALIDOS.has(possivelDdd)) {
+      digits = digits.slice(2);
+    }
+  }
+
+  // Celular nacional com 11 dígitos: (DD) 9XXXX-XXXX
+  if (digits.length === 11) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  }
+
+  // Telefone fixo nacional com 10 dígitos: (DD) XXXX-XXXX
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+
+  // Valores fora do padrão não recebem máscara indevida
+  return String(value).trim() || '—';
+}
+
 function normalizeDocumentoTipo(value: string): string {
   return String(value || '')
     .normalize('NFD')
@@ -1326,7 +1366,7 @@ export default function ConsagracaoPage() {
               reg.cpf ? formatCpf(reg.cpf) : '—',
               reg.categoria_registro || '—',
               TIPO_REGISTRO_LABELS[reg.tipo_registro] || reg.tipo_registro || '—',
-              reg.telefone ? formatPhone(reg.telefone) : '—',
+              formatarTelefonePdf(reg.telefone),
               doc.label,
             ]
           : ['Nenhum registro encontrado.', '', '', '', '', '', '', ''];
@@ -2707,7 +2747,7 @@ export default function ConsagracaoPage() {
                         <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{reg.cpf ? formatCpf(reg.cpf) : '—'}</td>
                         <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{reg.categoria_registro || '—'}</td>
                         <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{TIPO_REGISTRO_LABELS[reg.tipo_registro] || reg.tipo_registro || '—'}</td>
-                        <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{reg.telefone ? formatPhone(reg.telefone) : '—'}</td>
+                        <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{formatarTelefonePdf(reg.telefone)}</td>
                         <td style={{ border: '1px solid #d1d5db', padding: '6px 8px' }}>{doc.label}</td>
                       </tr>
                     );
