@@ -451,6 +451,7 @@ export default function CheckinMobilePage() {
   const [torchOn, setTorchOn] = useState(false);
   const [cameraMsg, setCameraMsg] = useState<string | null>(null);
   const [capturandoCodigo, setCapturandoCodigo] = useState(false);
+  const [statusDiagnostico, setStatusDiagnostico] = useState<string>('Iniciando...');
   const autoLiberarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Limpa timer de autoliberação ao desmontar
@@ -806,8 +807,10 @@ export default function CheckinMobilePage() {
     if (iniciandoRef.current) return;
     iniciandoRef.current = true;
     setCameraMsg(null);
+    setStatusDiagnostico('Iniciando câmera...');
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraMsg('Seu navegador não suporta acesso à câmera.');
+      setStatusDiagnostico('Câmera indisponível');
       iniciandoRef.current = false;
       return;
     }
@@ -818,6 +821,7 @@ export default function CheckinMobilePage() {
       const { Html5Qrcode } = await import('html5-qrcode');
       if (!document.getElementById(scannerElementId)) {
         setCameraMsg('Área da câmera não encontrada.');
+        setStatusDiagnostico('Área da câmera não encontrada');
         await stopScanner();
         iniciandoRef.current = false;
         return;
@@ -860,18 +864,11 @@ export default function CheckinMobilePage() {
         if (cameraErroRef.current === msg) return;
         cameraErroRef.current = msg;
         setCameraMsg(`Erro ao abrir a câmera: ${msg}`);
+        setStatusDiagnostico('Erro na câmera');
       };
 
       const config = {
         fps: 20,
-        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-          const edge = Math.min(viewfinderWidth, viewfinderHeight);
-          const size = Math.floor(edge * 0.75);
-          return {
-            width: Math.max(Math.min(size, 320), 220),
-            height: Math.max(Math.min(size, 320), 220),
-          };
-        },
         aspectRatio: 1.0,
         disableFlip: true,
         videoConstraints: {
@@ -887,6 +884,8 @@ export default function CheckinMobilePage() {
         onQRCodeSuccess,
         onScanError
       );
+
+      setStatusDiagnostico('Procurando QR Code...');
 
       // Foco contínuo quando suportado pelo hardware da câmera
       try {
@@ -910,6 +909,7 @@ export default function CheckinMobilePage() {
       const msg = String(err || '').trim();
       const finalMsg = msg ? `Erro ao abrir a câmera: ${msg}` : 'Erro ao abrir a câmera.';
       setCameraMsg(finalMsg);
+      setStatusDiagnostico('Falha ao abrir câmera');
       await stopScanner();
     } finally {
       iniciandoRef.current = false;
@@ -944,6 +944,7 @@ export default function CheckinMobilePage() {
 
     ignorandoRef.current = true;
     setProcessando(true);
+    setStatusDiagnostico('Validando inscrição...');
 
     try {
       const dataPlenaria = new Date().toISOString().slice(0, 10);
@@ -1110,6 +1111,7 @@ export default function CheckinMobilePage() {
     if (ignorandoRef.current || processando || pendingConfirm || resultado) return;
 
     const rawText = String(qrText || '').trim();
+    setStatusDiagnostico('Código detectado');
     const qrToken = extractQrToken(rawText);
 
     if (qrToken && lastTokenRef.current) {
@@ -1288,6 +1290,7 @@ export default function CheckinMobilePage() {
     setPendingConfirm(null);
     setCapturandoCodigo(false);
     ignorandoRef.current = false;
+    setStatusDiagnostico('Procurando QR Code...');
     if (scannerRef.current) {
       try {
         const state = (scannerRef.current as { getState?: () => number }).getState?.();
@@ -2677,9 +2680,17 @@ export default function CheckinMobilePage() {
               )}
 
               {/* Banner Inferior de Instrução sobreposto */}
-              <div className="absolute bottom-3 left-3 right-3 z-20 bg-black/75 backdrop-blur-md border border-white/10 py-2.5 px-3 rounded-2xl flex items-center justify-center gap-2 text-[11px] text-white/90 text-center font-medium shadow-lg">
-                <QrCode className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Posicione o QR Code da credencial no centro da câmera</span>
+              <div className="absolute bottom-3 left-3 right-3 z-20 bg-black/80 backdrop-blur-md border border-white/10 py-2.5 px-3 rounded-2xl flex flex-col items-center justify-center gap-1 text-[11px] text-white/90 text-center font-medium shadow-lg">
+                <div className="flex items-center justify-center gap-2">
+                  <QrCode className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Posicione o QR Code da credencial no centro da câmera</span>
+                </div>
+                {scannerAtivo && (
+                  <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-semibold tracking-wide">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block" />
+                    <span>{statusDiagnostico}</span>
+                  </div>
+                )}
               </div>
 
               {/* Fallback se câmera parada */}
