@@ -340,7 +340,7 @@ export default function EditarEventoPage() {
 
       // Tipos de inscricao
       try {
-        const res = await fetch(`/api/eventos/${id}/tipos-inscricao`);
+        const res = await fetch(`/api/eventos/${id}/tipos-inscricao?todos=true`);
         if (res.ok) {
           const j = await res.json();
           const tipos = (j.tipos ?? []) as Array<{
@@ -367,6 +367,7 @@ export default function EditarEventoPage() {
                   limite_vagas_str: t.limite_vagas != null ? String(t.limite_vagas) : '',
                   inclui_alimentacao: !!t.inclui_alimentacao,
                   quantidade_refeicoes_str: String(t.quantidade_refeicoes ?? '0'),
+                  administrativo: t.administrativo !== undefined ? !!t.administrativo : !!def?.administrativo,
                 };
               });
               setAgoCategorias(mapped);
@@ -551,7 +552,6 @@ export default function EditarEventoPage() {
       // Salva categorias AGO
       if (isAGO) {
         const tiposAGO = agoCategorias
-          .filter(c => c.ativo)
           .map((c, i) => ({
             id: c.id,
             nome: c.nome.trim() || `Categoria ${i + 1}`,
@@ -562,7 +562,7 @@ export default function EditarEventoPage() {
             limite_vagas: c.limite_vagas_str ? parseInt(c.limite_vagas_str) : null,
             quantidade_refeicoes: c.inclui_alimentacao ? (parseInt(c.quantidade_refeicoes_str) || 0) : 0,
             administrativo: !!c.administrativo,
-            ativo: true,
+            ativo: !!c.ativo,
             ordem: i + 1,
           }));
         const resTipos = await fetch(`/api/eventos/${id}/tipos-inscricao`, {

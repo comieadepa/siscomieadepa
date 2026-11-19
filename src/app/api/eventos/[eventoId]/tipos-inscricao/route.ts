@@ -3,7 +3,8 @@ import { requireEventoPermission } from '@/lib/evento-guard';
 import { normalizeUppercase } from '@/lib/text';
 
 // GET /api/eventos/[eventoId]/tipos-inscricao
-// Lista os tipos de inscrição ativos de um evento (público)
+// Lista os tipos de inscrição de um evento.
+// Se ?todos=true for passado e o usuário tiver permissão de 'configuracoes', retorna todos (incluindo inativos).
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ eventoId: string }> }
@@ -12,12 +13,20 @@ export async function GET(
   const guard = await requireEventoPermission(_req, eventoId, 'configuracoes');
   if (!guard.ok) return guard.response;
   const supabase = guard.ctx.supabaseAdmin;
-  const { data, error } = await supabase
+
+  const { searchParams } = new URL(_req.url);
+  const buscarTodos = searchParams.get('todos') === 'true';
+
+  let query = supabase
     .from('evento_tipos_inscricao')
-    .select('id, nome, valor, inclui_alimentacao, inclui_hospedagem, cortesia, limite_vagas, quantidade_refeicoes, ordem, administrativo')
-    .eq('evento_id', eventoId)
-    .eq('ativo', true)
-    .order('ordem');
+    .select('id, nome, valor, inclui_alimentacao, inclui_hospedagem, cortesia, limite_vagas, quantidade_refeicoes, ordem, administrativo, ativo')
+    .eq('evento_id', eventoId);
+
+  if (!buscarTodos) {
+    query = query.eq('ativo', true);
+  }
+
+  const { data, error } = await query.order('ordem');
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ tipos: data ?? [] });
@@ -134,7 +143,7 @@ export async function POST(
     const limiteVagas = (t.limite_vagas !== undefined && t.limite_vagas !== null) ? Number(t.limite_vagas) : null;
     const qtdRefeicoes = incluiAlim ? (Number(t.quantidade_refeicoes) || 0) : 0;
     const administrativo = !!t.administrativo;
-    const ativo = t.ativo !== false;
+    const ativo = t.ativo !== false && t.ativo !== undefined ? !!t.ativo : false;
     const ordem = (t.ordem !== undefined && t.ordem !== null) ? Number(t.ordem) : (i + 1);
 
     // Se possui ID válido para este evento -> UPDATE

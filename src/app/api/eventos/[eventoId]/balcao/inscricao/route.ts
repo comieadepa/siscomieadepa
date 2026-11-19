@@ -380,6 +380,25 @@ export async function POST(
     // CPF limpo
     const cpfLimpo = cpf ? String(cpf).replace(/\D/g, '') : null;
 
+    // ── Validação Anti-Duplicidade por CPF no Balcão ───────────────────────
+    if (cpfLimpo) {
+      const { data: inscricoesExistentesBalcao, error: dupBalcaoErr } = await supabase
+        .from('evento_inscricoes')
+        .select('id, status_pagamento, nome_inscrito')
+        .eq('evento_id', eventoId)
+        .eq('cpf', cpfLimpo);
+
+      if (!dupBalcaoErr && inscricoesExistentesBalcao && inscricoesExistentesBalcao.length > 0) {
+        const jaQuitadaBalcao = inscricoesExistentesBalcao.find(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento');
+        if (jaQuitadaBalcao) {
+          return NextResponse.json(
+            { error: `O CPF informado já possui uma inscrição confirmada (${jaQuitadaBalcao.status_pagamento.toUpperCase()}) neste evento.` },
+            { status: 409 },
+          );
+        }
+      }
+    }
+
     // ── Resolução AEMADEPA Balcão ──
     const resolverAemadepa = async (cpfParaValidar: string | null | undefined) => {
       const cpfNorm = String(cpfParaValidar || '').replace(/\D/g, '');
@@ -960,6 +979,29 @@ export async function POST(
       recalcularPagamento();
     }
 
+    // REGRA CAMPO MISSIONÁRIO BALCÃO (ESPOSA):
+    // Se selecionou categoria de Esposa de Pastor Presidente de Campo Missionário,
+    // o valor original deve ser o valor especial configurado para esposa de CM.
+    const nTipoNormBalcao = norm(tipoNome);
+    if ((evento as any).departamento === 'AGO' && nTipoNormBalcao.includes('campo mission') && nTipoNormBalcao.includes('esposa')) {
+      const valorCmEsposa = cmConfig
+        ? (typeof cmConfig.valor_esposa === 'number' ? cmConfig.valor_esposa : parseFloat(String(cmConfig.valor_esposa)) || 0)
+        : 0;
+      if (valorCmEsposa > 0) {
+        vOriginal = valorCmEsposa;
+        vFinal = Math.max(0, vOriginal - vDesconto);
+        isGratuito = formaStr === 'isento';
+        isAsaas = formaStr === 'asaas' && !isGratuito;
+        isPresencial = !isAsaas && !isGratuito;
+        recalcularPagamento();
+      } else {
+        return NextResponse.json(
+          { error: 'O valor da inscrição de Esposa de Pastor Presidente de Campo Missionário não está configurado neste evento.' },
+          { status: 400 },
+        );
+      }
+    }
+
     // QR code
     const qrFinal = qr_code ? String(qr_code) : generateQRCodeToken();
     const cupomCodigo = cupom_codigo
@@ -1083,6 +1125,26 @@ export async function POST(
     // ── Fluxo esposa (AGO Campo Missionário) ─────────────────
     const ehEsposaFlow = !!(incluir_esposa) && !!(esposa) && (evento as any).departamento === 'AGO' && fluxoCampoMissionarioEspecial;
     if (ehEsposaFlow) {
+      const esposaData = esposa as Record<string, unknown>;
+      const cpfEsposaBalcao = String(esposaData.cpf ?? '').replace(/\D/g, '').trim();
+      if (cpfEsposaBalcao) {
+        const { data: inscricoesExistentesEsposaBalcao, error: dupEsposaBalcaoErr } = await supabase
+          .from('evento_inscricoes')
+          .select('id, status_pagamento')
+          .eq('evento_id', eventoId)
+          .eq('cpf', cpfEsposaBalcao);
+
+        if (!dupEsposaBalcaoErr && inscricoesExistentesEsposaBalcao && inscricoesExistentesEsposaBalcao.length > 0) {
+          const jaQuitadaEsposaBalcao = inscricoesExistentesEsposaBalcao.find(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento');
+          if (jaQuitadaEsposaBalcao) {
+            return NextResponse.json(
+              { error: `A esposa informada (${esposaData.nome_inscrito || 'CPF ' + cpfEsposaBalcao}) já possui inscrição confirmada (${jaQuitadaEsposaBalcao.status_pagamento.toUpperCase()}) neste evento.` },
+              { status: 409 },
+            );
+          }
+        }
+      }
+
       const confAgo = (evento as any).configuracoes_ago as Record<string, unknown> | null;
       const cmConfig = parseCampoMissionarioConfig(confAgo);
       const valorEsposaBase = cmConfig
@@ -1102,7 +1164,7 @@ export async function POST(
         ? 12
         : (tipoEsposa?.inclui_alimentacao ? Math.max(0, Number(tipoEsposa?.quantidade_refeicoes ?? 0)) : 0);
 
-      const esposaData = esposa as Record<string, unknown>;
+      // const esposaData = esposa as Record<string, unknown>; // já declarado no topo do bloco
       const esposaComorbidade = !!esposaData.hosp_possui_comorbidade;
       const esposaCamaInferiorAuto = resolveCamaInferiorAutomatica({
         sexo: 'F',
