@@ -452,6 +452,8 @@ export default function CheckinMobilePage() {
   const [cameraMsg, setCameraMsg] = useState<string | null>(null);
   const [capturandoCodigo, setCapturandoCodigo] = useState(false);
   const [statusDiagnostico, setStatusDiagnostico] = useState<string>('Iniciando...');
+  const [telemetriaFrames, setTelemetriaFrames] = useState<string>('');
+  const framesCountRef = useRef(0);
   const autoLiberarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Limpa timer de autoliberação ao desmontar
@@ -489,6 +491,10 @@ export default function CheckinMobilePage() {
   };
 
   const scannerRef = useRef<unknown>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const scanLoopActiveRef = useRef(false);
+  const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const scannerElementId = 'qr-scanner-region';
   const ignorandoRef = useRef(false);
   const lastTokenRef = useRef<{ token: string; at: number } | null>(null);
@@ -602,14 +608,6 @@ export default function CheckinMobilePage() {
         void validarSessaoEquipe(sess);
       }
       unlockAudio();
-      // Se scanner estava ativo e a janela/aba retornou, retoma o scanner sem travar
-      if (scannerRef.current && !ignorandoRef.current && !pendingConfirm && !resultado) {
-        try {
-          (scannerRef.current as { resume?: () => void }).resume?.();
-        } catch {
-          // ignora se já estiver ativo
-        }
-      }
     };
     window.addEventListener('focus', handleFocus);
     const handleVisibility = () => {
@@ -622,7 +620,7 @@ export default function CheckinMobilePage() {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [id, validarSessaoEquipe, pendingConfirm, resultado]);
+  }, [id, validarSessaoEquipe]);
 
   // ── Desbloqueio antecipado de áudio em mobile (iOS / Android) ──
   useEffect(() => {
@@ -765,13 +763,29 @@ export default function CheckinMobilePage() {
     }
   }
 
-  // ── Controle de Câmera e Lanterna ─────────────────────────
+  // ── Controle de Câmera e Lanterna com ZXing Nativo ───────
   const stopScanner = useCallback(async (atualizarEstado = true) => {
+    scanLoopActiveRef.current = false;
+    if (scanTimeoutRef.current) {
+      clearTimeout(scanTimeoutRef.current);
+      scanTimeoutRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getVideoTracks().forEach(track => {
+        try { track.stop(); } catch { /* ignora */ }
+      });
+      streamRef.current = null;
+    }
+    if (videoElementRef.current) {
+      try {
+        videoElementRef.current.pause();
+        videoElementRef.current.srcObject = null;
+      } catch { /* ignora */ }
+    }
     if (scannerRef.current) {
-      const inst = scannerRef.current as { stop?: () => Promise<void>; clear?: () => Promise<void> };
+      const inst = scannerRef.current as { reset?: () => void };
+      try { inst.reset?.(); } catch { /* ignora */ }
       scannerRef.current = null;
-      try { if (inst.stop) await inst.stop(); } catch { /* ignora */ }
-      try { if (inst.clear) await inst.clear(); } catch { /* ignora */ }
     }
     cameraErroRef.current = null;
     setTorchOn(false);
@@ -780,20 +794,16 @@ export default function CheckinMobilePage() {
 
   const toggleTorch = async () => {
     try {
-      const video = document.querySelector<HTMLVideoElement>('#qr-scanner-region video');
-      if (video?.srcObject) {
-        const stream = video.srcObject as MediaStream;
-        const track = stream.getVideoTracks()[0];
-        if (track) {
-          const caps = (track.getCapabilities?.() || {}) as { torch?: boolean };
-          if (caps.torch) {
-            const proximo = !torchOn;
-            await track.applyConstraints({
-              advanced: [{ torch: proximo } as MediaTrackConstraintSet],
-            });
-            setTorchOn(proximo);
-            return;
-          }
+      const track = streamRef.current?.getVideoTracks()[0];
+      if (track) {
+        const caps = (track.getCapabilities?.() || {}) as { torch?: boolean };
+        if (caps.torch) {
+          const proximo = !torchOn;
+          await track.applyConstraints({
+            advanced: [{ torch: proximo } as MediaTrackConstraintSet],
+          });
+          setTorchOn(proximo);
+          return;
         }
       }
     } catch (e) {
@@ -818,8 +828,8 @@ export default function CheckinMobilePage() {
       setScannerAtivo(true);
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
 
-      const { Html5Qrcode } = await import('html5-qrcode');
-      if (!document.getElementById(scannerElementId)) {
+      const container = document.getElementById(scannerElementId);
+      if (!container) {
         setCameraMsg('Área da câmera não encontrada.');
         setStatusDiagnostico('Área da câmera não encontrada');
         await stopScanner();
@@ -827,84 +837,100 @@ export default function CheckinMobilePage() {
         return;
       }
 
-      const { Html5QrcodeSupportedFormats } = await import('html5-qrcode');
-      const html5 = new Html5Qrcode(scannerElementId, {
-        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
-        verbose: false,
-      });
-      scannerRef.current = html5;
-
-      // Otimização iOS Safari / Chrome: Ativa tryHarder internamente no leitor ZXing
-      try {
-        const qrcodeShim = (html5 as unknown as { qrcode?: { primaryDecoder?: { hints?: Map<number, unknown> }; secondaryDecoder?: { hints?: Map<number, unknown> } } }).qrcode;
-        if (qrcodeShim) {
-          [qrcodeShim.primaryDecoder, qrcodeShim.secondaryDecoder].forEach(dec => {
-            if (dec?.hints && typeof dec.hints.set === 'function') {
-              dec.hints.set(3, true); // DecodeHintType.TRY_HARDER = 3
-            }
-          });
-        }
-      } catch {
-        // ignora se hints não estiver acessível
+      // Garante elemento <video> dedicado dentro do container
+      let videoEl = container.querySelector('video');
+      if (!videoEl) {
+        videoEl = document.createElement('video');
+        videoEl.setAttribute('autoplay', 'true');
+        videoEl.setAttribute('muted', 'true');
+        videoEl.setAttribute('playsinline', 'true');
+        videoEl.style.width = '100%';
+        videoEl.style.height = '100%';
+        videoEl.style.objectFit = 'cover';
+        container.appendChild(videoEl);
       }
+      videoElementRef.current = videoEl;
 
-      const onScanError = (err: unknown) => {
-        const msg = String(err || '').trim();
-        if (!msg) return;
-        const lower = msg.toLowerCase();
-        if (
-          lower.includes('notfound') ||
-          lower.includes('no multiformat') ||
-          lower.includes('parse error') ||
-          lower.includes('checksum') ||
-          lower.includes('format exception')
-        ) {
-          return;
-        }
-        if (cameraErroRef.current === msg) return;
-        cameraErroRef.current = msg;
-        setCameraMsg(`Erro ao abrir a câmera: ${msg}`);
-        setStatusDiagnostico('Erro na câmera');
-      };
-
-      const config = {
-        fps: 20,
-        aspectRatio: 1.0,
-        disableFlip: true,
-        videoConstraints: {
+      // Resolução nativa de captura: 1280x720 ideal para etiquetas térmicas 2.5cm/3cm
+      const constraints: MediaStreamConstraints = {
+        audio: false,
+        video: {
           facingMode: { ideal: 'environment' },
           width: { ideal: 1280, min: 640 },
           height: { ideal: 720, min: 480 },
         },
       };
 
-      await html5.start(
-        { facingMode: 'environment' },
-        config,
-        onQRCodeSuccess,
-        onScanError
-      );
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      streamRef.current = stream;
+      videoEl.srcObject = stream;
+      await videoEl.play().catch(() => {});
+
+      // Otimização de hardware: Foco contínuo quando disponível
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        try {
+          const caps = (track.getCapabilities?.() || {}) as { focusMode?: string[] };
+          if (caps.focusMode && Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) {
+            await track.applyConstraints({
+              advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet],
+            });
+          }
+        } catch {
+          // ignora se restrição avançada não for aceita
+        }
+      }
+
+      // Import dinâmico do ZXing oficial com Hints para alta precisão (TRY_HARDER)
+      const { BrowserMultiFormatReader, BarcodeFormat, DecodeHintType, NotFoundException, ChecksumException, FormatException } = await import('@zxing/library');
+      const hints = new Map();
+      hints.set(DecodeHintType.TRY_HARDER, true);
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]);
+
+      const codeReader = new BrowserMultiFormatReader(hints, 100);
+      scannerRef.current = codeReader;
 
       setStatusDiagnostico('Procurando QR Code...');
+      scanLoopActiveRef.current = true;
+      framesCountRef.current = 0;
 
-      // Foco contínuo quando suportado pelo hardware da câmera
-      try {
-        const video = document.querySelector<HTMLVideoElement>(`#${scannerElementId} video`);
-        if (video?.srcObject) {
-          const stream = video.srcObject as MediaStream;
-          const track = stream.getVideoTracks()[0];
-          if (track) {
-            const caps = (track.getCapabilities?.() || {}) as { focusMode?: string[] };
-            if (caps.focusMode && Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) {
-              await track.applyConstraints({
-                advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet],
-              });
+      // Loop de decodificação com resolução nativa do sensor
+      const runDecodeLoop = () => {
+        if (!scanLoopActiveRef.current) return;
+
+        if (ignorandoRef.current || processando || pendingConfirm || resultado) {
+          scanTimeoutRef.current = setTimeout(runDecodeLoop, 200);
+          return;
+        }
+
+        if (videoEl && videoEl.readyState >= 2 && videoEl.videoWidth > 0) {
+          try {
+            framesCountRef.current += 1;
+            if (framesCountRef.current % 10 === 0) {
+              setTelemetriaFrames(`${videoEl.videoWidth}x${videoEl.videoHeight} (${framesCountRef.current} f)`);
+            }
+            const decodeResult = codeReader.decode(videoEl);
+            if (decodeResult && decodeResult.getText()) {
+              void onQRCodeSuccess(decodeResult.getText());
+            }
+          } catch (err: unknown) {
+            const isExpected =
+              err instanceof NotFoundException ||
+              err instanceof ChecksumException ||
+              err instanceof FormatException;
+            if (!isExpected) {
+              const msg = String(err || '').trim();
+              if (msg && !msg.includes('NotFoundException')) {
+                console.warn('ZXing frame decode warning:', msg);
+              }
             }
           }
         }
-      } catch {
-        // ignora se foco contínuo não for suportado
-      }
+
+        scanTimeoutRef.current = setTimeout(runDecodeLoop, 80);
+      };
+
+      runDecodeLoop();
     } catch (err) {
       const msg = String(err || '').trim();
       const finalMsg = msg ? `Erro ao abrir a câmera: ${msg}` : 'Erro ao abrir a câmera.';
@@ -1291,20 +1317,7 @@ export default function CheckinMobilePage() {
     setCapturandoCodigo(false);
     ignorandoRef.current = false;
     setStatusDiagnostico('Procurando QR Code...');
-    if (scannerRef.current) {
-      try {
-        const state = (scannerRef.current as { getState?: () => number }).getState?.();
-        // Se por ventura estiver pausado (state 3 = PAUSED), retoma
-        if (state === 3) {
-          (scannerRef.current as { resume: () => void }).resume();
-        } else if (state === 1 || state === 0) {
-          // Se parado/não iniciado, reinicia o scanner
-          if (!modoManual) void iniciarScanner();
-        }
-      } catch {
-        if (!modoManual) void iniciarScanner();
-      }
-    } else if (!modoManual) {
+    if (!scannerAtivo && !modoManual) {
       void iniciarScanner();
     }
   }
@@ -2686,9 +2699,16 @@ export default function CheckinMobilePage() {
                   <span>Posicione o QR Code da credencial no centro da câmera</span>
                 </div>
                 {scannerAtivo && (
-                  <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-semibold tracking-wide">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block" />
-                    <span>{statusDiagnostico}</span>
+                  <div className="flex items-center justify-center gap-2 text-[10px] text-emerald-400 font-semibold tracking-wide flex-wrap">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block" />
+                      <span>{statusDiagnostico}</span>
+                    </span>
+                    {telemetriaFrames && (
+                      <span className="text-[9px] text-slate-400 font-mono bg-white/5 px-2 py-0.5 rounded-full border border-white/10">
+                        {telemetriaFrames}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
