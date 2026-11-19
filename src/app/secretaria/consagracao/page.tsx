@@ -14,6 +14,7 @@ import { normalizePayloadToUppercase } from '@/lib/uppercase-normalizer';
 import { authenticatedFetch } from '@/lib/api-client';
 import type { Member } from '@/types/supabase';
 import DocumentosMinistro from '@/components/DocumentosMinistro';
+import LoadingTransition from '@/components/LoadingTransition';
 import jsPDF from 'jspdf';
 
 interface SimpleOption {
@@ -1216,7 +1217,7 @@ export default function ConsagracaoPage() {
     setProcessRegistro(null);
   };
 
-  if (loading || loadingData) return <div className="p-8">Carregando...</div>;
+  if (loading || loadingData) return <LoadingTransition mensagem="Carregando Secretaria..." subtitulo="SISCOMIEADEPA" fullScreen={true} />;
 
   const labelCongregacao = nomenclaturas?.divisaoPrincipal?.opcao1 || 'Congregação';
   const labelCampo = nomenclaturas?.divisaoSecundaria?.opcao1 || 'Campo';

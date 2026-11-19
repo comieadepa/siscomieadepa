@@ -9,6 +9,7 @@ import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useUserRole } from '@/hooks/useUserRole';
 import { canAccessModule } from '@/lib/auth/roles';
 import AccessRestricted from '@/components/AccessRestricted';
+import LoadingTransition from '@/components/LoadingTransition';
 import { formatPhone } from '@/lib/mascaras';
 import { authenticatedFetch } from '@/lib/api-client';
 
@@ -489,7 +490,7 @@ export default function GerenciarFuncionarios() {
   const gruposCustom = gruposFuncao.filter(g => !GRUPOS_FUNCAO_BASE.some(base => base.valor === g.valor));
   const funcoesCustom = funcoes.filter(f => !FUNCOES_BASE.some(base => base.valor === f.valor));
 
-  if (authLoading || roleLoading) return <div className="p-8">Carregando...</div>;
+  if (authLoading || roleLoading) return <LoadingTransition mensagem="Carregando Secretaria..." subtitulo="SISCOMIEADEPA" fullScreen={true} />;
 
   if (!podeAcessar) {
     return (

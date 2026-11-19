@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import PageLayout from '@/components/PageLayout';
+import LoadingTransition from '@/components/LoadingTransition';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { buildUrl, getAppBaseUrl } from '@/lib/urls';
 import { normalizeRole } from '@/lib/auth/roles';
@@ -491,7 +492,7 @@ export default function PermutasPage() {
     setTimeout(() => win.print(), 600);
   }
 
-  if (loading) return <div className="p-8">Carregando...</div>;
+  if (loading) return <LoadingTransition mensagem="Carregando Secretaria..." subtitulo="SISCOMIEADEPA" fullScreen={true} />;
 
   return (
     <PageLayout

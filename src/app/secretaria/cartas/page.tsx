@@ -6,6 +6,7 @@ import PageLayout from '@/components/PageLayout';
 import Tabs from '@/components/Tabs';
 import Section from '@/components/Section';
 import CartaLayout from '@/components/cartas/CartaLayout';
+import LoadingTransition from '@/components/LoadingTransition';
 import { authenticatedFetch } from '@/lib/api-client';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useAuditLog } from '@/hooks/useAuditLog';
@@ -512,7 +513,7 @@ export default function CartasPage() {
 
   const cartaEmissao = preview?.dados?.dataEmissao || todayValue();
 
-  if (loading) return <div className="p-8">Carregando...</div>;
+  if (loading) return <LoadingTransition mensagem="Carregando Secretaria..." subtitulo="SISCOMIEADEPA" fullScreen={true} />;
 
   return (
     <PageLayout title="Cartas Ministeriais" description="Emissao e controle de cartas ministeriais" activeMenu="cartas">
