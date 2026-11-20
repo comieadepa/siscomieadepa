@@ -338,21 +338,22 @@ export async function POST(
     const elegiveis = (hospedagensRaw ?? [])
       .filter(h => {
         const insc = h.evento_inscricoes as unknown as Record<string, unknown> | null;
-        if (evento.departamento !== 'AGO') {
-          const statusPag = (insc?.status_pagamento as string | null) ?? '';
-          const isPago = ['pago', 'isento'].includes(statusPag.toLowerCase());
-          const jaAlocado = !!h.alojamento_id;
-          const statusValido = ['solicitada', 'pago_sem_alocacao', 'lista_espera'].includes(String(h.status || '').toLowerCase());
-          return isPago && !jaAlocado && statusValido;
-        }
-        return isElegivelAutoalocacao({
-          hospedagem: true,
-          status: h.status as string | null,
-          status_pagamento: (insc?.status_pagamento as string | null) ?? null,
-          alojamento_id: h.alojamento_id as string | null,
-          tipo_cama: h.tipo_cama as string | null,
-          numero_cama: h.numero_cama as string | null,
-        });
+        const statusPag = String(insc?.status_pagamento || '').toLowerCase();
+        const isPago = ['pago', 'isento'].includes(statusPag);
+        if (!isPago) return false;
+
+        const jaAlocado = !!h.alojamento_id && !!h.numero_cama;
+        if (jaAlocado) return false;
+
+        return ['solicitada', 'pago_sem_alocacao', 'lista_espera'].includes(String(h.status || '').toLowerCase()) ||
+          isElegivelAutoalocacao({
+            hospedagem: true,
+            status: h.status as string | null,
+            status_pagamento: (insc?.status_pagamento as string | null) ?? null,
+            alojamento_id: h.alojamento_id as string | null,
+            tipo_cama: h.tipo_cama as string | null,
+            numero_cama: h.numero_cama as string | null,
+          });
       })
       .sort((a, b) => {
         const pa = Number(a.prioridade ?? 0);

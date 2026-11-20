@@ -182,6 +182,46 @@ export async function alocarLeitoParaInscricaoAGO(
 ): Promise<AlocacaoResultado> {
   console.warn(`[Autoalocacao] [AGO] Entrou no fluxo AGO para inscrição ${inscricaoId}`);
   
+  // Requisito de Idempotência: verificar se o inscrito já possui leito ocupado físico na tabela de leitos
+  const { data: leitoFisicoExistente } = await supabase
+    .from('evento_hospedagem_leitos')
+    .select('id, alojamento_id, numero, posicao')
+    .eq('inscricao_id', inscricaoId)
+    .maybeSingle();
+
+  if (leitoFisicoExistente) {
+    const msg = `Idempotência: Inscrito ${inscricaoId} já possui o leito ${leitoFisicoExistente.numero} no alojamento ${leitoFisicoExistente.alojamento_id}.`;
+    console.warn(`[Autoalocacao] [AGO] Já tem leito físico registrado: ${msg}`);
+    
+    // Garante que o registro correspondente em evento_hospedagens esteja sincronizado com status confirmada
+    const { data: hosp } = await supabase
+      .from('evento_hospedagens')
+      .select('id, status')
+      .eq('inscricao_id', inscricaoId)
+      .maybeSingle();
+
+    const tipoCamaSinc = leitoFisicoExistente.posicao === 'unico' ? null : leitoFisicoExistente.posicao;
+    if (hosp && hosp.status !== 'confirmada') {
+      await supabase
+        .from('evento_hospedagens')
+        .update({
+          alojamento_id: leitoFisicoExistente.alojamento_id,
+          tipo_cama:     tipoCamaSinc,
+          numero_cama:   leitoFisicoExistente.numero,
+          status:        'confirmada',
+          alocacao_automatica: true,
+        })
+        .eq('id', hosp.id);
+    }
+
+    return {
+      success: true,
+      status: 'alocada',
+      motivo: msg,
+      detalhes: { alojamento_id: leitoFisicoExistente.alojamento_id, numero_cama: leitoFisicoExistente.numero, tipo_cama: tipoCamaSinc }
+    };
+  }
+
   let hospedagem = hospedagemExistente;
   console.warn(`[Autoalocacao] [AGO] Encontrou registro em evento_hospedagens? ${hospedagem ? 'Sim (ID: ' + hospedagem.id + ')' : 'Não'}`);
   if (hospedagem) {
@@ -361,7 +401,7 @@ export async function alocarLeitoParaInscricaoAGO(
   let alocadoComSucesso = false;
   let ultimoErroLeito = '';
   let numeroCamaAlocada = '';
-  for (let attempt = 0; attempt < 20; attempt++) {
+  for (let attempt = 0; attempt < 50; attempt++) {
     const nextNum = maxNum + 1 + attempt;
     const numeroCama = formatarNumeroLeitoSequencial(nextNum);
     const posicao = sugestao.tipo_cama === 'inferior' ? 'inferior' : (sugestao.tipo_cama === 'superior' ? 'superior' : 'unico');
@@ -436,10 +476,10 @@ export async function alocarLeitoParaInscricaoAGO(
       detalhes: { alojamento_id: alojId, numero_cama: numeroCamaAlocada, tipo_cama: sugestao.tipo_cama }
     };
   } else {
-    const msg = `Não foi possível alocar leito após tentativas para ${inscricaoId}. erro: ${ultimoErroLeito}`;
-    console.error(`[Autoalocacao] [AGO] Motivo não alocou: ${msg}`);
-    await colocarEmListaEspera(supabase, hospedagem.id, prioridade);
-    return { success: false, status: 'lista_espera', motivo: msg };
+    const msg = `Falha técnica temporária ao alocar leito após tentativas para ${inscricaoId}. erro: ${ultimoErroLeito}`;
+    console.error(`[Autoalocacao] [AGO] Falha temporária: ${msg}`);
+    // Diferenciação crítica: erro técnico não deve marcar como 'lista_espera', permitindo retry
+    return { success: false, status: 'erro', motivo: msg };
   }
 }
 
@@ -777,16 +817,135 @@ export async function alocarLeitoParaInscricaoEventoComum(
       detalhes: { alojamento_id: alojSelecionado.id, numero_cama: numeroCamaAlocada, tipo_cama: tipoCama }
     };
   } else {
-    const msg = `Falha ao atribuir leito após tentativas para ${inscricao.nome_inscrito}. erro: ${ultimoErroLeito}`;
-    console.error(`[Autoalocacao] [Comum] Motivo não alocou: ${msg}`);
-    await colocarEmListaEspera(supabase, hospedagem.id, 0);
-    await logDB({
-      acao: 'hospedagem_lista_espera',
-      modulo: 'eventos',
-      entidade: 'evento_hospedagens',
-      entidadeId: hospedagem.id,
-      descricao: `[Hospedagem] Falha ao atribuir leito após tentativas para ${inscricao.nome_inscrito}. Enviado para lista de espera.`,
-    });
-    return { success: false, status: 'lista_espera', motivo: msg };
+    const msg = `Falha técnica temporária ao atribuir leito após tentativas para ${inscricao.nome_inscrito}. erro: ${ultimoErroLeito}`;
+    console.error(`[Autoalocacao] [Comum] Falha temporária: ${msg}`);
+    return { success: false, status: 'erro', motivo: msg };
   }
+}
+
+/**
+ * Reprocessa a lista de espera e inscrições elegíveis não alocadas para um evento ou globalmente.
+ * Executado quando surgem vagas, cancelamentos ou periodicamente via jobs cron.
+ */
+export async function reprocessarFilaEsperaHospedagem(
+  supabase: any,
+  options?: { eventoId?: string; limit?: number }
+): Promise<{
+  processados: number;
+  alocados: number;
+  mantidos_espera: number;
+  erros: number;
+  detalhes: Array<{ inscricao_id: string; status: string; motivo: string }>;
+}> {
+  const maxLimit = options?.limit ?? 50;
+  console.log(`[Autoalocacao] Iniciando reprocessarFilaEsperaHospedagem (limite: ${maxLimit})...`);
+
+  // Se não foi especificado eventoId, busca apenas eventos ativos que permitem hospedagem
+  let targetEventoIds: string[] = [];
+  if (options?.eventoId) {
+    targetEventoIds = [options.eventoId];
+  } else {
+    const { data: eventosAtivos } = await supabase
+      .from('eventos')
+      .select('id')
+      .eq('permite_hospedagem', true);
+    targetEventoIds = (eventosAtivos ?? []).map((e: any) => e.id);
+  }
+
+  if (targetEventoIds.length === 0) {
+    return { processados: 0, alocados: 0, mantidos_espera: 0, erros: 0, detalhes: [] };
+  }
+
+  // 1. Prioridade Máxima: buscar quem já tem status 'lista_espera' ou já possui leito gravado
+  let query = supabase
+    .from('evento_hospedagens')
+    .select(`
+      id,
+      evento_id,
+      inscricao_id,
+      status,
+      prioridade,
+      alojamento_id,
+      tipo_cama,
+      numero_cama,
+      evento_inscricoes (
+        id,
+        nome_inscrito,
+        status_pagamento,
+        hospedagem
+      )
+    `)
+    .in('status', ['lista_espera', 'solicitada', 'pago_sem_alocacao'])
+    .in('evento_id', targetEventoIds)
+    .is('alojamento_id', null);
+
+  // Ordenação inteligente: lista_espera primeiro para destravar quem já foi bloqueado
+  const { data: pendentes, error: pendErr } = await query
+    .order('prioridade', { ascending: false })
+    .order('created_at', { ascending: true })
+    .limit(maxLimit * 4);
+
+  if (pendErr || !pendentes || pendentes.length === 0) {
+    return { processados: 0, alocados: 0, mantidos_espera: 0, erros: 0, detalhes: [] };
+  }
+
+  // Filtra apenas aqueles com pagamento elegível ('pago' ou 'isento') e prioriza quem está em 'lista_espera'
+  const elegiveis = pendentes
+    .filter((h: any) => {
+      const ins = h.evento_inscricoes;
+      if (!ins || !ins.hospedagem) return false;
+      const stPg = String(ins.status_pagamento ?? '').toLowerCase();
+      return stPg === 'pago' || stPg === 'isento';
+    })
+    .sort((a: any, b: any) => {
+      // Prioridade 1: status 'lista_espera' vem antes de 'solicitada'
+      const aEspera = a.status === 'lista_espera' ? 1 : 0;
+      const bEspera = b.status === 'lista_espera' ? 1 : 0;
+      if (bEspera !== aEspera) return bEspera - aEspera;
+      // Prioridade 2: score de prioridade de hospedagem
+      const pDiff = (b.prioridade || 0) - (a.prioridade || 0);
+      if (pDiff !== 0) return pDiff;
+      // Prioridade 3: antiguidade de criação
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    })
+    .slice(0, maxLimit);
+
+  let alocados = 0;
+  let mantidos_espera = 0;
+  let erros = 0;
+  const detalhes: Array<{ inscricao_id: string; status: string; motivo: string }> = [];
+
+  for (const item of elegiveis) {
+    try {
+      const res = await alocarLeitoParaInscricao(supabase, item.inscricao_id);
+      if (res.success || res.status === 'alocada') {
+        alocados++;
+      } else if (res.status === 'lista_espera') {
+        mantidos_espera++;
+      } else {
+        erros++;
+      }
+      detalhes.push({
+        inscricao_id: item.inscricao_id,
+        status: res.status,
+        motivo: res.motivo,
+      });
+    } catch (err: any) {
+      erros++;
+      detalhes.push({
+        inscricao_id: item.inscricao_id,
+        status: 'erro',
+        motivo: err?.message || 'Erro inesperado',
+      });
+    }
+  }
+
+  console.log(`[Autoalocacao] Reprocessamento finalizado: ${elegiveis.length} processados | ${alocados} alocados | ${mantidos_espera} em espera | ${erros} erros.`);
+  return {
+    processados: elegiveis.length,
+    alocados,
+    mantidos_espera,
+    erros,
+    detalhes,
+  };
 }

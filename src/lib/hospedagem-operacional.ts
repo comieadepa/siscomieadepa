@@ -73,6 +73,7 @@ export function isElegivelAutoalocacao(input: HospedagemStatusInput): boolean {
     return false;
   }
 
+  // Se já tem alocação completa de leito e alojamento, não é elegível para alocação inicial
   return !temAlocacaoCompleta(input);
 }
 

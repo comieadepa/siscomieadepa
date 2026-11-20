@@ -4,6 +4,7 @@ import { processPendingWebhookJobs } from '@/lib/jobs/webhook-jobs';
 import { processarAvisosValidadeCredenciais } from '@/lib/jobs/processar-avisos-validade-credenciais';
 import { processarConvocacoesAgo } from '@/lib/jobs/processar-convocacoes-ago';
 import { processarComunicados } from '@/lib/jobs/processar-comunicados';
+import { reprocessarFilaEsperaHospedagem } from '@/lib/hospedagem-alocacao-automatica';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -51,8 +52,12 @@ async function handle(request: NextRequest) {
     // 4. Processa comunicados oficiais da Convenção
     const resumoComunicados = await processarComunicados(supabase);
 
+    // 5. Reprocessa fila de espera de hospedagem para inscrições pagas da 126ª AGO ativa
+    const evento126AgoId = '4307ecd3-e74a-4855-9de7-c4e29216a190';
+    const resumoHospedagem = await reprocessarFilaEsperaHospedagem(supabase, { eventoId: evento126AgoId, limit: 50 });
+
     const durationMs = Date.now() - start;
-    console.log(`[CRON JOBS] ⏹ Execução concluída. Webhooks: ${processedWebhooks} | Avisos Validade: ${resumoValidade.avisos30dEnviados + resumoValidade.avisosVencidosEnviados} | Convocações AGO: ${resumoAgo.notificacoesCriadas} | Comunicados: ${resumoComunicados.notificacoesCriadas} | Duração: ${durationMs}ms`);
+    console.log(`[CRON JOBS] ⏹ Execução concluída. Webhooks: ${processedWebhooks} | Avisos Validade: ${resumoValidade.avisos30dEnviados + resumoValidade.avisosVencidosEnviados} | Convocações AGO: ${resumoAgo.notificacoesCriadas} | Comunicados: ${resumoComunicados.notificacoesCriadas} | Fila Hospedagem: ${resumoHospedagem.alocados} alocados / ${resumoHospedagem.processados} processados | Duração: ${durationMs}ms`);
 
     return NextResponse.json({
       ok: true,
@@ -60,6 +65,7 @@ async function handle(request: NextRequest) {
       validadeCredenciais: resumoValidade,
       convocacoesAgo: resumoAgo,
       comunicados: resumoComunicados,
+      filaHospedagem: resumoHospedagem,
       durationMs,
     });
   } catch (err: any) {
