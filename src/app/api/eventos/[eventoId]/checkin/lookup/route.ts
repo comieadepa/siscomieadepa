@@ -78,16 +78,22 @@ export async function GET(
   const equipeIdFromQuery = searchParams.get('equipe_id')?.trim();
   const targetEquipeId = equipeIdFromGuard || equipeIdFromHeader || equipeIdFromQuery;
 
+  // Se o guard já resolveu o objeto evento, podemos reutilizar diretamente se os campos estiverem presentes
+  const eventoDoGuard = guard.ctx.evento as { id: string; nome?: string; status?: string | null; checkin_ativo?: boolean; valor_inscricao?: number | null } | undefined;
+
   const [eventoRes, opRowRes, byTokenRes] = await Promise.all([
-    supabase
-      .from('eventos')
-      .select('id,nome,status,checkin_ativo,valor_inscricao')
-      .eq('id', eventoId)
-      .single(),
+    // Se o guard já possuir os campos necessários do evento, evita reconsulta
+    eventoDoGuard && eventoDoGuard.checkin_ativo !== undefined && eventoDoGuard.valor_inscricao !== undefined
+      ? Promise.resolve({ data: eventoDoGuard, error: null })
+      : supabase
+          .from('eventos')
+          .select('id,nome,status,checkin_ativo,valor_inscricao')
+          .eq('id', eventoId)
+          .single(),
     targetEquipeId
       ? supabase
           .from('evento_equipe')
-          .select('id,evento_id,tipo,ativo,local_id')
+          .select('id,evento_id,tipo,ativo,local_id,evento_locais_checkin(id,evento_id,tipo,nome,ativo)')
           .eq('id', targetEquipeId)
           .eq('evento_id', eventoId)
           .maybeSingle()
@@ -107,7 +113,7 @@ export async function GET(
 
   // ── Validação do Local Vinculado ao Operador ──────────────
   if (targetEquipeId) {
-    const opRow = opRowRes.data;
+    const opRow = opRowRes.data as any;
     if (!opRow || !opRow.ativo) {
       return NextResponse.json({
         error: 'operador_inativo',
@@ -123,12 +129,13 @@ export async function GET(
     }
 
     if (opRow.local_id) {
-      const { data: localRec } = await supabase
+      // Usa dados do join para evitar round-trip extra
+      const localRec = opRow.evento_locais_checkin || (await supabase
         .from('evento_locais_checkin')
         .select('id,evento_id,tipo,nome,ativo')
         .eq('id', opRow.local_id)
         .eq('evento_id', eventoId)
-        .maybeSingle();
+        .maybeSingle()).data;
 
       if (!localRec) {
         return NextResponse.json({
@@ -285,19 +292,51 @@ export async function GET(
 
   const ins = inscricao;
 
-  // ── Contexto para PLENÁRIA ────────────────────────────────────────────────
-  // Chave de duplicidade: evento_id + inscricao_id + data_plenaria + sessao
-  // "Já registrado" bloqueia APENAS quando mesmo dia + mesma sessão.
-  // Registro de dia anterior é INFORMATIVO — NÃO bloqueia novo check-in.
+  // ── Contexto Geral e Financeiro ──────────────────────────
+  const statusPag = String(ins.status_pagamento || '').toLowerCase();
+  const valorFinal = Number(ins.valor_final ?? ins.valor_pago ?? 0);
+  const valorEvento = Number(evento.valor_inscricao ?? 0);
+  const exigePagamento = valorFinal > 0 || valorEvento > 0;
+  const pagamentoPendente = exigePagamento && !['pago', 'isento'].includes(statusPag);
+  const aptoCheckin = !pagamentoPendente;
+
+  const total  = ins.quantidade_refeicoes_total ?? ins.refeicoes_total ?? 0;
+  const usadas = ins.quantidade_refeicoes_usadas ?? ins.refeicoes_utilizadas ?? 0;
+  const saldo  = ins.quantidade_refeicoes_saldo ?? Math.max(0, total - usadas);
+
+  // ── Plenária e Enriquecimento em Paralelo (Redução de Latência) ──────────────
   let plenaria_hoje = false;
   let plenaria_hoje_at: string | null = null;
   let plenaria_hoje_operador: string | null = null;
   let plenaria_ultimo_at: string | null = null;
   let plenaria_ultimo_data: string | null = null;
 
+  const snapshot = ins.ministro_snapshot;
+  let fotoUrl: string | null = null;
+  let matricula: string | null = snapshot?.matricula ? String(snapshot.matricula) : null;
+  let cargoMinisterial: string | null = snapshot?.cargo ? String(snapshot.cargo) : null;
+  const targetMemberId = ins.ministro_id || snapshot?.ministro_id;
+
+  const cpfLimpo = ins.cpf ? String(ins.cpf).replace(/\D/g, '') : '';
+  const cpfFormatado = cpfLimpo.length === 11 ? cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4') : '';
+
+  const memberPromise = targetMemberId
+    ? supabase
+        .from('members')
+        .select('foto_url, matricula, cargo_ministerial, custom_fields')
+        .eq('id', targetMemberId)
+        .maybeSingle()
+    : cpfLimpo
+      ? supabase
+          .from('members')
+          .select('foto_url, matricula, cargo_ministerial, custom_fields')
+          .or(`cpf.eq.${cpfLimpo},cpf.eq.${cpfFormatado}`)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null });
+
   if (modo === 'plenaria') {
-    // Executa em paralelo a checagem de hoje e a busca do último registro
-    const [presHojeRes, ultimoRegistroRes] = await Promise.all([
+    // Dispara checagens de plenária e enrich do membro simultaneamente no mesmo round-trip
+    const [presHojeRes, ultimoRegistroRes, memberRes] = await Promise.all([
       supabase
         .from('evento_checkins')
         .select('id,created_at,checkin_user')
@@ -313,7 +352,8 @@ export async function GET(
         .eq('tipo_checkin', 'plenaria')
         .order('created_at', { ascending: false })
         .limit(1)
-        .maybeSingle()
+        .maybeSingle(),
+      memberPromise as Promise<{ data: any; error: any }>
     ]);
 
     const presHoje = presHojeRes.data;
@@ -328,54 +368,20 @@ export async function GET(
       plenaria_ultimo_at = (ultimoRegistro as any).created_at ?? null;
       plenaria_ultimo_data = (ultimoRegistro as any).data_plenaria ?? null;
     }
-  }
 
-  // ── Contexto Geral e Financeiro ──────────────────────────
-  const statusPag = String(ins.status_pagamento || '').toLowerCase();
-  const valorFinal = Number(ins.valor_final ?? ins.valor_pago ?? 0);
-  const valorEvento = Number(evento.valor_inscricao ?? 0);
-  const exigePagamento = valorFinal > 0 || valorEvento > 0;
-  const pagamentoPendente = exigePagamento && !['pago', 'isento'].includes(statusPag);
-  const aptoCheckin = !pagamentoPendente;
-
-  const total  = ins.quantidade_refeicoes_total ?? ins.refeicoes_total ?? 0;
-  const usadas = ins.quantidade_refeicoes_usadas ?? ins.refeicoes_utilizadas ?? 0;
-  const saldo  = ins.quantidade_refeicoes_saldo ?? Math.max(0, total - usadas);
-
-  // ── Enriquecimento de foto, matrícula e cargo se vinculado a ministro ──
-  const snapshot = ins.ministro_snapshot;
-  let fotoUrl: string | null = null;
-  let matricula: string | null = snapshot?.matricula ? String(snapshot.matricula) : null;
-  let cargoMinisterial: string | null = snapshot?.cargo ? String(snapshot.cargo) : null;
-
-  const targetMemberId = ins.ministro_id || snapshot?.ministro_id;
-  if (targetMemberId) {
-    const { data: memberData } = await supabase
-      .from('members')
-      .select('foto_url, matricula, cargo_ministerial, custom_fields')
-      .eq('id', targetMemberId)
-      .maybeSingle() as any;
-
+    const memberData = memberRes.data;
     if (memberData) {
       fotoUrl = memberData.foto_url || memberData.custom_fields?.fotoUrl || null;
       if (!matricula && memberData.matricula) matricula = String(memberData.matricula);
       if (!cargoMinisterial && memberData.cargo_ministerial) cargoMinisterial = String(memberData.cargo_ministerial);
     }
-  } else if (ins.cpf) {
-    const cpfLimpo = String(ins.cpf).replace(/\D/g, '');
-    if (cpfLimpo) {
-      const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
-      const { data: memberData } = await supabase
-        .from('members')
-        .select('foto_url, matricula, cargo_ministerial, custom_fields')
-        .or(`cpf.eq.${cpfLimpo},cpf.eq.${cpfFormatado}`)
-        .maybeSingle() as any;
-
-      if (memberData) {
-        fotoUrl = memberData.foto_url || memberData.custom_fields?.fotoUrl || null;
-        if (!matricula && memberData.matricula) matricula = String(memberData.matricula);
-        if (!cargoMinisterial && memberData.cargo_ministerial) cargoMinisterial = String(memberData.cargo_ministerial);
-      }
+  } else {
+    // Modo refeitorio ou credenciamento
+    const { data: memberData } = await memberPromise;
+    if (memberData) {
+      fotoUrl = (memberData as any).foto_url || (memberData as any).custom_fields?.fotoUrl || null;
+      if (!matricula && (memberData as any).matricula) matricula = String((memberData as any).matricula);
+      if (!cargoMinisterial && (memberData as any).cargo_ministerial) cargoMinisterial = String((memberData as any).cargo_ministerial);
     }
   }
 

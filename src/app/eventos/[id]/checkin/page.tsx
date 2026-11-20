@@ -292,8 +292,19 @@ function getAudioContext(): AudioContext | null {
 
 function unlockAudio() {
   const ctx = getAudioContext();
-  if (ctx && ctx.state === 'suspended') {
+  if (!ctx) return;
+  if (ctx.state === 'suspended') {
     void ctx.resume();
+  }
+  // No iOS Safari, tocar um micro-buffer silencioso no primeiro toque autoriza a reprodução subsequente sem bloqueio
+  try {
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
+  } catch {
+    // ignora
   }
 }
 
@@ -323,38 +334,40 @@ function emitirSom(tipo: TipoSom, forcar = false) {
     gain.connect(ctx.destination);
 
     if (tipo === 'bip' || tipo === 'leitura') {
-      // BIP agudo, curto e límpido (estilo leitor de código de barras profissional: 2400 Hz, 120ms)
+      // BIP de Captura do QR: Agudo, curto, estalado e límpido (estilo leitor Honeywell/Zebra: 2600 Hz, 85ms)
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(2400, now);
+      osc.frequency.setValueAtTime(2600, now);
 
-      const duracao = 0.12;
+      const duracao = 0.085;
       gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.7, now + 0.005);
-      gain.gain.setValueAtTime(0.7, now + 0.07);
+      gain.gain.linearRampToValueAtTime(0.85, now + 0.004);
+      gain.gain.setValueAtTime(0.85, now + 0.055);
       gain.gain.exponentialRampToValueAtTime(0.001, now + duracao);
 
       osc.start(now);
       osc.stop(now + duracao);
     } else if (tipo === 'sucesso') {
+      // Sinal de Confirmação Efetiva: Dois tons harmônicos ascendentes (880 Hz -> 1320 Hz)
       osc.type = 'sine';
       osc.frequency.setValueAtTime(880, now);
-      osc.frequency.setValueAtTime(1100, now + 0.1);
+      osc.frequency.setValueAtTime(1320, now + 0.09);
 
-      const duracao = 0.35;
+      const duracao = 0.28;
       gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.4, now + 0.01);
+      gain.gain.linearRampToValueAtTime(0.6, now + 0.008);
       gain.gain.exponentialRampToValueAtTime(0.001, now + duracao);
 
       osc.start(now);
       osc.stop(now + duracao);
     } else if (tipo === 'erro') {
+      // Sinal de Bloqueio/Erro: Grave descendente (220 Hz -> 140 Hz)
       osc.type = 'sawtooth';
       osc.frequency.setValueAtTime(220, now);
-      osc.frequency.setValueAtTime(160, now + 0.12);
+      osc.frequency.setValueAtTime(140, now + 0.1);
 
-      const duracao = 0.4;
+      const duracao = 0.35;
       gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.4, now + 0.01);
+      gain.gain.linearRampToValueAtTime(0.5, now + 0.01);
       gain.gain.exponentialRampToValueAtTime(0.001, now + duracao);
 
       osc.start(now);
@@ -369,11 +382,14 @@ function vibrar(tipo: TipoSom) {
   if (typeof navigator === 'undefined' || !navigator.vibrate) return;
   try {
     if (tipo === 'bip' || tipo === 'leitura') {
-      navigator.vibrate(60);
+      // Pulso rápido de detecção óptica (45ms)
+      navigator.vibrate(45);
     } else if (tipo === 'sucesso') {
-      navigator.vibrate([100, 50, 100]);
+      // Vibração dupla para confirmação definitiva do operador
+      navigator.vibrate([80, 40, 120]);
     } else {
-      navigator.vibrate([200, 100, 200, 100, 200]);
+      // Vibração longa para alerta de erro/bloqueio
+      navigator.vibrate([150, 60, 150]);
     }
   } catch {
     // Silencioso se vibração não suportada
@@ -958,6 +974,8 @@ export default function CheckinMobilePage() {
   async function consultarInscricao(tokenOuId: string) {
     if (processando || pendingConfirm) return;
 
+    const tInicioConsulta = typeof performance !== 'undefined' ? performance.now() : Date.now();
+
     if (operadorLocal && !operadorLocal.ativo) {
       setResultado({
         estado: 'invalid',
@@ -1008,12 +1026,21 @@ export default function CheckinMobilePage() {
 
       const timeoutId = setTimeout(() => controller.abort(), 8000);
       let res: Response;
+      const tReqInicio = typeof performance !== 'undefined' ? performance.now() : Date.now();
       try {
         res = await fetch(`/api/eventos/${id}/checkin/lookup?${params}`, { headers, signal: controller.signal });
       } finally {
         clearTimeout(timeoutId);
       }
+      const tReqFim = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const duracaoReq = Math.round(tReqFim - tReqInicio);
+
       const json = await res.json().catch(() => ({}));
+      const tTotal = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - tInicioConsulta);
+
+      if (process.env.NODE_ENV !== 'production' || typeof window !== 'undefined') {
+        console.debug(`[Checkin Performance] Lookup total: ${tTotal}ms (Rede/API: ${duracaoReq}ms)`);
+      }
 
       if (!res.ok) {
         const backendMsg = (json?.message || json?.error || '').trim();
