@@ -270,6 +270,9 @@ function extractQrToken(raw: string): string | null {
 }
 
 let sharedAudioCtx: AudioContext | null = null;
+let bipAudioBuffer: AudioBuffer | null = null;
+let sucessoAudioBuffer: AudioBuffer | null = null;
+let erroAudioBuffer: AudioBuffer | null = null;
 
 function getAudioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
@@ -281,30 +284,99 @@ function getAudioContext(): AudioContext | null {
     if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
       sharedAudioCtx = new AudioCtxClass();
     }
-    if (sharedAudioCtx.state === 'suspended') {
-      void sharedAudioCtx.resume();
-    }
     return sharedAudioCtx;
   } catch {
     return null;
   }
 }
 
-function unlockAudio() {
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  if (ctx.state === 'suspended') {
-    void ctx.resume();
-  }
-  // No iOS Safari, tocar um micro-buffer silencioso no primeiro toque autoriza a reprodução subsequente sem bloqueio
+// Pré-renderiza buffers de áudio PCM na memória do dispositivo.
+// AudioBufferSourceNode toca instantaneamente em mobile, sem latência de oscilador e com volume máximo.
+function prepararBuffersAudio(ctx: AudioContext) {
   try {
-    const buffer = ctx.createBuffer(1, 1, 22050);
+    const sampleRate = ctx.sampleRate || 44100;
+
+    // 1. BIP de Captura: 2400 Hz / 100ms - Alto, estalado e claro
+    if (!bipAudioBuffer) {
+      const durBip = 0.10;
+      const numFramesBip = Math.floor(sampleRate * durBip);
+      const buf = ctx.createBuffer(1, numFramesBip, sampleRate);
+      const data = buf.getChannelData(0);
+      const freq = 2400;
+      for (let i = 0; i < numFramesBip; i++) {
+        const t = i / sampleRate;
+        // Envelope: 4ms ataque, sustentação até 70ms, fade rápido até 100ms
+        let env = 1.0;
+        if (t < 0.005) {
+          env = t / 0.005;
+        } else if (t > 0.07) {
+          env = Math.max(0, 1.0 - (t - 0.07) / 0.03);
+        }
+        data[i] = Math.sin(2 * Math.PI * freq * t) * env * 0.95;
+      }
+      bipAudioBuffer = buf;
+    }
+
+    // 2. Confirmação de Sucesso: 880 Hz -> 1320 Hz (dois tons harmônicos ascendentes)
+    if (!sucessoAudioBuffer) {
+      const durSuc = 0.28;
+      const numFramesSuc = Math.floor(sampleRate * durSuc);
+      const buf = ctx.createBuffer(1, numFramesSuc, sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < numFramesSuc; i++) {
+        const t = i / sampleRate;
+        const freq = t < 0.10 ? 880 : 1320;
+        let env = 1.0;
+        if (t < 0.01) env = t / 0.01;
+        else if (t > 0.22) env = Math.max(0, 1.0 - (t - 0.22) / 0.06);
+        data[i] = Math.sin(2 * Math.PI * freq * t) * env * 0.85;
+      }
+      sucessoAudioBuffer = buf;
+    }
+
+    // 3. Alerta de Erro / Bloqueio: Tom grave descendente 240 Hz -> 140 Hz
+    if (!erroAudioBuffer) {
+      const durErr = 0.32;
+      const numFramesErr = Math.floor(sampleRate * durErr);
+      const buf = ctx.createBuffer(1, numFramesErr, sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < numFramesErr; i++) {
+        const t = i / sampleRate;
+        const freq = 240 - (100 * (t / durErr));
+        let env = 1.0;
+        if (t < 0.01) env = t / 0.01;
+        else if (t > 0.25) env = Math.max(0, 1.0 - (t - 0.25) / 0.07);
+        // Pequena onda com distorção harmônica suave para soar alerta
+        const sine = Math.sin(2 * Math.PI * freq * t);
+        data[i] = Math.max(-0.9, Math.min(0.9, sine * 1.4)) * env * 0.85;
+      }
+      erroAudioBuffer = buf;
+    }
+  } catch (err) {
+    console.warn('Erro ao preparar buffers de áudio:', err);
+  }
+}
+
+// Desbloqueio definitivo para iOS Safari e Chrome Android acionado por gesto do usuário
+async function unlockAudio(): Promise<boolean> {
+  const ctx = getAudioContext();
+  if (!ctx) return false;
+  try {
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
+    prepararBuffersAudio(ctx);
+
+    // Toca um micro-buffer silencioso no destino de saída durante o evento do toque
+    const silent = ctx.createBuffer(1, 1, 22050);
     const source = ctx.createBufferSource();
-    source.buffer = buffer;
+    source.buffer = silent;
     source.connect(ctx.destination);
     source.start(0);
+
+    return ctx.state === 'running';
   } catch {
-    // ignora
+    return false;
   }
 }
 
@@ -319,6 +391,7 @@ function emitirSom(tipo: TipoSom, forcar = false) {
       // ignora
     }
   }
+
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
@@ -327,6 +400,25 @@ function emitirSom(tipo: TipoSom, forcar = false) {
       void ctx.resume();
     }
 
+    prepararBuffersAudio(ctx);
+
+    let targetBuffer: AudioBuffer | null = null;
+    if (tipo === 'bip' || tipo === 'leitura') targetBuffer = bipAudioBuffer;
+    else if (tipo === 'sucesso') targetBuffer = sucessoAudioBuffer;
+    else if (tipo === 'erro') targetBuffer = erroAudioBuffer;
+
+    if (targetBuffer) {
+      const source = ctx.createBufferSource();
+      source.buffer = targetBuffer;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(1.0, ctx.currentTime);
+      source.connect(gain);
+      gain.connect(ctx.destination);
+      source.start(ctx.currentTime);
+      return;
+    }
+
+    // Fallback com Oscillator caso o buffer não tenha sido montado
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -334,42 +426,33 @@ function emitirSom(tipo: TipoSom, forcar = false) {
     gain.connect(ctx.destination);
 
     if (tipo === 'bip' || tipo === 'leitura') {
-      // BIP de Captura do QR: Agudo, curto, estalado e límpido (estilo leitor Honeywell/Zebra: 2600 Hz, 85ms)
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(2600, now);
-
-      const duracao = 0.085;
+      osc.frequency.setValueAtTime(2400, now);
+      const duracao = 0.09;
       gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.85, now + 0.004);
-      gain.gain.setValueAtTime(0.85, now + 0.055);
+      gain.gain.linearRampToValueAtTime(0.9, now + 0.005);
+      gain.gain.setValueAtTime(0.9, now + 0.06);
       gain.gain.exponentialRampToValueAtTime(0.001, now + duracao);
-
       osc.start(now);
       osc.stop(now + duracao);
     } else if (tipo === 'sucesso') {
-      // Sinal de Confirmação Efetiva: Dois tons harmônicos ascendentes (880 Hz -> 1320 Hz)
       osc.type = 'sine';
       osc.frequency.setValueAtTime(880, now);
       osc.frequency.setValueAtTime(1320, now + 0.09);
-
       const duracao = 0.28;
       gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.6, now + 0.008);
+      gain.gain.linearRampToValueAtTime(0.7, now + 0.008);
       gain.gain.exponentialRampToValueAtTime(0.001, now + duracao);
-
       osc.start(now);
       osc.stop(now + duracao);
     } else if (tipo === 'erro') {
-      // Sinal de Bloqueio/Erro: Grave descendente (220 Hz -> 140 Hz)
       osc.type = 'sawtooth';
       osc.frequency.setValueAtTime(220, now);
       osc.frequency.setValueAtTime(140, now + 0.1);
-
       const duracao = 0.35;
       gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.5, now + 0.01);
+      gain.gain.linearRampToValueAtTime(0.6, now + 0.01);
       gain.gain.exponentialRampToValueAtTime(0.001, now + duracao);
-
       osc.start(now);
       osc.stop(now + duracao);
     }
@@ -489,21 +572,52 @@ export default function CheckinMobilePage() {
       return true;
     }
   });
+  const [audioPronto, setAudioPronto] = useState<boolean>(false);
+  const [testandoSom, setTestandoSom] = useState<boolean>(false);
 
-  const toggleSom = () => {
-    setSomHabilitado(prev => {
-      const proximo = !prev;
-      try {
-        sessionStorage.setItem('checkin_som_ativo', String(proximo));
-      } catch {
-        // ignora
-      }
-      if (proximo) {
-        unlockAudio();
-        emitirSom('bip', true);
-      }
-      return proximo;
-    });
+  // Monitora o estado do AudioContext para informar visualmente ao operador se o áudio está desbloqueado
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const ctx = getAudioContext();
+    if (ctx) {
+      setAudioPronto(ctx.state === 'running');
+      const onStateChange = () => {
+        setAudioPronto(ctx.state === 'running');
+      };
+      ctx.addEventListener('statechange', onStateChange);
+      return () => {
+        ctx.removeEventListener('statechange', onStateChange);
+      };
+    }
+  }, []);
+
+  const ativarAudioPorGesto = async () => {
+    const ok = await unlockAudio();
+    setAudioPronto(ok);
+    return ok;
+  };
+
+  const testarBip = async () => {
+    setTestandoSom(true);
+    await ativarAudioPorGesto();
+    vibrar('bip');
+    emitirSom('bip', true);
+    setTimeout(() => setTestandoSom(false), 300);
+  };
+
+  const toggleSom = async () => {
+    const proximo = !somHabilitado;
+    setSomHabilitado(proximo);
+    try {
+      sessionStorage.setItem('checkin_som_ativo', String(proximo));
+    } catch {
+      // ignora
+    }
+    if (proximo) {
+      await ativarAudioPorGesto();
+      vibrar('bip');
+      emitirSom('bip', true);
+    }
   };
 
   const scannerRef = useRef<unknown>(null);
@@ -2825,30 +2939,62 @@ export default function CheckinMobilePage() {
             )}
 
             {/* Controles Inferiores da Câmera (Screen 1 footer) */}
-            <div className="w-full flex items-center justify-between gap-3 mt-4">
-              <button
-                onClick={() => setHistoricoOpen(true)}
-                className="flex-1 bg-[#0F1E36] hover:bg-slate-800 border border-white/10 rounded-2xl py-3 px-4 text-xs font-semibold text-slate-200 flex items-center justify-between transition active:scale-95 shadow-sm"
-              >
-                <span className="flex items-center gap-2">
-                  <Clock className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Últimos Check-ins</span>
-                </span>
-                <ChevronRight className="w-4 h-4 text-slate-400" />
-              </button>
+            <div className="w-full space-y-2 mt-4">
+              {/* Barra de Status e Teste de Som do Terminal */}
+              <div className="w-full bg-[#0F1E36]/80 border border-white/10 rounded-2xl p-2.5 px-3 flex items-center justify-between gap-2 shadow-sm text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${somHabilitado && audioPronto ? 'bg-emerald-400 animate-pulse' : !somHabilitado ? 'bg-slate-500' : 'bg-amber-400 animate-ping'}`} />
+                  <span className="text-[11px] text-slate-300 truncate">
+                    {!somHabilitado ? 'Som desativado' : audioPronto ? 'BIP ativo e pronto' : 'Toque para liberar áudio'}
+                  </span>
+                </div>
 
-              <button
-                onClick={() => {
-                  if (scannerAtivo) {
-                    void stopScanner();
-                  } else {
-                    void iniciarScanner();
-                  }
-                }}
-                className="bg-[#0F1E36] hover:bg-slate-800 border border-white/10 rounded-2xl py-3 px-4 text-xs font-semibold text-slate-300 transition active:scale-95 shadow-sm"
-              >
-                {scannerAtivo ? 'Parar câmera' : 'Ativar câmera'}
-              </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={testarBip}
+                    disabled={testandoSom}
+                    className="bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold px-2.5 py-1 rounded-xl transition active:scale-95 disabled:opacity-50 flex items-center gap-1 cursor-pointer"
+                    title="Testar som do BIP agora"
+                  >
+                    <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{testandoSom ? 'Tocando...' : 'Testar BIP'}</span>
+                  </button>
+
+                  <button
+                    onClick={toggleSom}
+                    className="bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-[11px] font-semibold px-2 py-1 rounded-xl transition active:scale-95"
+                    title={somHabilitado ? 'Silenciar BIP' : 'Ativar BIP'}
+                  >
+                    {somHabilitado ? 'Silenciar' : 'Ativar'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="w-full flex items-center justify-between gap-3">
+                <button
+                  onClick={() => setHistoricoOpen(true)}
+                  className="flex-1 bg-[#0F1E36] hover:bg-slate-800 border border-white/10 rounded-2xl py-3 px-4 text-xs font-semibold text-slate-200 flex items-center justify-between transition active:scale-95 shadow-sm"
+                >
+                  <span className="flex items-center gap-2">
+                    <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Últimos Check-ins</span>
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-slate-400" />
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (scannerAtivo) {
+                      void stopScanner();
+                    } else {
+                      void iniciarScanner();
+                    }
+                  }}
+                  className="bg-[#0F1E36] hover:bg-slate-800 border border-white/10 rounded-2xl py-3 px-4 text-xs font-semibold text-slate-300 transition active:scale-95 shadow-sm"
+                >
+                  {scannerAtivo ? 'Parar câmera' : 'Ativar câmera'}
+                </button>
+              </div>
             </div>
 
             {/* Quick Preview dos Últimos 3 Check-ins */}
