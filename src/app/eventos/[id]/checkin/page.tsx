@@ -497,6 +497,7 @@ export default function CheckinMobilePage() {
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const scannerElementId = 'qr-scanner-region';
   const ignorandoRef = useRef(false);
+  const lookupAbortControllerRef = useRef<AbortController | null>(null);
   const lastTokenRef = useRef<{ token: string; at: number } | null>(null);
   const cameraErroRef = useRef<string | null>(null);
   const iniciandoRef = useRef(false);
@@ -955,7 +956,7 @@ export default function CheckinMobilePage() {
 
   // ── FASE 1: Leitura QR → Lookup com Validação Backend ───────
   async function consultarInscricao(tokenOuId: string) {
-    if (ignorandoRef.current || processando || pendingConfirm) return;
+    if (processando || pendingConfirm) return;
 
     if (operadorLocal && !operadorLocal.ativo) {
       setResultado({
@@ -968,9 +969,26 @@ export default function CheckinMobilePage() {
       return;
     }
 
+    // Garante recuperação da sessão da equipe mais atualizada da memória ou storage
+    let sessAtual = equipeSessao;
+    if (!sessAtual?.equipeId) {
+      const sessRecuperada = getEquipeSession();
+      if (sessRecuperada?.eventoId === id && sessRecuperada.equipeId) {
+        sessAtual = sessRecuperada;
+        setEquipeSessao(sessRecuperada);
+      }
+    }
+
     ignorandoRef.current = true;
     setProcessando(true);
     setStatusDiagnostico('Validando inscrição...');
+
+    // Aborta eventual requisição lookup anterior pendente
+    if (lookupAbortControllerRef.current) {
+      try { lookupAbortControllerRef.current.abort(); } catch { /* noop */ }
+    }
+    const controller = new AbortController();
+    lookupAbortControllerRef.current = controller;
 
     try {
       const dataPlenaria = new Date().toISOString().slice(0, 10);
@@ -979,10 +997,15 @@ export default function CheckinMobilePage() {
         modo: modoCheckin,
         data_plenaria: dataPlenaria,
       });
-      const headers: Record<string, string> = {};
-      if (equipeSessao?.equipeId) headers['x-evento-equipe-id'] = equipeSessao.equipeId;
+      if (sessAtual?.equipeId) {
+        params.set('equipe_id', sessAtual.equipeId);
+      }
 
-      const controller = new AbortController();
+      const headers: Record<string, string> = {};
+      if (sessAtual?.equipeId) {
+        headers['x-evento-equipe-id'] = sessAtual.equipeId;
+      }
+
       const timeoutId = setTimeout(() => controller.abort(), 8000);
       let res: Response;
       try {
@@ -993,13 +1016,21 @@ export default function CheckinMobilePage() {
       const json = await res.json().catch(() => ({}));
 
       if (!res.ok) {
+        const backendMsg = (json?.message || json?.error || '').trim();
+        const msgFormatada = backendMsg || (res.status === 403
+          ? 'Terminal não autenticado. Identifique-se na equipe para validar credenciais.'
+          : 'QR Code não reconhecido ou inválido.');
         setResultado({
           estado: 'invalid',
-          message: json?.message || 'QR Code não reconhecido ou inválido.',
-          bloqueadoMotivo: json?.message || 'Não foi possível validar esta credencial no sistema.',
+          message: msgFormatada,
+          bloqueadoMotivo: msgFormatada,
         });
         emitirSom('erro');
         vibrar('erro');
+        if (autoLiberarTimerRef.current) clearTimeout(autoLiberarTimerRef.current);
+        autoLiberarTimerRef.current = setTimeout(() => {
+          voltarParaScan();
+        }, 5000);
         return;
       }
 
@@ -1128,6 +1159,7 @@ export default function CheckinMobilePage() {
         voltarParaScan();
       }, 4000);
     } finally {
+      lookupAbortControllerRef.current = null;
       setProcessando(false);
       setCapturandoCodigo(false);
     }
@@ -1312,9 +1344,14 @@ export default function CheckinMobilePage() {
       clearTimeout(autoLiberarTimerRef.current);
       autoLiberarTimerRef.current = null;
     }
+    if (lookupAbortControllerRef.current) {
+      try { lookupAbortControllerRef.current.abort(); } catch { /* noop */ }
+      lookupAbortControllerRef.current = null;
+    }
     setResultado(null);
     setPendingConfirm(null);
     setCapturandoCodigo(false);
+    setProcessando(false);
     ignorandoRef.current = false;
     setStatusDiagnostico('Procurando QR Code...');
     if (!scannerAtivo && !modoManual) {
@@ -2667,9 +2704,18 @@ export default function CheckinMobilePage() {
 
               {/* Indicador Visual Imediato de Código Capturado */}
               {capturandoCodigo && (
-                <div className="absolute top-16 inset-x-4 z-30 bg-emerald-500 text-slate-950 font-bold text-xs py-2 px-3 rounded-2xl flex items-center justify-center gap-2 shadow-2xl animate-pulse">
-                  <div className="w-3 h-3 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
-                  <span>Código capturado! Consultando participante...</span>
+                <div className="absolute top-16 inset-x-4 z-30 bg-emerald-500 text-slate-950 font-bold text-xs py-2 px-3 rounded-2xl flex items-center justify-between shadow-2xl animate-pulse">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin shrink-0" />
+                    <span className="truncate">Código capturado! Consultando participante...</span>
+                  </div>
+                  <button
+                    onClick={voltarParaScan}
+                    className="ml-2 bg-slate-950 hover:bg-slate-900 text-white text-[10px] font-bold px-2.5 py-1 rounded-xl uppercase tracking-wider shrink-0 active:scale-95 transition"
+                    title="Cancelar consulta e liberar câmera"
+                  >
+                    Cancelar
+                  </button>
                 </div>
               )}
 
