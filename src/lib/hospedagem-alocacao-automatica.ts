@@ -10,6 +10,7 @@ import {
 import {
   formatarNumeroLeitoSequencial,
 } from '@/lib/hospedagem-operacional';
+import { enviarEmailHospedagemComplementar } from '@/lib/hospedagem-email-service';
 import { normalizePayloadUppercase } from '@/lib/text';
 
 async function fetchAllRows<T>(queryBuilder: any): Promise<T[]> {
@@ -920,6 +921,13 @@ export async function reprocessarFilaEsperaHospedagem(
       const res = await alocarLeitoParaInscricao(supabase, item.inscricao_id);
       if (res.success || res.status === 'alocada') {
         alocados++;
+        // Se a inscrição foi regularizada / alocada com sucesso no reprocessamento da lista de espera,
+        // envia o e-mail complementar de hospedagem confirmada de forma segura e deduplicada
+        try {
+          await enviarEmailHospedagemComplementar(supabase, { inscricaoId: item.inscricao_id });
+        } catch (mailErr: any) {
+          console.error(`[Autoalocacao] Erro ao enviar e-mail complementar para ${item.inscricao_id}:`, mailErr?.message);
+        }
       } else if (res.status === 'lista_espera') {
         mantidos_espera++;
       } else {

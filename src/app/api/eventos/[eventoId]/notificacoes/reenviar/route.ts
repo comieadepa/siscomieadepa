@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireEventoPermission } from '@/lib/evento-guard';
 import { sendEmail } from '@/services/email';
 import { parseEventoTemplate } from '@/lib/evento-template';
+import {
+  obterDadosHospedagemConfirmada,
+  formatarBlocoHospedagem,
+  type DadosHospedagemConfirmada,
+} from '@/lib/hospedagem-email-service';
 
 type EventoRow = {
   id: string;
@@ -35,7 +40,7 @@ function fmtMoeda(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-function buildConfirmacaoEmail(evento: EventoRow, inscricao: InscricaoRow) {
+function buildConfirmacaoEmail(evento: EventoRow, inscricao: InscricaoRow, dadosHosp?: DadosHospedagemConfirmada | null) {
   const isIsento = inscricao.status_pagamento === 'isento';
   const finalNome = (evento.nome || '').toUpperCase().includes('UMADESPA') ? 'CONGRESSO UMADESPA 2026 - BELÉM' : (evento.nome || '');
   const assunto = `Inscricao confirmada - ${finalNome}`;
@@ -77,6 +82,10 @@ function buildConfirmacaoEmail(evento: EventoRow, inscricao: InscricaoRow) {
     mensagem += `Seu pagamento para o evento *${finalNome}* foi confirmado.`;
   }
   mensagem += `\n\nCodigo de check-in: ${inscricao.qr_code ?? '-'}`;
+
+  if (dadosHosp) {
+    mensagem += `\n\n${formatarBlocoHospedagem(dadosHosp)}`;
+  }
 
   if (evento.mensagem_confirmacao) {
     mensagem += `\n\n${parseEventoTemplate(evento.mensagem_confirmacao, vars)}`;
@@ -169,7 +178,8 @@ export async function POST(
   let payload: { assunto: string; mensagem: string } | null = null;
 
   if (status === 'pago' || status === 'isento') {
-    payload = buildConfirmacaoEmail(evento as EventoRow, inscricao as InscricaoRow);
+    const dadosHosp = await obterDadosHospedagemConfirmada(supabase, inscricaoId);
+    payload = buildConfirmacaoEmail(evento as EventoRow, inscricao as InscricaoRow, dadosHosp);
   } else if (status === 'pendente') {
     payload = buildSegundaViaEmail(evento as EventoRow, inscricao as InscricaoRow);
     if (!payload) {

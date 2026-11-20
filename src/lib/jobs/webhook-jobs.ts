@@ -2,6 +2,11 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { sendEmail } from '@/services/email';
 import { registrarHistoricoMinisterial } from '@/lib/historico-ministerial';
 import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
+import {
+  obterDadosHospedagemConfirmada,
+  formatarBlocoHospedagem,
+  enviarEmailHospedagemComplementar,
+} from '@/lib/hospedagem-email-service';
 import { cleanCpf } from '@/lib/cpf';
 import { renderTemplate } from '@/lib/evento-template';
 
@@ -118,6 +123,14 @@ async function enviarEmailComDeduplicacao(
   };
 
   let mensagem = `Olá, ${nome}!\n\nSeu pagamento para o evento *${finalNomeEvento}* foi confirmado. ✅\n\n🎫 Código de check-in: ${qrCode}`;
+
+  // Se a hospedagem já estiver confirmada neste momento, incorpora os dados oficiais de alojamento e leito
+  const dadosHosp = await obterDadosHospedagemConfirmada(supabase, inscricaoId);
+  if (dadosHosp) {
+    const blocoHosp = formatarBlocoHospedagem(dadosHosp);
+    mensagem += `\n\n${blocoHosp}`;
+  }
+
   if (mensagemConfirmacao) mensagem += `\n\n${subst(mensagemConfirmacao, vars)}`;
   if (linkWhatsapp)        mensagem += `\n\n📲 Grupo do WhatsApp: ${linkWhatsapp}`;
 
@@ -321,9 +334,24 @@ export async function processSingleWebhookJob(supabase: SupabaseClient, job: any
 
   if (job_type === 'ALLOCATE_ACCOMMODATION') {
     if (entity_type === 'inscricao') {
-      await alocarLeitoParaInscricao(supabase, entity_id);
+      const resAloc = await alocarLeitoParaInscricao(supabase, entity_id);
+      // Se alocada agora e já existia e-mail de confirmação enviado anteriormente sem hospedagem,
+      // despacha automaticamente o e-mail complementar de hospedagem confirmada
+      if (resAloc.success || resAloc.status === 'alocada') {
+        try {
+          await enviarEmailHospedagemComplementar(supabase, { inscricaoId: entity_id });
+        } catch (hospEmailErr: any) {
+          console.error(`[WEBHOOK JOBS] Erro ao enviar e-mail complementar de hospedagem para ${entity_id}:`, hospEmailErr?.message);
+        }
+      }
     } else {
       throw new Error(`ALLOCATE_ACCOMMODATION não suporta entity_type ${entity_type}`);
+    }
+  } else if (job_type === 'SEND_ACCOMMODATION_EMAIL') {
+    if (entity_type === 'inscricao') {
+      await enviarEmailHospedagemComplementar(supabase, { inscricaoId: entity_id });
+    } else {
+      throw new Error(`SEND_ACCOMMODATION_EMAIL não suporta entity_type ${entity_type}`);
     }
   } else if (job_type === 'SEND_CONFIRMATION_EMAIL') {
     if (entity_type === 'inscricao') {
