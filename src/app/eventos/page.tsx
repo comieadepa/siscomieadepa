@@ -309,30 +309,61 @@ export default function EventosPage() {
       // Carrega inscrições apenas dos eventos acessíveis
       if (evs.length > 0) {
         const ids = evs.map(e => e.id);
-        let allInsc: InscricaoResumo[] = [];
-        let page = 0;
-        const limit = 1000;
-        while (true) {
-          const { data: inData, error } = await supabase
-            .from('evento_inscricoes')
-            .select('id, evento_id, nome_inscrito, cpf, status_pagamento, valor_original, valor_final, valor_pago, lote_id')
-            .in('evento_id', ids)
-            .range(page * limit, (page + 1) * limit - 1);
-          
-          if (error) {
-            console.error("Erro ao buscar inscrições:", error);
-            break;
-          }
-          if (!inData || inData.length === 0) break;
-          allInsc = [...allInsc, ...(inData as any[])];
-          if (inData.length < limit) break;
-          page++;
+        // 1. Obtém contagem total para particionamento paralelo ordenado e estável
+        const { count: totalInsc, error: countErr } = await supabase
+          .from('evento_inscricoes')
+          .select('*', { count: 'exact', head: true })
+          .in('evento_id', ids);
+
+        if (countErr) {
+          throw new Error('Falha ao contabilizar inscrições: ' + countErr.message);
         }
 
-        const { data: lotesData } = await supabase
+        const limit = 1000;
+        const total = totalInsc || 0;
+        const numPages = Math.ceil(total / limit);
+
+        // 2. Executa em chunks com concorrência controlada (máx 4 requisições simultâneas)
+        // com ordenação determinística por id para garantir consistência e estabilidade absoluta
+        const CHUNK_CONCURRENCY = 8;
+        const allInsc: InscricaoResumo[] = [];
+
+        for (let i = 0; i < numPages; i += CHUNK_CONCURRENCY) {
+          const chunkPages = Array.from(
+            { length: Math.min(CHUNK_CONCURRENCY, numPages - i) },
+            (_, idx) => i + idx
+          );
+
+          const chunkResults = await Promise.all(
+            chunkPages.map(p =>
+              supabase
+                .from('evento_inscricoes')
+                .select('id, evento_id, nome_inscrito, cpf, status_pagamento, valor_original, valor_final, valor_pago, lote_id')
+                .in('evento_id', ids)
+                .order('id', { ascending: true })
+                .range(p * limit, (p + 1) * limit - 1)
+            )
+          );
+
+          for (const res of chunkResults) {
+            if (res.error) {
+              throw new Error('Falha ao carregar lote de inscrições: ' + res.error.message);
+            }
+            if (res.data) {
+              allInsc.push(...(res.data as any[]));
+            }
+          }
+        }
+
+        // 3. Busca lotes
+        const { data: lotesData, error: lotesErr } = await supabase
           .from('evento_lotes_inscricao')
           .select('*')
           .in('evento_id', ids);
+
+        if (lotesErr) {
+          throw new Error('Falha ao carregar lotes de inscrição: ' + lotesErr.message);
+        }
 
         const lotesMap: Record<string, any> = {};
         if (lotesData) {

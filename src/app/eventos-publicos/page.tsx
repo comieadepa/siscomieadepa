@@ -4,6 +4,7 @@ import type { CSSProperties } from 'react';
 const sora = { className: 'font-sans' };
 const playfair = { className: 'font-serif' };
 import PublicAssistenteWidget from '@/components/PublicAssistenteWidget';
+import BotaoConsultarInscricaoAgo from '@/components/BotaoConsultarInscricaoAgo';
 import { APP_URL, PUBLIC_URL } from '@/lib/urls';
 import { DEPARTAMENTOS, fetchOpenEvents } from '@/lib/public-portal';
 
@@ -183,6 +184,7 @@ export default async function EventosPublicosPage() {
                       >
                         Fazer inscrição
                       </Link>
+                      <BotaoConsultarInscricaoAgo />
                     </div>
                   </div>
                 </div>

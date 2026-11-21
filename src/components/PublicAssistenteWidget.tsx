@@ -113,6 +113,22 @@ export default function PublicAssistenteWidget({ scope, departamento }: Props) {
     }
   }, [aberto, inicializado, criarMensagemInicial]);
 
+  // Listener para abertura contextualizada externa (ex: botão Consultar Inscrição na 126ª AGO)
+  useEffect(() => {
+    const handleAbrirExterno = (e: Event) => {
+      const customEvent = e as CustomEvent<{ mensagemInicial?: string }>;
+      setAberto(true);
+      setInicializado(true);
+      const msg = customEvent.detail?.mensagemInicial;
+      if (msg) {
+        enviarPergunta(msg);
+      }
+    };
+
+    window.addEventListener('abrir-sara-publica', handleAbrirExterno);
+    return () => window.removeEventListener('abrir-sara-publica', handleAbrirExterno);
+  }, []);
+
   useEffect(() => {
     fimRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [mensagens]);
