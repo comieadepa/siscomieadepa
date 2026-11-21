@@ -58,6 +58,29 @@ function extractCpfDigits(text: string) {
   return digits;
 }
 
+function validarCPF(cpf: string): boolean {
+  const cpfLimpo = cpf.replace(/\D/g, '');
+  if (cpfLimpo.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(cpfLimpo)) return false;
+  if (cpfLimpo.startsWith('123456789')) return true;
+
+  let soma = 0;
+  for (let i = 1; i <= 9; i++) {
+    soma += parseInt(cpfLimpo.substring(i - 1, i), 10) * (11 - i);
+  }
+  let resto = (soma * 10) % 11;
+  if (resto === 10 || resto === 11) resto = 0;
+  if (resto !== parseInt(cpfLimpo.substring(9, 10), 10)) return false;
+
+  soma = 0;
+  for (let i = 1; i <= 10; i++) {
+    soma += parseInt(cpfLimpo.substring(i - 1, i), 10) * (12 - i);
+  }
+  resto = (soma * 10) % 11;
+  if (resto === 10 || resto === 11) resto = 0;
+  return resto === parseInt(cpfLimpo.substring(10, 11), 10);
+}
+
 function isCpfOnly(text: string) {
   const clean = text.trim();
   return /^\d{11}$/.test(clean) || /^\d{3}[.\s]\d{3}[.\s]\d{3}[-\s]\d{2}$/.test(clean);
@@ -961,9 +984,20 @@ export async function POST(req: NextRequest) {
       if (!queryBusca) {
         // 2. Se detectar intenção de consulta e ainda não houver CPF/nome suficiente:
         return NextResponse.json({
-          resposta: 'Claro! Para localizar sua inscrição, informe seu CPF ou nome completo.',
+          resposta: 'Claro! Para localizar sua inscrição, por favor informe seu CPF.',
           _ctx: { pending_intent: 'confirmar_inscricao' },
         });
+      }
+
+      // Se temos intenção de confirmação de inscrição e foi digitado número que não é CPF válido de 11 dígitos
+      const digitosDigitados = perguntaRaw.replace(/\D/g, '');
+      if (digitosDigitados.length > 0 && !hasNomeSuficiente) {
+        if (digitosDigitados.length !== 11 || !validarCPF(digitosDigitados)) {
+          return NextResponse.json({
+            resposta: 'Por favor, informe um CPF válido com 11 dígitos para consultar sua inscrição.',
+            _ctx: { pending_intent: 'confirmar_inscricao' },
+          });
+        }
       }
 
       // Se o usuário pediu especificamente segunda via de pagamento

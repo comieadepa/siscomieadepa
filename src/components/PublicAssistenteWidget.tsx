@@ -116,11 +116,31 @@ export default function PublicAssistenteWidget({ scope, departamento }: Props) {
   // Listener para abertura contextualizada externa (ex: botão Consultar Inscrição na 126ª AGO)
   useEffect(() => {
     const handleAbrirExterno = (e: Event) => {
-      const customEvent = e as CustomEvent<{ mensagemInicial?: string }>;
+      const customEvent = e as CustomEvent<{
+        mensagemInicial?: string;
+        mensagemAssistente?: string;
+        pendingIntent?: string;
+      }>;
       setAberto(true);
       setInicializado(true);
+
+      const msgAssistente = customEvent.detail?.mensagemAssistente;
+      const pending = customEvent.detail?.pendingIntent;
       const msg = customEvent.detail?.mensagemInicial;
-      if (msg) {
+
+      if (msgAssistente) {
+        // Inicializa o chat diretamente com a saudação solicitada e aguarda entrada do usuário
+        setMensagens([
+          {
+            id: `assistente-${Date.now()}`,
+            role: 'maia',
+            text: msgAssistente,
+          },
+        ]);
+        if (pending) {
+          setCtxPendingIntent(pending);
+        }
+      } else if (msg) {
         enviarPergunta(msg);
       }
     };
@@ -370,8 +390,8 @@ export default function PublicAssistenteWidget({ scope, departamento }: Props) {
 
       {!aberto && (
         <div className="fixed bottom-[5.25rem] right-5 z-50 pointer-events-none">
-          <div className="bg-white border border-gray-200 shadow-lg rounded-xl px-3.5 py-1.5 text-xs font-semibold text-[#0D2B4E] animate-bounce max-w-[70vw]">
-            Ola :) Posso ajudar?
+          <div className="bg-white border border-gray-200 shadow-lg rounded-xl px-3.5 py-1.5 text-xs font-semibold text-[#0D2B4E] animate-bounce max-w-[85vw] sm:max-w-xs text-center">
+            Olá, eu sou a SARA, posso ajudar?
           </div>
         </div>
       )}

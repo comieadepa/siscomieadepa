@@ -6,7 +6,8 @@ export default function BotaoConsultarInscricaoAgo() {
       window.dispatchEvent(
         new CustomEvent('abrir-sara-publica', {
           detail: {
-            mensagemInicial: 'Quero consultar minha inscrição na 126ª AGO',
+            mensagemAssistente: 'Olá! Vou ajudar você a consultar sua inscrição na 126ª AGO. Por favor, informe seu CPF.',
+            pendingIntent: 'confirmar_inscricao',
           },
         })
       );
