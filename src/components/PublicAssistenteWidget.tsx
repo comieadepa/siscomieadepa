@@ -210,12 +210,14 @@ export default function PublicAssistenteWidget({ scope, departamento }: Props) {
 
       const data = await res.json();
       const resposta = String(data?.resposta || 'Desculpe, nao consegui responder agora.');
-      if (data?._ctx?.cpf) setCtxCpf(String(data._ctx.cpf));
-      if (data?._ctx?.inscricao_id) setCtxInscricaoId(String(data._ctx.inscricao_id));
-      if (data?._ctx?.evento_id) setCtxEventoId(String(data._ctx.evento_id));
-      if (data?._ctx?.evento_nome) setCtxEventoNome(String(data._ctx.evento_nome));
-      if (data?._ctx?.ultima_intencao) setCtxUltimaIntencao(String(data._ctx.ultima_intencao));
-      setCtxPendingIntent(typeof data?._ctx?.pending_intent === 'string' ? data._ctx.pending_intent : null);
+      if (data?._ctx) {
+        if (data._ctx.cpf !== undefined) setCtxCpf(data._ctx.cpf ? String(data._ctx.cpf) : null);
+        if (data._ctx.inscricao_id !== undefined) setCtxInscricaoId(data._ctx.inscricao_id ? String(data._ctx.inscricao_id) : null);
+        if (data._ctx.evento_id !== undefined) setCtxEventoId(data._ctx.evento_id ? String(data._ctx.evento_id) : null);
+        if (data._ctx.evento_nome !== undefined) setCtxEventoNome(data._ctx.evento_nome ? String(data._ctx.evento_nome) : null);
+        if (data._ctx.ultima_intencao !== undefined) setCtxUltimaIntencao(data._ctx.ultima_intencao ? String(data._ctx.ultima_intencao) : null);
+        setCtxPendingIntent(typeof data._ctx.pending_intent === 'string' ? data._ctx.pending_intent : null);
+      }
       const maiaMsg: Message = {
         id: `maia-${Date.now()}`,
         role: 'maia',

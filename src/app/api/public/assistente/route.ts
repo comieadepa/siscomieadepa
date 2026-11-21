@@ -369,7 +369,7 @@ async function responderConfirmarInscricao(
   let query = supabase
     .from('evento_inscricoes')
     .select(
-      'id,nome_inscrito,status_pagamento,hospedagem,alimentacao,tipo_inscricao,valor_final,refeicoes_total,refeicoes_utilizadas,quantidade_refeicoes_total,quantidade_refeicoes_usadas,quantidade_refeicoes_saldo,eventos!inner(id,nome,departamento,data_inicio,data_fim,permite_hospedagem,permite_alimentacao,suporte_whatsapp)'
+      'id,evento_id,nome_inscrito,status_pagamento,hospedagem,alimentacao,tipo_inscricao,valor_final,refeicoes_total,refeicoes_utilizadas,quantidade_refeicoes_total,quantidade_refeicoes_usadas,quantidade_refeicoes_saldo,created_at,eventos!inner(id,nome,departamento,data_inicio,data_fim,permite_hospedagem,permite_alimentacao,suporte_whatsapp)'
     )
   const cleanCpf = cpf.replace(/\D/g, '');
   if (cleanCpf.length === 11) {
@@ -377,7 +377,7 @@ async function responderConfirmarInscricao(
   } else {
     query = query.ilike('nome_inscrito', `%${cpf.trim()}%`);
   }
-  query = query.order('created_at', { ascending: false }).limit(10);
+  query = query.order('created_at', { ascending: false }).limit(20);
 
   if (departamento) {
     query = query.eq('eventos.departamento', departamento.key);
@@ -385,6 +385,50 @@ async function responderConfirmarInscricao(
 
   const { data } = await query;
   let lista = (data ?? []) as Array<Record<string, unknown>>;
+
+  const isAgo = departamento?.key === 'AGO' || lista.some(i => {
+    const ev = i.eventos as Record<string, unknown> | null;
+    return ev?.departamento === 'AGO' || String(ev?.nome || '').includes('126');
+  });
+
+  if (isAgo) {
+    // 1. Na 126ª AGO, retornar e apresentar somente inscrições com status_pagamento = 'pago' ou 'isento'
+    lista = lista.filter(item => {
+      const st = String(item.status_pagamento || '').toLowerCase();
+      return st === 'pago' || st === 'isento';
+    });
+
+    // 4. Se não existir nenhuma paga/isenta
+    if (lista.length === 0) {
+      return {
+        resposta: 'Não encontramos uma inscrição confirmada para este CPF na 126ª AGO.',
+      };
+    }
+
+    // 5. Se houver mais de uma confirmada para o mesmo CPF, apresentar uma única inscrição principal (determinística)
+    if (lista.length > 1) {
+      lista.sort((a, b) => {
+        const aPago = String(a.status_pagamento || '').toLowerCase() === 'pago';
+        const bPago = String(b.status_pagamento || '').toLowerCase() === 'pago';
+        if (aPago !== bPago) return aPago ? -1 : 1; // Prioriza 'pago' sobre 'isento'
+
+        const aCreated = String(a.created_at || '');
+        const bCreated = String(b.created_at || '');
+        if (aCreated !== bCreated) return bCreated.localeCompare(aCreated);
+
+        return String(b.id || '').localeCompare(String(a.id || ''));
+      });
+      lista = [lista[0]];
+    }
+  }
+
+  if (lista.length === 0) {
+    return {
+      resposta: departamento
+        ? `Nao encontrei inscricoes para este CPF em ${departamento.nome}.\nVerifique o CPF e tente novamente ou entre em contato com a organizacao.`
+        : 'Nao encontrei inscricoes para este CPF.\nVerifique o CPF e tente novamente ou entre em contato com a organizacao.',
+    };
+  }
 
   const hospedagemMap = new Map<string, Record<string, any>>();
   const inscricaoIds = lista
@@ -428,12 +472,37 @@ async function responderConfirmarInscricao(
     }
   }
 
-  if (lista.length === 0) {
-    return {
-      resposta: departamento
-        ? `Nao encontrei inscricoes para este CPF em ${departamento.nome}.\nVerifique o CPF e tente novamente ou entre em contato com a organizacao.`
-        : 'Nao encontrei inscricoes para este CPF.\nVerifique o CPF e tente novamente ou entre em contato com a organizacao.',
-    };
+  // Obter tipos de inscricao para calculo dinâmico de alimentação, se necessário
+  const eventoIds = Array.from(new Set(lista.map(i => {
+    const ev = i.eventos as Record<string, unknown> | null;
+    return String(ev?.id || i.evento_id || '');
+  }).filter(Boolean)));
+
+  const tiposInscricaoMap = new Map<string, number>(); // key: `${evento_id}:${nome_tipo.toLowerCase()}`
+  if (eventoIds.length > 0) {
+    const { data: tiposData } = await supabase
+      .from('evento_tipos_inscricao')
+      .select('evento_id,nome,quantidade_refeicoes')
+      .in('evento_id', eventoIds);
+    for (const t of tiposData ?? []) {
+      const k = `${t.evento_id}:${String(t.nome || '').trim().toLowerCase()}`;
+      tiposInscricaoMap.set(k, Number(t.quantidade_refeicoes ?? 0));
+    }
+  }
+
+  // Contagem de consumos reais em evento_refeicoes_consumo
+  const consumoCountMap = new Map<string, number>();
+  if (inscricaoIds.length > 0) {
+    const { data: consumos } = await supabase
+      .from('evento_refeicoes_consumo')
+      .select('inscricao_id')
+      .in('inscricao_id', inscricaoIds);
+    for (const c of consumos ?? []) {
+      const iId = String(c.inscricao_id || '');
+      if (iId) {
+        consumoCountMap.set(iId, (consumoCountMap.get(iId) || 0) + 1);
+      }
+    }
   }
 
   // 1. Ordenar por relevância
@@ -520,9 +589,20 @@ async function responderConfirmarInscricao(
 
     // Alimentação metadata
     if (temAlimentacao) {
-      const totalRef = Number(insc.quantidade_refeicoes_total ?? insc.refeicoes_total ?? (ev?.departamento === 'AGO' ? 12 : 0));
-      const usadasRef = Number(insc.quantidade_refeicoes_usadas ?? insc.refeicoes_utilizadas ?? 0);
-      const saldoRef = Number(insc.quantidade_refeicoes_saldo ?? Math.max(0, totalRef - usadasRef));
+      const tipoNome = insc.tipo_inscricao ? String(insc.tipo_inscricao).trim().toLowerCase() : '';
+      const evId = String(ev?.id || insc.evento_id || '');
+      const tipoQtd = tiposInscricaoMap.get(`${evId}:${tipoNome}`);
+
+      const totalDoBanco = insc.quantidade_refeicoes_total ?? insc.refeicoes_total;
+      const totalRef = Number(
+        (totalDoBanco !== null && totalDoBanco !== undefined && Number(totalDoBanco) > 0)
+          ? totalDoBanco
+          : (typeof tipoQtd === 'number' && tipoQtd > 0 ? tipoQtd : (ev?.departamento === 'AGO' ? 15 : 0))
+      );
+
+      const consumosRegistrados = consumoCountMap.get(String(insc.id || '')) || 0;
+      const usadasRef = Math.max(consumosRegistrados, Number(insc.quantidade_refeicoes_usadas ?? insc.refeicoes_utilizadas ?? 0));
+      const saldoRef = Math.max(0, totalRef - usadasRef);
 
       meta.push(`Alimentação: ✅ Incluída (Total: ${totalRef} | Usadas: ${usadasRef} | Saldo: ${saldoRef})`);
     } else {
@@ -652,7 +732,7 @@ async function responderAlimentacaoInscricao(inscricaoId: string): Promise<Assis
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from('evento_inscricoes')
-    .select('id,alimentacao,tipo_inscricao,evento_id,eventos!inner(nome,permite_alimentacao)')
+    .select('id,alimentacao,tipo_inscricao,evento_id,quantidade_refeicoes_total,quantidade_refeicoes_usadas,quantidade_refeicoes_saldo,refeicoes_total,refeicoes_utilizadas,eventos!inner(nome,permite_alimentacao,departamento)')
     .eq('id', inscricaoId)
     .maybeSingle();
 
@@ -667,8 +747,10 @@ async function responderAlimentacaoInscricao(inscricaoId: string): Promise<Assis
   const permiteAlimentacao = Boolean(ev?.permite_alimentacao);
 
   if (temAlimentacao) {
-    const tipoNome = insc.tipo_inscricao ? String(insc.tipo_inscricao) : null;
+    const tipoNome = insc.tipo_inscricao ? String(insc.tipo_inscricao).trim() : null;
     const eventoId = insc.evento_id ? String(insc.evento_id) : null;
+    let qtdRefeicoes = 0;
+
     if (tipoNome && eventoId) {
       const { data: tipoData } = await supabase
         .from('evento_tipos_inscricao')
@@ -678,10 +760,28 @@ async function responderAlimentacaoInscricao(inscricaoId: string): Promise<Assis
         .maybeSingle();
       const qtd = (tipoData as Record<string, unknown> | null)?.quantidade_refeicoes;
       if (typeof qtd === 'number' && qtd > 0) {
-        return { resposta: `Sim! Sua inscricao em *${nomeEvento}* inclui alimentacao 🍽️\nQuantidade de refeicoes: ${qtd}` };
+        qtdRefeicoes = qtd;
       }
     }
-    return { resposta: `Sim! Sua inscricao em *${nomeEvento}* inclui alimentacao 🍽️` };
+
+    const totalDoBanco = insc.quantidade_refeicoes_total ?? insc.refeicoes_total;
+    const totalRef = Number(
+      (totalDoBanco !== null && totalDoBanco !== undefined && Number(totalDoBanco) > 0)
+        ? totalDoBanco
+        : (qtdRefeicoes > 0 ? qtdRefeicoes : (ev?.departamento === 'AGO' ? 15 : 0))
+    );
+
+    const { count: consumoCount } = await supabase
+      .from('evento_refeicoes_consumo')
+      .select('*', { count: 'exact', head: true })
+      .eq('inscricao_id', inscricaoId);
+
+    const usadasRef = Math.max(Number(consumoCount || 0), Number(insc.quantidade_refeicoes_usadas ?? insc.refeicoes_utilizadas ?? 0));
+    const saldoRef = Math.max(0, totalRef - usadasRef);
+
+    return {
+      resposta: `Sim! Sua inscrição em *${nomeEvento}* inclui alimentação 🍽️\n- Total de refeições: ${totalRef}\n- Utilizadas: ${usadasRef}\n- Saldo disponível: ${saldoRef}`,
+    };
   }
 
   if (permiteAlimentacao) {
@@ -826,6 +926,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ resposta: 'Sempre que precisar, estarei aqui. Ate mais!' });
     }
 
+    const querConsultarOutraInscricao = hasAny(pergunta, [
+      'outra inscricao',
+      'outro cpf',
+      'outra pessoa',
+      'consultar outro',
+      'consultar outra',
+      'ver outra',
+      'ver outro',
+      'nova consulta',
+      'consultar novamente',
+      'outra consulta',
+      'esposa',
+      'esposo',
+      'marido',
+      'filho',
+      'filha',
+      'amigo',
+      'amiga',
+      'pastor',
+    ]) && hasAny(pergunta, ['outra', 'outro', 'nova', 'ver', 'consultar', 'buscar', 'pesquisar', 'trocar', 'mudar']);
+
+    if (querConsultarOutraInscricao) {
+      return NextResponse.json({
+        resposta: 'Claro! 😊 Vamos consultar outra inscrição. Informe os dados necessários para identificação.',
+        _ctx: { cpf: null as any, inscricao_id: null as any, pending_intent: 'confirmar_inscricao' },
+      });
+    }
+
     const cpfDetectado = extractCpfDigits(perguntaRaw) || (isCpfOnly(perguntaRaw) ? perguntaRaw.replace(/\D/g, '') : null);
     const isSegundaVia = hasAny(pergunta, [
       'segunda via',
@@ -961,41 +1089,28 @@ export async function POST(req: NextRequest) {
     const isDuvidaPagamento = hasAny(pergunta, ['como pagar', 'formas de', 'opcoes de', 'quais formas']);
     const consulta_inscricao = !isNovoCadastro && !isDuvidaPagamento && termosConsultaNorm.some(t => pergunta.includes(t));
 
-    // Determinar CPF ou Nome
-    let cleanedForName = normalizeText(perguntaRaw);
-    const wordsToRemove = [
-      'confirmar', 'confirmado', 'status', 'ver', 'consultar', 'minha', 'meu', 'de', 'do', 'da', 'o', 'a', 'em',
-      'inscricao', 'pagamento', 'hospedagem', 'alojamento', 'leito', 'check-in', 'checkin', 'cracha', 'queria', 'quero'
-    ];
-    for (const w of wordsToRemove) {
-      cleanedForName = cleanedForName.replace(new RegExp(`\\b${w}\\b`, 'g'), '');
-    }
-    const cleanRemaining = cleanedForName.replace(/\s+/g, ' ').trim();
-    const hasNomeSuficiente = cleanRemaining.length >= 4 && /[a-zA-Z]/.test(cleanRemaining);
-
     const isContinuation = ctxPendingIntent === 'confirmar_inscricao' || ctxPendingIntent === 'hospedagem' || ctxPendingIntent === 'alimentacao' || ctxPendingIntent === 'segunda_via';
 
     const queryBusca = cpfDetectado || 
-      (hasNomeSuficiente ? perguntaRaw.trim() : null) || 
-      (isContinuation && !consulta_inscricao && perguntaRaw.trim().length >= 2 ? perguntaRaw.trim() : null);
+      (isContinuation && !consulta_inscricao && perguntaRaw.trim().length >= 2 ? (extractCpfDigits(perguntaRaw) ? perguntaRaw.replace(/\D/g, '') : null) : null);
 
     // Se detectou intenção de consulta (ou continuação de fluxo)
     if (consulta_inscricao || isContinuation) {
       if (!queryBusca) {
-        // 2. Se detectar intenção de consulta e ainda não houver CPF/nome suficiente:
+        // 2. Se detectar intenção de consulta e ainda não houver CPF informado na interação atual:
         return NextResponse.json({
           resposta: 'Claro! Para localizar sua inscrição, por favor informe seu CPF.',
-          _ctx: { pending_intent: 'confirmar_inscricao' },
+          _ctx: { cpf: null as any, inscricao_id: null as any, pending_intent: 'confirmar_inscricao' },
         });
       }
 
       // Se temos intenção de confirmação de inscrição e foi digitado número que não é CPF válido de 11 dígitos
       const digitosDigitados = perguntaRaw.replace(/\D/g, '');
-      if (digitosDigitados.length > 0 && !hasNomeSuficiente) {
+      if (digitosDigitados.length > 0) {
         if (digitosDigitados.length !== 11 || !validarCPF(digitosDigitados)) {
           return NextResponse.json({
             resposta: 'Por favor, informe um CPF válido com 11 dígitos para consultar sua inscrição.',
-            _ctx: { pending_intent: 'confirmar_inscricao' },
+            _ctx: { cpf: null as any, inscricao_id: null as any, pending_intent: 'confirmar_inscricao' },
           });
         }
       }
