@@ -16,6 +16,10 @@ import {
   resolveGrupoHospedagemAGO,
 } from '@/lib/hospedagem-helpers';
 import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
+import {
+  verificarInscricaoConfirmadaPorCpf,
+  MSG_INSCRICAO_CONFIRMADA,
+} from '@/lib/evento-duplicidade-service';
 
 type ErrorJson = {
   error: string;
@@ -385,25 +389,15 @@ export async function POST(request: NextRequest) {
 
     const cpfLimpoInput = cpf?.replace(/\D/g, '') || null;
 
-    // ── Validação Anti-Duplicidade por CPF no Evento ───────────────────────
-    if (cpfLimpoInput) {
-      const { data: inscricoesExistentes, error: dupErr } = await supabase
-        .from('evento_inscricoes')
-        .select('id, status_pagamento, nome_inscrito')
-        .eq('evento_id', evento.id)
-        .eq('cpf', cpfLimpoInput);
-
-      if (!dupErr && inscricoesExistentes && inscricoesExistentes.length > 0) {
-        const jaQuitada = inscricoesExistentes.find(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento');
-        if (jaQuitada) {
-          return buildErrorResponse(409, {
-            error: `O CPF informado já possui uma inscrição confirmada (${jaQuitada.status_pagamento.toUpperCase()}) neste evento.`,
-            stage: 'validacao_duplicidade_cpf',
-            code: 'INSCRICAO_JA_CONFIRMADA',
-            payloadResumo: { ...payloadResumo, evento_id: evento.id, cpf: cpfLimpoInput },
-          });
-        }
-      }
+    // ── Validação Anti-Duplicidade por CPF no Evento (Regra Definitiva) ──
+    const checkCpf = await verificarInscricaoConfirmadaPorCpf(supabase, evento.id, cpf);
+    if (!checkCpf.permitido) {
+      return buildErrorResponse(409, {
+        error: MSG_INSCRICAO_CONFIRMADA,
+        stage: 'validacao_duplicidade_cpf',
+        code: 'INSCRICAO_JA_CONFIRMADA',
+        payloadResumo: { ...payloadResumo, evento_id: evento.id, cpf: cleanCpf(cpf) },
+      });
     }
 
     // ── Resolução AEMADEPA no backend ──
@@ -1374,25 +1368,14 @@ export async function POST(request: NextRequest) {
     const ehEsposaFlow = !!(incluir_esposa) && !!(esposa) && evento.departamento === 'AGO' && fluxoCampoMissionarioEspecial;
     if (ehEsposaFlow) {
       const esposaData = esposa as Record<string, unknown>;
-      const cpfEsposaLimpo = String(esposaData.cpf ?? '').replace(/\D/g, '').trim();
-      if (cpfEsposaLimpo) {
-        const { data: inscricoesExistentesEsposa, error: dupEsposaErr } = await supabase
-          .from('evento_inscricoes')
-          .select('id, status_pagamento')
-          .eq('evento_id', evento.id)
-          .eq('cpf', cpfEsposaLimpo);
-
-        if (!dupEsposaErr && inscricoesExistentesEsposa && inscricoesExistentesEsposa.length > 0) {
-          const jaQuitadaEsposa = inscricoesExistentesEsposa.find(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento');
-          if (jaQuitadaEsposa) {
-            return buildErrorResponse(409, {
-              error: `A esposa informada (${esposaData.nome_inscrito || 'CPF ' + cpfEsposaLimpo}) já possui inscrição confirmada (${jaQuitadaEsposa.status_pagamento.toUpperCase()}) neste evento.`,
-              stage: 'validacao_duplicidade_cpf_esposa',
-              code: 'INSCRICAO_ESPOSA_JA_CONFIRMADA',
-              payloadResumo: { ...payloadResumo, evento_id: evento.id, cpf_esposa: cpfEsposaLimpo },
-            });
-          }
-        }
+      const checkEsposa = await verificarInscricaoConfirmadaPorCpf(supabase, evento.id, String(esposaData.cpf ?? ''));
+      if (!checkEsposa.permitido) {
+        return buildErrorResponse(409, {
+          error: `A esposa informada (${esposaData.nome_inscrito || 'CPF informado'}) já possui uma inscrição confirmada neste evento.`,
+          stage: 'validacao_duplicidade_cpf_esposa',
+          code: 'INSCRICAO_ESPOSA_JA_CONFIRMADA',
+          payloadResumo: { ...payloadResumo, evento_id: evento.id, cpf_esposa: cleanCpf(String(esposaData.cpf ?? '')) },
+        });
       }
 
       // Busca valor da esposa a partir da config
@@ -1761,25 +1744,15 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        const cpfParticipante = String(p.cpf ?? '').replace(/\D/g, '').trim();
-        if (cpfParticipante) {
-          const { data: inscricoesExistentesPart, error: dupPartErr } = await supabase
-            .from('evento_inscricoes')
-            .select('id, status_pagamento')
-            .eq('evento_id', evento.id)
-            .eq('cpf', cpfParticipante);
-
-          if (!dupPartErr && inscricoesExistentesPart && inscricoesExistentesPart.length > 0) {
-            const jaQuitadaPart = inscricoesExistentesPart.find(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento');
-            if (jaQuitadaPart) {
-              return buildErrorResponse(409, {
-                error: `O participante ${idx + 1} (${p.nome_inscrito || 'CPF ' + cpfParticipante}) já possui inscrição confirmada (${jaQuitadaPart.status_pagamento.toUpperCase()}) neste evento.`,
-                stage: 'validacao_duplicidade_cpf_lote',
-                code: 'INSCRICAO_LOTE_JA_CONFIRMADA',
-                payloadResumo: { ...payloadResumo, evento_id: evento.id, cpf: cpfParticipante },
-              });
-            }
-          }
+        const cpfParticipante = cleanCpf(String(p.cpf ?? ''));
+        const checkPart = await verificarInscricaoConfirmadaPorCpf(supabase, evento.id, cpfParticipante);
+        if (!checkPart.permitido) {
+          return buildErrorResponse(409, {
+            error: `O participante ${idx + 1} (${p.nome_inscrito || 'CPF informado'}) já possui uma inscrição confirmada neste evento.`,
+            stage: 'validacao_duplicidade_cpf_lote',
+            code: 'INSCRICAO_LOTE_JA_CONFIRMADA',
+            payloadResumo: { ...payloadResumo, evento_id: evento.id, cpf: cpfParticipante },
+          });
         }
         if (ehTipoEsposaJubilado(tipoParticipante)) {
           const vinculoConjugeParticipante = await resolverVinculoEsposaJubilado(cpfParticipante);

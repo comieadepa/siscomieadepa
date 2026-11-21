@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase-server';
 import { logDB } from '@/lib/audit';
 import { enqueueWebhookJobs, processPendingWebhookJobs } from '@/lib/jobs/webhook-jobs';
 import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
+import { validarConfirmacaoPagamentoCpf } from '@/lib/evento-duplicidade-service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -295,7 +296,7 @@ export async function POST(request: NextRequest) {
     // 4b. Localiza inscrição individual pelo asaas_payment_id
     let { data: ins, error: findErr } = await supabase
       .from('evento_inscricoes')
-      .select('id, status_pagamento, evento_id, ministro_id, cpf, tipo_inscricao, valor_final')
+      .select('id, status_pagamento, evento_id, ministro_id, cpf, tipo_inscricao, valor_final, observacoes')
       .eq('asaas_payment_id', asaasId)
       .maybeSingle();
 
@@ -309,7 +310,7 @@ export async function POST(request: NextRequest) {
     if (!ins && extRef && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(extRef)) {
       const { data: insByRef, error: findRefErr } = await supabase
         .from('evento_inscricoes')
-        .select('id, status_pagamento, evento_id, ministro_id, cpf, tipo_inscricao, valor_final')
+        .select('id, status_pagamento, evento_id, ministro_id, cpf, tipo_inscricao, valor_final, observacoes')
         .eq('id', extRef)
         .maybeSingle();
 
@@ -338,6 +339,43 @@ export async function POST(request: NextRequest) {
       console.log('[EVENTOS WEBHOOK] Inscrição já está com status correto (idempotência):', ins.id, novoStatus);
       console.timeEnd("ASAAS_WEBHOOK_TOTAL");
       return NextResponse.json({ received: true, action: 'already_processed', inscricaoId: ins.id });
+    }
+
+    // ── Proteção Anti-Duplicidade Financeira (Regra 6) ────────────────────────
+    // Se novoStatus for 'pago', verifica se já existe OUTRA inscrição confirmada para o mesmo CPF + evento
+    if (novoStatus === 'pago' && ins.cpf && ins.evento_id) {
+      const valorRecebido = Number(payment?.value ?? 0);
+      const validacaoCpf = await validarConfirmacaoPagamentoCpf(supabase, {
+        eventoId: ins.evento_id,
+        inscricaoId: ins.id,
+        cpf: ins.cpf,
+        asaasPaymentId: asaasId,
+        valorRecebido,
+      });
+
+      if (!validacaoCpf.podeConfirmar) {
+        // Recebe o pagamento sem alterar a inscrição principal nem confirmar uma segunda inscrição
+        // Marca a inscrição secundária com observação específica para estorno
+        const obsAtual = ins.observacoes ? `${ins.observacoes}\n` : '';
+        const obsEstorno = `[ATENÇÃO: PAGAMENTO DUPLICADO RECEBIDO VIA ASAAS ${asaasId} (R$ ${valorRecebido}). Já existe inscrição confirmada (${validacaoCpf.inscricaoPrincipalId}). Encaminhado para estorno/análise.]`;
+
+        await supabase
+          .from('evento_inscricoes')
+          .update({
+            observacoes: (obsAtual + obsEstorno).slice(0, 1000),
+            valor_pago: valorRecebido,
+            comprovante_url: payment?.transactionReceiptUrl ?? null,
+          })
+          .eq('id', ins.id);
+
+        console.timeEnd("ASAAS_WEBHOOK_TOTAL");
+        return NextResponse.json({
+          received: true,
+          action: 'payment_received_duplicate_flagged_for_refund',
+          inscricaoId: ins.id,
+          inscricaoPrincipalId: validacaoCpf.inscricaoPrincipalId,
+        });
+      }
     }
 
     // 6. Monta update

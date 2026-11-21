@@ -3,6 +3,7 @@ import { createServerClient, createServerClientFromCookies } from '@/lib/supabas
 import { normalizeEventoRole, resolveEventoPermissoes, type EventoRole } from '@/lib/evento-permissions';
 import { normalizeRole } from '@/lib/auth/roles';
 import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
+import { verificarInscricaoConfirmadaPorCpf, MSG_INSCRICAO_CONFIRMADA } from '@/lib/evento-duplicidade-service';
 
 export async function POST(
   _request: NextRequest,
@@ -26,7 +27,7 @@ export async function POST(
   // Busca a inscrição para obter evento_id e lote_id
   const { data: ins, error: insError } = await supabaseAdmin
     .from('evento_inscricoes')
-    .select('id, evento_id, lote_id, status_pagamento')
+    .select('id, evento_id, lote_id, status_pagamento, cpf')
     .eq('id', inscricaoId)
     .single();
 
@@ -36,6 +37,14 @@ export async function POST(
 
   if (ins.status_pagamento === 'pago' || ins.status_pagamento === 'isento') {
     return NextResponse.json({ error: 'Inscrição já está paga/isenta' }, { status: 400 });
+  }
+
+  // ── Proteção Anti-Duplicidade na Baixa Manual Individual ──
+  if (!ins.lote_id && ins.cpf && ins.evento_id) {
+    const checkDup = await verificarInscricaoConfirmadaPorCpf(supabaseAdmin, ins.evento_id, ins.cpf);
+    if (!checkDup.permitido) {
+      return NextResponse.json({ error: MSG_INSCRICAO_CONFIRMADA }, { status: 409 });
+    }
   }
 
   // Verifica permissão do usuário no evento

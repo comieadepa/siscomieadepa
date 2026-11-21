@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireEventoPermission } from '@/lib/evento-guard';
 import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
+import { verificarInscricaoConfirmadaPorCpf, MSG_INSCRICAO_CONFIRMADA } from '@/lib/evento-duplicidade-service';
 
 export async function POST(
   request: NextRequest,
@@ -46,6 +47,14 @@ export async function POST(
   // Validar status pendente
   if (ins.status_pagamento === 'pago' || ins.status_pagamento === 'isento') {
     return NextResponse.json({ error: 'Esta inscrição já está paga ou isenta.' }, { status: 400 });
+  }
+
+  // ── Proteção Anti-Duplicidade por CPF no Pagamento Presencial ──
+  if (ins.cpf) {
+    const checkDup = await verificarInscricaoConfirmadaPorCpf(supabase, eventoId, ins.cpf);
+    if (!checkDup.permitido) {
+      return NextResponse.json({ error: MSG_INSCRICAO_CONFIRMADA }, { status: 409 });
+    }
   }
 
   // Validar se inscrição pertence a um lote

@@ -13,6 +13,10 @@ import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
 import { avaliarElegibilidadeAemadepa } from '@/lib/aemadepa/eventos-integracao';
 import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
+import {
+  verificarInscricaoConfirmadaPorCpf,
+  MSG_INSCRICAO_CONFIRMADA,
+} from '@/lib/evento-duplicidade-service';
 
 const VENCIMENTO_DIAS = 3;
 
@@ -380,23 +384,13 @@ export async function POST(
     // CPF limpo
     const cpfLimpo = cpf ? String(cpf).replace(/\D/g, '') : null;
 
-    // ── Validação Anti-Duplicidade por CPF no Balcão ───────────────────────
-    if (cpfLimpo) {
-      const { data: inscricoesExistentesBalcao, error: dupBalcaoErr } = await supabase
-        .from('evento_inscricoes')
-        .select('id, status_pagamento, nome_inscrito')
-        .eq('evento_id', eventoId)
-        .eq('cpf', cpfLimpo);
-
-      if (!dupBalcaoErr && inscricoesExistentesBalcao && inscricoesExistentesBalcao.length > 0) {
-        const jaQuitadaBalcao = inscricoesExistentesBalcao.find(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento');
-        if (jaQuitadaBalcao) {
-          return NextResponse.json(
-            { error: `O CPF informado já possui uma inscrição confirmada (${jaQuitadaBalcao.status_pagamento.toUpperCase()}) neste evento.` },
-            { status: 409 },
-          );
-        }
-      }
+    // ── Validação Anti-Duplicidade por CPF no Balcão (Regra Definitiva) ──
+    const checkCpfBalcao = await verificarInscricaoConfirmadaPorCpf(supabase, eventoId, String(cpf ?? ''));
+    if (!checkCpfBalcao.permitido) {
+      return NextResponse.json(
+        { error: MSG_INSCRICAO_CONFIRMADA },
+        { status: 409 },
+      );
     }
 
     // ── Resolução AEMADEPA Balcão ──
@@ -1126,23 +1120,12 @@ export async function POST(
     const ehEsposaFlow = !!(incluir_esposa) && !!(esposa) && (evento as any).departamento === 'AGO' && fluxoCampoMissionarioEspecial;
     if (ehEsposaFlow) {
       const esposaData = esposa as Record<string, unknown>;
-      const cpfEsposaBalcao = String(esposaData.cpf ?? '').replace(/\D/g, '').trim();
-      if (cpfEsposaBalcao) {
-        const { data: inscricoesExistentesEsposaBalcao, error: dupEsposaBalcaoErr } = await supabase
-          .from('evento_inscricoes')
-          .select('id, status_pagamento')
-          .eq('evento_id', eventoId)
-          .eq('cpf', cpfEsposaBalcao);
-
-        if (!dupEsposaBalcaoErr && inscricoesExistentesEsposaBalcao && inscricoesExistentesEsposaBalcao.length > 0) {
-          const jaQuitadaEsposaBalcao = inscricoesExistentesEsposaBalcao.find(i => i.status_pagamento === 'pago' || i.status_pagamento === 'isento');
-          if (jaQuitadaEsposaBalcao) {
-            return NextResponse.json(
-              { error: `A esposa informada (${esposaData.nome_inscrito || 'CPF ' + cpfEsposaBalcao}) já possui inscrição confirmada (${jaQuitadaEsposaBalcao.status_pagamento.toUpperCase()}) neste evento.` },
-              { status: 409 },
-            );
-          }
-        }
+      const checkEsposaBalcao = await verificarInscricaoConfirmadaPorCpf(supabase, eventoId, String(esposaData.cpf ?? ''));
+      if (!checkEsposaBalcao.permitido) {
+        return NextResponse.json(
+          { error: `A esposa informada (${esposaData.nome_inscrito || 'CPF informado'}) já possui uma inscrição confirmada neste evento.` },
+          { status: 409 },
+        );
       }
 
       const confAgo = (evento as any).configuracoes_ago as Record<string, unknown> | null;

@@ -3,6 +3,7 @@ import { asaasFetch, AsaasApiError } from '@/lib/asaas';
 import { logDB, mascaraCpf } from '@/lib/audit';
 import { alocarLeitoParaInscricao } from '@/lib/hospedagem-alocacao-automatica';
 import { enqueueWebhookJobs } from '@/lib/jobs/webhook-jobs';
+import { validarConfirmacaoPagamentoCpf } from '@/lib/evento-duplicidade-service';
 
 export interface ItemConciliacaoPreview {
   id: string; // ID local da entidade (inscrição, lote ou ordem)
@@ -302,12 +303,62 @@ export async function regularizarPagamentosConfirmados(
         // Idempotência
         const { data: insAtual, error: insErr } = await supabase
           .from('evento_inscricoes')
-          .select('id, status_pagamento, valor_final, valor_pago')
+          .select('id, status_pagamento, valor_final, valor_pago, cpf, observacoes')
           .eq('id', item.id)
           .single();
 
         if (insErr || !insAtual) {
           throw new Error('Inscrição não encontrada no momento da baixa.');
+        }
+
+        // Validação anti-duplicidade de pagamento
+        if (insAtual.cpf) {
+          const validacaoDuplicidade = await validarConfirmacaoPagamentoCpf(supabase, {
+            eventoId,
+            cpf: insAtual.cpf,
+            inscricaoId: item.id,
+            asaasPaymentId: item.asaas_payment_id,
+            valorRecebido: item.valor_asaas,
+          });
+
+          if (!validacaoDuplicidade.podeConfirmar) {
+            const obsAtual = insAtual.observacoes ? insAtual.observacoes + '\n' : '';
+            const obsAviso = '[ATENÇÃO: PAGAMENTO DUPLICADO IDENTIFICADO NA CONCILIAÇÃO] Pagamento Asaas ' + item.asaas_payment_id + ' no valor de R$ ' + Number(item.valor_asaas).toFixed(2) + ' recebido, mas já existe outra inscrição quitada (ID: ' + (validacaoDuplicidade.inscricaoPrincipalId || 'N/A') + ') para o mesmo CPF. Inscrição mantida pendente para análise/estorno da tesouraria.';
+
+            await supabase
+              .from('evento_inscricoes')
+              .update({ observacoes: obsAtual + obsAviso })
+              .eq('id', item.id);
+
+            await logDB({
+              userId: usuarioOperador.id,
+              userEmail: usuarioOperador.email,
+              acao: 'ocorrencia_pagamento_duplicado',
+              modulo: 'eventos',
+              entidade: 'evento_inscricoes',
+              entidadeId: item.id,
+              descricao: 'Conciliação Asaas: Pagamento duplicado detectado para CPF já quitado (Existente: ' + (validacaoDuplicidade.inscricaoPrincipalId || 'N/A') + '). Marcado para análise/estorno.',
+              status: 'aviso',
+              detalhes: {
+                evento_id: eventoId,
+                origem: 'conciliacao_asaas',
+                asaas_payment_id: item.asaas_payment_id,
+                valor_recebido: item.valor_asaas,
+                inscricao_existente_id: validacaoDuplicidade.inscricaoPrincipalId,
+                cpf_mascarado: mascaraCpf(insAtual.cpf),
+              },
+            });
+
+            detalhes.push({
+              id: item.id,
+              tipo_entidade: item.tipo_entidade,
+              asaas_payment_id: item.asaas_payment_id,
+              sucesso: false,
+              erro: 'Pagamento duplicado recebido para CPF já quitado. Encaminhado para análise/estorno da tesouraria.',
+            });
+            totalFalhas++;
+            continue;
+          }
         }
 
         if (insAtual.status_pagamento === 'pago') {
