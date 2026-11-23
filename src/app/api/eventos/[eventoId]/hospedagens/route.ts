@@ -469,7 +469,7 @@ export async function PATCH(
   if (updates.alojamento_id && updates.status === 'confirmada') {
     const { data: aloj } = await supabase
       .from('evento_alojamentos')
-      .select('total_vagas, camas_inferiores, camas_superiores')
+      .select('nome, total_vagas, camas_inferiores, camas_superiores')
       .eq('id', updates.alojamento_id)
       .single();
 
@@ -504,6 +504,27 @@ export async function PATCH(
           );
         }
       }
+
+      // Validação de paridade estrita: aplicada apenas no Alojamento Rosa (onde beliches foram homologados por paridade)
+      const isRosa = aloj.nome?.toUpperCase().includes('ROSA');
+      if (isRosa && updates.numero_cama && updates.tipo_cama) {
+        const num = parseInt(String(updates.numero_cama).trim(), 10);
+        if (!isNaN(num)) {
+          const isPar = num % 2 === 0;
+          if (updates.tipo_cama === 'inferior' && !isPar) {
+            return NextResponse.json(
+              { error: `Inconsistência: no Alojamento Rosa, o leito ${updates.numero_cama} é ímpar (superior) e não pode ser atribuído como cama inferior.` },
+              { status: 422 }
+            );
+          }
+          if (updates.tipo_cama === 'superior' && isPar) {
+            return NextResponse.json(
+              { error: `Inconsistência: no Alojamento Rosa, o leito ${updates.numero_cama} é par (inferior) e não pode ser atribuído como cama superior.` },
+              { status: 422 }
+            );
+          }
+        }
+      }
     }
   }
 
@@ -516,6 +537,37 @@ export async function PATCH(
     .eq('evento_id', eventoId);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Sincroniza evento_hospedagem_leitos se o leito ou tipo foram alterados na edição
+  if (updates.numero_cama || updates.tipo_cama || updates.alojamento_id) {
+    const { data: hospAtual } = await supabase
+      .from('evento_hospedagens')
+      .select('inscricao_id, alojamento_id, tipo_cama, numero_cama')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (hospAtual?.inscricao_id && hospAtual.numero_cama && hospAtual.alojamento_id) {
+      const pos: 'inferior' | 'superior' | 'unico' =
+        hospAtual.tipo_cama === 'inferior' ? 'inferior'
+        : hospAtual.tipo_cama === 'superior' ? 'superior'
+        : 'unico';
+
+      await supabase
+        .from('evento_hospedagem_leitos')
+        .upsert(
+          [{
+            evento_id:     eventoId,
+            alojamento_id: hospAtual.alojamento_id,
+            inscricao_id:  hospAtual.inscricao_id,
+            numero:        hospAtual.numero_cama,
+            tipo_leito:    'beliche',
+            posicao:       pos,
+            ocupado:       true,
+          }],
+          { onConflict: 'inscricao_id' },
+        );
+    }
+  }
   await logDB({
     userId: guard.ctx.user?.id,
     userEmail: guard.ctx.user?.email ?? undefined,

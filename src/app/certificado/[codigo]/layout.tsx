@@ -1,12 +1,7 @@
 import type { Metadata } from 'next';
 import { APP_URL, PUBLIC_URL } from '@/lib/urls';
 
-const IS_PROD = process.env.NODE_ENV === 'production';
-if (IS_PROD && !PUBLIC_URL) {
-  throw new Error('NEXT_PUBLIC_PUBLIC_URL não configurado');
-}
-
-const baseUrl = PUBLIC_URL || APP_URL;
+const baseUrl = PUBLIC_URL || APP_URL || 'https://siscomieadepa.org';
 const metadataBase = baseUrl ? new URL(baseUrl) : undefined;
 
 export const metadata: Metadata = {

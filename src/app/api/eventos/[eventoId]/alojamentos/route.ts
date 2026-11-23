@@ -3,6 +3,20 @@ import { requireEventoPermission } from '@/lib/evento-guard';
 import { normalizePayloadUppercase } from '@/lib/text';
 import { logDB } from '@/lib/audit';
 
+async function isEventoAGO(supabase: any, eventoId: string): Promise<boolean> {
+  const { data: evento } = await supabase
+    .from('eventos')
+    .select('departamento, configuracoes_ago')
+    .eq('id', eventoId)
+    .single();
+
+  if (!evento) return false;
+  if (evento.departamento === 'AGO') return true;
+  const cfg = evento.configuracoes_ago as Record<string, unknown> | null;
+  const setores = cfg?.setores as unknown[] | undefined;
+  return Boolean(setores && setores.length > 0);
+}
+
 // GET /api/eventos/[eventoId]/alojamentos
 export async function GET(
   _req: NextRequest,
@@ -14,7 +28,7 @@ export async function GET(
   const supabase = guard.ctx.supabaseAdmin;
   const { data, error } = await supabase
     .from('evento_alojamentos')
-    .select('id,nome,publico,sexo,total_vagas,camas_inferiores,camas_superiores,colchonetes,ativo,created_at')
+    .select('id,setor_key,origem,nome,publico,sexo,total_vagas,camas_inferiores,camas_superiores,colchonetes,ativo,created_at')
     .eq('evento_id', eventoId)
     .order('nome');
 
@@ -81,6 +95,17 @@ export async function POST(
   const { eventoId } = await params;
   const guard = await requireEventoPermission(request, eventoId, 'hospedagem');
   if (!guard.ok) return guard.response;
+
+  const supabase = guard.ctx.supabaseAdmin;
+
+  // Bloqueio estrito para eventos AGO: configuração exclusiva via Editar Evento > Hospedagem AGO
+  if (await isEventoAGO(supabase, eventoId)) {
+    return NextResponse.json(
+      { error: 'Eventos AGO utilizam fonte única de verdade gerenciada exclusivamente nas Configurações do Evento. Não é permitida a criação manual de alojamentos.' },
+      { status: 403 }
+    );
+  }
+
   const body = await request.json();
   const { nome, publico, sexo, total_vagas, camas_inferiores, camas_superiores, colchonetes } = body;
 
@@ -88,7 +113,6 @@ export async function POST(
     return NextResponse.json({ error: 'Campos obrigatórios: nome, publico, total_vagas' }, { status: 400 });
   }
 
-  const supabase = guard.ctx.supabaseAdmin;
   const payload = normalizePayloadUppercase({
     evento_id:        eventoId,
     nome:             nome.trim(),
@@ -127,13 +151,22 @@ export async function PATCH(
   // 1. Buscar alojamento atual
   const { data: currentAloj, error: errFetch } = await supabase
     .from('evento_alojamentos')
-    .select('nome, publico, total_vagas, camas_inferiores, camas_superiores, colchonetes, ativo')
+    .select('nome, publico, total_vagas, camas_inferiores, camas_superiores, colchonetes, ativo, setor_key, origem')
     .eq('id', id)
     .eq('evento_id', eventoId)
     .single();
 
   if (errFetch || !currentAloj) {
     return NextResponse.json({ error: 'Alojamento não encontrado.' }, { status: 404 });
+  }
+
+  // 1.1 Bloqueia alteração manual em evento AGO ou alojamento originado de setor da configuração do evento
+  const eventoEhAgo = await isEventoAGO(supabase, eventoId);
+  if (eventoEhAgo || currentAloj.setor_key || currentAloj.origem === 'configuracoes_ago') {
+    return NextResponse.json(
+      { error: 'Alojamentos de eventos AGO são gerenciados exclusivamente nas Configurações do Evento (Hospedagem AGO). Não é permitida a edição direta.' },
+      { status: 403 }
+    );
   }
 
   // 2. Calcular ocupação atual
@@ -230,6 +263,22 @@ export async function DELETE(
   if (!id) return NextResponse.json({ error: 'id obrigatório' }, { status: 400 });
 
   const supabase = guard.ctx.supabaseAdmin;
+
+  // Verifica se o alojamento é vinculado a um setor ou evento AGO
+  const { data: alojCheck } = await supabase
+    .from('evento_alojamentos')
+    .select('id, setor_key, origem')
+    .eq('id', id)
+    .eq('evento_id', eventoId)
+    .single();
+
+  const eventoEhAgo = await isEventoAGO(supabase, eventoId);
+  if (eventoEhAgo || alojCheck?.setor_key || alojCheck?.origem === 'configuracoes_ago') {
+    return NextResponse.json(
+      { error: 'Alojamentos de eventos AGO não podem ser excluídos diretamente. Gerencie os setores nas Configurações do Evento (Hospedagem AGO).' },
+      { status: 403 }
+    );
+  }
 
   // Verifica se há hospedagens ocupadas neste alojamento
   const { count: leitosCount } = await supabase

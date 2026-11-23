@@ -18,6 +18,8 @@ interface SetorAgo {
   tipos_leito: ('beliche' | 'colchonete' | 'rede')[];
   quantidade_leitos: number;
   quantidade_leitos_inferiores: number;
+  quantidade_leitos_superiores?: number;
+  quantidade_colchonetes?: number;
   observacoes: string; ativo: boolean;
 }
 
@@ -27,6 +29,8 @@ interface Campo      { id: string; nome: string; supervisao_id: string; }
 interface Alojamento {
   id: string;
   evento_id: string;
+  setor_key?: string | null;
+  origem?: string | null;
   nome: string;
   publico: 'feminino' | 'presidentes' | 'jubilados' | 'masculino_geral' | 'misto';
   sexo: 'M' | 'F' | null;
@@ -225,6 +229,7 @@ export default function TabHospedagem({
   const [modalRealocar,   setModalRealocar]   = useState<Hospedagem | null>(null);
   const [realAlojId,      setRealAlojId]      = useState('');
   const [realTipoCama,    setRealTipoCama]    = useState('');
+  const [realNumeroCama,  setRealNumeroCama]  = useState('');
   const [realMotivo,      setRealMotivo]      = useState('');
   const [realOp,          setRealOp]          = useState('');
   const [salvandoReal,    setSalvandoReal]    = useState(false);
@@ -710,6 +715,7 @@ export default function TabHospedagem({
     setModalRealocar(h);
     setRealAlojId(h.alojamento_id ?? '');
     setRealTipoCama(h.tipo_cama ?? '');
+    setRealNumeroCama('');
     setRealMotivo('');
     setRealOp('');
     setErroReal(null);
@@ -727,6 +733,7 @@ export default function TabHospedagem({
           hospedagem_id:       modalRealocar.id,
           novo_alojamento_id:  realAlojId,
           novo_tipo_cama:      realTipoCama || null,
+          novo_numero_cama:    realNumeroCama.trim() || null,
           motivo:              realMotivo,
           operador:            realOp,
         }),
@@ -1361,6 +1368,7 @@ export default function TabHospedagem({
           alojamentos={alojamentos}
           loading={loadingAloj}
           onRefresh={fetchAlojamentos}
+          isAGO={evento.departamento === 'AGO' || Boolean((evento.configuracoes_ago?.setores as any[])?.length)}
         />
       )}
 
@@ -2059,6 +2067,13 @@ export default function TabHospedagem({
                 </select>
               </div>
               <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Número do leito (opcional)</label>
+                <input type="text" value={realNumeroCama} onChange={e => setRealNumeroCama(e.target.value)}
+                  placeholder="Ex: 048 (deixe vazio para automático)"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]" />
+                <p className="text-[10px] text-gray-400 mt-0.5">Se não informado, o sistema seleciona o próximo leito compatível disponível.</p>
+              </div>
+              <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Motivo</label>
                 <input type="text" value={realMotivo} onChange={e => setRealMotivo(e.target.value)}
                   placeholder="Motivo da realocação (opcional)"
@@ -2247,11 +2262,13 @@ function SecaoAlojamentos({
   alojamentos,
   loading,
   onRefresh,
+  isAGO = false,
 }: {
   eventoId: string;
   alojamentos: Alojamento[];
   loading: boolean;
   onRefresh: () => void;
+  isAGO?: boolean;
 }) {
   const [form, setForm] = useState({
     nome: '', publico: 'masculino_geral' as string, total_vagas: '20',
@@ -2271,6 +2288,7 @@ function SecaoAlojamentos({
   const [erroEdit, setErroEdit] = useState<string | null>(null);
 
   function abrirModalEdicao(aloj: Alojamento) {
+    if (isAGO || aloj.setor_key || aloj.origem === 'configuracoes_ago') return;
     setModalEditar(aloj);
     setEditForm({
       nome: aloj.nome,
@@ -2383,75 +2401,90 @@ function SecaoAlojamentos({
 
   return (
     <div className="space-y-5">
-      {/* Formulário criar alojamento */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-        <h3 className="font-bold text-[#123b63] mb-4">➕ Novo Alojamento</h3>
-        {erro && <div className="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{erro}</div>}
-        {sucesso && <div className="mb-3 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{sucesso}</div>}
-        <form onSubmit={criarAlojamento}>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            <div className="md:col-span-3">
-              <label className={labelCls}>Nome do alojamento *</label>
-              <input type="text" value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))}
-                placeholder="Ex: Bloco A — Masculino" className={inputCls} required />
-            </div>
-            <div>
-              <label className={labelCls}>Público</label>
-              <select value={form.publico} onChange={e => setForm(f => ({ ...f, publico: e.target.value }))} className={inputCls}>
-                <option value="masculino_geral">👨 Masculino (Geral)</option>
-                <option value="feminino">👩 Feminino</option>
-                <option value="presidentes">👨 Presidentes</option>
-                <option value="jubilados">👨 Jubilados</option>
-                <option value="misto">👥 Misto</option>
-              </select>
-            </div>
-            <div>
-              <label className={labelCls}>Total de vagas</label>
-              <input type="number" min="1" value={form.total_vagas}
-                onChange={e => {
-                  setForm(f => ({
-                    ...f,
-                    total_vagas: e.target.value,
-                  }));
-                }} className={inputCls} />
-            </div>
-            <div>
-              <label className={labelCls}>Camas inferiores</label>
-              <input type="number" min="0" value={form.camas_inferiores}
-                onChange={e => {
-                  setForm(f => ({
-                    ...f,
-                    camas_inferiores: e.target.value,
-                  }));
-                }} className={inputCls} />
-            </div>
-            <div>
-              <label className={labelCls}>Camas superiores</label>
-              <input type="number" min="0" value={form.camas_superiores}
-                onChange={e => {
-                  setForm(f => ({
-                    ...f,
-                    camas_superiores: e.target.value,
-                  }));
-                }} className={inputCls} />
-            </div>
-            <div>
-              <label className={labelCls}>Colchonetes</label>
-              <input type="number" min="0" value={form.colchonetes}
-                onChange={e => {
-                  setForm(f => ({
-                    ...f,
-                    colchonetes: e.target.value,
-                  }));
-                }} className={inputCls} />
-            </div>
+      {/* Formulário criar alojamento (ou aviso informativo se for evento AGO) */}
+      {isAGO ? (
+        <div className="bg-gradient-to-r from-sky-50 to-blue-50 rounded-xl border border-sky-200/80 shadow-sm p-5 flex items-start gap-4">
+          <span className="text-2xl mt-0.5 select-none">🏛️</span>
+          <div>
+            <h3 className="font-bold text-[#123b63] text-sm">Fonte Única de Configuração (Hospedagem AGO)</h3>
+            <p className="text-xs text-sky-900 mt-1 leading-relaxed">
+              Para eventos da AGO, a autoridade para criar alojamentos, definir capacidades nominais e configurar tipos de camas reside exclusivamente em <strong>Editar Evento &gt; Hospedagem AGO</strong>.
+            </p>
+            <p className="text-xs text-sky-700 mt-1">
+              Esta aba apresenta a <strong>projeção operacional sincronizada em tempo real</strong> (vagas livres, ocupações físicas e relação de hóspedes).
+            </p>
           </div>
-          <button type="submit" disabled={salvando}
-            className="bg-[#123b63] text-white px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-[#0f2a45] transition disabled:opacity-50">
-            {salvando ? 'Criando...' : '✅ Criar Alojamento'}
-          </button>
-        </form>
-      </div>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+          <h3 className="font-bold text-[#123b63] mb-4">➕ Novo Alojamento</h3>
+          {erro && <div className="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{erro}</div>}
+          {sucesso && <div className="mb-3 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{sucesso}</div>}
+          <form onSubmit={criarAlojamento}>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <div className="md:col-span-3">
+                <label className={labelCls}>Nome do alojamento *</label>
+                <input type="text" value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))}
+                  placeholder="Ex: Bloco A — Masculino" className={inputCls} required />
+              </div>
+              <div>
+                <label className={labelCls}>Público</label>
+                <select value={form.publico} onChange={e => setForm(f => ({ ...f, publico: e.target.value }))} className={inputCls}>
+                  <option value="masculino_geral">👨 Masculino (Geral)</option>
+                  <option value="feminino">👩 Feminino</option>
+                  <option value="presidentes">👨 Presidentes</option>
+                  <option value="jubilados">👨 Jubilados</option>
+                  <option value="misto">👥 Misto</option>
+                </select>
+              </div>
+              <div>
+                <label className={labelCls}>Total de vagas</label>
+                <input type="number" min="1" value={form.total_vagas}
+                  onChange={e => {
+                    setForm(f => ({
+                      ...f,
+                      total_vagas: e.target.value,
+                    }));
+                  }} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Camas inferiores</label>
+                <input type="number" min="0" value={form.camas_inferiores}
+                  onChange={e => {
+                    setForm(f => ({
+                      ...f,
+                      camas_inferiores: e.target.value,
+                    }));
+                  }} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Camas superiores</label>
+                <input type="number" min="0" value={form.camas_superiores}
+                  onChange={e => {
+                    setForm(f => ({
+                      ...f,
+                      camas_superiores: e.target.value,
+                    }));
+                  }} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Colchonetes</label>
+                <input type="number" min="0" value={form.colchonetes}
+                  onChange={e => {
+                    setForm(f => ({
+                      ...f,
+                      colchonetes: e.target.value,
+                    }));
+                  }} className={inputCls} />
+              </div>
+            </div>
+            <button type="submit" disabled={salvando}
+              className="bg-[#123b63] text-white px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-[#0f2a45] transition disabled:opacity-50">
+              {salvando ? 'Criando...' : '✅ Criar Alojamento'}
+            </button>
+          </form>
+        </div>
+      )}
 
       {/* Lista de alojamentos */}
       {loading ? (
@@ -2507,14 +2540,22 @@ function SecaoAlojamentos({
                 </div>
 
                 <div className="flex gap-1.5 mt-2">
-                  <button onClick={() => abrirModalEdicao(aloj)}
-                    className="flex-1 text-xs py-1.5 rounded-lg border border-gray-200 text-[#0D2B4E] hover:bg-gray-50 transition font-semibold">
-                    ✏️ Editar
-                  </button>
-                  <button onClick={() => toggleAtivo(aloj)}
-                    className="flex-1 text-xs py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition font-semibold">
-                    {aloj.ativo ? 'Desativar' : 'Ativar'}
-                  </button>
+                  {isAGO || aloj.setor_key || aloj.origem === 'configuracoes_ago' ? (
+                    <div className="w-full text-center text-xs py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-gray-500 font-medium">
+                      🔒 Gerenciado via Configuração do Evento
+                    </div>
+                  ) : (
+                    <>
+                      <button onClick={() => abrirModalEdicao(aloj)}
+                        className="flex-1 text-xs py-1.5 rounded-lg border border-gray-200 text-[#0D2B4E] hover:bg-gray-50 transition font-semibold">
+                        ✏️ Editar
+                      </button>
+                      <button onClick={() => toggleAtivo(aloj)}
+                        className="flex-1 text-xs py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition font-semibold">
+                        {aloj.ativo ? 'Desativar' : 'Ativar'}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             );
@@ -2522,8 +2563,8 @@ function SecaoAlojamentos({
         </div>
       )}
 
-      {/* Modal de Edição de Alojamento */}
-      {modalEditar && (
+      {/* Modal de Edição de Alojamento (apenas para eventos não-AGO) */}
+      {!isAGO && modalEditar && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setModalEditar(null)}>
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
             <div className="flex items-start justify-between mb-5">

@@ -74,6 +74,8 @@ interface SetorHospedagem {
   tipos_leito: ('beliche' | 'colchonete' | 'rede')[];
   quantidade_leitos: number;
   quantidade_leitos_inferiores: number;
+  quantidade_leitos_superiores?: number;
+  quantidade_colchonetes?: number;
   observacoes: string;
   ativo: boolean;
 }
@@ -510,9 +512,50 @@ export default function EditarEventoPage() {
     if (perfil.isDeptAdmin && perfil.departamentoUsuario && form.departamento !== perfil.departamentoUsuario)
       return setErro(`Voce so pode editar eventos do departamento ${perfil.departamentoUsuario}.`);
 
+    if (isAGO) {
+      for (const s of agoHospConfig.setores || []) {
+        const inf = s.quantidade_leitos_inferiores || 0;
+        const sup = s.quantidade_leitos_superiores ?? (s.tipos_leito?.includes('beliche') ? inf : 0);
+        const col = s.quantidade_colchonetes !== undefined
+          ? s.quantidade_colchonetes
+          : (parseInt(s.observacoes?.match(/(\d+)\s*(?:leitos são colchonetes|colchonetes)/i)?.[1] || '0', 10) || 0);
+        const soma = inf + sup + col;
+        if (soma !== (s.quantidade_leitos || 0)) {
+          return setErro(`No setor "${s.nome}", a soma dos leitos (${inf} inf + ${sup} sup + ${col} colch = ${soma}) deve ser exatamente igual à capacidade total (${s.quantidade_leitos}).`);
+        }
+      }
+    }
+
     setSalvando(true);
     try {
-      const payload = normalizePayloadUppercase({
+      const novaConfiguracaoAgo = isAGO ? {
+        ...agoHospConfig,
+        enabled: true,
+        campo_missionario: agoHospConfig.habilitar_desconto_campo_missionario ? {
+          enabled: true,
+          valor_pastor_presidente: parseFloat(agoHospConfig.valor_pastor_presidente_campo_missionario) || 0,
+          valor_esposa: parseFloat(agoHospConfig.valor_esposa_campo_missionario) || 0,
+        } : null,
+      } : null;
+
+      // 1. Para eventos AGO: validação prévia e persistência atômica de configuracoes_ago e setores via RPC exclusiva
+      if (isAGO && novaConfiguracaoAgo) {
+        const resSinc = await fetch(`/api/eventos/${id}/alojamentos/sincronizar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nova_configuracao_ago: novaConfiguracaoAgo }),
+        });
+
+        if (!resSinc.ok) {
+          const sincData = await resSinc.json().catch(() => ({}));
+          throw new Error(sincData.error || 'Erro ao validar e sincronizar alojamentos da AGO.');
+        }
+      }
+
+      // 2. Prepara payload cadastral do evento
+      // IMPORTANTE (Regra 4): Para eventos AGO, configuracoes_ago é gerenciada EXCLUSIVAMENTE pela RPC acima.
+      // Omitir configuracoes_ago deste payload evita uma segunda gravação desnecessária e arriscada.
+      const payloadBase: Record<string, unknown> = {
         nome:                   form.nome.trim(),
         descricao:              form.descricao.trim() || null,
         banner_url:             form.banner_url.trim() || null,
@@ -540,8 +583,13 @@ export default function EditarEventoPage() {
         publico_alvo:           form.publico_alvo.trim() || null,
         status:                 form.status,
         tipo_inscricao_avulso:  form.departamento === 'AVULSO' ? form.tipo_inscricao_avulso : 'individual',
-        configuracoes_ago:      isAGO ? { ...agoHospConfig, enabled: true, campo_missionario: agoHospConfig.habilitar_desconto_campo_missionario ? { enabled: true, valor_pastor_presidente: parseFloat(agoHospConfig.valor_pastor_presidente_campo_missionario) || 0, valor_esposa: parseFloat(agoHospConfig.valor_esposa_campo_missionario) || 0 } : null } : null,
-      });
+      };
+
+      if (!isAGO) {
+        payloadBase.configuracoes_ago = null;
+      }
+
+      const payload = normalizePayloadUppercase(payloadBase);
 
       const { error } = await supabase
         .from('eventos')
@@ -1415,34 +1463,101 @@ export default function EditarEventoPage() {
                           </div>
                         </div>
                         <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-1">Quantidade de Leitos *</label>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Capacidade Total de Vagas *</label>
                           <input
                             type="number"
                             min="1"
                             value={setor.quantidade_leitos || ''}
                             onChange={e => {
                               const v = Math.max(0, parseInt(e.target.value) || 0);
-                              setAgoHospConfig(c => { const s = [...(c.setores||[])]; s[idx] = { ...s[idx], quantidade_leitos: v, quantidade_leitos_inferiores: Math.min(s[idx].quantidade_leitos_inferiores, v) }; return { ...c, setores: s }; });
+                              setAgoHospConfig(c => {
+                                const s = [...(c.setores || [])];
+                                const item = { ...s[idx], quantidade_leitos: v };
+                                s[idx] = item;
+                                return { ...c, setores: s };
+                              });
                             }}
                             className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                           />
                         </div>
                         {(setor.tipos_leito || []).includes('beliche') ? (
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1">Leitos Inferiores (beliches de baixo)</label>
-                            <input
-                              type="number"
-                              min="0"
-                              max={setor.quantidade_leitos}
-                              value={setor.quantidade_leitos_inferiores || ''}
-                              onChange={e => {
-                                const v = Math.min(Math.max(0, parseInt(e.target.value) || 0), setor.quantidade_leitos);
-                                setAgoHospConfig(c => { const s = [...(c.setores||[])]; s[idx] = { ...s[idx], quantidade_leitos_inferiores: v }; return { ...c, setores: s }; });
-                              }}
-                              className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                            />
-                          </div>
-                        ) : <div />}
+                          <>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">Leitos Inferiores (baixo)</label>
+                              <input
+                                type="number"
+                                min="0"
+                                max={setor.quantidade_leitos}
+                                value={setor.quantidade_leitos_inferiores ?? ''}
+                                onChange={e => {
+                                  const v = Math.max(0, parseInt(e.target.value) || 0);
+                                  setAgoHospConfig(c => {
+                                    const s = [...(c.setores || [])];
+                                    const item = { ...s[idx], quantidade_leitos_inferiores: v };
+                                    // Para beliches completos, superiores calculados automaticamente
+                                    item.quantidade_leitos_superiores = v;
+                                    s[idx] = item;
+                                    return { ...c, setores: s };
+                                  });
+                                }}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">Leitos Superiores (cima - automático)</label>
+                              <div className="w-full border border-gray-200 bg-gray-50 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 flex items-center justify-between">
+                                <span>{setor.quantidade_leitos_superiores ?? setor.quantidade_leitos_inferiores ?? 0}</span>
+                                <span className="text-[11px] text-gray-400">(= inferiores em beliches)</span>
+                              </div>
+                            </div>
+                          </>
+                        ) : null}
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Colchonetes</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={
+                              setor.quantidade_colchonetes !== undefined
+                                ? setor.quantidade_colchonetes
+                                : (setor.observacoes?.match(/(\d+)\s*(?:leitos são colchonetes|colchonetes)/i)?.[1] || 0)
+                            }
+                            onChange={e => {
+                              const v = Math.max(0, parseInt(e.target.value) || 0);
+                              setAgoHospConfig(c => {
+                                const s = [...(c.setores || [])];
+                                s[idx] = { ...s[idx], quantidade_colchonetes: v };
+                                return { ...c, setores: s };
+                              });
+                            }}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+                        {(() => {
+                          const inf = setor.quantidade_leitos_inferiores || 0;
+                          const sup = setor.quantidade_leitos_superiores ?? (setor.tipos_leito?.includes('beliche') ? inf : 0);
+                          const col = setor.quantidade_colchonetes !== undefined
+                            ? setor.quantidade_colchonetes
+                            : (parseInt(setor.observacoes?.match(/(\d+)\s*(?:leitos são colchonetes|colchonetes)/i)?.[1] || '0', 10) || 0);
+                          const soma = inf + sup + col;
+                          const total = setor.quantidade_leitos || 0;
+                          const diverge = soma !== total;
+                          return (
+                            <div className="sm:col-span-2">
+                              {diverge ? (
+                                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 flex items-center gap-2">
+                                  <span>⚠️</span>
+                                  <span>Atenção: A soma ({inf} inf + {sup} sup + {col} col = <strong>{soma}</strong>) diverge da capacidade total configurada (<strong>{total}</strong>).</span>
+                                </div>
+                              ) : (
+                                <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1 flex items-center gap-2">
+                                  <span>✓</span>
+                                  <span>Distribuição consistente: {inf} inferiores + {sup} superiores + {col} colchonetes = {total} vagas.</span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                         <div className="sm:col-span-2">
                           <label className="block text-xs font-semibold text-gray-700 mb-1">Observações internas</label>
                           <input

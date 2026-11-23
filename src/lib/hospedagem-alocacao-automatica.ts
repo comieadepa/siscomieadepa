@@ -304,12 +304,18 @@ export async function alocarLeitoParaInscricaoAGO(
     }
   }
 
-  // 4. Busca os alojamentos ativos
-  const { data: alojamentosRaw, error: errAloj } = await supabase
+  // 4. Busca os alojamentos ativos (para eventos AGO, consome exclusivamente a projeção oficial sincronizada)
+  let queryAloj = supabase
     .from('evento_alojamentos')
     .select('id, nome, publico, sexo, total_vagas, camas_inferiores, camas_superiores, ativo')
     .eq('evento_id', evento.id)
     .eq('ativo', true);
+
+  if (evento?.departamento === 'AGO' || Boolean((evento?.configuracoes_ago as any)?.setores?.length)) {
+    queryAloj = queryAloj.not('setor_key', 'is', null);
+  }
+
+  const { data: alojamentosRaw, error: errAloj } = await queryAloj;
 
   if (errAloj || !alojamentosRaw || alojamentosRaw.length === 0) {
     const msg = `Nenhum alojamento ativo encontrado para o evento ${evento.id}`;
