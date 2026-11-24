@@ -834,28 +834,30 @@ export default function GerenciarEventoPage() {
           </div>
         </div>
 
-        {/* Faixa de métricas — fundo gradiente sutil */}
-        <div className="border-t border-gray-100 bg-gradient-to-r from-[#0D2B4E]/[0.03] to-transparent">
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 lg:divide-x divide-gray-100">
-            {[
-              { label: 'Inscritos',  value: stats.total,               icon: '👥', color: 'text-[#0D2B4E]',   bgIcon: 'bg-[#0D2B4E]/10', show: true },
-              { label: 'Pagos',      value: stats.pagos,               icon: '💳', color: 'text-emerald-700', bgIcon: 'bg-emerald-100',   show: true },
-              { label: 'Pendentes',  value: stats.pendentes,           icon: '⏳', color: 'text-amber-600',   bgIcon: 'bg-amber-100',     show: perfil.podeVerFinanceiro },
-              { label: 'Isentos',    value: stats.isentos,             icon: '🎟️', color: 'text-blue-600',    bgIcon: 'bg-blue-100',      show: perfil.podeVerFinanceiro },
-              { label: 'Check-ins',  value: stats.checkins,            icon: '✅', color: 'text-purple-700',  bgIcon: 'bg-purple-100',    show: true },
-              { label: 'Etiquetas',  value: stats.etiquetas,           icon: '🏷️', color: 'text-gray-600',    bgIcon: 'bg-gray-100',      show: true },
-              { label: 'Arrecadado', value: fmtMoeda(stats.arrecadado),icon: '💰', color: 'text-[#D9A520]',   bgIcon: 'bg-amber-100',     show: perfil.podeVerFinanceiro },
-            ].filter(s => s.show).map(s => (
-              <div key={s.label} className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 lg:border-b-0">
-                <div className={`w-8 h-8 rounded-lg ${s.bgIcon} flex items-center justify-center text-sm flex-shrink-0`}>{s.icon}</div>
-                <div>
-                  <p className={`font-black text-base leading-tight ${s.color}`}>{s.value}</p>
-                  <p className="text-[10px] text-gray-400 uppercase tracking-wide">{s.label}</p>
+        {/* Faixa de métricas gerais — oculta exclusivamente no perfil de Administrador de Hospedagem */}
+        {!isHospedagemOperador && (
+          <div className="border-t border-gray-100 bg-gradient-to-r from-[#0D2B4E]/[0.03] to-transparent">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 lg:divide-x divide-gray-100">
+              {[
+                { label: 'Inscritos',  value: stats.total,               icon: '👥', color: 'text-[#0D2B4E]',   bgIcon: 'bg-[#0D2B4E]/10', show: true },
+                { label: 'Pagos',      value: stats.pagos,               icon: '💳', color: 'text-emerald-700', bgIcon: 'bg-emerald-100',   show: true },
+                { label: 'Pendentes',  value: stats.pendentes,           icon: '⏳', color: 'text-amber-600',   bgIcon: 'bg-amber-100',     show: perfil.podeVerFinanceiro },
+                { label: 'Isentos',    value: stats.isentos,             icon: '🎟️', color: 'text-blue-600',    bgIcon: 'bg-blue-100',      show: perfil.podeVerFinanceiro },
+                { label: 'Check-ins',  value: stats.checkins,            icon: '✅', color: 'text-purple-700',  bgIcon: 'bg-purple-100',    show: true },
+                { label: 'Etiquetas',  value: stats.etiquetas,           icon: '🏷️', color: 'text-gray-600',    bgIcon: 'bg-gray-100',      show: true },
+                { label: 'Arrecadado', value: fmtMoeda(stats.arrecadado),icon: '💰', color: 'text-[#D9A520]',   bgIcon: 'bg-amber-100',     show: perfil.podeVerFinanceiro },
+              ].filter(s => s.show).map(s => (
+                <div key={s.label} className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 lg:border-b-0">
+                  <div className={`w-8 h-8 rounded-lg ${s.bgIcon} flex items-center justify-center text-sm flex-shrink-0`}>{s.icon}</div>
+                  <div>
+                    <p className={`font-black text-base leading-tight ${s.color}`}>{s.value}</p>
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">{s.label}</p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* ── ABAS ────────────────────────────────────────────────── */}

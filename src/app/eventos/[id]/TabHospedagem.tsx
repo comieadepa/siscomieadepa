@@ -237,6 +237,7 @@ export default function TabHospedagem({
 
   // Busca e atribuição de hospedagem para inscrições sem hospedagem
   const [modalBuscarInscricao, setModalBuscarInscricao] = useState(false);
+  const [menuAdminAberto, setMenuAdminAberto] = useState(false);
   const [termoBuscaInscricao, setTermoBuscaInscricao] = useState('');
   const [resultadosBuscaInscricao, setResultadosBuscaInscricao] = useState<any[]>([]);
   const [buscandoInscricao, setBuscandoInscricao] = useState(false);
@@ -469,6 +470,7 @@ export default function TabHospedagem({
     const listaEspera = hospedagens.filter(h => (h.status_operacional ?? h.status) === 'lista_espera').length;
     const vagasDisp = alojamentos.filter(a => a.ativo).reduce((sum, a) => sum + (a.vagas_livres ?? 0), 0);
     const prioridadeInferiorPendente = hospedagens.filter(h => (h.pendencias ?? []).includes('prioridade_sem_leito_inferior')).length;
+    const checkinsHospedagem = hospedagens.filter(h => Boolean(h.checkin_at) || (h.status_operacional ?? h.status) === 'checkin_realizado').length;
     
     const pagos = hospedagens.filter(h => {
       const sp = (h.status_pagamento || '').toLowerCase();
@@ -489,6 +491,7 @@ export default function TabHospedagem({
       listaEspera,
       vagasDisp,
       prioridadeInferiorPendente,
+      checkinsHospedagem,
       pagos,
       pendentes
     };
@@ -896,30 +899,50 @@ export default function TabHospedagem({
         ))}
       </div>
 
-      {/* ── Cards operacionais ──────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
-        {(evento.departamento === 'AGO' ? [
-          { label: 'Solicitações', value: stats.total, cor: 'text-[#123b63]' },
-          { label: 'Aguard. pgto', value: stats.aguardandoPagamento, cor: 'text-amber-700' },
-          { label: 'Elegíveis', value: stats.elegiveis, cor: 'text-blue-700' },
-          { label: 'Alocados', value: stats.alocadas, cor: 'text-indigo-700' },
-          { label: 'Lista espera', value: stats.listaEspera, cor: 'text-orange-700' },
-          { label: 'Vagas livres', value: stats.vagasDisp, cor: 'text-emerald-700' },
-          { label: 'Prioridade ↓ pendente', value: stats.prioridadeInferiorPendente, cor: 'text-rose-700' },
-        ] : [
-          { label: 'Solicitaram hospedagem', value: stats.total, cor: 'text-[#123b63]' },
-          { label: 'Pagos com hospedagem', value: stats.pagos, cor: 'text-emerald-700' },
-          { label: 'Pendentes hospedagem', value: stats.pendentes, cor: 'text-rose-700' },
-          { label: 'Alocados', value: stats.alocadas, cor: 'text-indigo-700' },
-          { label: 'Lista espera', value: stats.listaEspera, cor: 'text-orange-700' },
-          { label: 'Vagas livres', value: stats.vagasDisp, cor: 'text-emerald-700' },
-          { label: 'Pago sem alocação', value: stats.pagoSemAlocacao, cor: 'text-amber-700' },
-        ]).map(s => (
-          <div key={s.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 text-center">
-            <p className={`text-xl font-black ${s.cor}`}>{s.value}</p>
-            <p className="text-[10px] text-gray-400 mt-0.5">{s.label}</p>
+      {/* ── Cards operacionais em destaque ──────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {[
+          { label: 'Alocados', value: stats.alocadas, cor: 'text-indigo-700', bg: 'bg-indigo-50/60 border-indigo-100', icon: '🛏️' },
+          { label: 'Vagas livres', value: stats.vagasDisp, cor: 'text-emerald-700', bg: 'bg-emerald-50/60 border-emerald-100', icon: '🟢' },
+          { label: 'Elegíveis', value: stats.elegiveis, cor: 'text-blue-700', bg: 'bg-blue-50/60 border-blue-100', icon: '⚡' },
+          { label: 'Lista espera', value: stats.listaEspera, cor: 'text-orange-700', bg: 'bg-orange-50/60 border-orange-100', icon: '⏳' },
+          { label: 'Check-ins Hospedagem', value: stats.checkinsHospedagem, cor: 'text-teal-700', bg: 'bg-teal-50/60 border-teal-100', icon: '✅' },
+        ].map(s => (
+          <div key={s.label} className={`rounded-xl border shadow-sm p-3.5 text-center transition ${s.bg}`}>
+            <div className="flex items-center justify-center gap-1.5 mb-1">
+              <span className="text-sm select-none">{s.icon}</span>
+              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">{s.label}</p>
+            </div>
+            <p className={`text-2xl font-black ${s.cor}`}>{s.value}</p>
           </div>
         ))}
+      </div>
+
+      {/* ── Linha secundária informativa de solicitações e pagamentos (preserva total visibilidade) ── */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-gray-50/80 rounded-xl border border-gray-200/80 text-xs text-gray-600">
+        <div className="flex flex-wrap items-center gap-4">
+          <span>
+            📋 <span className="font-semibold text-gray-500">Solicitações de Hospedagem:</span>{' '}
+            <strong className="text-gray-800">{stats.total}</strong>
+          </span>
+          <span className="text-gray-300">•</span>
+          <span>
+            💳 <span className="font-semibold text-gray-500">Aguardando Pagamento:</span>{' '}
+            <strong className="text-amber-700">{stats.aguardandoPagamento}</strong>
+          </span>
+          {evento.departamento === 'AGO' && stats.prioridadeInferiorPendente > 0 && (
+            <>
+              <span className="text-gray-300">•</span>
+              <span>
+                ⚠️ <span className="font-semibold text-gray-500">Prioridade ↓ pendente:</span>{' '}
+                <strong className="text-rose-700">{stats.prioridadeInferiorPendente}</strong>
+              </span>
+            </>
+          )}
+        </div>
+        <span className="text-[10px] text-gray-400">
+          Dados de solicitações e relatórios preservados
+        </span>
       </div>
 
       {/* ── Resultado autoalocação ────────────────────────────── */}
@@ -1012,41 +1035,73 @@ export default function TabHospedagem({
           {/* Botão autoalocar + filtros */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col gap-3">
 
-            {/* Linha 1: Botões de Ação */}
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={autoalocar}
-                disabled={autoalocando || (stats.elegiveis === 0 && stats.listaEspera === 0)}
-                title="Processa TODAS as pendências do evento, ignorando filtros visuais."
-                className="flex items-center justify-center gap-2 bg-[#0D2B4E] text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-[#0a1e38] transition disabled:opacity-50"
-              >
-                {autoalocando ? (autoalocProgresso || '⏳ Alocando...') : '🤖 Processar pendências'}
-              </button>
-
+            {/* Linha 1: Ações Principais e Menu Secundário Administrativo */}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Ação Principal 1: Check-in */}
               <a
                 href={`/eventos/${eventoId}/hospedagem/checkin`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-teal-700 transition"
+                className="flex items-center justify-center gap-2 bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-teal-700 shadow-sm transition"
               >
                 📱 Tela Check-in
               </a>
 
+              {/* Ação Principal 2: Processar Pendências */}
               <button
-                onClick={() => setModalBuscarInscricao(true)}
-                className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-xl text-sm font-bold transition"
+                onClick={autoalocar}
+                disabled={autoalocando || (stats.elegiveis === 0 && stats.listaEspera === 0)}
+                title="Processa TODAS as pendências do evento, ignorando filtros visuais."
+                className="flex items-center justify-center gap-2 bg-[#0D2B4E] text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-[#0a1e38] shadow-sm transition disabled:opacity-50"
               >
-                🔍 Buscar sem Hospedagem
+                {autoalocando ? (autoalocProgresso || '⏳ Alocando...') : '🤖 Processar pendências'}
               </button>
 
-              {evento.departamento === 'AGO' && (
+              {/* Menu Secundário Administrativo */}
+              <div className="relative inline-block text-left">
                 <button
-                  onClick={abrirTransferirCampoMissionario}
-                  className="flex items-center justify-center gap-2 bg-violet-700 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-violet-800 transition"
+                  type="button"
+                  onClick={() => setMenuAdminAberto(prev => !prev)}
+                  className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300 px-3.5 py-2 rounded-xl text-sm font-semibold shadow-sm transition"
+                  title="Ações administrativas secundárias"
                 >
-                  🔄 Transferir Campo Missionário
+                  ⚙️ Mais Ações Administrativas ▾
                 </button>
-              )}
+
+                {menuAdminAberto && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-20"
+                      onClick={() => setMenuAdminAberto(false)}
+                    />
+                    <div className="absolute left-0 mt-1.5 w-64 rounded-xl shadow-lg bg-white ring-1 ring-black ring-opacity-5 divide-y divide-gray-100 z-30 focus:outline-none py-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModalBuscarInscricao(true);
+                          setMenuAdminAberto(false);
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-xs font-semibold text-gray-700 hover:bg-amber-50 hover:text-amber-900 flex items-center gap-2 transition"
+                      >
+                        🔍 Buscar sem Hospedagem
+                      </button>
+
+                      {evento.departamento === 'AGO' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            abrirTransferirCampoMissionario();
+                            setMenuAdminAberto(false);
+                          }}
+                          className="w-full text-left px-4 py-2.5 text-xs font-semibold text-gray-700 hover:bg-violet-50 hover:text-violet-900 flex items-center gap-2 transition"
+                        >
+                          🔄 Transferir Campo Missionário
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
             {/* Linha 2: Busca + Filtros */}
