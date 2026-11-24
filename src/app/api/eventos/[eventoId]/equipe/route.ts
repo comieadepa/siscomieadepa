@@ -81,8 +81,17 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoPermission(request, eventoId, 'equipe');
-  if (!guard.ok) return guard.response;
+  let guard = await requireEventoPermission(request, eventoId, 'equipe');
+  let isHospedagemOnly = false;
+  if (!guard.ok) {
+    const hospGuard = await requireEventoPermission(request, eventoId, 'hospedagem');
+    if (hospGuard.ok) {
+      guard = hospGuard;
+      isHospedagemOnly = true;
+    } else {
+      return guard.response;
+    }
+  }
 
   let body: { nome?: string; email?: string; funcao?: string; senha?: string; local_id?: string | null };
   try {
@@ -93,12 +102,28 @@ export async function POST(
 
   const nome = (body.nome || '').trim();
   const email = (body.email || '').trim().toLowerCase();
-  const funcao = normalizarFuncao(body.funcao);
+  let funcao = normalizarFuncao(body.funcao);
   const senha = (body.senha || '').trim();
+
+  // Se a requisição for feita pelo Admin de Hospedagem (sem permissão geral de equipe),
+  // a função é estritamente restrita a 'checkin_hospedagem'.
+  if (isHospedagemOnly) {
+    if (funcao !== 'checkin_hospedagem') {
+      return NextResponse.json(
+        { error: 'Admin de Hospedagem só pode cadastrar operadores para Check-in de Hospedagem.' },
+        { status: 403 }
+      );
+    }
+  }
 
   if (!nome) return NextResponse.json({ error: 'Nome obrigatorio.' }, { status: 400 });
   if (!email) return NextResponse.json({ error: 'E-mail obrigatorio.' }, { status: 400 });
   if (exigeSenha(funcao) && senha.length < 8) {
+    return NextResponse.json({ error: 'Senha deve ter no minimo 8 caracteres.' }, { status: 400 });
+  }
+
+  // Operadores de checkin_hospedagem cadastrados com senha por gestão de hospedagem
+  if (funcao === 'checkin_hospedagem' && senha && senha.length < 8) {
     return NextResponse.json({ error: 'Senha deve ter no minimo 8 caracteres.' }, { status: 400 });
   }
 
@@ -174,7 +199,7 @@ export async function POST(
   }
 
   const now = new Date().toISOString();
-  const senhaHash = exigeSenha(funcao) ? await bcrypt.hash(senha, 10) : null;
+  const senhaHash = (exigeSenha(funcao) || senha) ? await bcrypt.hash(senha, 10) : null;
   const codigoAcesso = isFuncaoCheckinSemSenha(funcao) ? await gerarCodigoEquipe(supabase, eventoId) : null;
   const conviteExpiraEm = isFuncaoCheckinSemSenha(funcao)
     ? calcExpiraEm((eventoInfo as { data_fim?: string | null } | null)?.data_fim ?? null)
@@ -287,11 +312,20 @@ export async function PATCH(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoPermission(request, eventoId, 'equipe');
-  if (!guard.ok) return guard.response;
+  let guard = await requireEventoPermission(request, eventoId, 'equipe');
+  let isHospedagemOnly = false;
+  if (!guard.ok) {
+    const hospGuard = await requireEventoPermission(request, eventoId, 'hospedagem');
+    if (hospGuard.ok) {
+      guard = hospGuard;
+      isHospedagemOnly = true;
+    } else {
+      return guard.response;
+    }
+  }
 
-  // Apenas gestores administrativos podem alterar vínculos e configurações de membros
-  const isGestor = guard.ctx.source === 'global' || guard.ctx.role === 'admin_evento';
+  // Gestores administrativos ou gestor de hospedagem
+  const isGestor = guard.ctx.source === 'global' || guard.ctx.role === 'admin_evento' || isHospedagemOnly;
   if (!isGestor) {
     return NextResponse.json(
       { error: 'Apenas administradores podem gerenciar e alterar vinculações da equipe.' },
@@ -330,6 +364,24 @@ export async function PATCH(
   }
 
   const row = existente as EquipeRow;
+
+  // Se for Admin de Hospedagem (sem permissão geral de equipe):
+  // 1. Só pode editar membros com tipo === 'checkin_hospedagem'
+  // 2. Não pode alterar a função para outro tipo nem editar outro perfil
+  if (isHospedagemOnly) {
+    if (row.tipo !== 'checkin_hospedagem') {
+      return NextResponse.json(
+        { error: 'Admin de Hospedagem só tem permissão para gerenciar integrantes de Check-in de Hospedagem.' },
+        { status: 403 }
+      );
+    }
+    if (body.funcao && body.funcao !== 'checkin_hospedagem') {
+      return NextResponse.json(
+        { error: 'Não é permitido alterar o papel do integrante para outra função.' },
+        { status: 403 }
+      );
+    }
+  }
   const nome = (body.nome ?? row.nome ?? '').trim();
   const email = (body.email ?? row.email ?? '').trim().toLowerCase();
   const funcao = body.funcao ? normalizarFuncao(body.funcao) : row.tipo;
@@ -584,8 +636,17 @@ export async function DELETE(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoPermission(request, eventoId, 'equipe');
-  if (!guard.ok) return guard.response;
+  let guard = await requireEventoPermission(request, eventoId, 'equipe');
+  let isHospedagemOnly = false;
+  if (!guard.ok) {
+    const hospGuard = await requireEventoPermission(request, eventoId, 'hospedagem');
+    if (hospGuard.ok) {
+      guard = hospGuard;
+      isHospedagemOnly = true;
+    } else {
+      return guard.response;
+    }
+  }
 
   let body: { equipe_id?: string };
   try {
@@ -610,6 +671,14 @@ export async function DELETE(
   }
 
   const row = existente as Pick<EquipeRow, 'id' | 'email' | 'tipo'>;
+
+  // Se for Admin de Hospedagem (sem permissão geral de equipe), só pode remover checkin_hospedagem
+  if (isHospedagemOnly && row.tipo !== 'checkin_hospedagem') {
+    return NextResponse.json(
+      { error: 'Admin de Hospedagem só tem permissão para remover integrantes de Check-in de Hospedagem.' },
+      { status: 403 }
+    );
+  }
 
   await supabase.from('evento_equipe').delete().eq('id', equipeId).eq('evento_id', eventoId);
 

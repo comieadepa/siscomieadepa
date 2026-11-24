@@ -8,8 +8,17 @@ export async function POST(
 ) {
   const { eventoId } = await params;
 
-  const guard = await requireEventoPermission(request, eventoId, 'equipe');
-  if (!guard.ok) return guard.response;
+  let guard = await requireEventoPermission(request, eventoId, 'equipe');
+  let isHospedagemOnly = false;
+  if (!guard.ok) {
+    const hospGuard = await requireEventoPermission(request, eventoId, 'hospedagem');
+    if (hospGuard.ok) {
+      guard = hospGuard;
+      isHospedagemOnly = true;
+    } else {
+      return guard.response;
+    }
+  }
 
   let body: { equipe_id?: string };
   try {
@@ -24,6 +33,26 @@ export async function POST(
   }
 
   const supabase = guard.ctx.supabaseAdmin;
+
+  if (isHospedagemOnly) {
+    const { data: membro } = await supabase
+      .from('evento_equipe')
+      .select('id,tipo')
+      .eq('id', equipeId)
+      .eq('evento_id', eventoId)
+      .single();
+
+    if (!membro) {
+      return NextResponse.json({ error: 'Membro não encontrado.' }, { status: 404 });
+    }
+    if (membro.tipo !== 'checkin_hospedagem') {
+      return NextResponse.json(
+        { error: 'Admin de Hospedagem só pode revogar acesso de integrantes de Check-in de Hospedagem.' },
+        { status: 403 }
+      );
+    }
+  }
+
   const now = new Date().toISOString();
   const { error } = await supabase
     .from('evento_equipe')

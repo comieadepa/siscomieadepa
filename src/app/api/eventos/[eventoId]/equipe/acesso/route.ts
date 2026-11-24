@@ -45,8 +45,17 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoPermission(request, eventoId, 'equipe');
-  if (!guard.ok) return guard.response;
+  let guard = await requireEventoPermission(request, eventoId, 'equipe');
+  let isHospedagemOnly = false;
+  if (!guard.ok) {
+    const hospGuard = await requireEventoPermission(request, eventoId, 'hospedagem');
+    if (hospGuard.ok) {
+      guard = hospGuard;
+      isHospedagemOnly = true;
+    } else {
+      return guard.response;
+    }
+  }
 
   let body: { equipe_id?: string };
   try {
@@ -71,6 +80,12 @@ export async function POST(
   }
 
   const row = equipe as EquipeRow;
+  if (isHospedagemOnly && row.tipo !== 'checkin_hospedagem') {
+    return NextResponse.json(
+      { error: 'Admin de Hospedagem só pode reenviar acesso para integrantes de Check-in de Hospedagem.' },
+      { status: 403 }
+    );
+  }
   if (!row.ativo) {
     return NextResponse.json({ error: 'Membro inativo. Reative antes de reenviar o acesso.' }, { status: 400 });
   }

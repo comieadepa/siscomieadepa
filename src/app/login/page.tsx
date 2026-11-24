@@ -121,12 +121,60 @@ export default function LoginPage() {
           // silencioso: não impede o login
         }
         // Redireciona conforme o nível do usuário
-        const destino =
+        let destino =
           nivel === 'inscricao' ? '/eventos' :
           nivel === 'cgadb'     ? '/secretaria/cgadb' :
           nivel === 'financeiro'? '/financeiro' :
           nivel === 'aemadepa'  ? '/aemadepa' :
           '/dashboard';
+
+        // Se for perfil de inscrição, verifica se é Admin de Hospedagem ou Check-in Hospedagem
+        // para direcionar imediatamente ao destino correto do evento vinculado
+        if (nivel === 'inscricao') {
+          try {
+            // Busca vínculos oficiais do usuário na tabela usuario_eventos
+            const { data: vinculos } = await supabaseRef.current
+              .from('usuario_eventos')
+              .select('evento_id, permissao')
+              .eq('user_id', authData.user.id);
+
+            const vinculosHosp = (vinculos || []).filter((v: { permissao?: string | null }) => v.permissao === 'hospedagem');
+            const vinculosCheckinHosp = (vinculos || []).filter((v: { permissao?: string | null }) => v.permissao === 'checkin_hospedagem');
+
+            if (vinculosHosp.length > 0) {
+              const eventoIds = vinculosHosp.map((v: { evento_id: string }) => v.evento_id);
+              // Busca os eventos para determinar ordenação oficial por prioridade
+              const { data: evsData } = await supabaseRef.current
+                .from('eventos')
+                .select('id, nome, departamento, data_inicio, data_fim, status')
+                .in('id', eventoIds);
+
+              const evs = (evsData || []);
+              if (evs.length > 0) {
+                // Importa função de comparação oficial de prioridade
+                const { compareEventosPorPrioridade } = await import('@/lib/eventos/evento-listing');
+                evs.sort((a: any, b: any) => compareEventosPorPrioridade(a, b));
+                destino = `/eventos/${evs[0].id}?tab=hospedagem`;
+              }
+            } else if (vinculosCheckinHosp.length > 0) {
+              const eventoIds = vinculosCheckinHosp.map((v: { evento_id: string }) => v.evento_id);
+              const { data: evsData } = await supabaseRef.current
+                .from('eventos')
+                .select('id, nome, departamento, data_inicio, data_fim, status')
+                .in('id', eventoIds);
+
+              const evs = (evsData || []);
+              if (evs.length > 0) {
+                const { compareEventosPorPrioridade } = await import('@/lib/eventos/evento-listing');
+                evs.sort((a: any, b: any) => compareEventosPorPrioridade(a, b));
+                destino = `/eventos/${evs[0].id}/hospedagem/mapa`;
+              }
+            }
+          } catch (errHosp) {
+            console.error('[LOGIN] Erro ao verificar direcionamento de hospedagem:', errHosp);
+          }
+        }
+
         router.push(destino);
         return;
       }

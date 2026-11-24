@@ -9,8 +9,17 @@ export async function POST(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoPermission(request, eventoId, 'equipe');
-  if (!guard.ok) return guard.response;
+  let guard = await requireEventoPermission(request, eventoId, 'equipe');
+  let isHospedagemOnly = false;
+  if (!guard.ok) {
+    const hospGuard = await requireEventoPermission(request, eventoId, 'hospedagem');
+    if (hospGuard.ok) {
+      guard = hospGuard;
+      isHospedagemOnly = true;
+    } else {
+      return guard.response;
+    }
+  }
 
   let body: { equipe_id?: string; senha?: string };
   try {
@@ -37,8 +46,17 @@ export async function POST(
     return NextResponse.json({ error: 'Membro nao encontrado.' }, { status: 404 });
   }
 
-  if (!['operador', 'hospedagem'].includes((equipe as { tipo: string }).tipo)) {
-    return NextResponse.json({ error: 'Apenas operador e hospedagem possuem senha.' }, { status: 400 });
+  const tipoEquipe = (equipe as { tipo: string }).tipo;
+
+  if (isHospedagemOnly && tipoEquipe !== 'checkin_hospedagem') {
+    return NextResponse.json(
+      { error: 'Admin de Hospedagem só pode redefinir senha para integrantes de Check-in de Hospedagem.' },
+      { status: 403 }
+    );
+  }
+
+  if (!['operador', 'hospedagem', 'checkin_hospedagem'].includes(tipoEquipe)) {
+    return NextResponse.json({ error: 'Apenas operador, hospedagem e check-in de hospedagem possuem senha.' }, { status: 400 });
   }
 
   const senhaHash = await bcrypt.hash(senha, 10);
@@ -77,7 +95,7 @@ export async function POST(
     nome: (equipe as { nome?: string | null }).nome || email,
     eventoNome: (evento as { nome?: string } | null)?.nome || 'evento',
     eventoId,
-    funcao: (equipe as { tipo: 'operador' | 'hospedagem' }).tipo,
+    funcao: (equipe as { tipo: any }).tipo,
     origin: getRequestOrigin(request),
     senha,
     redefinicao: true,

@@ -276,6 +276,38 @@ export default function EventosPage() {
     return fetch(input, { ...init, headers });
   }, [getAccessTokenOrThrow]);
 
+  // ── Proteção e Redirecionamento Imediato para Perfis de Hospedagem ──
+  // Usuário com perfil Admin de Hospedagem (ou Check-in Hospedagem) NUNCA vê a listagem geral de eventos
+  useEffect(() => {
+    if (perfil.loading) return;
+
+    if (!perfil.isGlobal && !perfil.isDeptAdmin) {
+      if (perfil.somenteHospedagem) {
+        if (!perfil.eventoIds || perfil.eventoIds.length === 0) {
+          // Sem evento vinculado
+          return;
+        }
+        // Identifica evento pelo vínculo oficial, ordenando por prioridade
+        if (eventos.length > 0) {
+          const evsOrdenados = [...eventos].sort((a, b) => compareEventosPorPrioridade(a, b));
+          router.replace(`/eventos/${evsOrdenados[0].id}?tab=hospedagem`);
+        } else if (perfil.eventoIds.length === 1) {
+          router.replace(`/eventos/${perfil.eventoIds[0]}?tab=hospedagem`);
+        }
+      } else if (perfil.somenteCheckinHospedagem) {
+        if (!perfil.eventoIds || perfil.eventoIds.length === 0) {
+          return;
+        }
+        if (eventos.length > 0) {
+          const evsOrdenados = [...eventos].sort((a, b) => compareEventosPorPrioridade(a, b));
+          router.replace(`/eventos/${evsOrdenados[0].id}/hospedagem/mapa`);
+        } else if (perfil.eventoIds.length === 1) {
+          router.replace(`/eventos/${perfil.eventoIds[0]}/hospedagem/mapa`);
+        }
+      }
+    }
+  }, [perfil, eventos, router]);
+
   const carregarDados = useCallback(async () => {
     try {
       // Busca eventos: filtra pelo dept (isDeptAdmin) ou IDs acessíveis (vinculados)
@@ -655,6 +687,35 @@ export default function EventosPage() {
         <AccessRestricted message="Voce nao tem permissao para acessar o modulo de eventos." />
       </PageLayout>
     );
+  }
+
+  // ── Bloqueio de exibição da listagem geral para perfil Admin de Hospedagem / Check-in Hospedagem ──
+  if (!perfil.isGlobal && !perfil.isDeptAdmin && (perfil.somenteHospedagem || perfil.somenteCheckinHospedagem)) {
+    if (loadingData || !eventos || eventos.length === 0) {
+      if (perfil.eventoIds && perfil.eventoIds.length > 0) {
+        return <LoadingTransition mensagem="Redirecionando para Hospedagem..." subtitulo="SISCOMIEADEPA" fullScreen={true} />;
+      }
+      return (
+        <PageLayout title="Hospedagem" description="" activeMenu="eventos" hideSidebar={true}>
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-12 text-center max-w-md mx-auto my-12">
+            <span className="text-5xl mb-4 block">🏨</span>
+            <p className="text-gray-800 font-bold text-base mb-1">Nenhum evento vinculado</p>
+            <p className="text-xs text-gray-500 mb-6">Você possui perfil de Hospedagem, mas ainda não foi vinculado a nenhum evento oficial ativo.</p>
+            <button
+              onClick={async () => {
+                await supabase.auth.signOut();
+                router.push('/login');
+              }}
+              className="bg-[#0D2B4E] hover:bg-[#081e36] text-white px-5 py-2.5 rounded-xl text-xs font-bold transition"
+            >
+              ← Sair da Conta
+            </button>
+          </div>
+        </PageLayout>
+      );
+    }
+
+    return <LoadingTransition mensagem="Abrindo painel de Hospedagem..." subtitulo="SISCOMIEADEPA" fullScreen={true} />;
   }
 
   // ── Dashboard simplificada para perfil checkin ───────────

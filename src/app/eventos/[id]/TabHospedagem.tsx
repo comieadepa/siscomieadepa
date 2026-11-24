@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Pencil, KeyRound, Mail, PowerOff, Power, Trash2, Link, ExternalLink, Check, Plus, AlertCircle, Phone, User, Lock } from 'lucide-react';
 import { createClient } from '@/lib/supabase-client';
 import { getEquipeSession } from '@/lib/equipe-session';
 import { matchCpf } from '@/lib/cpf';
@@ -139,8 +140,20 @@ const labelCls = 'block text-xs font-semibold text-gray-600 mb-1';
 const thCls = 'text-left text-xs font-semibold text-gray-500 uppercase tracking-wide py-2.5 px-3 bg-gray-50 whitespace-nowrap';
 const tdCls = 'py-2.5 px-3 text-sm text-gray-700 border-t border-gray-50 whitespace-nowrap';
 
+interface EquipeMembro {
+  id: string;
+  evento_id: string;
+  nome: string | null;
+  email: string;
+  tipo: 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem';
+  local_id?: string | null;
+  ativo: boolean;
+  created_at: string;
+  ultimo_acesso_em: string | null;
+}
+
 // ─── Sub-aba ────────────────────────────────────────────────────────────────
-type SubAba = 'hospedagens' | 'alojamentos' | 'relatorios' | 'setores' | 'chegadas' | 'ausentes' | 'painel_ago';
+type SubAba = 'hospedagens' | 'alojamentos' | 'relatorios' | 'setores' | 'chegadas' | 'ausentes' | 'painel_ago' | 'equipe';
 
 // ════════════════════════════════════════════════════════════════════════════
 // COMPONENTE PRINCIPAL
@@ -153,6 +166,8 @@ export default function TabHospedagem({
   nomeSup,
   nomeCampo,
   supabase: _supabase,
+  equipe: equipeProp,
+  onRefreshEquipe,
 }: {
   eventoId: string;
   evento: Evento;
@@ -161,6 +176,8 @@ export default function TabHospedagem({
   nomeSup: (id: string | null) => string;
   nomeCampo: (id: string | null) => string;
   supabase: ReturnType<typeof createClient>;
+  equipe?: EquipeMembro[];
+  onRefreshEquipe?: () => void;
 }) {
   const [subAba, setSubAba] = useState<SubAba>('hospedagens');
 
@@ -892,6 +909,7 @@ export default function TabHospedagem({
             { id: 'setores'    as SubAba, label: '🏗️ Setores' },
             { id: 'painel_ago' as SubAba, label: '🎯 Painel AGO' },
           ] : []),
+          { id: 'equipe' as SubAba, label: '👤 Equipe de Hospedagem' },
         ] as { id: SubAba; label: string }[]).map(t => (
           <button key={t.id} onClick={() => setSubAba(t.id)}
             className={`px-4 py-2 rounded-lg text-xs font-semibold transition whitespace-nowrap flex-shrink-0 ${
@@ -1487,6 +1505,15 @@ export default function TabHospedagem({
           alojamentos={alojamentos}
           configuracoes={evento.configuracoes_ago ?? null}
           exportarCSV={exportarCSV}
+        />
+      )}
+
+      {/* ════════════ SUB-ABA: EQUIPE DE HOSPEDAGEM ═══════════════ */}
+      {subAba === 'equipe' && (
+        <SecaoEquipeHospedagem
+          eventoId={eventoId}
+          equipe={equipeProp ?? []}
+          onRefresh={onRefreshEquipe}
         />
       )}
 
@@ -3808,6 +3835,787 @@ function SecaoPainelAgo({
         </div>
       )}
 
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SEÇÃO: EQUIPE DE HOSPEDAGEM (Check-in de Hospedagem)
+// ════════════════════════════════════════════════════════════════════════════
+function parseNomeTelefone(val: string | null | undefined): { nome: string; telefone: string } {
+  if (!val) return { nome: '', telefone: '' };
+  const parts = val.split(' | ');
+  if (parts.length > 1) {
+    return { nome: parts[0].trim(), telefone: parts[1].trim() };
+  }
+  return { nome: val.trim(), telefone: '' };
+}
+
+function formatNomeTelefone(nome: string, telefone: string): string {
+  const n = nome.trim();
+  const t = telefone.trim();
+  return t ? `${n} | ${t}` : n;
+}
+
+function fmtDataHora(d: string | null | undefined) {
+  if (!d) return '—';
+  try {
+    return new Date(d).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  } catch {
+    return '—';
+  }
+}
+
+function SecaoEquipeHospedagem({
+  eventoId,
+  equipe,
+  onRefresh,
+}: {
+  eventoId: string;
+  equipe: EquipeMembro[];
+  onRefresh?: () => void;
+}) {
+  const [nome, setNome] = useState('');
+  const [telefone, setTelefone] = useState('');
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
+  const [confirmarSenha, setConfirmarSenha] = useState('');
+
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [sucesso, setSucesso] = useState<string | null>(null);
+
+  const [linkCopiado, setLinkCopiado] = useState(false);
+  const [reenviandoId, setReenviandoId] = useState<string | null>(null);
+  const [acaoId, setAcaoId] = useState<string | null>(null);
+
+  // Modais
+  const [editando, setEditando] = useState<EquipeMembro | null>(null);
+  const [editNome, setEditNome] = useState('');
+  const [editTelefone, setEditTelefone] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+
+  const [resetando, setResetando] = useState<EquipeMembro | null>(null);
+  const [novaSenha, setNovaSenha] = useState('');
+  const [confirmarNovaSenha, setConfirmarNovaSenha] = useState('');
+
+  const [removerConfirm, setRemoverConfirm] = useState<EquipeMembro | null>(null);
+  const [removendo, setRemovendo] = useState(false);
+
+  const operadoresHosp = useMemo(() => {
+    return equipe.filter(m => m.tipo === 'checkin_hospedagem');
+  }, [equipe]);
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const mapaUrl = `${origin}/eventos/${eventoId}/hospedagem/mapa`;
+
+  function mostrarErro(msg: string) {
+    setErro(msg);
+    setSucesso(null);
+    setTimeout(() => setErro(null), 6000);
+  }
+
+  function mostrarSucesso(msg: string) {
+    setSucesso(msg);
+    setErro(null);
+    setTimeout(() => setSucesso(null), 5000);
+  }
+
+  async function copiarLink(url: string) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        const input = document.createElement('input');
+        input.value = url;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+      }
+      setLinkCopiado(true);
+      setTimeout(() => setLinkCopiado(false), 3000);
+    } catch {
+      mostrarErro('Não foi possível copiar o link.');
+    }
+  }
+
+  async function cadastrarOperador(e: React.FormEvent) {
+    e.preventDefault();
+    setErro(null);
+    setSucesso(null);
+
+    const n = nome.trim();
+    const em = email.trim().toLowerCase();
+    const tel = telefone.trim();
+
+    if (!n) return mostrarErro('Nome é obrigatório.');
+    if (!em) return mostrarErro('E-mail é obrigatório.');
+    if (senha.length < 8) return mostrarErro('Senha deve ter no mínimo 8 caracteres.');
+    if (senha !== confirmarSenha) return mostrarErro('As senhas não coincidem.');
+
+    setSalvando(true);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/equipe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nome: formatNomeTelefone(n, tel),
+          email: em,
+          funcao: 'checkin_hospedagem',
+          senha,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        mostrarErro(json.error || 'Erro ao cadastrar integrante.');
+        return;
+      }
+
+      setNome('');
+      setTelefone('');
+      setEmail('');
+      setSenha('');
+      setConfirmarSenha('');
+      onRefresh?.();
+      mostrarSucesso(
+        json.email_enviado === false
+          ? 'Integrante de check-in cadastrado com sucesso! (E-mail não disparado)'
+          : 'Integrante de check-in cadastrado e credenciais enviadas por e-mail.'
+      );
+    } catch {
+      mostrarErro('Erro de conexão ao cadastrar integrante.');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  function abrirEdicao(eq: EquipeMembro) {
+    const parsed = parseNomeTelefone(eq.nome);
+    setEditando(eq);
+    setEditNome(parsed.nome);
+    setEditTelefone(parsed.telefone);
+    setEditEmail(eq.email);
+  }
+
+  async function salvarEdicao(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editando) return;
+    setErro(null);
+    setSucesso(null);
+
+    const n = editNome.trim();
+    const em = editEmail.trim().toLowerCase();
+    const tel = editTelefone.trim();
+
+    if (!n) return mostrarErro('Nome é obrigatório.');
+    if (!em) return mostrarErro('E-mail é obrigatório.');
+
+    setSalvando(true);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/equipe`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          equipe_id: editando.id,
+          nome: formatNomeTelefone(n, tel),
+          email: em,
+          funcao: 'checkin_hospedagem',
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        mostrarErro(json.error || 'Erro ao atualizar dados.');
+        return;
+      }
+
+      onRefresh?.();
+      setEditando(null);
+      mostrarSucesso('Integrante de check-in atualizado com sucesso.');
+    } catch {
+      mostrarErro('Erro ao salvar alterações.');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function salvarRedefinicaoSenha(e: React.FormEvent) {
+    e.preventDefault();
+    if (!resetando) return;
+    setErro(null);
+    setSucesso(null);
+
+    if (novaSenha.length < 8) return mostrarErro('A nova senha deve ter no mínimo 8 caracteres.');
+    if (novaSenha !== confirmarNovaSenha) return mostrarErro('As senhas não coincidem.');
+
+    setSalvando(true);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/equipe/senha`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          equipe_id: resetando.id,
+          senha: novaSenha,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        mostrarErro(json.error || 'Erro ao redefinir senha.');
+        return;
+      }
+
+      setResetando(null);
+      setNovaSenha('');
+      setConfirmarNovaSenha('');
+      mostrarSucesso('Senha redefinida com segurança e enviada por e-mail.');
+    } catch {
+      mostrarErro('Erro de conexão ao redefinir senha.');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function alternarStatus(eq: EquipeMembro, novoStatus: boolean) {
+    setAcaoId(eq.id);
+    setErro(null);
+    setSucesso(null);
+
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/equipe`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          equipe_id: eq.id,
+          ativo: novoStatus,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        mostrarErro(json.error || 'Erro ao alterar status de acesso.');
+        return;
+      }
+
+      onRefresh?.();
+      mostrarSucesso(novoStatus ? 'Acesso do operador reativado.' : 'Acesso do operador desativado com sucesso.');
+    } catch {
+      mostrarErro('Erro de conexão ao alterar status.');
+    } finally {
+      setAcaoId(null);
+    }
+  }
+
+  async function reenviarAcesso(eq: EquipeMembro) {
+    setReenviandoId(eq.id);
+    setErro(null);
+    setSucesso(null);
+
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/equipe/acesso`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ equipe_id: eq.id }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        mostrarErro(json.error || 'Erro ao reenviar acesso.');
+        return;
+      }
+
+      mostrarSucesso('Convite/Acesso reenviado por e-mail com sucesso.');
+    } catch {
+      mostrarErro('Erro ao reenviar acesso.');
+    } finally {
+      setReenviandoId(null);
+    }
+  }
+
+  async function excluirOperador() {
+    if (!removerConfirm) return;
+    setRemovendo(true);
+    setErro(null);
+    setSucesso(null);
+
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/equipe`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ equipe_id: removerConfirm.id }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        mostrarErro(json.error || 'Erro ao remover integrante.');
+        return;
+      }
+
+      onRefresh?.();
+      setRemoverConfirm(null);
+      mostrarSucesso('Integrante removido da equipe com sucesso.');
+    } catch {
+      mostrarErro('Erro ao remover integrante.');
+    } finally {
+      setRemovendo(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Alertas */}
+      {erro && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-center justify-between shadow-sm animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={18} className="text-red-500 shrink-0" />
+            <span>{erro}</span>
+          </div>
+          <button onClick={() => setErro(null)} className="text-red-400 hover:text-red-600 font-bold ml-3 text-lg leading-none">×</button>
+        </div>
+      )}
+
+      {sucesso && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl text-sm flex items-center justify-between shadow-sm animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <Check size={18} className="text-emerald-600 shrink-0" />
+            <span>{sucesso}</span>
+          </div>
+          <button onClick={() => setSucesso(null)} className="text-emerald-500 hover:text-emerald-700 font-bold ml-3 text-lg leading-none">×</button>
+        </div>
+      )}
+
+      {/* Card: Link direto de Acesso ao Mapa de Leitos */}
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 md:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-base font-bold text-[#123b63] flex items-center gap-2">
+              <Link size={18} className="text-indigo-600" />
+              Link Oficial do Mapa de Leitos
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Os operadores de Check-in de Hospedagem autenticam com e-mail e senha diretamente nesta URL.
+            </p>
+          </div>
+          {linkCopiado && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 animate-in fade-in">
+              <Check size={14} /> Link copiado!
+            </span>
+          )}
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            readOnly
+            value={mapaUrl}
+            className="flex-1 min-w-0 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs text-gray-700 bg-gray-50 font-mono select-all focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+          />
+          <button
+            type="button"
+            onClick={() => copiarLink(mapaUrl)}
+            className="px-4 py-2.5 rounded-xl text-xs font-bold bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-1.5 shrink-0 shadow-sm"
+          >
+            <Link size={14} /> Copiar Link
+          </button>
+          <a
+            href={mapaUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-4 py-2.5 rounded-xl text-xs font-bold bg-[#123b63] text-white hover:bg-[#0f2a45] transition flex items-center justify-center gap-1.5 shrink-0 shadow-sm"
+          >
+            <ExternalLink size={14} /> Abrir Mapa
+          </a>
+        </div>
+      </div>
+
+      {/* Card: Formulário de Adição */}
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 md:p-6">
+        <div className="mb-4">
+          <h3 className="text-base font-bold text-[#123b63] flex items-center gap-2">
+            <Plus size={18} className="text-emerald-600" />
+            Cadastrar Integrante da Equipe de Check-in
+          </h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            O papel será configurado automaticamente como <strong>Check-in de Hospedagem</strong> com acesso restrito ao mapa deste evento.
+          </p>
+        </div>
+
+        <form onSubmit={cadastrarOperador} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1">
+              <User size={13} className="text-gray-400" /> Nome Completo *
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="Ex: Carlos Oliveira"
+              value={nome}
+              onChange={e => setNome(e.target.value)}
+              className="w-full border border-gray-300 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1">
+              <Phone size={13} className="text-gray-400" /> Telefone / WhatsApp
+            </label>
+            <input
+              type="text"
+              placeholder="(91) 99999-9999"
+              value={telefone}
+              onChange={e => setTelefone(e.target.value)}
+              className="w-full border border-gray-300 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1">
+              <Mail size={13} className="text-gray-400" /> E-mail Oficial *
+            </label>
+            <input
+              type="email"
+              required
+              placeholder="operador@email.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="w-full border border-gray-300 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1">
+              <Lock size={13} className="text-gray-400" /> Senha Inicial *
+            </label>
+            <input
+              type="password"
+              required
+              minLength={8}
+              placeholder="Mínimo 8 dígitos"
+              value={senha}
+              onChange={e => setSenha(e.target.value)}
+              className="w-full border border-gray-300 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+            />
+          </div>
+
+          <div className="sm:col-span-2 lg:col-span-2">
+            <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1">
+              <Lock size={13} className="text-gray-400" /> Confirmar Senha *
+            </label>
+            <input
+              type="password"
+              required
+              minLength={8}
+              placeholder="Repita a mesma senha"
+              value={confirmarSenha}
+              onChange={e => setConfirmarSenha(e.target.value)}
+              className="w-full border border-gray-300 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63] bg-white"
+            />
+          </div>
+
+          <div className="sm:col-span-2 lg:col-span-2 flex items-end">
+            <button
+              type="submit"
+              disabled={salvando}
+              className="w-full bg-[#123b63] text-white py-2.5 px-5 rounded-xl text-sm font-bold hover:bg-[#0f2a45] transition shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {salvando ? 'Cadastrando integrante...' : 'Cadastrar na Equipe de Check-in'}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* Card: Lista de Operadores de Check-in */}
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-bold text-gray-800">Integrantes Cadastrados</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Total de {operadoresHosp.length} {operadoresHosp.length === 1 ? 'operador registrado' : 'operadores registrados'} para acolhimento e acomodação.
+            </p>
+          </div>
+        </div>
+
+        {operadoresHosp.length === 0 ? (
+          <div className="p-10 text-center text-gray-400">
+            <div className="text-4xl mb-2">👤</div>
+            <p className="font-semibold text-gray-600">Nenhum operador de check-in cadastrado ainda.</p>
+            <p className="text-xs text-gray-400 mt-1">Preencha o formulário acima para adicionar os recepcionistas do evento.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wider text-left">
+                  <th className="py-3 px-4">Nome</th>
+                  <th className="py-3 px-4">Telefone</th>
+                  <th className="py-3 px-4">E-mail</th>
+                  <th className="py-3 px-4">Função</th>
+                  <th className="py-3 px-4 text-center">Status</th>
+                  <th className="py-3 px-4">Último Acesso</th>
+                  <th className="py-3 px-4 text-center">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {operadoresHosp.map(op => {
+                  const parsed = parseNomeTelefone(op.nome);
+                  return (
+                    <tr key={op.id} className="hover:bg-gray-50/70 transition">
+                      <td className="py-3 px-4 font-semibold text-gray-800">
+                        {parsed.nome || '—'}
+                      </td>
+                      <td className="py-3 px-4 text-gray-600 font-mono text-xs">
+                        {parsed.telefone || '—'}
+                      </td>
+                      <td className="py-3 px-4 text-gray-600 text-xs">
+                        {op.email}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+                          🛏️ Check-in Hospedagem
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span
+                          className={`inline-block text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                            op.ativo ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                          }`}
+                        >
+                          {op.ativo ? 'Ativo' : 'Desativado'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-xs text-gray-500 whitespace-nowrap">
+                        {fmtDataHora(op.ultimo_acesso_em)}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => abrirEdicao(op)}
+                            title="Editar informações"
+                            className="p-1.5 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 transition border border-sky-200"
+                          >
+                            <Pencil size={14} />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setResetando(op);
+                              setNovaSenha('');
+                              setConfirmarNovaSenha('');
+                            }}
+                            title="Redefinir senha com segurança"
+                            className="p-1.5 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 transition border border-amber-200"
+                          >
+                            <KeyRound size={14} />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => reenviarAcesso(op)}
+                            disabled={reenviandoId === op.id || !op.ativo}
+                            title="Reenviar convite / link de acesso"
+                            className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition border border-emerald-200 disabled:opacity-40"
+                          >
+                            <Mail size={14} />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => alternarStatus(op, !op.ativo)}
+                            disabled={acaoId === op.id}
+                            title={op.ativo ? 'Desativar acesso do operador' : 'Reativar acesso do operador'}
+                            className="p-1.5 rounded-lg bg-gray-50 text-gray-600 hover:bg-gray-100 transition border border-gray-200 disabled:opacity-40"
+                          >
+                            {op.ativo ? <PowerOff size={14} className="text-red-500" /> : <Power size={14} className="text-emerald-600" />}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setRemoverConfirm(op)}
+                            title="Remover integrante"
+                            className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition border border-red-200"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Modal: Edição de Integrante */}
+      {editando && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setEditando(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h3 className="font-bold text-[#123b63] text-base">✏️ Editar Integrante</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Atualize os dados cadastrais do operador de check-in.</p>
+              </div>
+              <button onClick={() => setEditando(null)} className="text-gray-400 hover:text-gray-700 text-xl font-bold leading-none">×</button>
+            </div>
+
+            <form onSubmit={salvarEdicao} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Nome Completo *</label>
+                <input
+                  type="text"
+                  required
+                  value={editNome}
+                  onChange={e => setEditNome(e.target.value)}
+                  className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Telefone / WhatsApp</label>
+                <input
+                  type="text"
+                  placeholder="(91) 99999-9999"
+                  value={editTelefone}
+                  onChange={e => setEditTelefone(e.target.value)}
+                  className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">E-mail *</label>
+                <input
+                  type="email"
+                  required
+                  value={editEmail}
+                  onChange={e => setEditEmail(e.target.value)}
+                  className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditando(null)}
+                  className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-xl text-sm font-semibold hover:bg-gray-50 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={salvando}
+                  className="flex-1 bg-[#123b63] text-white py-2 rounded-xl text-sm font-bold hover:bg-[#0f2a45] transition disabled:opacity-50"
+                >
+                  {salvando ? 'Salvando...' : 'Salvar Alterações'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Redefinição de Senha */}
+      {resetando && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setResetando(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h3 className="font-bold text-[#123b63] text-base">🔑 Redefinir Senha</h3>
+                <p className="text-xs text-gray-500 mt-0.5">{resetando.email}</p>
+              </div>
+              <button onClick={() => setResetando(null)} className="text-gray-400 hover:text-gray-700 text-xl font-bold leading-none">×</button>
+            </div>
+
+            <form onSubmit={salvarRedefinicaoSenha} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Nova Senha *</label>
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  placeholder="Mínimo 8 caracteres"
+                  value={novaSenha}
+                  onChange={e => setNovaSenha(e.target.value)}
+                  className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Confirmar Nova Senha *</label>
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  placeholder="Repita a nova senha"
+                  value={confirmarNovaSenha}
+                  onChange={e => setConfirmarNovaSenha(e.target.value)}
+                  className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#123b63]"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setResetando(null)}
+                  className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-xl text-sm font-semibold hover:bg-gray-50 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={salvando}
+                  className="flex-1 bg-amber-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-amber-700 transition disabled:opacity-50"
+                >
+                  {salvando ? 'Redefinindo...' : 'Atualizar Senha'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Confirmação de Exclusão */}
+      {removerConfirm && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setRemoverConfirm(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <h3 className="text-base font-bold text-red-600 flex items-center gap-1.5">
+                  <Trash2 size={18} /> Remover Integrante
+                </h3>
+                <p className="text-xs text-gray-500 mt-1">O acesso de check-in deste operador será revogado imediatamente.</p>
+              </div>
+              <button onClick={() => setRemoverConfirm(null)} className="text-gray-400 hover:text-gray-700 text-xl font-bold leading-none">×</button>
+            </div>
+
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm text-gray-700 my-4">
+              <p className="font-bold">{parseNomeTelefone(removerConfirm.nome).nome || removerConfirm.email}</p>
+              <p className="text-xs text-gray-500">{removerConfirm.email}</p>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setRemoverConfirm(null)}
+                className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-xl text-sm font-semibold hover:bg-gray-50 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={excluirOperador}
+                disabled={removendo}
+                className="flex-1 bg-red-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-red-700 transition disabled:opacity-50"
+              >
+                {removendo ? 'Removendo...' : 'Sim, Remover'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

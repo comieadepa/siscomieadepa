@@ -61,6 +61,8 @@ export interface EventosPerfil {
   podeMoverInscricao: boolean;
   somenteCheckin: boolean;
   somenteRefeitorio: boolean;
+  somenteHospedagem: boolean;
+  somenteCheckinHospedagem: boolean;
   tabsPermitidas: TabEventoId[];
   tabsPermitidasParaEvento: (eventoId: string) => TabEventoId[];
   /** Verifica se o usuário tem acesso a um evento específico */
@@ -302,6 +304,8 @@ export function useEventosPerfil(): EventosPerfil {
     podeMoverInscricao: perms.podeMoverInscricao,
     somenteCheckin: perms.somenteCheckin,
     somenteRefeitorio: perms.somenteRefeitorio,
+    somenteHospedagem: perms.somenteHospedagem,
+    somenteCheckinHospedagem: perms.somenteCheckinHospedagem,
     tabsPermitidas,
     tabsPermitidasParaEvento,
     podeAcessarEvento,

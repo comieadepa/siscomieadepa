@@ -203,6 +203,7 @@ export type EventoPermissoes = {
   somenteCheckin: boolean;
   somenteRefeitorio: boolean;
   somenteCheckinHospedagem: boolean;
+  somenteHospedagem: boolean;
 };
 
 export function isEventoRole(value: string | null | undefined): value is EventoRole {
@@ -302,5 +303,6 @@ export function resolveEventoPermissoes(opts: {
     somenteCheckin: role === 'checkin',
     somenteRefeitorio: role === 'checkin_refeitorio',
     somenteCheckinHospedagem: role === 'checkin_hospedagem',
+    somenteHospedagem: role === 'hospedagem',
   };
 }

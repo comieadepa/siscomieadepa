@@ -597,6 +597,10 @@ export default function GerenciarEventoPage() {
             return;
           }
         }
+        if (roleOperacional === 'checkin_hospedagem') {
+          router.replace(`/eventos/${id}/hospedagem/mapa`);
+          return;
+        }
       }
 
       // Gate de acesso: bloqueia acesso direto por URL para usuários sem permissão
@@ -635,7 +639,7 @@ export default function GerenciarEventoPage() {
     Promise.all([
       fetchEvento(),
       (permissaoNesseEvento === 'checkin_refeitorio') ? Promise.resolve() : fetchInscricoes(),
-      (permissaoNesseEvento === 'hospedagem' || permissaoNesseEvento === 'checkin_refeitorio' || permissaoNesseEvento === 'checkin_hospedagem') ? Promise.resolve() : fetchEquipe(),
+      (permissaoNesseEvento === 'checkin_refeitorio' || permissaoNesseEvento === 'checkin_hospedagem') ? Promise.resolve() : fetchEquipe(),
       authenticatedFetch('/api/v1/estrutura').then(async (res) => {
         if (!res.ok) return;
         const estrutura = await res.json().catch(() => null as any);
@@ -776,6 +780,22 @@ export default function GerenciarEventoPage() {
 
           {/* Botões de ação — agrupados à direita */}
           <div className="flex flex-wrap gap-2 px-5 pt-2 pb-5 md:px-6 md:pb-6 border-t border-gray-100 lg:border-t-0 lg:mt-0 lg:pt-6 lg:pb-0 lg:pr-6 lg:pl-0 lg:flex-col lg:flex-nowrap lg:items-end lg:self-start">
+            {isHospedagemOperador && (
+              <button
+                onClick={async () => {
+                  try {
+                    const { clearEquipeSession } = await import('@/lib/equipe-session');
+                    clearEquipeSession();
+                  } catch { /* noop */ }
+                  await supabase.auth.signOut();
+                  router.push('/login');
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-sm transition"
+              >
+                <span>🚪</span>
+                <span>Sair da Sessão</span>
+              </button>
+            )}
             {!isHospedagemOperador && (
               <>
                 <button
@@ -1034,7 +1054,7 @@ export default function GerenciarEventoPage() {
         <TabComunicacao eventoId={id} supabase={supabase} />
       )}
       {activeTab === 'hospedagem' && (
-        <TabHospedagem eventoId={id} evento={evento} supervisoes={supervisoes} campos={campos} nomeSup={nomeSup} nomeCampo={nomeCampo} supabase={supabase} />
+        <TabHospedagem eventoId={id} evento={evento} supervisoes={supervisoes} campos={campos} nomeSup={nomeSup} nomeCampo={nomeCampo} supabase={supabase} equipe={equipe} onRefreshEquipe={fetchEquipe} />
       )}
       {activeTab === 'equipe' && (
         <TabEquipe
