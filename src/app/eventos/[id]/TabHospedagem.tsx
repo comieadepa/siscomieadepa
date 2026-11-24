@@ -42,6 +42,9 @@ interface Alojamento {
   vagas_livres?: number;
   inferiores_livres?: number;
   superiores_livres?: number;
+  total_leitos_fisicos?: number;
+  leitos_fisicos_livres?: number;
+  ocupadas?: number;
 }
 
 interface Hospedagem {
@@ -2587,10 +2590,15 @@ function SecaoAlojamentos({
                 </div>
 
                 <div className="flex gap-1.5 text-xs text-gray-500 mb-3 flex-wrap">
-                  <span className="bg-sky-50 text-sky-700 px-2 py-0.5 rounded-full">⬇ {aloj.camas_inferiores || 0} inf.</span>
-                  <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">⬆ {aloj.camas_superiores || 0} sup.</span>
+                  <span className="bg-sky-50 text-sky-700 px-2 py-0.5 rounded-full font-medium">⬇ {aloj.camas_inferiores || 0} inf.</span>
+                  <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">⬆ {aloj.camas_superiores || 0} sup.</span>
                   {(aloj.colchonetes ?? 0) > 0 && (
-                    <span className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">🟨 {aloj.colchonetes} colch.</span>
+                    <span className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-medium">🟨 {aloj.colchonetes} colch.</span>
+                  )}
+                  {aloj.total_leitos_fisicos !== undefined && (
+                    <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-medium" title="Leitos físicos cadastrados no inventário do banco">
+                      🛏️ {aloj.total_leitos_fisicos} físicos ({aloj.leitos_fisicos_livres ?? 0} livres)
+                    </span>
                   )}
                 </div>
 

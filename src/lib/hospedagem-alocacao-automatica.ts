@@ -304,10 +304,10 @@ export async function alocarLeitoParaInscricaoAGO(
     }
   }
 
-  // 4. Busca os alojamentos ativos (para eventos AGO, consome exclusivamente a projeção oficial sincronizada)
+  // 4. Busca os alojamentos ativos (para eventos AGO, consome exclusivamente a projeção oficial sincronizada com a SSOT)
   let queryAloj = supabase
     .from('evento_alojamentos')
-    .select('id, nome, publico, sexo, total_vagas, camas_inferiores, camas_superiores, ativo')
+    .select('id, setor_key, nome, publico, sexo, total_vagas, camas_inferiores, camas_superiores, colchonetes, ativo')
     .eq('evento_id', evento.id)
     .eq('ativo', true);
 
@@ -323,6 +323,40 @@ export async function alocarLeitoParaInscricaoAGO(
     await colocarEmListaEspera(supabase, hospedagem.id, prioridade);
     return { success: false, status: 'lista_espera', motivo: msg };
   }
+
+  // Se houver configuracoes_ago.setores (SSOT oficial), alinha as capacidades nominais diretamente da SSOT
+  const setoresSSOT = (evento?.configuracoes_ago?.setores as any[] | undefined) ?? [];
+  const alojamentosAjustados = alojamentosRaw.map((a: any) => {
+    let totalVagasOficial = Number(a.total_vagas || 0);
+    let infOficial = Number(a.camas_inferiores || 0);
+    let supOficial = Number(a.camas_superiores || 0);
+    let colchOficial = Number(a.colchonetes || 0);
+
+    const s = setoresSSOT.find((set: any) =>
+      set.id === a.setor_key ||
+      (set.nome && a.nome && set.nome.trim().toUpperCase() === a.nome.trim().toUpperCase())
+    );
+
+    if (s) {
+      const matchCol = (s.observacoes || '').match(/(\d+)\s*(?:leitos são colchonetes|colchonetes)/i);
+      colchOficial = s.quantidade_colchonetes !== undefined
+        ? Number(s.quantidade_colchonetes)
+        : (matchCol ? parseInt(matchCol[1], 10) : 0);
+      totalVagasOficial = Number(s.quantidade_leitos || 0);
+      infOficial = Number(s.quantidade_leitos_inferiores || 0);
+      supOficial = s.quantidade_leitos_superiores !== undefined
+        ? Number(s.quantidade_leitos_superiores)
+        : Math.max(0, totalVagasOficial - infOficial - colchOficial);
+    }
+
+    return {
+      ...a,
+      total_vagas: totalVagasOficial,
+      camas_inferiores: infOficial,
+      camas_superiores: supOficial,
+      colchonetes: colchOficial,
+    };
+  });
 
   // 5. Conta ocupantes atuais
   let ocupantesDb: any[] = [];
@@ -340,7 +374,7 @@ export async function alocarLeitoParaInscricaoAGO(
   }
 
   const vagasMap: Record<string, { total: number; inferiores: number; superiores: number; colchonetes: number }> = {};
-  for (const aloj of alojamentosRaw) {
+  for (const aloj of alojamentosAjustados) {
     const conf = (ocupantesDb ?? []).filter((c: any) => c.alojamento_id === aloj.id);
     vagasMap[aloj.id] = {
       total:       Math.max(0, aloj.total_vagas - conf.length),
@@ -350,7 +384,7 @@ export async function alocarLeitoParaInscricaoAGO(
     };
   }
 
-  const alojamentos = alojamentosRaw.map((a: any) => ({
+  const alojamentos = alojamentosAjustados.map((a: any) => ({
     ...a,
     evento_id:          evento.id,
     vagas_livres:       vagasMap[a.id]?.total       ?? 0,

@@ -17,6 +17,8 @@ interface Alojamento {
   colchonetes?: number;
   ativo: boolean;
   total_leitos_fisicos?: number;
+  vagas_livres?: number;
+  ocupadas?: number;
 }
 
 interface ParticipanteInfo {
@@ -354,6 +356,8 @@ export default function MapaCheckinMobilePage() {
         colchonetes: a.colchonetes,
         ativo: Boolean(a.ativo),
         total_leitos_fisicos: countsMap.get(a.id) || 0,
+        vagas_livres: a.vagas_livres !== undefined ? Number(a.vagas_livres) : Math.max(0, a.total_vagas - (countsMap.get(a.id) || 0)),
+        ocupadas: a.ocupadas !== undefined ? Number(a.ocupadas) : (countsMap.get(a.id) || 0),
       }));
 
       setAlojamentos(alojsFormatados);
@@ -391,16 +395,36 @@ export default function MapaCheckinMobilePage() {
     return todosLeitos.filter(l => l.alojamento_id === alojamentoAtivo.id);
   }, [todosLeitos, alojamentoAtivo]);
 
-  // 5. Estatísticas exclusivas dos leitos físicos cadastrados no alojamento ativo
+  // 5. Estatísticas exclusivas do alojamento ativo
   const statsAlojamento = useMemo(() => {
     const operacionais = leitosDoAlojamentoAtivo.filter(l => l.estadoCheckin !== 'indisponivel').length;
-    const livres = leitosDoAlojamentoAtivo.filter(l => l.estadoCheckin === 'livre').length;
+    const ocupadosReais = leitosDoAlojamentoAtivo.filter(l => l.ocupado && l.inscricao_id).length;
     const reservados = leitosDoAlojamentoAtivo.filter(l => l.estadoCheckin === 'reservado').length;
     const entradas = leitosDoAlojamentoAtivo.filter(l => l.estadoCheckin === 'entrada').length;
     const saidas = leitosDoAlojamentoAtivo.filter(l => l.estadoCheckin === 'saida').length;
     const indisponiveis = leitosDoAlojamentoAtivo.filter(l => l.estadoCheckin === 'indisponivel').length;
-    return { total: operacionais, livres, reservados, entradas, saidas, indisponiveis, totalFisico: leitosDoAlojamentoAtivo.length };
-  }, [leitosDoAlojamentoAtivo]);
+    const totalFisico = leitosDoAlojamentoAtivo.length;
+
+    // Capacidade oficial SSOT do alojamento ativo
+    const capOficial = alojamentoAtivo?.total_vagas ?? operacionais;
+    // Vagas livres oficiais = capacidade oficial menos ocupados reais
+    const vagasLivresOficiais = alojamentoAtivo?.vagas_livres !== undefined
+      ? alojamentoAtivo.vagas_livres
+      : Math.max(0, capOficial - ocupadosReais);
+    const leitosLivresFisicos = leitosDoAlojamentoAtivo.filter(l => l.estadoCheckin === 'livre').length;
+
+    return {
+      total: capOficial,
+      livres: vagasLivresOficiais,
+      reservados,
+      entradas,
+      saidas,
+      indisponiveis,
+      totalFisico,
+      ocupadosReais,
+      leitosLivresFisicos,
+    };
+  }, [leitosDoAlojamentoAtivo, alojamentoAtivo]);
 
   // 6. Filtragem de Leitos na tela mobile
   const leitosFiltrados = useMemo(() => {
@@ -626,7 +650,7 @@ export default function MapaCheckinMobilePage() {
             ) : (
               alojamentos.map(aloj => (
                 <option key={aloj.id} value={aloj.id}>
-                  {aloj.nome} ({aloj.total_leitos_fisicos ?? 0} leitos físicos cadastrados)
+                  {aloj.nome} — {aloj.total_vagas} vagas oficiais ({aloj.vagas_livres ?? 0} livres) · {aloj.total_leitos_fisicos ?? 0} físicos
                 </option>
               ))
             )}
@@ -640,9 +664,9 @@ export default function MapaCheckinMobilePage() {
       {/* ── Resumo Rápido & Legenda de Cores (Clicáveis como filtro) ── */}
       <section className="bg-white px-4 py-3 border-b border-gray-200 space-y-2.5">
         <div className="flex items-center justify-between text-xs font-bold text-gray-700">
-          <span>{alojamentoAtivo?.nome ?? 'Selecione o alojamento'}</span>
+          <span>{alojamentoAtivo?.nome ?? 'Selecione o alojamento'} — {statsAlojamento.total} vagas oficiais</span>
           <span className="text-gray-500 text-[11px] font-medium">
-            {statsAlojamento.total} leitos físicos cadastrados
+            Inventário: {statsAlojamento.totalFisico} físicos cadastrados ({statsAlojamento.leitosLivresFisicos} livres)
           </span>
         </div>
 
@@ -760,7 +784,12 @@ export default function MapaCheckinMobilePage() {
         ) : leitosFiltrados.length === 0 ? (
           <div className="text-center py-16 text-gray-400 space-y-2">
             <div className="text-3xl">🛏️</div>
-            <p className="text-xs font-medium">Nenhum leito encontrado com os filtros atuais.</p>
+            <p className="text-xs font-bold text-gray-600">Nenhum leito físico cadastrado com este filtro.</p>
+            {filtroEstado === 'livre' && statsAlojamento.livres > statsAlojamento.leitosLivresFisicos && (
+              <p className="text-[11px] text-sky-700 max-w-xs mx-auto">
+                Existem <strong>{statsAlojamento.livres} vagas oficiais disponíveis</strong> neste setor (capacidade nominal SSOT), mas apenas <strong>{statsAlojamento.leitosLivresFisicos} leito(s) físico(s)</strong> já cadastrado(s) no banco.
+              </p>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">

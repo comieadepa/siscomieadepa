@@ -26,6 +26,17 @@ export async function GET(
   const guard = await requireEventoPermission(_req, eventoId, 'hospedagem_checkin');
   if (!guard.ok) return guard.response;
   const supabase = guard.ctx.supabaseAdmin;
+
+  // Busca configurações AGO para obter a SSOT oficial de setores se for evento AGO
+  const { data: evento } = await supabase
+    .from('eventos')
+    .select('departamento, configuracoes_ago')
+    .eq('id', eventoId)
+    .single();
+
+  const cfg = evento?.configuracoes_ago as Record<string, unknown> | null;
+  const setoresSSOT = (cfg?.setores as any[] | undefined) ?? [];
+
   const { data, error } = await supabase
     .from('evento_alojamentos')
     .select('id,setor_key,origem,nome,publico,sexo,total_vagas,camas_inferiores,camas_superiores,colchonetes,ativo,created_at')
@@ -47,6 +58,17 @@ export async function GET(
     .select('alojamento_id, tipo_cama')
     .eq('evento_id', eventoId)
     .in('status', ['alocada', 'confirmada', 'checkin_realizado']);
+
+  // Contagem total de leitos físicos cadastrados no inventário do banco
+  const { data: todosLeitosFisicos } = await supabase
+    .from('evento_hospedagem_leitos')
+    .select('id, alojamento_id')
+    .eq('evento_id', eventoId);
+
+  const countsFisicos = new Map<string, number>();
+  (todosLeitosFisicos ?? []).forEach(l => {
+    countsFisicos.set(l.alojamento_id, (countsFisicos.get(l.alojamento_id) || 0) + 1);
+  });
 
   const ocupadosPorAlojamento: Record<string, { total: number; inferiores: number; superiores: number; colchonetes: number }> = {};
 
@@ -73,19 +95,48 @@ export async function GET(
   }
 
   const result = (data ?? []).map(a => {
+    let totalVagasOficial = a.total_vagas;
+    let infOficial = a.camas_inferiores;
+    let supOficial = a.camas_superiores;
+    let colchOficial = Number(a.colchonetes ?? 0);
+
+    // Se houver configuração na SSOT oficial, prioriza estritamente os quantitativos oficiais
+    const setorSSOT = setoresSSOT.find((s: any) =>
+      s.id === a.setor_key ||
+      (s.nome && a.nome && s.nome.trim().toUpperCase() === a.nome.trim().toUpperCase())
+    );
+
+    if (setorSSOT) {
+      const matchCol = (setorSSOT.observacoes || '').match(/(\d+)\s*(?:leitos são colchonetes|colchonetes)/i);
+      colchOficial = setorSSOT.quantidade_colchonetes !== undefined
+        ? Number(setorSSOT.quantidade_colchonetes)
+        : (matchCol ? parseInt(matchCol[1], 10) : 0);
+      totalVagasOficial = Number(setorSSOT.quantidade_leitos || 0);
+      infOficial = Number(setorSSOT.quantidade_leitos_inferiores || 0);
+      supOficial = setorSSOT.quantidade_leitos_superiores !== undefined
+        ? Number(setorSSOT.quantidade_leitos_superiores)
+        : Math.max(0, totalVagasOficial - infOficial - colchOficial);
+    }
+
     const oc = ocupadosPorAlojamento[a.id] ?? { total: 0, inferiores: 0, superiores: 0, colchonetes: 0 };
-    const colchonetesTotal = Number(a.colchonetes ?? 0);
+    const totalFisico = countsFisicos.get(a.id) || 0;
+
     return {
       ...a,
-      colchonetes:        colchonetesTotal,
+      total_vagas:        totalVagasOficial,
+      camas_inferiores:   infOficial,
+      camas_superiores:   supOficial,
+      colchonetes:        colchOficial,
       ocupadas:           oc.total,
       inferiores_usadas:  oc.inferiores,
       superiores_usadas:  oc.superiores,
       colchonetes_usados: oc.colchonetes,
-      vagas_livres:       Math.max(0, a.total_vagas - oc.total),
-      inferiores_livres:  Math.max(0, a.camas_inferiores - oc.inferiores),
-      superiores_livres:  Math.max(0, a.camas_superiores - oc.superiores),
-      colchonetes_livres: Math.max(0, colchonetesTotal - oc.colchonetes),
+      vagas_livres:       Math.max(0, totalVagasOficial - oc.total),
+      inferiores_livres:  Math.max(0, infOficial - oc.inferiores),
+      superiores_livres:  Math.max(0, supOficial - oc.superiores),
+      colchonetes_livres: Math.max(0, colchOficial - oc.colchonetes),
+      total_leitos_fisicos: totalFisico,
+      leitos_fisicos_livres: Math.max(0, totalFisico - oc.total),
     };
   });
 
