@@ -29,6 +29,10 @@ interface ParticipanteInfo {
   status_pagamento?: string | null;
   supervisao_id?: string | null;
   campo_id?: string | null;
+  hosp_possui_comorbidade?: boolean;
+  hosp_descricao_comorbidade?: string | null;
+  hosp_necessidade_especial?: boolean;
+  hosp_descricao_necessidade?: string | null;
 }
 
 interface HospedagemInfo {
@@ -88,7 +92,7 @@ export default function MapaCheckinMobilePage() {
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
 
   // Filtros de visualização mobile
-  const [filtroEstado, setFiltroEstado] = useState<'todos' | 'livre' | 'reservado' | 'entrada' | 'saida'>('todos');
+  const [filtroEstado, setFiltroEstado] = useState<'todos' | 'livre' | 'reservado' | 'entrada' | 'saida' | 'comorbidade'>('todos');
   const [filtroPosicao, setFiltroPosicao] = useState<'todas' | 'inferior' | 'superior' | 'colchonete'>('todas');
   const [buscaTermo, setBuscaTermo] = useState('');
 
@@ -404,6 +408,7 @@ export default function MapaCheckinMobilePage() {
     const saidas = leitosDoAlojamentoAtivo.filter(l => l.estadoCheckin === 'saida').length;
     const indisponiveis = leitosDoAlojamentoAtivo.filter(l => l.estadoCheckin === 'indisponivel').length;
     const totalFisico = leitosDoAlojamentoAtivo.length;
+    const comorbidades = leitosDoAlojamentoAtivo.filter(l => Boolean(l.ocupado && l.participante?.hosp_possui_comorbidade)).length;
 
     // Capacidade oficial SSOT do alojamento ativo
     const capOficial = alojamentoAtivo?.total_vagas ?? operacionais;
@@ -423,6 +428,7 @@ export default function MapaCheckinMobilePage() {
       totalFisico,
       ocupadosReais,
       leitosLivresFisicos,
+      comorbidades,
     };
   }, [leitosDoAlojamentoAtivo, alojamentoAtivo]);
 
@@ -430,7 +436,11 @@ export default function MapaCheckinMobilePage() {
   const leitosFiltrados = useMemo(() => {
     return leitosDoAlojamentoAtivo.filter(l => {
       // Filtro por Estado (Cor)
-      if (filtroEstado !== 'todos' && l.estadoCheckin !== filtroEstado) return false;
+      if (filtroEstado === 'comorbidade') {
+        if (!Boolean(l.ocupado && l.participante?.hosp_possui_comorbidade)) return false;
+      } else if (filtroEstado !== 'todos' && l.estadoCheckin !== filtroEstado) {
+        return false;
+      }
 
       // Filtro por Posição
       if (filtroPosicao === 'inferior' && l.posicao !== 'inferior') return false;
@@ -671,49 +681,63 @@ export default function MapaCheckinMobilePage() {
         </div>
 
         {/* Grade de Legenda com contadores reais */}
-        <div className="grid grid-cols-4 gap-1.5">
+        <div className="grid grid-cols-5 gap-1.5">
           {/* Branco: Livre */}
           <button
             onClick={() => setFiltroEstado(prev => prev === 'livre' ? 'todos' : 'livre')}
-            className={`p-2 rounded-xl text-center border transition flex flex-col items-center justify-center ${
+            className={`p-1.5 sm:p-2 rounded-xl text-center border transition flex flex-col items-center justify-center ${
               filtroEstado === 'livre' ? 'ring-2 ring-blue-500 bg-gray-50' : 'bg-white hover:bg-gray-50'
             } border-gray-300 text-gray-800`}
           >
-            <span className="text-[10px] uppercase font-bold text-gray-400">⚪ Livre</span>
-            <span className="text-base font-black text-gray-700">{statsAlojamento.livres}</span>
+            <span className="text-[9px] uppercase font-bold text-gray-500">⚪ Livre</span>
+            <span className="text-sm sm:text-base font-black text-gray-700">{statsAlojamento.livres}</span>
           </button>
 
           {/* Azul Escuro: Reservado sem entrada */}
           <button
             onClick={() => setFiltroEstado(prev => prev === 'reservado' ? 'todos' : 'reservado')}
-            className={`p-2 rounded-xl text-center border transition flex flex-col items-center justify-center ${
+            className={`p-1.5 sm:p-2 rounded-xl text-center border transition flex flex-col items-center justify-center ${
               filtroEstado === 'reservado' ? 'ring-2 ring-yellow-400' : ''
             } bg-[#0D2B4E] border-[#0D2B4E] text-white`}
           >
-            <span className="text-[10px] uppercase font-bold text-blue-200">🔵 Reservado</span>
-            <span className="text-base font-black text-white">{statsAlojamento.reservados}</span>
+            <span className="text-[9px] uppercase font-bold text-blue-200">🔵 Reserv.</span>
+            <span className="text-sm sm:text-base font-black text-white">{statsAlojamento.reservados}</span>
           </button>
 
           {/* Verde: Entrada Registrada */}
           <button
             onClick={() => setFiltroEstado(prev => prev === 'entrada' ? 'todos' : 'entrada')}
-            className={`p-2 rounded-xl text-center border transition flex flex-col items-center justify-center ${
+            className={`p-1.5 sm:p-2 rounded-xl text-center border transition flex flex-col items-center justify-center ${
               filtroEstado === 'entrada' ? 'ring-2 ring-blue-500' : ''
             } bg-emerald-600 border-emerald-600 text-white`}
           >
-            <span className="text-[10px] uppercase font-bold text-emerald-100">🟢 Entrada</span>
-            <span className="text-base font-black text-white">{statsAlojamento.entradas}</span>
+            <span className="text-[9px] uppercase font-bold text-emerald-100">🟢 Entrada</span>
+            <span className="text-sm sm:text-base font-black text-white">{statsAlojamento.entradas}</span>
           </button>
 
-          {/* Âmbar/Vermelho: Saída Registrada */}
+          {/* Âmbar: Saída Registrada */}
           <button
             onClick={() => setFiltroEstado(prev => prev === 'saida' ? 'todos' : 'saida')}
-            className={`p-2 rounded-xl text-center border transition flex flex-col items-center justify-center ${
+            className={`p-1.5 sm:p-2 rounded-xl text-center border transition flex flex-col items-center justify-center ${
               filtroEstado === 'saida' ? 'ring-2 ring-blue-500' : ''
             } bg-amber-700 border-amber-700 text-white`}
           >
-            <span className="text-[10px] uppercase font-bold text-amber-200">🔴 Saída</span>
-            <span className="text-base font-black text-white">{statsAlojamento.saidas}</span>
+            <span className="text-[9px] uppercase font-bold text-amber-200">🟠 Saída</span>
+            <span className="text-sm sm:text-base font-black text-white">{statsAlojamento.saidas}</span>
+          </button>
+
+          {/* Vermelho: Comorbidade Declarada (Atenção Acolhimento) */}
+          <button
+            onClick={() => setFiltroEstado(prev => prev === 'comorbidade' ? 'todos' : 'comorbidade')}
+            title="Participantes com comorbidade declarada (Atenção Acolhimento)"
+            className={`p-1.5 sm:p-2 rounded-xl text-center border transition flex flex-col items-center justify-center ${
+              filtroEstado === 'comorbidade' ? 'ring-2 ring-yellow-400 bg-red-700' : 'bg-red-600 hover:bg-red-700'
+            } border-red-700 text-white shadow-sm`}
+          >
+            <span className="text-[9px] uppercase font-black text-red-100 flex items-center gap-0.5">
+              🔴 Atenção
+            </span>
+            <span className="text-sm sm:text-base font-black text-white">{statsAlojamento.comorbidades}</span>
           </button>
         </div>
 
@@ -794,11 +818,17 @@ export default function MapaCheckinMobilePage() {
         ) : (
           <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
             {leitosFiltrados.map(leito => {
+              // Comorbidade declarada tem prioridade visual vermelha para equipe de acolhimento
+              const temComorbidade = Boolean(leito.ocupado && leito.participante?.hosp_possui_comorbidade);
+
               // Estilo do quadrado por estado real
               let cardStyle = '';
               let badgePos = '';
 
-              if (leito.estadoCheckin === 'indisponivel') {
+              if (temComorbidade) {
+                // Card Vermelho para destacar atenção especial da equipe de acolhimento
+                cardStyle = 'bg-red-600 border-2 border-red-700 text-white shadow-md active:bg-red-700 ring-2 ring-red-400/50';
+              } else if (leito.estadoCheckin === 'indisponivel') {
                 cardStyle = 'bg-gray-100 border-2 border-dashed border-gray-300 text-gray-400 shadow-none opacity-60';
               } else if (leito.estadoCheckin === 'livre') {
                 cardStyle = 'bg-white border-2 border-gray-300 text-gray-800 shadow-sm active:bg-gray-100';
@@ -827,7 +857,12 @@ export default function MapaCheckinMobilePage() {
                   onClick={() => setLeitoSelecionado(leito)}
                   className={`min-h-[68px] rounded-xl flex flex-col items-center justify-between p-1.5 transition transform active:scale-95 ${cardStyle}`}
                 >
-                  <span className="text-[9px] font-black tracking-tight opacity-90">{badgePos}</span>
+                  <div className="w-full flex items-center justify-between px-0.5">
+                    <span className="text-[9px] font-black tracking-tight opacity-90">{badgePos}</span>
+                    {temComorbidade && (
+                      <span className="text-[10px] leading-none" title="Comorbidade declarada">❤️</span>
+                    )}
+                  </div>
                   <span className="text-lg font-black leading-none">{leito.numero}</span>
                   <span className="text-[8px] truncate max-w-full font-bold opacity-80">
                     {leito.estadoCheckin === 'indisponivel'
@@ -860,7 +895,9 @@ export default function MapaCheckinMobilePage() {
               <div className="flex items-center gap-2.5">
                 <div
                   className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm text-white ${
-                    leitoSelecionado.estadoCheckin === 'livre'
+                    Boolean(leitoSelecionado.ocupado && leitoSelecionado.participante?.hosp_possui_comorbidade)
+                      ? 'bg-red-600 shadow-md ring-2 ring-red-300'
+                      : leitoSelecionado.estadoCheckin === 'livre'
                       ? 'bg-gray-400'
                       : leitoSelecionado.estadoCheckin === 'reservado'
                       ? 'bg-[#0D2B4E]'
@@ -872,9 +909,16 @@ export default function MapaCheckinMobilePage() {
                   {leitoSelecionado.numero}
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-gray-900 leading-tight">
-                    Leito {leitoSelecionado.numero} ({leitoSelecionado.posicao.toUpperCase()})
-                  </h3>
+                  <div className="flex items-center gap-1.5">
+                    <h3 className="text-sm font-black text-gray-900 leading-tight">
+                      Leito {leitoSelecionado.numero} ({leitoSelecionado.posicao.toUpperCase()})
+                    </h3>
+                    {Boolean(leitoSelecionado.ocupado && leitoSelecionado.participante?.hosp_possui_comorbidade) && (
+                      <span className="bg-red-100 text-red-800 text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wide border border-red-200">
+                        Atenção
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[11px] text-gray-500">{alojamentoAtivo?.nome}</p>
                 </div>
               </div>
@@ -928,6 +972,30 @@ export default function MapaCheckinMobilePage() {
 
                 {/* Dados do Participante */}
                 <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200 space-y-2 text-xs">
+                  {/* Banner de Atenção Especial para Equipe de Acolhimento se tiver comorbidade */}
+                  {Boolean(leitoSelecionado.participante?.hosp_possui_comorbidade) && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2.5 text-red-950 mb-2">
+                      <span className="text-xl leading-none">🚨</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-red-700 block">
+                          Atenção Especial — Equipe de Acolhimento
+                        </span>
+                        <p className="text-xs font-bold text-red-900 mt-0.5">
+                          Comorbidade declarada:{' '}
+                          <span className="font-black underline">
+                            {leitoSelecionado.participante?.hosp_descricao_comorbidade || 'Sim (não detalhada)'}
+                          </span>
+                        </p>
+                        {leitoSelecionado.participante?.hosp_necessidade_especial && (
+                          <p className="text-[11px] font-semibold text-red-800 mt-1">
+                            Necessidade especial:{' '}
+                            {leitoSelecionado.participante?.hosp_descricao_necessidade || 'Sim'}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   <div>
                     <span className="text-gray-400 font-bold uppercase text-[10px] block">Nome do Participante</span>
                     <strong className="text-sm text-gray-900 font-black">

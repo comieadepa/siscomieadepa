@@ -28,7 +28,7 @@ export async function GET(
       alojamento_id,
       evento_alojamentos ( id, nome, publico ),
       inscricao_id,
-      evento_inscricoes ( id, nome_inscrito, cpf, tipo_inscricao, status_pagamento )
+      evento_inscricoes ( id, nome_inscrito, cpf, tipo_inscricao, status_pagamento, hosp_possui_comorbidade, hosp_descricao_comorbidade, hosp_necessidade_especial, hosp_descricao_necessidade )
     `)
     .eq('evento_id', eventoId)
     .order('alojamento_id', { ascending: true })
