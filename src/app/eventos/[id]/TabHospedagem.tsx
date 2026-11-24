@@ -1037,9 +1037,9 @@ export default function TabHospedagem({
 
             {/* Linha 1: Ações Principais e Menu Secundário Administrativo */}
             <div className="flex flex-wrap items-center gap-2">
-              {/* Ação Principal 1: Check-in */}
+              {/* Ação Principal 1: Check-in (Direciona diretamente para o novo Mapa Mobile) */}
               <a
-                href={`/eventos/${eventoId}/hospedagem/checkin`}
+                href={`/eventos/${eventoId}/hospedagem/mapa`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center justify-center gap-2 bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-teal-700 shadow-sm transition"

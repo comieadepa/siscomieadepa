@@ -45,7 +45,7 @@ export function getEquipeAccessUrl(origin: string, eventoId: string, funcao: Fun
           ? `/eventos/${eventoId}/checkin/refeitorio`
         : funcao === 'hospedagem'
           ? `/eventos/${eventoId}?tab=hospedagem`
-          : `/eventos/${eventoId}/hospedagem/checkin`;
+          : `/eventos/${eventoId}/hospedagem/mapa`;
   return `${origin.replace(/\/$/, '')}${path}`;
 }
 

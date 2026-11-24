@@ -691,6 +691,18 @@ export default function MapaCheckinMobilePage() {
             <option value="colchonete">🛏️ Colchonetes</option>
           </select>
         </div>
+
+        {/* Recurso auxiliar: Busca tradicional por CPF/Nome */}
+        <div className="flex items-center justify-between pt-1 border-t border-gray-100 text-[11px]">
+          <span className="text-gray-400">Busca tradicional preservada:</span>
+          <button
+            onClick={() => router.push(`/eventos/${eventoId}/hospedagem/checkin`)}
+            className="text-[#0D2B4E] hover:underline font-bold flex items-center gap-1 py-0.5 px-2 bg-blue-50 hover:bg-blue-100 rounded-lg transition"
+          >
+            <span>🔍</span>
+            <span>Buscar por CPF / Nome</span>
+          </button>
+        </div>
       </section>
 
       {/* ── Grade Touch de Leitos Físicos Cadastrados ────────────────── */}

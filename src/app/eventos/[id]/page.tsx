@@ -5513,7 +5513,7 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
   const checkinPlenariaUrl = origin ? `${origin}/eventos/${eventoId}/checkin/plenaria` : `/eventos/${eventoId}/checkin/plenaria`;
   const checkinRefeitorioUrl = origin ? `${origin}/eventos/${eventoId}/checkin/refeitorio` : `/eventos/${eventoId}/checkin/refeitorio`;
   const hospedagemUrl = origin ? `${origin}/eventos/${eventoId}/hospedagem` : `/eventos/${eventoId}/hospedagem`;
-  const checkinHospedagemUrl = origin ? `${origin}/eventos/${eventoId}/hospedagem/checkin` : `/eventos/${eventoId}/hospedagem/checkin`;
+  const checkinHospedagemUrl = origin ? `${origin}/eventos/${eventoId}/hospedagem/mapa` : `/eventos/${eventoId}/hospedagem/mapa`;
 
   async function registrarCopiaLink(funcaoEquipe: 'operador' | 'checkin_credenciamento' | 'checkin_plenaria' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem', url: string) {
     try {

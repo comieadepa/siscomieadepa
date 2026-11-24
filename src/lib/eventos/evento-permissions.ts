@@ -253,7 +253,7 @@ export function getDefaultEventoPath(eventoId: string, role: EventoRole | null |
     case 'hospedagem':
       return `/eventos/${eventoId}?tab=hospedagem`;
     case 'hospedagem_checkin':
-      return `/eventos/${eventoId}/hospedagem/checkin`;
+      return `/eventos/${eventoId}/hospedagem/mapa`;
     case 'inscricoes':
     default:
       return `/eventos/${eventoId}`;
