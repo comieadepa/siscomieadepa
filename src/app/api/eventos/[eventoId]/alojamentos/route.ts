@@ -23,7 +23,7 @@ export async function GET(
   { params }: { params: Promise<{ eventoId: string }> }
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoPermission(_req, eventoId, 'hospedagem');
+  const guard = await requireEventoPermission(_req, eventoId, 'hospedagem_checkin');
   if (!guard.ok) return guard.response;
   const supabase = guard.ctx.supabaseAdmin;
   const { data, error } = await supabase

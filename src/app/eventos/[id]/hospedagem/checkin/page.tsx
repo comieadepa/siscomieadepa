@@ -275,6 +275,13 @@ export default function HospedagemCheckinPage() {
         <h1 className="text-white font-bold text-lg tracking-tight flex-1">
           🛏️ Check-in de Hospedagem
         </h1>
+        <a
+          href={`/eventos/${eventoId}/hospedagem/mapa`}
+          className="bg-blue-600/40 hover:bg-blue-600/60 text-white text-xs font-bold px-3 py-1.5 rounded-xl border border-white/20 transition flex items-center gap-1.5"
+        >
+          <span>🗺️</span>
+          <span>Mapa Mobile</span>
+        </a>
       </header>
 
       <main className="flex-1 flex flex-col items-center justify-start p-4 sm:p-8 gap-6 max-w-lg mx-auto w-full">

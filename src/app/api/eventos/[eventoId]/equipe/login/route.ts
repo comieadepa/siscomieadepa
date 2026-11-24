@@ -13,6 +13,7 @@ type EquipeRow = {
   id: string;
   evento_id: string;
   email: string;
+  nome: string | null;
   tipo: 'operador' | 'checkin' | 'hospedagem' | 'checkin_hospedagem';
   ativo: boolean;
   senha_hash: string | null;
@@ -39,7 +40,7 @@ export async function POST(
 ) {
   const { eventoId } = await params;
 
-  let body: { email?: string; senha?: string; funcao?: 'operador' | 'hospedagem' };
+  let body: { email?: string; senha?: string; funcao?: 'operador' | 'hospedagem' | 'checkin_hospedagem' };
   try {
     body = await request.json();
   } catch {
@@ -48,7 +49,9 @@ export async function POST(
 
   const email = (body.email || '').trim().toLowerCase();
   const senha = (body.senha || '').trim();
-  const funcao = body.funcao === 'hospedagem' ? 'hospedagem' : 'operador';
+  const funcao = (body.funcao === 'hospedagem' || body.funcao === 'checkin_hospedagem')
+    ? body.funcao
+    : 'operador';
 
   if (!email) return NextResponse.json({ error: 'E-mail obrigatorio.' }, { status: 400 });
   if (!senha) return NextResponse.json({ error: 'Senha obrigatoria.' }, { status: 400 });
@@ -69,17 +72,24 @@ export async function POST(
     return NextResponse.json({ error: 'Evento encerrado ou cancelado.' }, { status: 403 });
   }
 
-  const { data: equipe } = await supabase
+  const tiposCompativeis = funcao === 'hospedagem'
+    ? ['hospedagem', 'checkin_hospedagem', 'operador']
+    : funcao === 'checkin_hospedagem'
+    ? ['checkin_hospedagem', 'hospedagem', 'operador']
+    : ['operador'];
+
+  const { data: equipes } = await supabase
     .from('evento_equipe')
-    .select('id,evento_id,email,tipo,ativo,senha_hash')
+    .select('id,evento_id,email,nome,tipo,ativo,senha_hash')
     .eq('evento_id', eventoId)
     .eq('email', email)
-    .eq('tipo', funcao)
-    .maybeSingle();
+    .in('tipo', tiposCompativeis);
 
-  if (!equipe || (equipe as EquipeRow).ativo !== true) {
+  const equipe = ((equipes ?? []) as EquipeRow[]).find(e => e.ativo === true) ?? null;
+
+  if (!equipe) {
     void logDB({
-      acao: acaoLoginPorTipo(funcao),
+      acao: acaoLoginPorTipo(funcao as any),
       modulo: 'eventos',
       entidade: 'evento_equipe',
       descricao: 'Tentativa de login com equipe nao encontrada ou inativa.',
@@ -137,6 +147,8 @@ export async function POST(
   return NextResponse.json({
     ok: true,
     equipe_id: row.id,
+    tipo: row.tipo,
+    nome: row.nome ?? null,
     expira_em: calcExpiraEm((evento as EventoRow).data_fim),
   });
 }

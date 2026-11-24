@@ -3,10 +3,12 @@ import { requireEventoPermission } from '@/lib/evento-guard';
 
 /**
  * GET /api/eventos/[eventoId]/hospedagens/leitos
- * Lista todos os leitos do evento com alojamento e inscrito.
+ * Lista todos os leitos do evento com alojamento, inscrito e status operacional.
+ * Acesso: 'hospedagem_checkin' (disponível para perfis Hospedagem e Check-in Hospedagem).
  *
  * DELETE /api/eventos/[eventoId]/hospedagens/leitos
  * Libera um leito: ocupado=false, inscricao_id=null.
+ * Acesso: 'hospedagem' (exclusivo Administrador).
  * Body: { id: string }
  */
 
@@ -15,7 +17,7 @@ export async function GET(
   { params }: { params: Promise<{ eventoId: string }> },
 ) {
   const { eventoId } = await params;
-  const guard = await requireEventoPermission(req, eventoId, 'hospedagem');
+  const guard = await requireEventoPermission(req, eventoId, 'hospedagem_checkin');
   if (!guard.ok) return guard.response;
   const supabase = guard.ctx.supabaseAdmin;
 
@@ -24,16 +26,38 @@ export async function GET(
     .select(`
       id, numero, tipo_leito, posicao, ocupado, created_at,
       alojamento_id,
-      evento_alojamentos ( nome, publico ),
+      evento_alojamentos ( id, nome, publico ),
       inscricao_id,
-      evento_inscricoes ( nome_inscrito, cpf )
+      evento_inscricoes ( id, nome_inscrito, cpf, tipo_inscricao, status_pagamento )
     `)
     .eq('evento_id', eventoId)
     .order('alojamento_id', { ascending: true })
     .order('created_at', { ascending: true });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ leitos: data ?? [] });
+
+  const rawLeitos = data ?? [];
+  const inscricaoIds = rawLeitos.map((l: any) => l.inscricao_id).filter(Boolean);
+
+  const hospMap = new Map<string, any>();
+  if (inscricaoIds.length > 0) {
+    const { data: hospData } = await supabase
+      .from('evento_hospedagens')
+      .select('id, inscricao_id, status, checkin_at, checkout_at, checkin_operador, checkout_operador')
+      .eq('evento_id', eventoId)
+      .in('inscricao_id', inscricaoIds);
+
+    ((hospData as any[]) ?? []).forEach((h: any) => {
+      hospMap.set(h.inscricao_id, h);
+    });
+  }
+
+  const leitosCompletos = rawLeitos.map((l: any) => ({
+    ...l,
+    hospedagem: l.inscricao_id ? hospMap.get(l.inscricao_id) ?? null : null,
+  }));
+
+  return NextResponse.json({ leitos: leitosCompletos });
 }
 
 export async function DELETE(
