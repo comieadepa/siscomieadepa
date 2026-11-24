@@ -168,7 +168,8 @@ export async function materializarSetoresHospedagemAGO(
         };
       }
 
-      if (camasSuperiores < superioresOcupadas) {
+      // Validação resiliente para leitos superiores: permite se a capacidade de superiores + colchonetes comportar a ocupação não-inferior
+      if (camasSuperiores < superioresOcupadas && (camasSuperiores + colchonetes) < superioresOcupadas) {
         return {
           criados: 0,
           atualizados: 0,

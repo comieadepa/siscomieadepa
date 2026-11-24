@@ -44,11 +44,12 @@ interface LeitoItem {
   posicao: 'inferior' | 'superior' | 'unico' | string;
   tipo_leito: string;
   ocupado: boolean;
+  indisponivel?: boolean;
   alojamento_id: string;
   inscricao_id: string | null;
   participante?: ParticipanteInfo | null;
   hospedagem?: HospedagemInfo | null;
-  estadoCheckin: 'livre' | 'reservado' | 'entrada' | 'saida';
+  estadoCheckin: 'livre' | 'reservado' | 'entrada' | 'saida' | 'indisponivel';
 }
 
 // ─── Componente Principal ───────────────────────────────────────────────────
@@ -232,6 +233,19 @@ export default function MapaCheckinMobilePage() {
     }
 
     try {
+      // Se autenticado via Supabase (Admin Geral), encaminha Bearer token para o evento-guard
+      if (isAdminGeral) {
+        try {
+          const { createClient } = await import('@/lib/supabase-client');
+          const supabase = createClient();
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`;
+          }
+        } catch {
+          // Continua sem Bearer se não disponível
+        }
+      }
       // 3.1. Carrega Alojamentos Oficiais via API autenticada
       const resAlojs = await fetch(`/api/eventos/${eventoId}/alojamentos${qs}`, {
         headers,
@@ -274,9 +288,19 @@ export default function MapaCheckinMobilePage() {
           : l.evento_inscricoes ?? null;
         const hosp = l.hospedagem ?? null;
 
-        let estado: 'livre' | 'reservado' | 'entrada' | 'saida' = 'livre';
+        // Identifica explicitamente se é leito excedente/indisponível (preservado no banco)
+        const isExcedente = Boolean(
+          l.indisponivel === true ||
+          (l.alojamento_id === 'fbb5d408-e9de-42ee-bfb5-2d4f0d33a0d8' &&
+            !l.inscricao_id &&
+            ['076', '078', '080', '082', '084', '115', '116', '117', '118', '119', '120', '121', '122', '123', '124'].includes(l.numero))
+        );
 
-        if (l.ocupado && l.inscricao_id) {
+        let estado: 'livre' | 'reservado' | 'entrada' | 'saida' | 'indisponivel' = 'livre';
+
+        if (isExcedente) {
+          estado = 'indisponivel';
+        } else if (l.ocupado && l.inscricao_id) {
           if (hosp?.checkout_at || hosp?.status === 'checkout_realizado') {
             estado = 'saida';
           } else if (hosp?.checkin_at || hosp?.status === 'checkin_realizado') {
@@ -294,6 +318,7 @@ export default function MapaCheckinMobilePage() {
           posicao: (l.posicao as any) || 'inferior',
           tipo_leito: l.tipo_leito || 'beliche',
           ocupado: Boolean(l.ocupado && l.inscricao_id),
+          indisponivel: isExcedente,
           alojamento_id: l.alojamento_id,
           inscricao_id: l.inscricao_id,
           participante: insc,
@@ -368,12 +393,13 @@ export default function MapaCheckinMobilePage() {
 
   // 5. Estatísticas exclusivas dos leitos físicos cadastrados no alojamento ativo
   const statsAlojamento = useMemo(() => {
-    const total = leitosDoAlojamentoAtivo.length;
+    const operacionais = leitosDoAlojamentoAtivo.filter(l => l.estadoCheckin !== 'indisponivel').length;
     const livres = leitosDoAlojamentoAtivo.filter(l => l.estadoCheckin === 'livre').length;
     const reservados = leitosDoAlojamentoAtivo.filter(l => l.estadoCheckin === 'reservado').length;
     const entradas = leitosDoAlojamentoAtivo.filter(l => l.estadoCheckin === 'entrada').length;
     const saidas = leitosDoAlojamentoAtivo.filter(l => l.estadoCheckin === 'saida').length;
-    return { total, livres, reservados, entradas, saidas };
+    const indisponiveis = leitosDoAlojamentoAtivo.filter(l => l.estadoCheckin === 'indisponivel').length;
+    return { total: operacionais, livres, reservados, entradas, saidas, indisponiveis, totalFisico: leitosDoAlojamentoAtivo.length };
   }, [leitosDoAlojamentoAtivo]);
 
   // 6. Filtragem de Leitos na tela mobile
@@ -743,7 +769,9 @@ export default function MapaCheckinMobilePage() {
               let cardStyle = '';
               let badgePos = '';
 
-              if (leito.estadoCheckin === 'livre') {
+              if (leito.estadoCheckin === 'indisponivel') {
+                cardStyle = 'bg-gray-100 border-2 border-dashed border-gray-300 text-gray-400 shadow-none opacity-60';
+              } else if (leito.estadoCheckin === 'livre') {
                 cardStyle = 'bg-white border-2 border-gray-300 text-gray-800 shadow-sm active:bg-gray-100';
               } else if (leito.estadoCheckin === 'reservado') {
                 cardStyle = 'bg-[#0D2B4E] border-2 border-[#0D2B4E] text-white shadow active:bg-[#081e36]';
@@ -754,7 +782,7 @@ export default function MapaCheckinMobilePage() {
               }
 
               // Posição
-              if (leito.tipo_leito === 'colchonete') {
+              if (leito.tipo_leito === 'colchonete' || leito.posicao === 'colchonete') {
                 badgePos = 'COL';
               } else if (leito.posicao === 'inferior') {
                 badgePos = '↓ INF';
@@ -773,7 +801,9 @@ export default function MapaCheckinMobilePage() {
                   <span className="text-[9px] font-black tracking-tight opacity-90">{badgePos}</span>
                   <span className="text-lg font-black leading-none">{leito.numero}</span>
                   <span className="text-[8px] truncate max-w-full font-bold opacity-80">
-                    {leito.ocupado && leito.participante
+                    {leito.estadoCheckin === 'indisponivel'
+                      ? 'INDISP.'
+                      : leito.ocupado && leito.participante
                       ? leito.participante.nome_inscrito.split(' ')[0]
                       : 'LIVRE'}
                   </span>
@@ -829,7 +859,15 @@ export default function MapaCheckinMobilePage() {
             </div>
 
             {/* Situação Real do Leito */}
-            {leitoSelecionado.estadoCheckin === 'livre' ? (
+            {leitoSelecionado.estadoCheckin === 'indisponivel' ? (
+              <div className="p-4 bg-gray-50 rounded-2xl text-center space-y-2 border border-dashed border-gray-300">
+                <div className="text-2xl">🔒</div>
+                <p className="text-sm font-bold text-gray-800">Leito Físico Indisponível (Excedente Histórico)</p>
+                <p className="text-xs text-gray-500">
+                  Este leito pertence à estrutura física do alojamento, mas excede o teto homologado de 124 vagas oficiais para a 126ª AGO. Seu registro e numeração estão preservados no banco, porém bloqueados para novas alocações.
+                </p>
+              </div>
+            ) : leitoSelecionado.estadoCheckin === 'livre' ? (
               <div className="p-4 bg-gray-50 rounded-2xl text-center space-y-2 border border-dashed border-gray-300">
                 <div className="text-2xl">🟢</div>
                 <p className="text-sm font-bold text-gray-800">Leito Físico Livre</p>

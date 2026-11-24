@@ -48,16 +48,17 @@ export async function GET(
     .eq('evento_id', eventoId)
     .in('status', ['alocada', 'confirmada', 'checkin_realizado']);
 
-  const ocupadosPorAlojamento: Record<string, { total: number; inferiores: number; superiores: number }> = {};
+  const ocupadosPorAlojamento: Record<string, { total: number; inferiores: number; superiores: number; colchonetes: number }> = {};
 
   const processOcupante = (alojId: string, tipoCama: string | null) => {
     if (!alojId) return;
     if (!ocupadosPorAlojamento[alojId]) {
-      ocupadosPorAlojamento[alojId] = { total: 0, inferiores: 0, superiores: 0 };
+      ocupadosPorAlojamento[alojId] = { total: 0, inferiores: 0, superiores: 0, colchonetes: 0 };
     }
     ocupadosPorAlojamento[alojId].total++;
     if (tipoCama === 'inferior') ocupadosPorAlojamento[alojId].inferiores++;
-    if (tipoCama === 'superior') ocupadosPorAlojamento[alojId].superiores++;
+    else if (tipoCama === 'superior') ocupadosPorAlojamento[alojId].superiores++;
+    else if (tipoCama === 'colchonete') ocupadosPorAlojamento[alojId].colchonetes++;
   };
 
   // Se houver leitos reais ocupados, usá-los prioritariamente
@@ -72,15 +73,19 @@ export async function GET(
   }
 
   const result = (data ?? []).map(a => {
-    const oc = ocupadosPorAlojamento[a.id] ?? { total: 0, inferiores: 0, superiores: 0 };
+    const oc = ocupadosPorAlojamento[a.id] ?? { total: 0, inferiores: 0, superiores: 0, colchonetes: 0 };
+    const colchonetesTotal = Number(a.colchonetes ?? 0);
     return {
       ...a,
+      colchonetes:        colchonetesTotal,
       ocupadas:           oc.total,
       inferiores_usadas:  oc.inferiores,
       superiores_usadas:  oc.superiores,
-      vagas_livres:       a.total_vagas    - oc.total,
-      inferiores_livres:  a.camas_inferiores - oc.inferiores,
-      superiores_livres:  a.camas_superiores - oc.superiores,
+      colchonetes_usados: oc.colchonetes,
+      vagas_livres:       Math.max(0, a.total_vagas - oc.total),
+      inferiores_livres:  Math.max(0, a.camas_inferiores - oc.inferiores),
+      superiores_livres:  Math.max(0, a.camas_superiores - oc.superiores),
+      colchonetes_livres: Math.max(0, colchonetesTotal - oc.colchonetes),
     };
   });
 

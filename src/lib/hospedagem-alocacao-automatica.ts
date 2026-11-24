@@ -339,22 +339,24 @@ export async function alocarLeitoParaInscricaoAGO(
     console.error(`[Autoalocacao] [AGO] Erro ao buscar ocupantes:`, err.message);
   }
 
-  const vagasMap: Record<string, { total: number; inferiores: number; superiores: number }> = {};
+  const vagasMap: Record<string, { total: number; inferiores: number; superiores: number; colchonetes: number }> = {};
   for (const aloj of alojamentosRaw) {
     const conf = (ocupantesDb ?? []).filter((c: any) => c.alojamento_id === aloj.id);
     vagasMap[aloj.id] = {
-      total:      aloj.total_vagas      - conf.length,
-      inferiores: aloj.camas_inferiores - conf.filter((c: any) => c.tipo_cama === 'inferior').length,
-      superiores: aloj.camas_superiores - conf.filter((c: any) => c.tipo_cama === 'superior').length,
+      total:       Math.max(0, aloj.total_vagas - conf.length),
+      inferiores:  Math.max(0, aloj.camas_inferiores - conf.filter((c: any) => c.tipo_cama === 'inferior').length),
+      superiores:  Math.max(0, aloj.camas_superiores - conf.filter((c: any) => c.tipo_cama === 'superior').length),
+      colchonetes: Math.max(0, (aloj.colchonetes || 0) - conf.filter((c: any) => c.tipo_cama === 'colchonete').length),
     };
   }
 
   const alojamentos = alojamentosRaw.map((a: any) => ({
     ...a,
-    evento_id:         evento.id,
-    vagas_livres:      vagasMap[a.id]?.total      ?? 0,
-    inferiores_livres: vagasMap[a.id]?.inferiores ?? 0,
-    superiores_livres: vagasMap[a.id]?.superiores ?? 0,
+    evento_id:          evento.id,
+    vagas_livres:       vagasMap[a.id]?.total       ?? 0,
+    inferiores_livres:  vagasMap[a.id]?.inferiores  ?? 0,
+    superiores_livres:  vagasMap[a.id]?.superiores  ?? 0,
+    colchonetes_livres: vagasMap[a.id]?.colchonetes ?? 0,
   })) as Alojamento[];
 
   // 6. Alojamentos candidatos compatíveis
@@ -408,36 +410,44 @@ export async function alocarLeitoParaInscricaoAGO(
   let alocadoComSucesso = false;
   let ultimoErroLeito = '';
   let numeroCamaAlocada = '';
-  for (let attempt = 0; attempt < 50; attempt++) {
-    const nextNum = maxNum + 1 + attempt;
-    const numeroCama = formatarNumeroLeitoSequencial(nextNum);
-    const posicao = sugestao.tipo_cama === 'inferior' ? 'inferior' : (sugestao.tipo_cama === 'superior' ? 'superior' : 'unico');
 
-    // Tenta inserir na tabela de leitos
-    const { error: errInsertLeito } = await supabase
+  // 7.1. Primeira tentativa: Reutilizar leito cadastrado livre pós-materialização
+  const posicaoDesejada = sugestao.tipo_cama === 'inferior' ? 'inferior' : (sugestao.tipo_cama === 'superior' ? 'superior' : 'colchonete');
+  const { data: leitoLivre } = await supabase
+    .from('evento_hospedagem_leitos')
+    .select('id, numero, tipo_leito')
+    .eq('evento_id', evento.id)
+    .eq('alojamento_id', alojId)
+    .eq('posicao', posicaoDesejada)
+    .eq('ocupado', false)
+    .is('inscricao_id', null)
+    .order('numero', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (leitoLivre) {
+    const { data: claimLeito, error: errClaim } = await supabase
       .from('evento_hospedagem_leitos')
-      .insert({
-        evento_id: evento.id,
-        alojamento_id: alojId,
-        inscricao_id: inscricaoId,
-        numero: numeroCama,
-        tipo_leito: 'beliche',
-        posicao,
-        ocupado: true,
-      });
+      .update({ ocupado: true, inscricao_id: inscricaoId })
+      .eq('id', leitoLivre.id)
+      .eq('ocupado', false)
+      .select('id, numero')
+      .maybeSingle();
 
-    if (!errInsertLeito) {
-      // Alocado com sucesso! Atualiza a tabela evento_hospedagens
+    if (claimLeito && !errClaim) {
+      alocadoComSucesso = true;
+      numeroCamaAlocada = claimLeito.numero;
+
       const observacaoAtual = String(hospedagem.observacoes ?? '').trim();
       const alertaTxt = sugestao.prioridadeInferiorNaoAtendida ? 'PRIORIDADE SEM LEITO INFERIOR DISPONIVEL' : '';
       const observacaoNova = [observacaoAtual, alertaTxt].filter(Boolean).join(' | ') || null;
 
-      const { error: errUpdateHosp } = await supabase
+      await supabase
         .from('evento_hospedagens')
         .update({
           alojamento_id: alojId,
           tipo_cama: sugestao.tipo_cama,
-          numero_cama: numeroCama,
+          numero_cama: numeroCamaAlocada,
           status: 'confirmada',
           prioridade,
           observacoes: observacaoNova,
@@ -445,34 +455,85 @@ export async function alocarLeitoParaInscricaoAGO(
         })
         .eq('id', hospedagem.id);
 
-      if (errUpdateHosp) {
-        console.error(`[Autoalocacao] [AGO] Erro ao atualizar status da hospedagem ${hospedagem.id}:`, errUpdateHosp.message);
-      }
-
       await logDB({
         acao: 'hospedagem_alocada',
         modulo: 'eventos',
         entidade: 'evento_hospedagens',
         entidadeId: evento.id,
-        descricao: `[Hospedagem] Alocação automática individual: ${inscricao.nome_inscrito} alocado no leito ${numeroCama} do alojamento ${alojId}`,
-        detalhes: { inscricaoId, alojamentoId: alojId, numeroCama, posicao },
+        descricao: `[Hospedagem] Alocação em leito previamente cadastrado: ${inscricao.nome_inscrito} no leito ${numeroCamaAlocada} (${posicaoDesejada}) do alojamento ${alojId}`,
+        detalhes: { inscricaoId, alojamentoId: alojId, numeroCama: numeroCamaAlocada, posicao: posicaoDesejada },
       });
+    }
+  }
 
-      alocadoComSucesso = true;
-      numeroCamaAlocada = numeroCama;
+  // 7.2. Fallback JIT apenas se não encontrou leito pré-cadastrado
+  if (!alocadoComSucesso) {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const nextNum = maxNum + 1 + attempt;
+      const numeroCama = formatarNumeroLeitoSequencial(nextNum);
+      const posicao = sugestao.tipo_cama === 'inferior' ? 'inferior' : (sugestao.tipo_cama === 'superior' ? 'superior' : 'unico');
+
+      // Tenta inserir na tabela de leitos
+      const { error: errInsertLeito } = await supabase
+        .from('evento_hospedagem_leitos')
+        .insert({
+          evento_id: evento.id,
+          alojamento_id: alojId,
+          inscricao_id: inscricaoId,
+          numero: numeroCama,
+          tipo_leito: 'beliche',
+          posicao,
+          ocupado: true,
+        });
+
+      if (!errInsertLeito) {
+        // Alocado com sucesso! Atualiza a tabela evento_hospedagens
+        const observacaoAtual = String(hospedagem.observacoes ?? '').trim();
+        const alertaTxt = sugestao.prioridadeInferiorNaoAtendida ? 'PRIORIDADE SEM LEITO INFERIOR DISPONIVEL' : '';
+        const observacaoNova = [observacaoAtual, alertaTxt].filter(Boolean).join(' | ') || null;
+
+        const { error: errUpdateHosp } = await supabase
+          .from('evento_hospedagens')
+          .update({
+            alojamento_id: alojId,
+            tipo_cama: sugestao.tipo_cama,
+            numero_cama: numeroCama,
+            status: 'confirmada',
+            prioridade,
+            observacoes: observacaoNova,
+            alocacao_automatica: true,
+          })
+          .eq('id', hospedagem.id);
+
+        if (errUpdateHosp) {
+          console.error(`[Autoalocacao] [AGO] Erro ao atualizar status da hospedagem ${hospedagem.id}:`, errUpdateHosp.message);
+        }
+
+        await logDB({
+          acao: 'hospedagem_alocada',
+          modulo: 'eventos',
+          entidade: 'evento_hospedagens',
+          entidadeId: evento.id,
+          descricao: `[Hospedagem] Alocação automática individual JIT: ${inscricao.nome_inscrito} alocado no leito ${numeroCama} do alojamento ${alojId}`,
+          detalhes: { inscricaoId, alojamentoId: alojId, numeroCama, posicao },
+        });
+
+        alocadoComSucesso = true;
+        numeroCamaAlocada = numeroCama;
+        break;
+      }
+
+      // Se o erro for de restrição única (23505), tentamos o próximo número
+      if (errInsertLeito.code === '23505') {
+        console.warn(`[Autoalocacao] [AGO] Conflito de leito ${numeroCama} no alojamento ${alojId}. Tentando proximo...`);
+        continue;
+      }
+
+      // Qualquer outro erro, abortamos o loop
+      ultimoErroLeito = errInsertLeito.message;
+      console.error(`[Autoalocacao] [AGO] Erro inesperado ao inserir leito para ${inscricaoId}:`, errInsertLeito.message);
       break;
     }
-
-    // Se o erro for de restrição única (23505), tentamos o próximo número
-    if (errInsertLeito.code === '23505') {
-      console.warn(`[Autoalocacao] [AGO] Conflito de leito ${numeroCama} no alojamento ${alojId}. Tentando proximo...`);
-      continue;
-    }
-
-    // Qualquer outro erro, abortamos o loop
-    ultimoErroLeito = errInsertLeito.message;
-    console.error(`[Autoalocacao] [AGO] Erro inesperado ao inserir leito para ${inscricaoId}:`, errInsertLeito.message);
-    break;
   }
 
   if (alocadoComSucesso) {
@@ -757,63 +818,116 @@ export async function alocarLeitoParaInscricaoEventoComum(
   let alocadoComSucesso = false;
   let numeroCamaAlocada = '';
   let ultimoErroLeito = '';
-  for (let attempt = 0; attempt < 20; attempt++) {
-    const nextNum = maxNum + 1 + attempt;
-    const numeroCama = formatarNumeroLeitoSequencial(nextNum);
-    const posicao = tipoCama === 'unico' ? 'unico' : tipoCama;
 
-    // Insere na tabela de leitos
-    const { error: errInsertLeito } = await supabase
+  // 8.1. Tentar reutilizar leito cadastrado disponível
+  const posicaoDesejada = tipoCama === 'unico' ? 'unico' : tipoCama;
+  const { data: leitoLivre } = await supabase
+    .from('evento_hospedagem_leitos')
+    .select('id, numero, tipo_leito')
+    .eq('evento_id', evento.id)
+    .eq('alojamento_id', alojSelecionado.id)
+    .eq('posicao', posicaoDesejada)
+    .eq('ocupado', false)
+    .is('inscricao_id', null)
+    .order('numero', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (leitoLivre) {
+    const { data: claimLeito, error: errClaim } = await supabase
       .from('evento_hospedagem_leitos')
-      .insert({
-        evento_id:     evento.id,
-        alojamento_id: alojSelecionado.id,
-        inscricao_id:  inscricaoId,
-        numero:        numeroCama,
-        tipo_leito:    'beliche',
-        posicao,
-        ocupado:       true,
-      });
+      .update({ ocupado: true, inscricao_id: inscricaoId })
+      .eq('id', leitoLivre.id)
+      .eq('ocupado', false)
+      .select('id, numero')
+      .maybeSingle();
 
-    if (!errInsertLeito) {
-      // Atualiza hospedagem
-      const { error: errUpdateHosp } = await supabase
+    if (claimLeito && !errClaim) {
+      alocadoComSucesso = true;
+      numeroCamaAlocada = claimLeito.numero;
+
+      await supabase
         .from('evento_hospedagens')
         .update({
           alojamento_id: alojSelecionado.id,
           tipo_cama:     tipoCama === 'unico' ? null : tipoCama,
-          numero_cama:   numeroCama,
+          numero_cama:   numeroCamaAlocada,
           status:        'confirmada',
           alocacao_automatica: true,
         })
         .eq('id', hospedagem.id);
 
-      if (errUpdateHosp) {
-        console.error(`[Autoalocacao] [Comum] Erro ao atualizar status da hospedagem ${hospedagem.id}:`, errUpdateHosp.message);
-      }
-
-      // Log de sucesso
       await logDB({
         acao: 'hospedagem_leito_atribuido',
         modulo: 'eventos',
         entidade: 'evento_hospedagens',
         entidadeId: hospedagem.id,
-        descricao: `[Hospedagem] Alocação concluída. Cama ${numeroCama} (${tipoCama}) no alojamento ${alojSelecionado.nome} atribuída a ${inscricao.nome_inscrito}.`,
-        detalhes: { inscricaoId, alojamentoId: alojSelecionado.id, numeroCama, tipoCama },
+        descricao: `[Hospedagem] Alocação concluída em leito cadastrado: Cama ${numeroCamaAlocada} (${tipoCama}) no alojamento ${alojSelecionado.nome} atribuída a ${inscricao.nome_inscrito}.`,
+        detalhes: { inscricaoId, alojamentoId: alojSelecionado.id, numeroCama: numeroCamaAlocada, tipoCama },
       });
+    }
+  }
 
-      alocadoComSucesso = true;
-      numeroCamaAlocada = numeroCama;
+  // 8.2. Fallback JIT apenas se não encontrou leito pré-cadastrado
+  if (!alocadoComSucesso) {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const nextNum = maxNum + 1 + attempt;
+      const numeroCama = formatarNumeroLeitoSequencial(nextNum);
+      const posicao = tipoCama === 'unico' ? 'unico' : tipoCama;
+
+      // Insere na tabela de leitos
+      const { error: errInsertLeito } = await supabase
+        .from('evento_hospedagem_leitos')
+        .insert({
+          evento_id:     evento.id,
+          alojamento_id: alojSelecionado.id,
+          inscricao_id:  inscricaoId,
+          numero:        numeroCama,
+          tipo_leito:    'beliche',
+          posicao,
+          ocupado:       true,
+        });
+
+      if (!errInsertLeito) {
+        // Atualiza hospedagem
+        const { error: errUpdateHosp } = await supabase
+          .from('evento_hospedagens')
+          .update({
+            alojamento_id: alojSelecionado.id,
+            tipo_cama:     tipoCama === 'unico' ? null : tipoCama,
+            numero_cama:   numeroCama,
+            status:        'confirmada',
+            alocacao_automatica: true,
+          })
+          .eq('id', hospedagem.id);
+
+        if (errUpdateHosp) {
+          console.error(`[Autoalocacao] [Comum] Erro ao atualizar status da hospedagem ${hospedagem.id}:`, errUpdateHosp.message);
+        }
+
+        // Log de sucesso
+        await logDB({
+          acao: 'hospedagem_leito_atribuido',
+          modulo: 'eventos',
+          entidade: 'evento_hospedagens',
+          entidadeId: hospedagem.id,
+          descricao: `[Hospedagem] Alocação concluída JIT. Cama ${numeroCama} (${tipoCama}) no alojamento ${alojSelecionado.nome} atribuída a ${inscricao.nome_inscrito}.`,
+          detalhes: { inscricaoId, alojamentoId: alojSelecionado.id, numeroCama, tipoCama },
+        });
+
+        alocadoComSucesso = true;
+        numeroCamaAlocada = numeroCama;
+        break;
+      }
+
+      if (errInsertLeito.code === '23505') {
+        continue;
+      }
+
+      ultimoErroLeito = errInsertLeito.message;
+      console.error(`[Autoalocacao] [Comum] Erro inesperado ao alocar leito para ${inscricaoId}:`, errInsertLeito.message);
       break;
     }
-
-    if (errInsertLeito.code === '23505') {
-      continue;
-    }
-
-    ultimoErroLeito = errInsertLeito.message;
-    console.error(`[Autoalocacao] [Comum] Erro inesperado ao alocar leito para ${inscricaoId}:`, errInsertLeito.message);
-    break;
   }
 
   if (alocadoComSucesso) {
