@@ -46,12 +46,22 @@ function buildInitialMessage(scope: PublicAssistenteScope, departamento?: Depart
   return 'Oi! Eu sou a SARA :)\nPosso ajudar com inscricoes abertas, pagamentos e duvidas gerais dos eventos.';
 }
 
-function MaiaAvatar({ sizeClass, className }: { sizeClass: string; className?: string }) {
+function MaiaAvatar({ sizeClass, className, isFloating }: { sizeClass: string; className?: string; isFloating?: boolean }) {
+  if (isFloating) {
+    return (
+      <img
+        src="/img/sara.png"
+        alt="SARA"
+        className={`${sizeClass} object-contain drop-shadow-xl ${className ?? ''}`.trim()}
+      />
+    );
+  }
+
   return (
     <img
       src="/img/sara.png"
       alt="SARA"
-      className={`${sizeClass} rounded-full bg-white border border-blue-200 shadow-sm object-cover object-center ${className ?? ''}`.trim()}
+      className={`${sizeClass} rounded-full bg-white border border-blue-200 shadow-sm object-cover object-top ${className ?? ''}`.trim()}
     />
   );
 }
@@ -378,20 +388,17 @@ export default function PublicAssistenteWidget({ scope, departamento }: Props) {
       <button
         onClick={() => setAberto(a => !a)}
         aria-label="Abrir assistente publico"
-        className={`fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all duration-300 ${
-          aberto
-            ? 'bg-gray-700 hover:bg-gray-600 scale-95'
-            : 'bg-[#123b63] hover:bg-[#0f2a45] scale-100 hover:scale-105'
+        className={`fixed bottom-6 right-6 z-50 flex items-center justify-center transition-all duration-300 focus:outline-none ${
+          aberto ? 'scale-90 opacity-90' : 'scale-100 hover:scale-105'
         }`}
       >
         <div className="relative">
-          <span className="pointer-events-none absolute -inset-1 rounded-full shadow-[0_0_14px_rgba(59,130,246,0.35)] motion-safe:animate-pulse" />
-          <MaiaAvatar sizeClass="w-14 h-14" className="relative border-[3px] border-white shadow-md" />
+          <MaiaAvatar sizeClass="w-24 h-24 sm:w-28 sm:h-28" isFloating />
         </div>
       </button>
 
       {!aberto && (
-        <div className="fixed bottom-[5.25rem] right-5 z-50 pointer-events-none">
+        <div className="fixed bottom-[6.5rem] sm:bottom-[7.5rem] right-6 z-50 pointer-events-none">
           <div className="bg-white border border-gray-200 shadow-lg rounded-xl px-3.5 py-1.5 text-xs font-semibold text-[#0D2B4E] animate-bounce max-w-[85vw] sm:max-w-xs text-center">
             Olá, eu sou a SARA, posso ajudar?
           </div>
