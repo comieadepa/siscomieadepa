@@ -71,10 +71,18 @@ export function valorPorExtenso(valor: number): string {
 }
 
 // ── Gerador Determinístico do Protocolo de Autenticação (HMAC-SHA256) ────────
-export function gerarProtocoloAutenticacao(inscricaoId: string, eventoId: string): string {
+// Vincula estritamente a inscrição ao pagamento confirmado de forma permanente e determinística
+export function gerarProtocoloAutenticacao(
+  inscricaoId: string,
+  eventoId: string,
+  paymentRef?: string | null
+): string {
   const secret = process.env.RECIBO_AUTH_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'AGO126_SECRET_AUTH_KEY_2026';
   const hmac = crypto.createHmac('sha256', secret);
-  hmac.update(`${eventoId}:${inscricaoId}`);
+  // Se houver referência real do pagamento (Asaas Payment ID ou Lote ID), incorpora de forma canônica
+  const refLimpa = (paymentRef || '').trim();
+  const payload = refLimpa ? `${eventoId}:${inscricaoId}:${refLimpa}` : `${eventoId}:${inscricaoId}`;
+  hmac.update(payload);
   const hashHex = hmac.digest('hex').toUpperCase();
 
   const b1 = hashHex.substring(0, 4);
@@ -87,12 +95,22 @@ export function gerarProtocoloAutenticacao(inscricaoId: string, eventoId: string
 
 // ── Validação Estrita de Elegibilidade para Recibo ───────────────────────────
 // Exclusivamente Pastor Presidente (com ou sem Campo Missionário)
+// Proíbe rigorosamente Esposa de Pastor Presidente, Delegados, Visitantes e Membros
 export function isPastorPresidenteElegivel(tipoInscricao?: string | null, snapshot?: any): boolean {
   const tipoUpper = (tipoInscricao || '').toUpperCase().trim();
-  if (tipoUpper.includes('PASTOR PRESIDENTE') || tipoUpper === 'PRESIDENTE') {
+
+  // Exclusão categórica prévia de esposas, acompanhantes, delegados e outros
+  if (tipoUpper.includes('ESPOSA') || tipoUpper.includes('CONJUGE') || tipoUpper.includes('CÔNJUGE')) {
+    return false;
+  }
+
+  if (tipoUpper === 'PASTOR PRESIDENTE' || tipoUpper === 'PRESIDENTE' || tipoUpper.startsWith('PASTOR PRESIDENTE')) {
     return true;
   }
   if (snapshot && typeof snapshot === 'object') {
+    if (snapshot.is_esposa === true) {
+      return false;
+    }
     if (snapshot.is_pastor_presidente === true || snapshot.cargo === 'PASTOR PRESIDENTE') {
       return true;
     }
@@ -152,7 +170,8 @@ export async function obterDadosReciboAgo(
   // Valor individual exato da inscrição do Pastor Presidente
   const valorNum = Number(ins.valor_final ?? ins.valor_pago ?? ins.valor_original ?? 0);
   const valorExt = valorPorExtenso(valorNum);
-  const protocolo = gerarProtocoloAutenticacao(ins.id, ins.evento_id);
+  const paymentRef = ins.asaas_payment_id || (ins.lote_id ? `lote_${ins.lote_id}` : null);
+  const protocolo = gerarProtocoloAutenticacao(ins.id, ins.evento_id, paymentRef);
 
   const dados: DadosReciboAgo = {
     inscricaoId: ins.id,

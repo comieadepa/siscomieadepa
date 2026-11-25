@@ -211,9 +211,9 @@ export async function POST(
   // Chave exclusiva da notificação manual persistida, estável para repetição segura da mesma tentativa (evita Resend HTTP 409)
   const idempotencyKey = 'reenvio_' + notif.id;
 
-  // Anexo opcional de Recibo de Quitação (exclusivo Pastor Presidente 126ª AGO) se status for de quitação
+  // Anexo opcional de Recibo de Quitação (exclusivo Pastor Presidente com pagamento confirmado na 126ª AGO)
   let attachments: Array<{ filename: string; content: string }> | undefined = undefined;
-  if (status === 'pago' || status === 'isento') {
+  if (status === 'pago') {
     try {
       const anexoRecibo = await gerarAnexoReciboSeElegivel(supabase, inscricaoId);
       if (anexoRecibo) {
