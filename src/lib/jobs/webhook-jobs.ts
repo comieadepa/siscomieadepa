@@ -7,6 +7,7 @@ import {
   formatarBlocoHospedagem,
   enviarEmailHospedagemComplementar,
 } from '@/lib/hospedagem-email-service';
+import { gerarAnexoReciboSeElegivel } from '@/lib/recibo-ago-service';
 import { cleanCpf } from '@/lib/cpf';
 import { renderTemplate } from '@/lib/evento-template';
 
@@ -175,7 +176,18 @@ async function enviarEmailComDeduplicacao(
     notifId = newRow.id as string;
   }
 
-  // 4. Envio externo via Resend com cabeçalho Idempotency-Key
+  // 4. Anexo opcional de Recibo de Quitação (exclusivo Pastor Presidente 126ª AGO) com proteção contra falhas
+  let attachments: Array<{ filename: string; content: string }> | undefined = undefined;
+  try {
+    const anexoRecibo = await gerarAnexoReciboSeElegivel(supabase, inscricaoId);
+    if (anexoRecibo) {
+      attachments = [anexoRecibo];
+    }
+  } catch (err) {
+    console.warn(`[WEBHOOK JOBS] Aviso: Não foi possível anexar recibo para inscrição ${inscricaoId}:`, err);
+  }
+
+  // 5. Envio externo via Resend com cabeçalho Idempotency-Key
   const resultado = await sendEmail({
     para: emailLimpo,
     assunto,
@@ -183,6 +195,7 @@ async function enviarEmailComDeduplicacao(
     nomeDestinatario: nome,
     fromEmail: 'inscricoes@siscomieadepa.org',
     idempotencyKey,
+    attachments,
   });
 
   // 5. Atualização de status condicional estrita ao retorno do Resend

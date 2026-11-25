@@ -7,6 +7,7 @@ import {
   formatarBlocoHospedagem,
   type DadosHospedagemConfirmada,
 } from '@/lib/hospedagem-email-service';
+import { gerarAnexoReciboSeElegivel } from '@/lib/recibo-ago-service';
 
 type EventoRow = {
   id: string;
@@ -210,6 +211,19 @@ export async function POST(
   // Chave exclusiva da notificação manual persistida, estável para repetição segura da mesma tentativa (evita Resend HTTP 409)
   const idempotencyKey = 'reenvio_' + notif.id;
 
+  // Anexo opcional de Recibo de Quitação (exclusivo Pastor Presidente 126ª AGO) se status for de quitação
+  let attachments: Array<{ filename: string; content: string }> | undefined = undefined;
+  if (status === 'pago' || status === 'isento') {
+    try {
+      const anexoRecibo = await gerarAnexoReciboSeElegivel(supabase, inscricaoId);
+      if (anexoRecibo) {
+        attachments = [anexoRecibo];
+      }
+    } catch (err) {
+      console.warn(`[REENVIAR NOTIFICACAO] Falha ao gerar anexo de recibo para ${inscricaoId}:`, err);
+    }
+  }
+
   const resultado = await sendEmail({
     para: inscricao.email,
     assunto: payload.assunto,
@@ -217,6 +231,7 @@ export async function POST(
     nomeDestinatario: inscricao.nome_inscrito,
     fromEmail: 'inscricoes@siscomieadepa.org',
     idempotencyKey,
+    attachments,
   });
 
   const isTimeout = resultado.erro?.startsWith('TIMEOUT_OU_FALHA_REDE');
