@@ -26,6 +26,7 @@ import TabCertificados  from './TabCertificados';
 import TabControleAGO  from './TabControleAGO';
 import ModalRelatorioExecutivoPDF from './ModalRelatorioExecutivoPDF';
 import ModalConciliacaoAsaas from './ModalConciliacaoAsaas';
+import ModalDetalhesLote from './ModalDetalhesLote';
 import GerenciadorLocaisCheckin from './GerenciadorLocaisCheckin';
 import { RelatorioPresencasPlenaria, RelatorioConsumoRestaurante } from './RelatoriosLocais';
 import { calcularValorFinanceiroInscricao, formatarValorUI, identificarResponsavelFinanceiro } from '@/lib/eventos/financeiro-lote-utils';
@@ -1198,6 +1199,7 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
   const [carregandoEventos, setCarregandoEventos] = useState(false);
   const [salvandoEdit,  setSalvandoEdit]  = useState(false);
   const [erroEdit,      setErroEdit]      = useState<string | null>(null);
+  const [loteModalId,   setLoteModalId]   = useState<string | null>(null);
   const [ordemGerada,   setOrdemGerada]   = useState<any>(null);
   const [confirmExcluir, setConfirmExcluir] = useState<Inscricao | null>(null);
   const [dadosOperacionais, setDadosOperacionais] = useState<DadosOperacionais | null>(null);
@@ -2238,9 +2240,15 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         {ins.lote_id ? (
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200`}>
-                            {pagCfg.label} (Lote)
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setLoteModalId(ins.lote_id)}
+                            title="Clique para ver os detalhes do lote"
+                            className="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-200 hover:border-purple-300 transition cursor-pointer inline-flex items-center gap-1 group"
+                          >
+                            <span>{pagCfg.label} (Lote)</span>
+                            <span className="text-[10px] opacity-60 group-hover:opacity-100">↗</span>
+                          </button>
                         ) : (
                           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${pagCfg.cls}`}>{pagCfg.label}</span>
                         )}
@@ -2861,6 +2869,14 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
           </div>
         </div>
       )}
+
+      {/* Modal Consultivo de Detalhes do Lote */}
+      <ModalDetalhesLote
+        eventoId={evento.id}
+        loteId={loteModalId}
+        isOpen={Boolean(loteModalId)}
+        onClose={() => setLoteModalId(null)}
+      />
     </div>
   );
 }
