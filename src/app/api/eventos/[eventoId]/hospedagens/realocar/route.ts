@@ -155,11 +155,18 @@ export async function POST(
   // Verifica se o alojamento opera com beliches (camas inferiores ou superiores configuradas)
   const isAlojamentoBeliche = (aloj.camas_inferiores > 0 || (aloj as any).camas_superiores > 0);
 
-  // Paridade estrita é regra física exclusiva do Alojamento Rosa
-  const isRosa = aloj.nome?.toUpperCase().includes('ROSA');
+  // Paridade estrita nos alojamentos sujeitos à regra (beliches de alojamentos oficiais)
+  const nomeUpper = aloj.nome?.toUpperCase() || '';
+  const isAlojamentoParidade = nomeUpper.includes('ROSA') ||
+                               nomeUpper.includes('AZUL') ||
+                               nomeUpper.includes('NOVO') ||
+                               nomeUpper.includes('AAME') ||
+                               nomeUpper.includes('MÁRIO') ||
+                               nomeUpper.includes('MARIO');
+
   const isPar = (n: number) => n % 2 === 0;
   const isNumeroCompativel = (num: number, pos: string) => {
-    if (!isRosa || pos === 'unico') return true;
+    if (!isAlojamentoParidade || pos === 'unico') return true;
     if (pos === 'inferior') return isPar(num);
     if (pos === 'superior') return !isPar(num);
     return true;

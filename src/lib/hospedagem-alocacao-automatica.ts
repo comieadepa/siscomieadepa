@@ -344,9 +344,10 @@ export async function alocarLeitoParaInscricaoAGO(
         : (matchCol ? parseInt(matchCol[1], 10) : 0);
       totalVagasOficial = Number(s.quantidade_leitos || 0);
       infOficial = Number(s.quantidade_leitos_inferiores || 0);
+      // Em beliches pareados, cada beliche possui 1 inferior e 1 superior
       supOficial = s.quantidade_leitos_superiores !== undefined
         ? Number(s.quantidade_leitos_superiores)
-        : Math.max(0, totalVagasOficial - infOficial - colchOficial);
+        : Math.min(infOficial, Math.max(0, totalVagasOficial - infOficial - colchOficial));
     }
 
     return {
@@ -445,19 +446,36 @@ export async function alocarLeitoParaInscricaoAGO(
   let ultimoErroLeito = '';
   let numeroCamaAlocada = '';
 
-  // 7.1. Primeira tentativa: Reutilizar leito cadastrado livre pós-materialização
+  // 7.1. Primeira tentativa: Reutilizar leito cadastrado livre pós-materialização com paridade estrita
   const posicaoDesejada = sugestao.tipo_cama === 'inferior' ? 'inferior' : (sugestao.tipo_cama === 'superior' ? 'superior' : 'colchonete');
-  const { data: leitoLivre } = await supabase
+  const alojNomeUpper = (alojamentosAjustados.find((a: any) => a.id === alojId)?.nome || '').toUpperCase();
+  const alojUsaParidade = alojNomeUpper.includes('AZUL') ||
+                          alojNomeUpper.includes('ROSA') ||
+                          alojNomeUpper.includes('NOVO') ||
+                          alojNomeUpper.includes('AAME') ||
+                          alojNomeUpper.includes('MÁRIO') ||
+                          alojNomeUpper.includes('MARIO');
+
+  const { data: leitosLivresRaw } = await supabase
     .from('evento_hospedagem_leitos')
-    .select('id, numero, tipo_leito')
+    .select('id, numero, tipo_leito, posicao')
     .eq('evento_id', evento.id)
     .eq('alojamento_id', alojId)
     .eq('posicao', posicaoDesejada)
     .eq('ocupado', false)
     .is('inscricao_id', null)
     .order('numero', { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .limit(50);
+
+  // Filtra por paridade física se aplicável
+  const leitoLivre = (leitosLivresRaw || []).find((l: any) => {
+    if (!alojUsaParidade || l.tipo_leito === 'colchonete' || l.posicao === 'unico') return true;
+    const n = parseInt(l.numero, 10);
+    if (isNaN(n)) return true;
+    if (posicaoDesejada === 'inferior') return n % 2 === 0;
+    if (posicaoDesejada === 'superior') return n % 2 !== 0;
+    return true;
+  });
 
   if (leitoLivre) {
     const { data: claimLeito, error: errClaim } = await supabase
@@ -502,9 +520,58 @@ export async function alocarLeitoParaInscricaoAGO(
 
   // 7.2. Fallback JIT apenas se não encontrou leito pré-cadastrado
   if (!alocadoComSucesso) {
-    for (let attempt = 0; attempt < 50; attempt++) {
-      const nextNum = maxNum + 1 + attempt;
-      const numeroCama = formatarNumeroLeitoSequencial(nextNum);
+    const alojAtual = alojamentosAjustados.find((a: any) => a.id === alojId);
+    const totalVagasMax = Number(alojAtual?.total_vagas || 500);
+    const limiteInfMax = Number(alojAtual?.camas_inferiores || 0);
+    const limiteSupMax = Number(alojAtual?.camas_superiores || 0);
+    const limiteColchMax = Number(alojAtual?.colchonetes || 0);
+
+    // Validação estrita de ocupação por tipo em tempo real para blindar concorrência
+    const { count: ocupadosTipoAtual } = await supabase
+      .from('evento_hospedagens')
+      .select('id', { count: 'exact', head: true })
+      .eq('evento_id', evento.id)
+      .eq('alojamento_id', alojId)
+      .eq('tipo_cama', sugestao.tipo_cama)
+      .in('status', ['alocada', 'confirmada', 'checkin_realizado']);
+
+    const totalOcupadosTipo = ocupadosTipoAtual ?? 0;
+    if (sugestao.tipo_cama === 'inferior' && limiteInfMax > 0 && totalOcupadosTipo >= limiteInfMax) {
+      console.warn(`[Autoalocacao] [AGO] Trava de segurança: limite de camas inferiores atingido no alojamento ${alojId} (${totalOcupadosTipo}/${limiteInfMax}).`);
+      await colocarEmListaEspera(supabase, hospedagem.id, prioridade);
+      return { success: false, status: 'lista_espera', motivo: 'Limite de camas inferiores atingido' };
+    }
+    if (sugestao.tipo_cama === 'superior' && limiteSupMax > 0 && totalOcupadosTipo >= limiteSupMax) {
+      console.warn(`[Autoalocacao] [AGO] Trava de segurança: limite de camas superiores atingido no alojamento ${alojId} (${totalOcupadosTipo}/${limiteSupMax}).`);
+      await colocarEmListaEspera(supabase, hospedagem.id, prioridade);
+      return { success: false, status: 'lista_espera', motivo: 'Limite de camas superiores atingido' };
+    }
+    if ((sugestao.tipo_cama as string) === 'colchonete' && limiteColchMax > 0 && totalOcupadosTipo >= limiteColchMax) {
+      console.warn(`[Autoalocacao] [AGO] Trava de segurança: limite de colchonetes atingido no alojamento ${alojId} (${totalOcupadosTipo}/${limiteColchMax}).`);
+      await colocarEmListaEspera(supabase, hospedagem.id, prioridade);
+      return { success: false, status: 'lista_espera', motivo: 'Limite de colchonetes atingido' };
+    }
+
+    // Mapear números já existentes ou ocupados para não colidir
+    const { data: todosLeitosExistentes } = await supabase
+      .from('evento_hospedagem_leitos')
+      .select('numero')
+      .eq('evento_id', evento.id)
+      .eq('alojamento_id', alojId);
+
+    const numerosUsados = new Set((todosLeitosExistentes || []).map((l: any) => parseInt(l.numero, 10)).filter((n: number) => !isNaN(n)));
+
+    // Se o alojamento usa paridade (beliche), busca o menor número livre que obedeça à paridade
+    // Ímpar: Superior | Par: Inferior
+    for (let cand = 1; cand <= totalVagasMax; cand++) {
+      if (numerosUsados.has(cand)) continue;
+
+      if (alojUsaParidade && posicaoDesejada !== 'colchonete') {
+        if (posicaoDesejada === 'inferior' && cand % 2 !== 0) continue;
+        if (posicaoDesejada === 'superior' && cand % 2 === 0) continue;
+      }
+
+      const numeroCama = formatarNumeroLeitoSequencial(cand);
       const posicao = sugestao.tipo_cama === 'inferior' ? 'inferior' : (sugestao.tipo_cama === 'superior' ? 'superior' : 'unico');
 
       // Tenta inserir na tabela de leitos
@@ -515,7 +582,7 @@ export async function alocarLeitoParaInscricaoAGO(
           alojamento_id: alojId,
           inscricao_id: inscricaoId,
           numero: numeroCama,
-          tipo_leito: 'beliche',
+          tipo_leito: posicao === 'unico' ? 'colchonete' : 'beliche',
           posicao,
           ocupado: true,
         });
