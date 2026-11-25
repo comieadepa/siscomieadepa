@@ -34,7 +34,7 @@ const SUGESTOES = [
 function MaiaAvatar({ sizeClass, className }: { sizeClass: string; className?: string }) {
   return (
     <img
-      src="/maia.png"
+      src="/img/sara.png"
       alt="SARA"
       className={`${sizeClass} rounded-full bg-white border border-blue-200 shadow-sm object-cover object-center ${className ?? ''}`.trim()}
     />
