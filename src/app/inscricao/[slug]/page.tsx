@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { normalizePayloadUppercase } from '@/lib/text';
+import { cleanCpf } from '@/lib/cpf';
 import AssistenteWidget from '@/components/AssistenteWidget';
 import {
   parseCampoMissionarioConfig,
@@ -1437,6 +1438,29 @@ export default function InscricaoPublicaPage() {
     if (modoLote) {
       if (fluxoCampoMissionarioEspecial) {
         return setErroForm('Campo Missionário permite inscrição apenas do Pastor Presidente e, opcionalmente, sua esposa.');
+      }
+
+      // Validação de CPFs únicos e não repetidos entre todos os participantes do lote
+      const cpfsLote = new Map<string, { ordem: number; nome: string }>();
+      const cpfTitularNorm = cleanCpf(form.cpf);
+      if (cpfTitularNorm) {
+        cpfsLote.set(cpfTitularNorm, { ordem: 1, nome: form.nome_inscrito.trim() || 'Titular' });
+      }
+
+      for (let i = 0; i < participantesExtra.length; i++) {
+        const pExtra = participantesExtra[i];
+        const cpfExtraNorm = cleanCpf(pExtra.cpf);
+        if (cpfExtraNorm) {
+          const existente = cpfsLote.get(cpfExtraNorm);
+          if (existente) {
+            const nome1 = existente.nome;
+            const nome2 = pExtra.nome_inscrito.trim() || `Participante ${i + 2}`;
+            return setErroForm(
+              `CPF repetido no lote: o participante ${i + 2} (${nome2}) possui o mesmo CPF do participante ${existente.ordem} (${nome1}). Cada participante deve possuir um CPF único.`
+            );
+          }
+          cpfsLote.set(cpfExtraNorm, { ordem: i + 2, nome: pExtra.nome_inscrito.trim() || `Participante ${i + 2}` });
+        }
       }
 
       const ppPorCampo = new Map<string, number>();

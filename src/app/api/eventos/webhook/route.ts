@@ -216,6 +216,43 @@ export async function POST(request: NextRequest) {
 
       if (loteCurrent && loteCurrent.status_pagamento === novoStatus && novoStatus !== 'cancelado') {
         console.log('[EVENTOS WEBHOOK] Lote já está com status correto (idempotência):', loteId, novoStatus);
+
+        // Garantia de recuperação idempotente: se o lote já estiver pago, verifica se existem jobs pendentes ou faltantes para as inscrições do lote
+        if (novoStatus === 'pago') {
+          const { data: loteIns } = await supabase
+            .from('evento_inscricoes')
+            .select('id')
+            .eq('lote_id', loteId);
+
+          if (loteIns && loteIns.length > 0) {
+            const recoveryJobs = [];
+            for (const li of loteIns) {
+              recoveryJobs.push(
+                { job_type: 'ALLOCATE_ACCOMMODATION', entity_type: 'inscricao', entity_id: li.id, external_event_id: eventId, external_payment_id: asaasId },
+                { job_type: 'SEND_CONFIRMATION_EMAIL', entity_type: 'inscricao', entity_id: li.id, external_event_id: eventId, external_payment_id: asaasId },
+                { job_type: 'REGISTER_MINISTERIAL_HISTORY', entity_type: 'inscricao', entity_id: li.id, external_event_id: eventId, external_payment_id: asaasId }
+              );
+            }
+            try {
+              // enqueueWebhookJobs usa onConflict com ignoreDuplicates: true, inserindo apenas se não existirem
+              const enqueuedIds = await enqueueWebhookJobs(supabase, recoveryJobs);
+              if (enqueuedIds && enqueuedIds.length > 0) {
+                console.log(`[EVENTOS WEBHOOK] Recuperados ${enqueuedIds.length} jobs pendentes para o lote já pago ${loteId}`);
+                after(async () => {
+                  try {
+                    const asyncClient = createServerClient();
+                    await processPendingWebhookJobs(asyncClient, { onlyJobIds: enqueuedIds });
+                  } catch (recErr: any) {
+                    console.error('[EVENTOS WEBHOOK] Erro na recuperação pós-lote:', recErr?.message);
+                  }
+                });
+              }
+            } catch (jobErr: any) {
+              console.warn('[EVENTOS WEBHOOK] Aviso ao verificar recuperação de jobs no lote pago:', jobErr?.message);
+            }
+          }
+        }
+
         console.timeEnd("ASAAS_WEBHOOK_TOTAL");
         return NextResponse.json({ received: true, action: 'already_processed', loteId });
       }
@@ -231,12 +268,40 @@ export async function POST(request: NextRequest) {
       if (loteErr) {
         console.error('[EVENTOS WEBHOOK] Erro ao atualizar lote:', loteErr.message);
         console.timeEnd("ASAAS_WEBHOOK_TOTAL");
-        return NextResponse.json({ error: loteErr.message }, { status: 500 });
+
+        // Tratamento com registro persistente de conflitos cadastrais em pagamentos recebidos
+        const isConflitoDuplicidade = loteErr.message?.includes('Já existe uma inscrição confirmada') || (loteErr as any).code === '23505';
+        void logDB({
+          acao: 'erro_critico',
+          modulo: 'eventos',
+          entidade: 'webhook',
+          descricao: `[FALHA_CONFIRMACAO_LOTE] ${isConflitoDuplicidade ? 'Conflito de duplicidade de CPF detectado ao confirmar lote' : 'Erro ao confirmar lote'}: ${loteErr.message}`,
+          status: 'erro',
+          detalhes: {
+            event,
+            eventId,
+            asaasId,
+            loteId,
+            valorRecebido: payment?.value ?? 0,
+            formaPagamento: payment?.billingType ?? null,
+            erroCode: (loteErr as any).code,
+            erroMensagem: loteErr.message,
+            conflitoCadastral: isConflitoDuplicidade,
+            precisaRecuperacao: true,
+          },
+        });
+
+        return NextResponse.json({
+          error: loteErr.message,
+          code: isConflitoDuplicidade ? 'CONFLITO_CADASTRO_LOTE' : 'ERRO_CONFIRMACAO_LOTE',
+          loteId,
+          precisaRecuperacao: true
+        }, { status: 500 });
       }
       // O trigger fn_sync_lote_pagamento cuida de atualizar as inscrições do lote de forma síncrona
       console.log('[EVENTOS WEBHOOK] Lote atualizado:', loteId, '→', novoStatus);
 
-      // Enfileira jobs pós-baixa se pago
+      // Enfileira jobs pós-baixa se pago SOMENTE após confirmação financeira persistida com sucesso
       if (novoStatus === 'pago') {
         const { data: loteIns } = await supabase
           .from('evento_inscricoes')

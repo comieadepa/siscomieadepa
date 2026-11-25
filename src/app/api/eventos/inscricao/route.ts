@@ -1692,6 +1692,32 @@ export async function POST(request: NextRequest) {
       const calculados: ParticipanteCalculado[] = [];
       const ppPorCampo = new Map<string, number>();
 
+      // Validação obrigatória de CPFs únicos entre todos os participantes do mesmo lote
+      const cpfsNoLoteMap = new Map<string, { ordem: number; nome: string }>();
+      for (let i = 0; i < todos.length; i++) {
+        const pCheck = todos[i] as Record<string, unknown>;
+        const cpfRaw = String(pCheck.cpf ?? '');
+        const cpfNorm = cleanCpf(cpfRaw);
+        if (cpfNorm) {
+          const jaExiste = cpfsNoLoteMap.get(cpfNorm);
+          if (jaExiste) {
+            const nome1 = jaExiste.nome || `Participante ${jaExiste.ordem}`;
+            const nome2 = String(pCheck.nome_inscrito ?? '').trim() || `Participante ${i + 1}`;
+            return buildErrorResponse(400, {
+              error: `CPF repetido no lote: o participante ${i + 1} (${nome2}) e o participante ${jaExiste.ordem} (${nome1}) informaram o mesmo CPF. Cada participante deve ter um CPF único.`,
+              stage: 'validacao_duplicidade_cpf_mesmo_lote',
+              code: 'CPF_DUPLICADO_NO_LOTE',
+              details: `Participante ${i + 1} (${nome2}) e Participante ${jaExiste.ordem} (${nome1}) informaram o mesmo CPF`,
+              payloadResumo: { ...payloadResumo, evento_id: evento.id },
+            });
+          }
+          cpfsNoLoteMap.set(cpfNorm, {
+            ordem: i + 1,
+            nome: String(pCheck.nome_inscrito ?? '').trim() || `Participante ${i + 1}`,
+          });
+        }
+      }
+
       const validarPastorPresidentePorCampo = (campoId: string | null, tipoNomeAtual: string | null, participanteOrdem: number) => {
         if (!campoId) return null;
         if (!ehTipoPastorPresidente(tipoNomeAtual)) return null;

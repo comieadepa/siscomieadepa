@@ -345,6 +345,24 @@ export async function markJobFailed(supabase: SupabaseClient, job: any, errorMsg
 export async function processSingleWebhookJob(supabase: SupabaseClient, job: any): Promise<void> {
   const { job_type, entity_type, entity_id } = job;
 
+  // Blindagem de integridade: jobs de inscrição só devem ser executados se a inscrição estiver efetivamente confirmada (pago ou isento)
+  if (entity_type === 'inscricao') {
+    const { data: checkIns, error: checkInsErr } = await supabase
+      .from('evento_inscricoes')
+      .select('id, status_pagamento')
+      .eq('id', entity_id)
+      .maybeSingle();
+
+    if (checkInsErr || !checkIns) {
+      throw new Error(`Inscrição ${entity_id} não encontrada para processar job ${job_type}: ${checkInsErr?.message ?? 'registro inexistente'}`);
+    }
+
+    const stPg = String(checkIns.status_pagamento ?? '').toLowerCase();
+    if (!['pago', 'isento'].includes(stPg)) {
+      throw new Error(`Abortando job ${job_type}: inscrição ${entity_id} não possui confirmação financeira persistida (status atual: ${checkIns.status_pagamento}).`);
+    }
+  }
+
   if (job_type === 'ALLOCATE_ACCOMMODATION') {
     if (entity_type === 'inscricao') {
       const resAloc = await alocarLeitoParaInscricao(supabase, entity_id);
