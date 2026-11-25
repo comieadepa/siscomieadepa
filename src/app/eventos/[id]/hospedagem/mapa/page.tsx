@@ -99,8 +99,10 @@ export default function MapaCheckinMobilePage() {
   // Ficha Mobile do Participante (Drawer/Modal)
   const [leitoSelecionado, setLeitoSelecionado] = useState<LeitoItem | null>(null);
 
-  // Toast de simulação visual (Etapa 1)
-  const [toastSimulacao, setToastSimulacao] = useState<string | null>(null);
+  // Estados de confirmação e processamento de check-in / check-out
+  const [confirmandoOperacao, setConfirmandoOperacao] = useState(false);
+  const [modalConfirmacaoSaida, setModalConfirmacaoSaida] = useState(false);
+  const [feedbackMensagem, setFeedbackMensagem] = useState<{ tipo: 'sucesso' | 'erro' | 'aviso'; texto: string } | null>(null);
 
   // Perfil de acesso operacional derivado da sessão legítima ou admin global
   const isPerfilAdminHospedagem = isAdminGeral || equipeSessao?.tipo === 'hospedagem';
@@ -460,18 +462,111 @@ export default function MapaCheckinMobilePage() {
     });
   }, [leitosDoAlojamentoAtivo, filtroEstado, filtroPosicao, buscaTermo]);
 
-  // 7. Simulação visual das ações (Etapa 1 - Sem gravação)
-  function dispararAcaoVisual(acao: string) {
-    let msg = `[SIMULAÇÃO ETAPA 1] Ação "${acao}" acionada visualmente. Nenhuma alteração gravada.`;
-    if (acao === 'Solicitar Troca') {
-      msg = `[SIMULAÇÃO ETAPA 1] Solicitação de troca registrada para coordenação de hospedagem. Sem alteração real.`;
-    } else if (acao === 'Solicitar Cancelamento') {
-      msg = `[SIMULAÇÃO ETAPA 1] Solicitação de cancelamento registrada para coordenação de hospedagem. Sem alteração real.`;
+  // 7. Registro Operacional Real de Entrada e Saída
+  async function executarCheckinCheckout(acao: 'checkin' | 'checkout') {
+    if (!leitoSelecionado?.inscricao_id || confirmandoOperacao) return;
+
+    // Se for saída, abre modal de confirmação primeiro se ainda não confirmado
+    if (acao === 'checkout' && !modalConfirmacaoSaida) {
+      setModalConfirmacaoSaida(true);
+      return;
     }
-    setToastSimulacao(msg);
-    setTimeout(() => {
-      setToastSimulacao(null);
-    }, 4500);
+
+    setConfirmandoOperacao(true);
+    setFeedbackMensagem(null);
+    setModalConfirmacaoSaida(false);
+
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (equipeSessao?.equipeId) {
+        headers['x-evento-equipe-id'] = equipeSessao.equipeId;
+      }
+
+      if (isAdminGeral) {
+        try {
+          const { createClient } = await import('@/lib/supabase-client');
+          const supabase = createClient();
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`;
+          }
+        } catch {
+          // segue com cookies/headers padrão
+        }
+      }
+
+      const nomeOperador = equipeSessao?.nome || equipeSessao?.email || (isAdminGeral ? 'Administrador' : 'Operador de Hospedagem');
+
+      const res = await fetch(`/api/eventos/${eventoId}/hospedagens/checkin`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          inscricao_id: leitoSelecionado.inscricao_id,
+          acao,
+          operador: nomeOperador,
+          equipe_id: equipeSessao?.equipeId || null,
+        }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(json.error || `Erro ao registrar ${acao === 'checkin' ? 'entrada' : 'saída'}.`);
+      }
+
+      // Atualização imediata no estado local do leito selecionado e na lista geral
+      const nowIso = new Date().toISOString();
+      const novoStatusHosp = acao === 'checkin' ? 'checkin_realizado' : 'checkout_realizado';
+      const novoEstadoCheckin = acao === 'checkin' ? 'entrada' : 'saida';
+
+      const hospAtualizada: HospedagemInfo = {
+        id: leitoSelecionado.hospedagem?.id || '',
+        status: novoStatusHosp,
+        checkin_at: acao === 'checkin' ? (json.dados?.checkin_at || nowIso) : (leitoSelecionado.hospedagem?.checkin_at || nowIso),
+        checkout_at: acao === 'checkout' ? (json.dados?.checkout_at || nowIso) : (leitoSelecionado.hospedagem?.checkout_at || null),
+        checkin_operador: acao === 'checkin' ? (json.dados?.checkin_operador || nomeOperador) : (leitoSelecionado.hospedagem?.checkin_operador || null),
+        checkout_operador: acao === 'checkout' ? (json.dados?.checkout_operador || nomeOperador) : (leitoSelecionado.hospedagem?.checkout_operador || null),
+      };
+
+      const leitoAtualizado: LeitoItem = {
+        ...leitoSelecionado,
+        hospedagem: hospAtualizada,
+        estadoCheckin: novoEstadoCheckin,
+      };
+
+      setLeitoSelecionado(leitoAtualizado);
+
+      // Atualiza no mapa completo de leitos
+      setTodosLeitos(prev =>
+        prev.map(l => (l.id === leitoSelecionado.id ? leitoAtualizado : l))
+      );
+
+      setFeedbackMensagem({
+        tipo: 'sucesso',
+        texto: acao === 'checkin'
+          ? `✅ Entrada registrada com sucesso para ${leitoSelecionado.participante?.nome_inscrito || 'o participante'}!`
+          : `🔴 Saída registrada com sucesso para ${leitoSelecionado.participante?.nome_inscrito || 'o participante'}!`,
+      });
+
+      // Recarrega dados completos em background para total sincronia
+      void carregarDadosCompletos();
+    } catch (err: any) {
+      setFeedbackMensagem({
+        tipo: 'erro',
+        texto: err.message || 'Erro ao comunicar com o servidor.',
+      });
+    } finally {
+      setConfirmandoOperacao(false);
+    }
+  }
+
+  // Ações de Troca e Cancelamento (Preservando as regras existentes sem ampliar permissões)
+  function solicitarAcaoCoordenacao(acao: string) {
+    let msg = `Solicitação de "${acao}" registrada para a coordenação de hospedagem.`;
+    if (isPerfilAdminHospedagem) {
+      msg = `Para ${acao.toLowerCase()}, utilize o gerenciador avançado de hospedagem no painel do evento.`;
+    }
+    setFeedbackMensagem({ tipo: 'aviso', texto: msg });
   }
 
   // ─── TELA DE CARREGAMENTO INICIAL ─────────────────────────────────────────
@@ -628,11 +723,17 @@ export default function MapaCheckinMobilePage() {
         </div>
       </header>
 
-      {/* ── Toast de Simulação Visual (Etapa 1) ─────────────────────── */}
-      {toastSimulacao && (
-        <div className="fixed top-14 inset-x-4 z-50 max-w-sm mx-auto p-3 bg-amber-600 text-white rounded-xl shadow-xl text-xs font-bold flex items-center justify-between animate-bounce">
-          <span>⚠️ {toastSimulacao}</span>
-          <button onClick={() => setToastSimulacao(null)} className="ml-2 text-white/80 hover:text-white">✕</button>
+      {/* ── Banner de Feedback Operacional Real ─────────────────────── */}
+      {feedbackMensagem && (
+        <div className={`fixed top-14 inset-x-4 z-50 max-w-sm mx-auto p-3.5 rounded-xl shadow-xl text-xs font-bold flex items-center justify-between border ${
+          feedbackMensagem.tipo === 'sucesso'
+            ? 'bg-emerald-700 text-white border-emerald-600'
+            : feedbackMensagem.tipo === 'erro'
+            ? 'bg-rose-700 text-white border-rose-600'
+            : 'bg-amber-600 text-white border-amber-500'
+        }`}>
+          <span>{feedbackMensagem.texto}</span>
+          <button onClick={() => setFeedbackMensagem(null)} className="ml-2 text-white/80 hover:text-white text-base">✕</button>
         </div>
       )}
 
@@ -1059,33 +1160,48 @@ export default function MapaCheckinMobilePage() {
                   </div>
                 </div>
 
-                {/* ── Ações Visuais (Etapa 1: Apenas apresentação, sem gravação) ── */}
+                {/* ── Ações Operacionais Reais de Entrada e Saída ── */}
                 <div className="space-y-2 pt-1">
-                  <div className="grid grid-cols-2 gap-2">
-                    {/* Botão Entrada */}
+                  {/* Situação 1: Reservado (Somente Registrar Entrada ocupando toda a largura) */}
+                  {leitoSelecionado.estadoCheckin === 'reservado' && (
                     <button
-                      onClick={() => dispararAcaoVisual('Confirmar Entrada')}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-3 rounded-xl text-xs shadow-sm flex items-center justify-center gap-1.5 transition"
+                      type="button"
+                      disabled={confirmandoOperacao}
+                      onClick={() => executarCheckinCheckout('checkin')}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold py-3 px-4 rounded-xl text-xs shadow-sm flex items-center justify-center gap-2 transition cursor-pointer"
                     >
                       <span>🟢</span>
-                      <span>Registrar Entrada</span>
+                      <span>{confirmandoOperacao ? 'Registrando entrada...' : 'Registrar Entrada'}</span>
                     </button>
+                  )}
 
-                    {/* Botão Saída */}
+                  {/* Situação 2: Entrada Realizada (Somente Registrar Saída ocupando toda a largura) */}
+                  {leitoSelecionado.estadoCheckin === 'entrada' && (
                     <button
-                      onClick={() => dispararAcaoVisual('Registrar Saída')}
-                      className="w-full bg-amber-700 hover:bg-amber-800 text-white font-bold py-2.5 px-3 rounded-xl text-xs shadow-sm flex items-center justify-center gap-1.5 transition"
+                      type="button"
+                      disabled={confirmandoOperacao}
+                      onClick={() => executarCheckinCheckout('checkout')}
+                      className="w-full bg-amber-700 hover:bg-amber-800 disabled:opacity-50 text-white font-bold py-3 px-4 rounded-xl text-xs shadow-sm flex items-center justify-center gap-2 transition cursor-pointer"
                     >
                       <span>🔴</span>
-                      <span>Registrar Saída</span>
+                      <span>{confirmandoOperacao ? 'Processando saída...' : 'Registrar Saída'}</span>
                     </button>
-                  </div>
+                  )}
+
+                  {/* Situação 3: Saída Realizada (Nenhum dos dois botões; exibir Hospedagem Finalizada) */}
+                  {leitoSelecionado.estadoCheckin === 'saida' && (
+                    <div className="w-full bg-gray-100 border border-gray-300 text-gray-700 font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2">
+                      <span>🏁</span>
+                      <span>Hospedagem Finalizada</span>
+                    </div>
+                  )}
 
                   {/* Ações de Troca e Cancelamento conforme o Perfil Real */}
                   {isPerfilAdminHospedagem ? (
                     <div className="grid grid-cols-2 gap-2 pt-1 border-t border-gray-200">
                       <button
-                        onClick={() => dispararAcaoVisual('Trocar Leito')}
+                        type="button"
+                        onClick={() => solicitarAcaoCoordenacao('Trocar Leito')}
                         className="w-full bg-blue-50 hover:bg-blue-100 text-[#0D2B4E] border border-blue-200 font-bold py-2 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 transition"
                       >
                         <span>🔄</span>
@@ -1093,7 +1209,8 @@ export default function MapaCheckinMobilePage() {
                       </button>
 
                       <button
-                        onClick={() => dispararAcaoVisual('Cancelar Alocação')}
+                        type="button"
+                        onClick={() => solicitarAcaoCoordenacao('Cancelar Alocação')}
                         className="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold py-2 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 transition"
                       >
                         <span>❌</span>
@@ -1103,7 +1220,8 @@ export default function MapaCheckinMobilePage() {
                   ) : (
                     <div className="grid grid-cols-2 gap-2 pt-1 border-t border-gray-200">
                       <button
-                        onClick={() => dispararAcaoVisual('Solicitar Troca')}
+                        type="button"
+                        onClick={() => solicitarAcaoCoordenacao('Solicitar Troca')}
                         className="w-full bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 font-bold py-2 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 transition"
                       >
                         <span>🔄</span>
@@ -1111,7 +1229,8 @@ export default function MapaCheckinMobilePage() {
                       </button>
 
                       <button
-                        onClick={() => dispararAcaoVisual('Solicitar Cancelamento')}
+                        type="button"
+                        onClick={() => solicitarAcaoCoordenacao('Solicitar Cancelamento')}
                         className="w-full bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 font-bold py-2 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 transition"
                       >
                         <span>⚠️</span>
@@ -1119,13 +1238,49 @@ export default function MapaCheckinMobilePage() {
                       </button>
                     </div>
                   )}
-
-                  <p className="text-[10px] text-center text-gray-400 italic">
-                    Etapa 1: Ações visuais demonstrativas sem gravação no banco de dados.
-                  </p>
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal de Confirmação para Registro de Saída (Check-out) ── */}
+      {modalConfirmacaoSaida && leitoSelecionado && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl shadow-2xl p-5 max-w-sm w-full space-y-4 animate-scale-up">
+            <div className="text-center space-y-2">
+              <span className="text-3xl">⚠️</span>
+              <h3 className="text-base font-black text-gray-900">Confirmar Registro de Saída?</h3>
+              <p className="text-xs text-gray-600">
+                Deseja confirmar a saída do hóspede{' '}
+                <strong className="text-gray-900 font-bold">
+                  {leitoSelecionado.participante?.nome_inscrito || 'Participante'}
+                </strong>{' '}
+                do <strong>Leito {leitoSelecionado.numero}</strong>?
+              </p>
+              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 font-medium">
+                Esta ação registrará a data, hora e operador da saída, finalizando o ciclo de hospedagem deste hóspede.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                disabled={confirmandoOperacao}
+                onClick={() => setModalConfirmacaoSaida(false)}
+                className="w-full py-2.5 px-3 rounded-xl border border-gray-300 text-gray-700 font-bold text-xs hover:bg-gray-100 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={confirmandoOperacao}
+                onClick={() => executarCheckinCheckout('checkout')}
+                className="w-full py-2.5 px-3 rounded-xl bg-amber-700 hover:bg-amber-800 disabled:opacity-50 text-white font-bold text-xs transition shadow-sm"
+              >
+                {confirmandoOperacao ? 'Registrando...' : 'Confirmar Saída'}
+              </button>
+            </div>
           </div>
         </div>
       )}
