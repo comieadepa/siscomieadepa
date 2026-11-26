@@ -429,7 +429,27 @@ export async function POST(
 
   if (insUpdateErr) return NextResponse.json({ error: insUpdateErr.message }, { status: 500 });
 
-  await alocarLeitoParaInscricao(supabase, inscricao_id);
+  const alocacaoRes = await alocarLeitoParaInscricao(supabase, inscricao_id);
+
+  // Busca dados atualizados da hospedagem após a tentativa de alocação
+  const { data: hospAtualizada } = await supabase
+    .from('evento_hospedagens')
+    .select(`
+      *,
+      evento_alojamentos ( nome )
+    `)
+    .eq('inscricao_id', inscricao_id)
+    .maybeSingle();
+
+  // Busca se houve leito efetivamente alocado
+  const { data: leitoAtualizado } = await supabase
+    .from('evento_hospedagem_leitos')
+    .select(`
+      numero, tipo_leito, posicao, alojamento_id, ocupado,
+      evento_alojamentos ( nome )
+    `)
+    .eq('inscricao_id', inscricao_id)
+    .maybeSingle();
 
   await logDB({
     userId: guard.ctx.user?.id,
@@ -439,10 +459,15 @@ export async function POST(
     entidade: 'evento_hospedagens',
     entidadeId: String(data?.id ?? inscricao_id),
     descricao: '[Hospedagem] Criacao/ajuste manual de hospedagem',
-    detalhes: { evento_id: eventoId, inscricao_id },
+    detalhes: { evento_id: eventoId, inscricao_id, alocacaoRes },
     request,
   });
-  return NextResponse.json({ hospedagem: data });
+
+  return NextResponse.json({
+    hospedagem: hospAtualizada ?? data,
+    leito: leitoAtualizado,
+    alocacao: alocacaoRes,
+  });
 }
 
 // PATCH /api/eventos/[eventoId]/hospedagens

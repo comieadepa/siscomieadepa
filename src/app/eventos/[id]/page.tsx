@@ -1581,6 +1581,10 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
         return;
       }
 
+      if (json.alocacao && !json.alocacao.success && json.alocacao.motivo) {
+        setErroEdit(`Atenção: Inscrição registrada para hospedagem, mas leito não pôde ser confirmado: ${json.alocacao.motivo}`);
+      }
+
       setEditForm(f => f ? { ...f, hospedagem: true } : f);
       setEditando(e => e ? {
         ...e,

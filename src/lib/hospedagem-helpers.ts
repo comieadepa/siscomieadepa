@@ -36,16 +36,18 @@ export interface Alojamento {
   total_vagas: number;
   camas_inferiores: number;
   camas_superiores: number;
+  colchonetes?: number;
   ativo: boolean;
   // Vagas calculadas (da view v_vagas_alojamento)
   vagas_livres?: number;
   inferiores_livres?: number;
   superiores_livres?: number;
+  colchonetes_livres?: number;
 }
 
 export interface SugestaoHospedagem {
   alojamento_id: string | null;
-  tipo_cama: 'inferior' | 'superior' | null;
+  tipo_cama: 'inferior' | 'superior' | 'colchonete' | null;
   status: 'confirmada' | 'lista_espera';
   prioridade: number;
   prioridadeInferiorNaoAtendida?: boolean;
@@ -148,9 +150,12 @@ export function detectarPerfilAGO(inscricao: InscricaoParaHospedagem): PerfilAGO
     .replace(/[\u0300-\u036f]/g, '');
   const sexo = inscricao.sexo?.toUpperCase();
 
+  // Se sexo for feminino ou tipo for esposa/viúva, o perfil SSOT é feminino
+  const ehEsposaOuViuva = tipoLower.includes('esposa') || tipoLower.includes('viuva');
+  if (sexo === 'F' || ehEsposaOuViuva) return 'feminino';
+
   if (tipoLower.includes('presidente') || tipoLower.includes('campo missionario')) return 'presidentes';
   if (tipoLower.includes('jubilado'))   return 'jubilados';
-  if (sexo === 'F')                     return 'feminino';
   return 'masculino_geral';
 }
 
@@ -238,8 +243,11 @@ export function sugerirAlojamento(
   });
 
   for (const aloj of ordenados) {
+    const infLivres = aloj.inferiores_livres ?? Math.max(0, aloj.camas_inferiores - 0);
+    const supLivres = aloj.superiores_livres ?? Math.max(0, aloj.camas_superiores - 0);
+    const colchLivres = aloj.colchonetes_livres ?? Math.max(0, (aloj.colchonetes || 0) - 0);
+
     if (precisaCamaInferior) {
-      const infLivres = aloj.inferiores_livres ?? (aloj.camas_inferiores - 0);
       if (infLivres > 0) {
         return {
           alojamento_id: aloj.id,
@@ -249,7 +257,6 @@ export function sugerirAlojamento(
           prioridadeInferiorNaoAtendida: false,
         };
       }
-      const supLivres = aloj.superiores_livres ?? (aloj.camas_superiores - 0);
       if (supLivres > 0) {
         return {
           alojamento_id: aloj.id,
@@ -259,11 +266,19 @@ export function sugerirAlojamento(
           prioridadeInferiorNaoAtendida: true,
         };
       }
+      if (colchLivres > 0) {
+        return {
+          alojamento_id: aloj.id,
+          tipo_cama: 'colchonete',
+          status: 'confirmada',
+          prioridade,
+          prioridadeInferiorNaoAtendida: false,
+        };
+      }
       continue;
     }
 
     // Sem preferência especial: prefere superior (deixar inferiores para prioritários)
-    const supLivres = aloj.superiores_livres ?? (aloj.camas_superiores - 0);
     if (supLivres > 0) {
       return {
         alojamento_id: aloj.id,
@@ -274,8 +289,18 @@ export function sugerirAlojamento(
       };
     }
 
+    // Se não tem superior sobrando, tenta colchonete se houver
+    if (colchLivres > 0) {
+      return {
+        alojamento_id: aloj.id,
+        tipo_cama: 'colchonete',
+        status: 'confirmada',
+        prioridade,
+        prioridadeInferiorNaoAtendida: false,
+      };
+    }
+
     // Se só tem inferior sobrando
-    const infLivres = aloj.inferiores_livres ?? 0;
     if (infLivres > 0) {
       return {
         alojamento_id: aloj.id,
