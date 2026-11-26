@@ -40,12 +40,65 @@ async function ensureBucket(supabaseAdmin: any) {
   }
 }
 
+// Polyfill essencial de DOMMatrix para runtime Node.js serverless da Vercel
+class SimpleDOMMatrixPolyfill {
+  a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
+  m11 = 1; m12 = 0; m13 = 0; m14 = 0;
+  m21 = 0; m22 = 1; m23 = 0; m24 = 0;
+  m31 = 0; m32 = 0; m33 = 1; m34 = 0;
+  m41 = 0; m42 = 0; m43 = 0; m44 = 1;
+  is2D = true;
+  isIdentity = true;
+
+  constructor(init?: any) {
+    if (Array.isArray(init) && init.length === 6) {
+      this.a = this.m11 = init[0];
+      this.b = this.m12 = init[1];
+      this.c = this.m21 = init[2];
+      this.d = this.m22 = init[3];
+      this.e = this.m41 = init[4];
+      this.f = this.m42 = init[5];
+    }
+  }
+
+  multiplySelf(_o: any) { return this; }
+  preMultiplySelf(_o: any) { return this; }
+  translate(_x = 0, _y = 0) { return this; }
+  scale(_x = 1, _y = 1) { return this; }
+  invertSelf() { return this; }
+  setTransform(_o: any) { return this; }
+}
+
+if (typeof (globalThis as any).DOMMatrix === 'undefined') {
+  (globalThis as any).DOMMatrix = SimpleDOMMatrixPolyfill;
+}
+
 async function extrairTextoPdf(buffer: Buffer): Promise<string> {
-  // Import dinâmico para compatibilidade com Next.js App Router / Turbopack
+  // Garante que o polyfill esteja ativo no globalThis antes do require/import
+  if (typeof (globalThis as any).DOMMatrix === 'undefined') {
+    (globalThis as any).DOMMatrix = SimpleDOMMatrixPolyfill;
+  }
+
   const pdfParseMod = await import('pdf-parse');
-  const pdfParse = (pdfParseMod as any).default ?? pdfParseMod;
-  const parsed = await pdfParse(buffer);
-  return String(parsed?.text ?? '')
+  let textoFinal = '';
+
+  // Suporte a pdf-parse v2 (classe PDFParse) e v1 (função default)
+  if (typeof (pdfParseMod as any).PDFParse === 'function') {
+    const ParserClass = (pdfParseMod as any).PDFParse;
+    const parser = new ParserClass({ data: buffer });
+    const parsed = await parser.getText();
+    textoFinal = String(parsed?.text ?? '');
+  } else {
+    const pdfParse = (pdfParseMod as any).default ?? pdfParseMod;
+    if (typeof pdfParse === 'function') {
+      const parsed = await pdfParse(buffer);
+      textoFinal = String(parsed?.text ?? '');
+    } else {
+      throw new Error('Módulo de extração de PDF incompatível no runtime.');
+    }
+  }
+
+  return textoFinal
     .replace(/\r\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
