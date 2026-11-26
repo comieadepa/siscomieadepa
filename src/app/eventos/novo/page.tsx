@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import PageLayout from '@/components/PageLayout';
+import ProgramacaoOficialAgoSection from '@/components/eventos/ProgramacaoOficialAgoSection';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { useEventosPerfil } from '@/hooks/useEventosPerfil';
 import { createClient } from '@/lib/supabase-client';
@@ -1110,6 +1111,13 @@ export default function NovoEventoPage() {
 
           </div>
         </div>
+
+        {/* ── SEÇÃO 4.4: Programação Oficial AGO (somente se isAGO) ── */}
+        {isAGO && (
+          <div className="mb-6">
+            <ProgramacaoOficialAgoSection />
+          </div>
+        )}
 
         {/* ── SEÇÃO 4.5: Hospedagem AGO (somente se isAGO) ───── */}
         {isAGO && (
