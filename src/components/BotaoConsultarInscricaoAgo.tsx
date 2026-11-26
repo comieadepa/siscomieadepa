@@ -1,5 +1,7 @@
 'use client';
 
+import { Search } from 'lucide-react';
+
 export default function BotaoConsultarInscricaoAgo() {
   const handleClick = () => {
     if (typeof window !== 'undefined') {
@@ -18,9 +20,9 @@ export default function BotaoConsultarInscricaoAgo() {
     <button
       type="button"
       onClick={handleClick}
-      className="mt-3 inline-flex w-full items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:border-slate-400 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+      className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-[#0D2B4E] shadow-sm transition-all duration-200 hover:border-[#D4AF37] hover:bg-slate-50 hover:shadow focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40"
     >
-      <span className="mr-2 text-base">🔍</span>
+      <Search className="h-4 w-4 text-[#0D2B4E]" />
       Consultar Inscrição
     </button>
   );

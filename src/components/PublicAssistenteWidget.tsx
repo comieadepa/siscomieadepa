@@ -50,7 +50,7 @@ function MaiaAvatar({ sizeClass, className, isFloating }: { sizeClass: string; c
   if (isFloating) {
     return (
       <img
-        src="/img/sara.png"
+        src="/img/sara.png?v=2"
         alt="SARA - Assistente Virtual"
         className={`${sizeClass} object-contain select-none pointer-events-none ${className ?? ''}`.trim()}
         draggable={false}
@@ -60,7 +60,7 @@ function MaiaAvatar({ sizeClass, className, isFloating }: { sizeClass: string; c
 
   return (
     <img
-      src="/img/sara.png"
+      src="/img/sara.png?v=2"
       alt="SARA"
       className={`${sizeClass} rounded-full bg-white border border-blue-200 shadow-sm object-cover object-top ${className ?? ''}`.trim()}
     />

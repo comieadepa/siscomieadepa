@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { CSSProperties } from 'react';
+import { Calendar, MapPin, ArrowRight, CheckCircle2, Users } from 'lucide-react';
 // Fontes tipográficas resilientes sem dependência de download externo durante o build na Vercel
 const sora = { className: 'font-sans' };
 const playfair = { className: 'font-serif' };
@@ -15,11 +16,11 @@ const baseUrl = PUBLIC_URL || APP_URL || 'http://localhost:3000';
 
 export const metadata = {
   metadataBase: new URL(baseUrl),
-  title: 'Portal de Inscricoes da COMIEADEPA',
-  description: 'Eventos e congressos da convencao com inscricoes abertas.',
+  title: 'Portal de Inscrições da COMIEADEPA',
+  description: 'Eventos e congressos da convenção com inscrições abertas.',
   openGraph: {
-    title: 'Portal de Inscricoes da COMIEADEPA',
-    description: 'Eventos e congressos da convencao com inscricoes abertas.',
+    title: 'Portal de Inscrições da COMIEADEPA',
+    description: 'Eventos e congressos da convenção com inscrições abertas.',
     images: ['/img/bg_site.png'],
   },
   alternates: {
@@ -34,22 +35,6 @@ const pageStyle: CSSProperties & Record<string, string> = {
   background: 'linear-gradient(180deg, var(--portal-light) 0%, #f0fdf4 45%, #e0f2fe 100%)',
 };
 
-const CTA_CLASSES: Record<string, string> = {
-  AGO: 'bg-amber-600 hover:bg-amber-700',
-  UMADESPA: 'bg-emerald-600 hover:bg-emerald-700',
-  COADESPA: 'bg-rose-500 hover:bg-rose-600',
-  SEIADEPA: 'bg-sky-600 hover:bg-sky-700',
-  AVULSO: 'bg-slate-700 hover:bg-slate-800',
-};
-
-const BADGE_CLASSES: Record<string, string> = {
-  AGO: 'bg-amber-600',
-  UMADESPA: 'bg-emerald-600',
-  COADESPA: 'bg-rose-500',
-  SEIADEPA: 'bg-sky-600',
-  AVULSO: 'bg-slate-700',
-};
-
 function formatDate(dateStr: string | null) {
   if (!dateStr) return '';
   const [y, m, d] = dateStr.split('-');
@@ -57,15 +42,8 @@ function formatDate(dateStr: string | null) {
   return `${d}/${m}/${y}`;
 }
 
-function formatValor(valor: number, usarTipos: boolean) {
-  const formatted = valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  if (usarTipos) return `Inscrição a partir de ${formatted}`;
-  if (valor === 0) return 'Inscrição gratuita';
-  return `Inscrição ${formatted}`;
-}
-
 function formatQuantidadeBadge(total: number) {
-  return `${total} EVENTO${total === 1 ? '' : 'S'} DISPONIVEL${total === 1 ? '' : 'S'}`;
+  return `${total} EVENTO${total === 1 ? '' : 'S'} DISPONÍVEL${total === 1 ? '' : 'IS'}`;
 }
 
 export default async function EventosPublicosPage() {
@@ -92,18 +70,18 @@ export default async function EventosPublicosPage() {
         </div>
         <div className="relative mx-auto max-w-6xl px-6 py-16 text-white" style={{ animation: 'portalFade 0.8s ease-out both' }}>
           <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-[11px] uppercase tracking-[0.35em] text-white/80">
-            Portal de inscricoes da COMIEADEPA
+            Portal de inscrições da COMIEADEPA
           </div>
           <h1 className={`${playfair.className} mt-6 max-w-3xl text-4xl font-semibold leading-tight sm:text-5xl`}>
-            Eventos e congressos da convencao
+            Eventos e congressos da convenção
           </h1>
           <p className="mt-4 max-w-2xl text-base text-white/80">
-            Escolha um dos eventos disponiveis para ver detalhes e garantir sua inscricao.
+            Escolha um dos eventos disponíveis para ver detalhes e garantir sua inscrição.
           </p>
           <div className="mt-6">
             <div className="inline-flex w-fit items-center gap-4 rounded-lg bg-white/90 px-3 py-2 text-emerald-900 shadow-sm ring-1 ring-emerald-900/10">
               <div className="flex flex-col">
-                <div className="text-[9px] font-semibold uppercase tracking-[0.24em] text-emerald-700">Inscricoes abertas</div>
+                <div className="text-[9px] font-semibold uppercase tracking-[0.24em] text-emerald-700">Inscrições abertas</div>
                 <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
                   {formatQuantidadeBadge(eventos.length)}
                 </div>
@@ -116,73 +94,98 @@ export default async function EventosPublicosPage() {
 
       <section className="mx-auto max-w-6xl px-6 py-16">
         <div className="text-center">
-          <h2 className={`${playfair.className} text-3xl font-semibold text-slate-900`}>Eventos e congressos da convencao</h2>
+          <h2 className={`${playfair.className} text-3xl font-semibold text-slate-900`}>Eventos e congressos da convenção</h2>
           <p className="mt-3 text-sm text-slate-600">
-            Escolha um dos eventos disponiveis e siga para a pagina de inscricao.
+            Escolha um dos eventos disponíveis e siga para a página de inscrição.
           </p>
         </div>
 
         {departamentosAbertos.length === 0 ? (
           <div className="mt-12 rounded-3xl border border-emerald-100 bg-white/80 p-10 text-center text-sm text-slate-600 shadow-lg">
-            No momento nao ha eventos com inscricoes abertas. Volte em breve!
+            No momento não há eventos com inscrições abertas. Volte em breve!
           </div>
         ) : null}
 
-        <div className="mt-12 grid justify-center gap-10 [grid-template-columns:repeat(auto-fit,minmax(280px,360px))]">
+        <div className="mt-12 grid justify-center gap-10 [grid-template-columns:repeat(auto-fit,minmax(280px,440px))]">
           {departamentosAbertos.map((dep, index) => {
             const total = contagens.get(dep.key) ?? 0;
 
             // Se for o departamento AGO e houver exatamente uma AGO ativa, renderiza o card real do evento
             if (dep.key === 'AGO' && agoAtiva) {
               const bannerCard = agoAtiva.banner_url || dep.banner;
+              const valorFormatado = agoAtiva.valor_inscricao.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
               return (
                 <div
                   key={agoAtiva.id}
-                  className="flex h-full min-h-[440px] w-full flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white/90 shadow-xl ring-1 ring-emerald-900/5 transition hover:-translate-y-1 hover:shadow-2xl"
+                  className="group flex h-full w-full flex-col overflow-hidden rounded-3xl border border-[#D4AF37]/30 bg-white shadow-lg ring-1 ring-[#0D2B4E]/5 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl"
                   style={{ animation: `portalCard 0.6s ease-out ${index * 0.08}s both` }}
                 >
-                  <div className="relative h-44 w-full overflow-hidden bg-slate-100">
+                  {/* Faixa dourada institucional no topo */}
+                  <div className="h-1.5 w-full bg-gradient-to-r from-[#0D2B4E] via-[#D4AF37] to-[#0D2B4E]" />
+
+                  {/* Banner oficial completo sem cortes e sem sobreposição */}
+                  <div className="relative w-full overflow-hidden bg-slate-50 border-b border-slate-100 p-3">
                     <img
                       src={bannerCard}
                       alt={agoAtiva.nome}
-                      className="h-full w-full object-cover"
+                      className="mx-auto max-h-56 w-full rounded-xl object-contain"
                     />
-                    <div className="absolute right-3 top-3">
-                      <span className={`rounded-full px-3 py-1 text-xs font-semibold text-white shadow-sm ${BADGE_CLASSES.AGO}`}>
+                  </div>
+
+                  <div className="flex flex-1 flex-col p-6 sm:p-7">
+                    {/* Cabeçalho interno com tag oficial e status fora da arte */}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#0D2B4E]/70">
+                        Evento Oficial
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
                         Inscrições abertas
                       </span>
                     </div>
-                  </div>
 
-                  <div className="flex flex-1 flex-col p-6">
-                    <div className="mb-1 text-xs uppercase tracking-[0.3em] text-slate-500">Evento Oficial</div>
+                    <h3 className={`${playfair.className} mt-3 text-2xl font-bold leading-snug text-[#0D2B4E]`}>
+                      {agoAtiva.nome}
+                    </h3>
 
-                    <h3 className="text-xl font-semibold leading-tight text-slate-900">{agoAtiva.nome}</h3>
-
-                    <div className="mt-4 text-sm text-slate-600">
-                      <div className="font-semibold text-slate-700">
-                        {formatDate(agoAtiva.data_inicio)}{agoAtiva.data_fim ? ` a ${formatDate(agoAtiva.data_fim)}` : ''}
+                    <div className="mt-5 space-y-2.5 text-sm text-slate-600">
+                      <div className="flex items-start gap-2.5">
+                        <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-[#D4AF37]" />
+                        <span className="font-medium text-slate-800">
+                          {formatDate(agoAtiva.data_inicio)}{agoAtiva.data_fim ? ` a ${formatDate(agoAtiva.data_fim)}` : ''}
+                        </span>
                       </div>
-                      <div className="mt-1">{[agoAtiva.local, agoAtiva.cidade].filter(Boolean).join(' - ') || 'Local a confirmar'}</div>
+                      <div className="flex items-start gap-2.5">
+                        <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#D4AF37]" />
+                        <span>{[agoAtiva.local, agoAtiva.cidade].filter(Boolean).join(' - ') || 'Local a confirmar'}</span>
+                      </div>
+                      {agoAtiva.vagas_disponiveis !== null ? (
+                        <div className="flex items-center gap-2.5">
+                          <Users className="h-4 w-4 shrink-0 text-[#D4AF37]" />
+                          <span className="font-medium text-emerald-700">
+                            {agoAtiva.vagas_disponiveis} vagas disponíveis
+                          </span>
+                        </div>
+                      ) : null}
                     </div>
 
-                    <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-700">
-                      <span className={`rounded-full px-3 py-1 ${dep.tonalidade.chip}`}>
-                        {formatValor(agoAtiva.valor_inscricao, agoAtiva.usar_tipos_inscricao)}
-                      </span>
-                      {agoAtiva.vagas_disponiveis !== null ? (
-                        <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-800">
-                          {agoAtiva.vagas_disponiveis} vagas
-                        </span>
-                      ) : null}
+                    {/* Destaque de preço */}
+                    <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3.5">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        {agoAtiva.usar_tipos_inscricao ? 'Inscrição a partir de' : agoAtiva.valor_inscricao === 0 ? 'Investimento' : 'Valor da inscrição'}
+                      </div>
+                      <div className="mt-0.5 text-2xl font-bold tracking-tight text-[#0D2B4E]">
+                        {agoAtiva.valor_inscricao === 0 && !agoAtiva.usar_tipos_inscricao ? 'Gratuita' : valorFormatado}
+                      </div>
                     </div>
 
                     <div className="mt-auto pt-6">
                       <Link
                         href={`/inscricao/${agoAtiva.slug}`}
-                        className={`inline-flex w-full items-center justify-center rounded-full px-5 py-3 text-sm font-semibold text-white shadow transition ${CTA_CLASSES.AGO}`}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-[#D4AF37]/60 bg-[#0D2B4E] px-5 py-3.5 text-sm font-semibold text-white shadow-md transition-all duration-200 hover:bg-[#123b63] hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/50"
                       >
-                        Fazer inscrição
+                        <span>Fazer inscrição</span>
+                        <ArrowRight className="h-4 w-4 text-[#D4AF37]" />
                       </Link>
                       <BotaoConsultarInscricaoAgo />
                     </div>
