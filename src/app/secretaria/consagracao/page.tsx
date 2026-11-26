@@ -195,6 +195,7 @@ export default function ConsagracaoPage() {
   const [statusMensagem, setStatusMensagem] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [processModalOpen, setProcessModalOpen] = useState(false);
+  const [modalPdfOpen, setModalPdfOpen] = useState(false);
   const [processRegistro, setProcessRegistro] = useState<any | null>(null);
   const [consagracaoModuleReady, setConsagracaoModuleReady] = useState(true);
   const [candidatoDocumentos, setCandidatoDocumentos] = useState<any | null>(null);
@@ -396,6 +397,20 @@ export default function ConsagracaoPage() {
     const payload = await res.json().catch(() => null as any);
     setDocumentosStatus((payload?.data as Record<string, { total: number; tipos: string[] }>) || {});
   };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && modalPdfOpen) {
+        setModalPdfOpen(false);
+      }
+    };
+    if (modalPdfOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [modalPdfOpen]);
 
   useEffect(() => {
     if (!loading) {
@@ -1436,6 +1451,342 @@ export default function ConsagracaoPage() {
     pdf.save(`consagracao-registros-${dataArquivo}.pdf`);
   };
 
+  const handlePrintRegistrosComEsposa = async () => {
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const marginX = 10;
+    const marginY = 10;
+    const contentWidth = pageWidth - marginX * 2;
+    const rowHeight = 5;
+    const headerHeight = 6;
+    // Larguras ajustadas proporcionalmente totalizando 277mm:
+    // Nº Processo (22), Data (18), Nome (50), CPF (26), Categoria (32), Nome da Esposa (48), Telefone (29), Pastor Indicante (52) = 277mm
+    const columnWidths = [22, 18, 50, 26, 32, 48, 29, 52];
+    const headers = ['Nº Processo', 'Data', 'Nome', 'CPF', 'Categoria', 'Nome da Esposa', 'Telefone', 'Pastor Indicante'];
+
+    const toText = (value: unknown) => String(value ?? '—');
+    const fitText = (value: unknown, maxWidth: number) => {
+      const raw = toText(value).replace(/\s+/g, ' ').trim() || '—';
+      if (pdf.getTextWidth(raw) <= maxWidth - 2) return raw;
+      let cut = raw;
+      while (cut.length > 1 && pdf.getTextWidth(`${cut}…`) > maxWidth - 2) {
+        cut = cut.slice(0, -1);
+      }
+      return `${cut}…`;
+    };
+
+    const loadLogoDataUrl = async () => {
+      try {
+        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = () => reject(new Error('Falha ao carregar logo'));
+          image.src = '/img/logo_comieadepa.png';
+        });
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        ctx.drawImage(img, 0, 0);
+        return canvas.toDataURL('image/png');
+      } catch {
+        return null;
+      }
+    };
+
+    const logoDataUrl = await loadLogoDataUrl();
+
+    paginasImpressao.forEach((pagina, pageIndex) => {
+      if (pageIndex > 0) {
+        pdf.addPage();
+      }
+
+      const isFirstPage = pageIndex === 0;
+      let currentY = marginY;
+
+      if (isFirstPage) {
+        if (logoDataUrl) {
+          pdf.addImage(logoDataUrl, 'PNG', marginX, currentY, 18, 18);
+        }
+
+        const centerStartX = marginX + 20;
+        const centerWidth = contentWidth - 20;
+
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(10);
+        pdf.text('COMIEADEPA - CONVENÇÃO INTERESTADUAL DE MINISTROS E IGREJAS', centerStartX + centerWidth / 2, currentY + 4, { align: 'center' });
+        pdf.text('EVANGÉLICAS ASSEMBLEIA DE DEUS NO PARÁ', centerStartX + centerWidth / 2, currentY + 8, { align: 'center' });
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        pdf.text('Emails: comieadepa@bol.com.br / Site: www.comieadepa.org', centerStartX + centerWidth / 2, currentY + 12, { align: 'center' });
+        pdf.text('RODOVIA DO MÁRIO COVAS, 2500, 67115-000 / COQUEIRO, ANANINDEUA - PA', centerStartX + centerWidth / 2, currentY + 15.5, { align: 'center' });
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(0, 102, 204);
+        pdf.text('PRESIDENTE: PR. OCELIO NAUAR', centerStartX + centerWidth / 2, currentY + 19, { align: 'center' });
+        pdf.setTextColor(0, 0, 0);
+
+        currentY += 22;
+        pdf.setDrawColor(0, 0, 0);
+        pdf.setLineWidth(0.35);
+        pdf.line(marginX, currentY, pageWidth - marginX, currentY);
+
+        currentY += 6;
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(12);
+        pdf.text('Lista de Candidatos - Consagração (com Esposa)', pageWidth / 2, currentY, { align: 'center' });
+
+        currentY += 5;
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        pdf.text(
+          `Emitido em ${new Date().toLocaleString('pt-BR')} | Total: ${registrosFiltrados.length} registro(s) | Página ${pageIndex + 1} de ${paginasImpressao.length}`,
+          pageWidth / 2,
+          currentY,
+          { align: 'center' }
+        );
+
+        if (filtrosAplicadosImpressao.length > 0) {
+          currentY += 4;
+          const filtrosLinhas = pdf.splitTextToSize(filtrosResumoImpressao, contentWidth);
+          pdf.text(filtrosLinhas, marginX, currentY);
+          currentY += filtrosLinhas.length * 3 + 3;
+        } else {
+          currentY += 6;
+        }
+      } else {
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(11);
+        pdf.text('Lista de Candidatos - Consagração (com Esposa)', pageWidth / 2, currentY + 4, { align: 'center' });
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        pdf.text(`Página ${pageIndex + 1} de ${paginasImpressao.length}`, pageWidth / 2, currentY + 8, { align: 'center' });
+        currentY += 12;
+      }
+
+      let currentX = marginX;
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8);
+      pdf.setTextColor(0, 0, 0);
+      headers.forEach((header, idx) => {
+        const width = columnWidths[idx];
+        pdf.setFillColor(255, 255, 255);
+        pdf.rect(currentX, currentY, width, headerHeight, 'S');
+        pdf.text(fitText(header, width), currentX + 1, currentY + 3.9);
+        currentX += width;
+      });
+
+      currentY += headerHeight;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(7.5);
+
+      const rows = pagina.length ? pagina : [null];
+      rows.forEach((reg, rowIndex) => {
+        const dataProc = reg?.data_processo ? new Date(`${reg.data_processo}T00:00:00`).toLocaleDateString('pt-BR') : '—';
+        const values = reg
+          ? [
+              reg.numero_processo || '—',
+              dataProc,
+              reg.nome || '—',
+              reg.cpf ? formatCpf(reg.cpf) : '—',
+              reg.categoria_registro || '—',
+              reg.nome_conjuge || '—',
+              formatarTelefonePdf(reg.telefone, reg.member_celular),
+              reg.pastor_solicitante || '—',
+            ]
+          : ['Nenhum registro encontrado.', '', '', '', '', '', '', ''];
+
+        currentX = marginX;
+        columnWidths.forEach((width, colIndex) => {
+          const isZebra = rowIndex % 2 === 1;
+          if (isZebra) {
+            pdf.setFillColor(249, 250, 251);
+            pdf.rect(currentX, currentY, width, rowHeight, 'F');
+          }
+          pdf.rect(currentX, currentY, width, rowHeight);
+          const value = colIndex === 0 && !reg ? (colIndex === 0 ? 'Nenhum registro encontrado.' : '') : values[colIndex];
+          pdf.text(fitText(value, width), currentX + 1, currentY + 3.6);
+          currentX += width;
+        });
+        currentY += rowHeight;
+      });
+
+      pdf.setFontSize(7);
+      pdf.text('Gerado automaticamente pelo módulo Consagração', marginX, pageHeight - 5);
+    });
+
+    const dataArquivo = new Date().toISOString().slice(0, 10);
+    pdf.save(`consagracao-registros-com-esposa-${dataArquivo}.pdf`);
+  };
+
+  const handlePrintListaFrequencia = async () => {
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const marginX = 10;
+    const marginY = 10;
+    const contentWidth = pageWidth - marginX * 2;
+    const rowHeight = 7;
+    const headerHeight = 6.5;
+    // Nº (12), Nº Processo (24), Nome (68), CPF (28), Categoria (38), Assinatura (107) = 277mm
+    const columnWidths = [12, 24, 68, 28, 38, 107];
+    const headers = ['Nº', 'Nº Processo', 'Nome', 'CPF', 'Categoria', 'Assinatura'];
+
+    const toText = (value: unknown) => String(value ?? '—');
+    const fitText = (value: unknown, maxWidth: number) => {
+      const raw = toText(value).replace(/\s+/g, ' ').trim() || '—';
+      if (pdf.getTextWidth(raw) <= maxWidth - 2) return raw;
+      let cut = raw;
+      while (cut.length > 1 && pdf.getTextWidth(`${cut}…`) > maxWidth - 2) {
+        cut = cut.slice(0, -1);
+      }
+      return `${cut}…`;
+    };
+
+    const loadLogoDataUrl = async () => {
+      try {
+        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = () => reject(new Error('Falha ao carregar logo'));
+          image.src = '/img/logo_comieadepa.png';
+        });
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        ctx.drawImage(img, 0, 0);
+        return canvas.toDataURL('image/png');
+      } catch {
+        return null;
+      }
+    };
+
+    const logoDataUrl = await loadLogoDataUrl();
+
+    // Agrupa os registros filtrados (de todas as páginas da listagem) respeitando a altura da linha de assinatura
+    const todosRegistros = paginasImpressao.flat();
+    const totalCandidatos = todosRegistros.length;
+    const rowsPerPageFirst = 21;
+    const rowsPerPageNext = 24;
+    const paginasFreq: any[][] = [];
+    if (todosRegistros.length === 0) {
+      paginasFreq.push([]);
+    } else {
+      let cursor = 0;
+      paginasFreq.push(todosRegistros.slice(0, rowsPerPageFirst));
+      cursor = rowsPerPageFirst;
+      while (cursor < todosRegistros.length) {
+        paginasFreq.push(todosRegistros.slice(cursor, cursor + rowsPerPageNext));
+        cursor += rowsPerPageNext;
+      }
+    }
+
+    let seq = 0;
+    paginasFreq.forEach((pagina, pageIndex) => {
+      if (pageIndex > 0) {
+        pdf.addPage();
+      }
+
+      const isFirstPage = pageIndex === 0;
+      let currentY = marginY;
+
+      if (isFirstPage) {
+        if (logoDataUrl) {
+          pdf.addImage(logoDataUrl, 'PNG', marginX, currentY, 18, 18);
+        }
+
+        const centerStartX = marginX + 20;
+        const centerWidth = contentWidth - 20;
+
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(10);
+        pdf.text('COMIEADEPA - CONVENÇÃO INTERESTADUAL DE MINISTROS E IGREJAS', centerStartX + centerWidth / 2, currentY + 4, { align: 'center' });
+        pdf.text('EVANGÉLICAS ASSEMBLEIA DE DEUS NO PARÁ', centerStartX + centerWidth / 2, currentY + 8, { align: 'center' });
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        pdf.text('Emails: comieadepa@bol.com.br / Site: www.comieadepa.org', centerStartX + centerWidth / 2, currentY + 12, { align: 'center' });
+        pdf.text('RODOVIA DO MÁRIO COVAS, 2500, 67115-000 / COQUEIRO, ANANINDEUA - PA', centerStartX + centerWidth / 2, currentY + 15.5, { align: 'center' });
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(0, 102, 204);
+        pdf.setFontSize(11);
+        pdf.text('LISTA DE FREQUÊNCIA — CONSAGRAÇÃO', centerStartX + centerWidth / 2, currentY + 21, { align: 'center' });
+        pdf.setTextColor(0, 0, 0);
+
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8.5);
+        pdf.text(`Data: ____/____/______`, marginX, currentY + 26.5);
+        pdf.text(`Total de candidatos: ${totalCandidatos}`, pageWidth - marginX, currentY + 26.5, { align: 'right' });
+
+        currentY += 29;
+      }
+
+      // Cabeçalho da tabela (repetido em todas as páginas)
+      pdf.setFillColor(243, 244, 246);
+      pdf.setDrawColor(180, 180, 180);
+      pdf.rect(marginX, currentY, contentWidth, headerHeight, 'FD');
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(7.5);
+      let colX = marginX;
+      headers.forEach((header, idx) => {
+        const w = columnWidths[idx];
+        pdf.line(colX, currentY, colX, currentY + headerHeight);
+        pdf.text(header, colX + 1.5, currentY + 4.3);
+        colX += w;
+      });
+      pdf.line(marginX + contentWidth, currentY, marginX + contentWidth, currentY + headerHeight);
+      currentY += headerHeight;
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(7.5);
+
+      pagina.forEach((item: any) => {
+        seq += 1;
+        pdf.rect(marginX, currentY, contentWidth, rowHeight);
+
+        const cells = [
+          String(seq),
+          item.numero_processo || '—',
+          item.nome || '—',
+          formatCpf(item.cpf),
+          item.categoria || '—',
+          '',
+        ];
+
+        let cellX = marginX;
+        cells.forEach((cellValue, idx) => {
+          const w = columnWidths[idx];
+          pdf.line(cellX, currentY, cellX, currentY + rowHeight);
+          if (idx === 5) {
+            // Linha guia para assinatura manual
+            pdf.setDrawColor(210, 210, 210);
+            pdf.line(cellX + 3, currentY + rowHeight - 1.5, cellX + w - 3, currentY + rowHeight - 1.5);
+            pdf.setDrawColor(180, 180, 180);
+          } else {
+            pdf.text(fitText(cellValue, w), cellX + 1.5, currentY + 4.6);
+          }
+          cellX += w;
+        });
+        pdf.line(marginX + contentWidth, currentY, marginX + contentWidth, currentY + rowHeight);
+        currentY += rowHeight;
+      });
+
+      // Rodapé com paginação e total de candidatos
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(100, 100, 100);
+      pdf.text(`Total de candidatos listados: ${totalCandidatos}`, marginX, pageHeight - 6);
+      pdf.text(`Página ${pageIndex + 1} de ${paginasFreq.length}`, pageWidth - marginX, pageHeight - 6, { align: 'right' });
+      pdf.setTextColor(0, 0, 0);
+    });
+
+    const dataArquivo = new Date().toISOString().slice(0, 10);
+    pdf.save(`consagracao-lista-frequencia-${dataArquivo}.pdf`);
+  };
+
   const getDocumentacaoStatus = (registroId: string) => {
     const info = documentosStatus[registroId] || { total: 0, tipos: [] };
     const tiposNormalizados = info.tipos.map(normalizeDocumentoTipo);
@@ -2435,7 +2786,7 @@ export default function ConsagracaoPage() {
               </button>
 
               <button
-                onClick={handlePrintRegistros}
+                onClick={() => setModalPdfOpen(true)}
                 className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition"
               >
                 Gerar PDF
@@ -3129,6 +3480,127 @@ export default function ConsagracaoPage() {
           </div>
         );
       })()}
+
+      {/* Modal de Seleção de Tipo de Relatório PDF */}
+      {modalPdfOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4"
+          onClick={() => setModalPdfOpen(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden border border-gray-100 animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Cabeçalho */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-150 bg-gradient-to-r from-blue-700 to-blue-800 text-white">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl">📄</span>
+                <div>
+                  <h3 className="text-base font-bold leading-tight">Gerar Relatório em PDF</h3>
+                  <p className="text-xs text-blue-150">Selecione o formato de listagem desejado</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="text-white/80 hover:text-white hover:bg-white/10 rounded-lg p-1.5 transition text-lg leading-none"
+                onClick={() => setModalPdfOpen(false)}
+                title="Fechar (Esc)"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Conteúdo com as 3 opções */}
+            <div className="p-6 space-y-3">
+              {/* Opção 1: Lista sem esposa (Ativa) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setModalPdfOpen(false);
+                  handlePrintRegistros();
+                }}
+                className="w-full text-left p-4 rounded-xl border-2 border-blue-200 bg-blue-50/60 hover:bg-blue-100/70 hover:border-blue-400 transition flex items-start gap-3.5 group cursor-pointer shadow-xs"
+              >
+                <div className="p-2 rounded-lg bg-blue-600 text-white flex-shrink-0 group-hover:scale-105 transition">
+                  <span className="text-lg">📋</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-bold text-blue-950">Lista sem esposa</span>
+                    <span className="text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-600 text-white">
+                      Disponível
+                    </span>
+                  </div>
+                  <p className="text-xs text-blue-900/80 mt-1">
+                    Relatório oficial em formato paisagem com os filtros aplicados na tela.
+                  </p>
+                </div>
+              </button>
+
+              {/* Opção 2: Lista com esposa (Habilitada) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setModalPdfOpen(false);
+                  handlePrintRegistrosComEsposa();
+                }}
+                className="w-full text-left p-4 rounded-xl border-2 border-teal-200 bg-teal-50/60 hover:bg-teal-100/70 hover:border-teal-400 transition flex items-start gap-3.5 group cursor-pointer shadow-xs"
+              >
+                <div className="p-2 rounded-lg bg-teal-600 text-white flex-shrink-0 group-hover:scale-105 transition">
+                  <span className="text-lg">👥</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-bold text-teal-950">Lista com esposa</span>
+                    <span className="text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-teal-600 text-white">
+                      Disponível
+                    </span>
+                  </div>
+                  <p className="text-xs text-teal-900/80 mt-1">
+                    Relatório em formato paisagem com Nome da Esposa e Pastor Indicante.
+                  </p>
+                </div>
+              </button>
+
+              {/* Opção 3: Lista de frequência (Habilitada) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setModalPdfOpen(false);
+                  handlePrintListaFrequencia();
+                }}
+                className="w-full text-left p-4 rounded-xl border-2 border-amber-200 bg-amber-50/60 hover:bg-amber-100/70 hover:border-amber-400 transition flex items-start gap-3.5 group cursor-pointer shadow-xs"
+              >
+                <div className="p-2 rounded-lg bg-amber-600 text-white flex-shrink-0 group-hover:scale-105 transition">
+                  <span className="text-lg">📝</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-bold text-amber-950">Lista de frequência</span>
+                    <span className="text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-600 text-white">
+                      Disponível
+                    </span>
+                  </div>
+                  <p className="text-xs text-amber-900/80 mt-1">
+                    Planilha em formato paisagem com campo amplo de assinatura para controle presencial.
+                  </p>
+                </div>
+              </button>
+            </div>
+
+            {/* Rodapé */}
+            <div className="px-6 py-3.5 bg-gray-50 border-t border-gray-150 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setModalPdfOpen(false)}
+                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold text-sm rounded-lg transition"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Impressão - Ficha do Ministro */}
       {membroImprimindo && (
