@@ -1,5 +1,12 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { APP_URL, PUBLIC_URL } from '@/lib/urls';
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
 
 const baseUrl = PUBLIC_URL || APP_URL || 'https://siscomieadepa.org';
 const metadataBase = baseUrl ? new URL(baseUrl) : undefined;

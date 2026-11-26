@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { CSSProperties } from 'react';
+import type { Viewport } from 'next';
 import { Calendar, MapPin, ArrowRight, CheckCircle2, Users } from 'lucide-react';
 // Fontes tipográficas resilientes sem dependência de download externo durante o build na Vercel
 const sora = { className: 'font-sans' };
@@ -10,6 +11,13 @@ import { APP_URL, PUBLIC_URL } from '@/lib/urls';
 import { DEPARTAMENTOS, fetchOpenEvents } from '@/lib/public-portal';
 
 export const dynamic = 'force-dynamic';
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
 
 
 const baseUrl = PUBLIC_URL || APP_URL || 'http://localhost:3000';
@@ -92,10 +100,10 @@ export default async function EventosPublicosPage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-6 py-16">
+      <section className="mx-auto max-w-6xl px-4 sm:px-6 pt-12 pb-44 sm:py-16">
         <div className="text-center">
-          <h2 className={`${playfair.className} text-3xl font-semibold text-slate-900`}>Eventos e congressos da convenção</h2>
-          <p className="mt-3 text-sm text-slate-600">
+          <h2 className={`${playfair.className} text-2xl sm:text-3xl font-semibold text-slate-900`}>Eventos e congressos da convenção</h2>
+          <p className="mt-2 sm:mt-3 text-sm text-slate-600">
             Escolha um dos eventos disponíveis e siga para a página de inscrição.
           </p>
         </div>
@@ -106,7 +114,7 @@ export default async function EventosPublicosPage() {
           </div>
         ) : null}
 
-        <div className="mt-12 grid justify-center gap-10 [grid-template-columns:repeat(auto-fit,minmax(280px,440px))]">
+        <div className="mt-8 sm:mt-12 grid justify-center gap-8 sm:gap-10 [grid-template-columns:repeat(auto-fit,minmax(280px,440px))]">
           {departamentosAbertos.map((dep, index) => {
             const total = contagens.get(dep.key) ?? 0;
 
@@ -124,15 +132,15 @@ export default async function EventosPublicosPage() {
                   <div className="h-1.5 w-full bg-gradient-to-r from-[#0D2B4E] via-[#D4AF37] to-[#0D2B4E]" />
 
                   {/* Banner oficial completo sem cortes e sem sobreposição */}
-                  <div className="relative w-full overflow-hidden bg-slate-50 border-b border-slate-100 p-3">
+                  <div className="relative w-full overflow-hidden bg-slate-50 border-b border-slate-100 p-2.5 sm:p-3">
                     <img
                       src={bannerCard}
                       alt={agoAtiva.nome}
-                      className="mx-auto max-h-56 w-full rounded-xl object-contain"
+                      className="mx-auto max-h-48 sm:max-h-56 w-full rounded-xl object-contain"
                     />
                   </div>
 
-                  <div className="flex flex-1 flex-col p-6 sm:p-7">
+                  <div className="flex flex-1 flex-col p-5 sm:p-7">
                     {/* Cabeçalho interno com tag oficial e status fora da arte */}
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#0D2B4E]/70">
@@ -144,11 +152,11 @@ export default async function EventosPublicosPage() {
                       </span>
                     </div>
 
-                    <h3 className={`${playfair.className} mt-3 text-2xl font-bold leading-snug text-[#0D2B4E]`}>
+                    <h3 className={`${playfair.className} mt-2.5 sm:mt-3 text-xl sm:text-2xl font-bold leading-snug text-[#0D2B4E]`}>
                       {agoAtiva.nome}
                     </h3>
 
-                    <div className="mt-5 space-y-2.5 text-sm text-slate-600">
+                    <div className="mt-3.5 sm:mt-5 space-y-2 text-sm text-slate-600">
                       <div className="flex items-start gap-2.5">
                         <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-[#D4AF37]" />
                         <span className="font-medium text-slate-800">
@@ -170,7 +178,7 @@ export default async function EventosPublicosPage() {
                     </div>
 
                     {/* Destaque de preço */}
-                    <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3.5">
+                    <div className="mt-4 sm:mt-6 rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3">
                       <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                         {agoAtiva.usar_tipos_inscricao ? 'Inscrição a partir de' : agoAtiva.valor_inscricao === 0 ? 'Investimento' : 'Valor da inscrição'}
                       </div>
@@ -179,7 +187,7 @@ export default async function EventosPublicosPage() {
                       </div>
                     </div>
 
-                    <div className="mt-auto pt-6">
+                    <div className="mt-auto pt-4 sm:pt-6">
                       <Link
                         href={`/inscricao/${agoAtiva.slug}`}
                         className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-[#D4AF37]/60 bg-[#0D2B4E] px-5 py-3.5 text-sm font-semibold text-white shadow-md transition-all duration-200 hover:bg-[#123b63] hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/50"

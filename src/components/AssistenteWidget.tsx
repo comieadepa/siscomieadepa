@@ -45,9 +45,10 @@ function MaiaAvatar({ sizeClass, className, isFloating }: { sizeClass: string; c
 
   return (
     <img
-      src="/img/sara.png?v=2"
+      src="/img/sara2.png"
       alt="SARA"
-      className={`${sizeClass} rounded-full bg-white border border-blue-200 shadow-sm object-cover object-top ${className ?? ''}`.trim()}
+      className={`${sizeClass} object-contain shrink-0 select-none ${className ?? ''}`.trim()}
+      draggable={false}
     />
   );
 }
@@ -330,7 +331,7 @@ export default function AssistenteWidget({ eventoId, nomeEvento }: AssistenteWid
       <div className={`flex ${isBot ? 'justify-start' : 'justify-end'} mb-2`}>
         {isBot && (
           <div className="mr-2 mt-1 flex-shrink-0">
-            <MaiaAvatar sizeClass="w-7 h-7" />
+            <MaiaAvatar sizeClass="w-8 h-8" />
           </div>
         )}
         <div
@@ -382,7 +383,7 @@ export default function AssistenteWidget({ eventoId, nomeEvento }: AssistenteWid
         <button
           onClick={() => setAberto(true)}
           aria-label="Abrir assistente virtual Sara"
-          className="fixed bottom-5 right-5 z-40 flex items-center justify-center p-0 border-0 bg-transparent focus:outline-none cursor-pointer animate-sara-float transition-transform duration-200 hover:scale-[1.02] active:scale-95"
+          className="fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom))] right-[calc(1.25rem+env(safe-area-inset-right))] z-40 flex items-center justify-center p-0 border-0 bg-transparent focus:outline-none cursor-pointer animate-sara-float transition-transform duration-200 hover:scale-[1.02] active:scale-95"
           style={{ width: 'auto', height: 'auto' }}
         >
           <MaiaAvatar sizeClass="w-[190px] sm:w-[260px] h-auto max-w-[85vw]" isFloating />
@@ -391,32 +392,33 @@ export default function AssistenteWidget({ eventoId, nomeEvento }: AssistenteWid
 
       {/* ── Janela do chat ──────────────────────────────────── */}
       <div
-        className={`fixed bottom-24 right-6 z-50 w-[360px] max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden transition-all duration-300 origin-bottom-right ${
+        className={`fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-50 h-[calc(100dvh-1.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] max-h-[600px] sm:inset-auto sm:bottom-6 sm:right-6 sm:w-[380px] sm:h-[520px] sm:max-h-[calc(100dvh-3rem)] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden transition-all duration-300 origin-bottom-right ${
           aberto ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-95 pointer-events-none'
         }`}
-        style={{ height: 480, maxHeight: 'calc(100vh - 8rem)' }}
       >
         {/* ── Cabeçalho ─────────────────────────────────────── */}
-        <div className="bg-[#0D2B4E] px-4 py-3 flex items-center gap-3 flex-shrink-0">
-          <MaiaAvatar sizeClass="w-9 h-9" />
+        <div className="bg-[#0D2B4E] px-3.5 py-2.5 flex items-center gap-3 flex-shrink-0">
+          <MaiaAvatar sizeClass="w-11 h-11" />
           <div className="flex-1 min-w-0">
             <p className="text-white font-bold text-sm leading-tight truncate">SARA</p>
-            <p className="text-white/60 text-xs truncate">{nomeEvento}</p>
+            <p className="text-white/75 text-xs truncate">
+              {/126[ªa]\s*AGO/i.test(nomeEvento) ? '126ª AGO' : nomeEvento}
+            </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={limparConversa}
               title="Limpar conversa"
-              className="text-white/60 hover:text-white text-xs bg-white/10 hover:bg-white/20 px-2 py-1 rounded-lg transition font-medium whitespace-nowrap"
+              className="min-h-[44px] px-3 py-2 text-white/80 hover:text-white text-xs bg-white/10 hover:bg-white/20 rounded-xl transition font-medium whitespace-nowrap flex items-center justify-center"
             >
               Limpar Conversa
             </button>
             <button
               onClick={() => setAberto(false)}
-              className="text-white/60 hover:text-white transition"
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition"
               aria-label="Fechar"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <svg className="w-[22px] h-[22px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
@@ -424,7 +426,7 @@ export default function AssistenteWidget({ eventoId, nomeEvento }: AssistenteWid
         </div>
 
         {/* ── Área de mensagens ─────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto bg-gray-50 px-3 py-3">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden bg-gray-50 px-3 py-3">
 
           {/* Sugestões rápidas (antes de qualquer troca) */}
           {mensagens.length <= 1 && !enviando && (
@@ -450,7 +452,7 @@ export default function AssistenteWidget({ eventoId, nomeEvento }: AssistenteWid
           {enviando && (
             <div className="flex justify-start mb-2">
               <div className="mr-2 mt-1 flex-shrink-0">
-                <MaiaAvatar sizeClass="w-7 h-7" />
+                <MaiaAvatar sizeClass="w-8 h-8" />
               </div>
               <div className="bg-white border border-gray-100 shadow-sm px-4 py-3 rounded-2xl rounded-tl-sm">
                 <div className="flex gap-1 items-center">
@@ -490,7 +492,7 @@ export default function AssistenteWidget({ eventoId, nomeEvento }: AssistenteWid
             onKeyDown={onKeyDown}
             placeholder="Digite sua mensagem..."
             disabled={enviando}
-            className="flex-1 text-sm px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#123b63]/30 disabled:bg-gray-50 disabled:text-gray-400"
+            className="flex-1 text-base sm:text-sm px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#123b63]/30 disabled:bg-gray-50 disabled:text-gray-400"
           />
           <button
             onClick={() => enviar(input)}
