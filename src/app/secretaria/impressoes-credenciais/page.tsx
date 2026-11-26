@@ -5,7 +5,6 @@ import PageLayout from '@/components/PageLayout';
 import { authenticatedFetch } from '@/lib/api-client';
 import {
   Printer,
-  Eye,
   RefreshCw,
   Truck,
   Package,
@@ -504,17 +503,6 @@ export default function ImpressoesCredenciaisPage() {
                       </td>
                       <td className="px-5 py-3.5">
                         <div className="flex items-center justify-end gap-2">
-                          {item.uniqueId && (
-                            <a
-                              href={`/credencial/${item.uniqueId}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              title="Ver credencial"
-                              className="inline-flex items-center justify-center rounded-lg border border-slate-200 p-2 text-slate-500 hover:border-[#0D2B4E] hover:text-[#0D2B4E] transition-colors"
-                            >
-                              <Eye size={15} />
-                            </a>
-                          )}
                           {item.status === 'pago_pendente_impressao' && (
                             <button
                               type="button"
