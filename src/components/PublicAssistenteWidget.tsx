@@ -51,8 +51,9 @@ function MaiaAvatar({ sizeClass, className, isFloating }: { sizeClass: string; c
     return (
       <img
         src="/img/sara.png"
-        alt="SARA"
-        className={`${sizeClass} object-contain drop-shadow-xl ${className ?? ''}`.trim()}
+        alt="SARA - Assistente Virtual"
+        className={`${sizeClass} object-contain select-none pointer-events-none ${className ?? ''}`.trim()}
+        draggable={false}
       />
     );
   }
@@ -385,24 +386,44 @@ export default function PublicAssistenteWidget({ scope, departamento }: Props) {
 
   return (
     <>
-      <button
-        onClick={() => setAberto(a => !a)}
-        aria-label="Abrir assistente publico"
-        className={`fixed bottom-6 right-6 z-50 flex items-center justify-center transition-all duration-300 focus:outline-none ${
-          aberto ? 'scale-90 opacity-90' : 'scale-100 hover:scale-105'
-        }`}
-      >
-        <div className="relative">
-          <MaiaAvatar sizeClass="w-24 h-24 sm:w-28 sm:h-28" isFloating />
-        </div>
-      </button>
+      <style jsx global>{`
+        @keyframes saraFloating {
+          0%, 100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-8px);
+          }
+        }
+        .animate-sara-float {
+          animation: saraFloating 3s ease-in-out infinite;
+        }
+        @media (hover: hover) {
+          .animate-sara-float:hover {
+            animation-play-state: paused;
+          }
+        }
+        .animate-sara-float:active,
+        .animate-sara-float:focus {
+          animation-play-state: paused;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .animate-sara-float {
+            animation: none !important;
+          }
+        }
+      `}</style>
 
+      {/* Botão flutuante - exibido somente enquanto o chat estiver fechado */}
       {!aberto && (
-        <div className="fixed bottom-[6.5rem] sm:bottom-[7.5rem] right-6 z-50 pointer-events-none">
-          <div className="bg-white border border-gray-200 shadow-lg rounded-xl px-3.5 py-1.5 text-xs font-semibold text-[#0D2B4E] animate-bounce max-w-[85vw] sm:max-w-xs text-center">
-            Olá, eu sou a SARA, posso ajudar?
-          </div>
-        </div>
+        <button
+          onClick={() => setAberto(true)}
+          aria-label="Abrir assistente virtual Sara"
+          className="fixed bottom-5 right-5 z-40 flex items-center justify-center p-0 border-0 bg-transparent focus:outline-none cursor-pointer animate-sara-float transition-transform duration-200 hover:scale-[1.02] active:scale-95"
+          style={{ width: 'auto', height: 'auto' }}
+        >
+          <MaiaAvatar sizeClass="w-[190px] sm:w-[260px] h-auto max-w-[85vw]" isFloating />
+        </button>
       )}
 
       <div
