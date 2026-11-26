@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { BedDouble, AlertTriangle } from 'lucide-react';
 import { generateQRCodeToken } from '@/lib/qrcode-token';
 import { normalizePayloadUppercase } from '@/lib/text';
 import { cleanCpf } from '@/lib/cpf';
@@ -350,6 +351,10 @@ export default function InscricaoPublicaPage() {
   const [buscandoCPF,   setBuscandoCPF]   = useState(false);
   const [cpfStatus,     setCpfStatus]     = useState<'idle' | 'encontrado' | 'nao_encontrado'>('idle');
   const [salvando,      setSalvando]      = useState(false);
+  const [modalSemHospedagemOpen, setModalSemHospedagemOpen] = useState(false);
+  const [participantesSemHospedagem, setParticipantesSemHospedagem] = useState<Array<{ nome: string; disponivel: boolean; motivo?: string | null }>>([]);
+  const hospedagemSectionRef = useRef<HTMLDivElement | null>(null);
+  const confirmadoSemHospedagemRef = useRef(false);
   const [erroForm,      setErroForm]      = useState<string | null>(null);
 
   // Tipo de inscrição e cupom
@@ -1514,6 +1519,37 @@ export default function InscricaoPublicaPage() {
         }
       }
     }
+
+      if (evento.departamento === 'AGO' && !confirmadoSemHospedagemRef.current) {
+        const semHosp: Array<{ nome: string; disponivel: boolean; motivo?: string | null }> = [];
+        const titularQuerHosp = evento.usar_tipos_inscricao ? solicitaHospedagem : form.hospedagem;
+        if (podeHospedagem && !titularQuerHosp) {
+          semHosp.push({
+            nome: form.nome_inscrito.trim() || 'Titular',
+            disponivel: statusHospTitular.disponivel,
+            motivo: statusHospTitular.motivo,
+          });
+        }
+        if (modoLote) {
+          for (let i = 0; i < participantesExtra.length; i++) {
+            const pExtra = participantesExtra[i];
+            if (!pExtra.hospedagem) {
+              semHosp.push({
+                nome: pExtra.nome_inscrito.trim() || `Participante ${i + 2}`,
+                disponivel: true,
+                motivo: null,
+              });
+            }
+          }
+        }
+        const temElegivelSemHosp = semHosp.some(s => s.disponivel);
+        if (temElegivelSemHosp) {
+          setParticipantesSemHospedagem(semHosp);
+          setModalSemHospedagemOpen(true);
+          return;
+        }
+      }
+      confirmadoSemHospedagemRef.current = false;
 
     setSalvando(true);
     try {
@@ -3186,6 +3222,85 @@ export default function InscricaoPublicaPage() {
               .
             </p>
           </form>
+
+          {/* Modal Preventivo de Confirmação sem Hospedagem */}
+          {modalSemHospedagemOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+              <div className="w-full max-w-md overflow-hidden rounded-2xl border border-[#D4AF37]/40 bg-white shadow-2xl">
+                <div className="bg-[#0D2B4E] px-6 py-4 flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-[#D4AF37]">
+                    <BedDouble className="h-5 w-5" />
+                  </div>
+                  <h3 className="text-base font-bold text-white leading-snug">
+                    Você vai precisar de hospedagem?
+                  </h3>
+                </div>
+
+                <div className="p-6 space-y-4 text-sm text-slate-700">
+                  <p>
+                    Identificamos que você está realizando sua inscrição sem solicitar hospedagem.
+                  </p>
+
+                  {participantesSemHospedagem.length > 0 && (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-1.5">
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                        {participantesSemHospedagem.length === 1 ? 'Participante sem hospedagem:' : 'Participantes sem hospedagem:'}
+                      </p>
+                      <ul className="space-y-1 text-xs">
+                        {participantesSemHospedagem.map((p, idx) => (
+                          <li key={idx} className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-slate-800">• {p.nome}</span>
+                            {!p.disponivel && (
+                              <span className="text-[11px] font-medium text-amber-700">
+                                ({p.motivo || 'Indisponível / não elegível'})
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 flex items-start gap-2.5 text-xs text-amber-900">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                    <span>
+                      As vagas de hospedagem são limitadas. Solicitações posteriores estarão sujeitas à disponibilidade.
+                    </span>
+                  </div>
+
+                  <p className="font-semibold text-[#0D2B4E]">
+                    Deseja continuar sua inscrição sem hospedagem?
+                  </p>
+                </div>
+
+                <div className="bg-slate-50 px-6 py-4 border-t border-slate-100 flex flex-col sm:flex-row gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModalSemHospedagemOpen(false);
+                      hospedagemSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }}
+                    className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-100 transition"
+                  >
+                    Voltar e revisar hospedagem
+                  </button>
+                  <button
+                    type="button"
+                    disabled={salvando}
+                    onClick={() => {
+                      setModalSemHospedagemOpen(false);
+                      confirmadoSemHospedagemRef.current = true;
+                      const formEl = document.querySelector('form');
+                      if (formEl) formEl.requestSubmit();
+                    }}
+                    className="flex-1 rounded-xl bg-[#0D2B4E] px-4 py-2.5 text-xs sm:text-sm font-semibold text-white hover:bg-[#123b63] transition disabled:opacity-60"
+                  >
+                    Sim, continuar sem hospedagem
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
