@@ -206,16 +206,23 @@ BEGIN
   v_grupo_compativel := false;
   IF v_grupo_aloj = '' OR v_grupo_aloj = 'todos' THEN
     v_grupo_compativel := true;
-  ELSIF v_grupo_aloj IN ('pastores', 'pastor') AND v_tipo_insc IN ('pastor', 'pastores', 'ministro') THEN
-    v_grupo_compativel := true;
-  ELSIF v_grupo_aloj IN ('evangelistas', 'evangelista') AND v_tipo_insc IN ('evangelista', 'evangelistas') THEN
-    v_grupo_compativel := true;
-  ELSIF v_grupo_aloj IN ('missionarios', 'missionario') AND v_tipo_insc IN ('missionario', 'missionarios', 'campo missionario', 'campo missionário') THEN
-    v_grupo_compativel := true;
-  ELSIF v_grupo_aloj IN ('esposas', 'esposa', 'mulheres', 'mulher') THEN
-    v_grupo_compativel := true;
   ELSIF v_pub_aloj = 'feminino' AND v_sexo_insc IN ('f', 'feminino') THEN
     v_grupo_compativel := true;
+  ELSIF v_pub_aloj = 'masculino' AND v_sexo_insc IN ('m', 'masculino') THEN
+    -- Mapeamento oficial dos 3 setores masculinos
+    IF v_grupo_aloj ILIKE '%presidente%' OR v_grupo_aloj ILIKE '%jubilado%' THEN
+      -- Prédio Novo e AAME: Pastores Presidentes e Jubilados
+      IF v_tipo_insc ILIKE '%presidente%' OR v_tipo_insc ILIKE '%jubilado%' THEN
+        v_grupo_compativel := true;
+      END IF;
+    ELSIF v_grupo_aloj ILIKE '%auxiliar%' OR v_grupo_aloj ILIKE '%juventude%' THEN
+      -- Mário Covas: Pastores Auxiliares, Juventude, Equipe de Apoio e demais participantes masculinos
+      IF v_tipo_insc ILIKE '%auxiliar%' OR v_tipo_insc ILIKE '%juventude%' OR v_tipo_insc ILIKE '%apoio%' OR v_tipo_insc ILIKE '%visitante%' OR v_tipo_insc ILIKE '%evangelista%' OR v_tipo_insc ILIKE '%missionario%' OR v_tipo_insc ILIKE '%presbitero%' THEN
+        v_grupo_compativel := true;
+      END IF;
+    ELSE
+      v_grupo_compativel := true;
+    END IF;
   END IF;
 
   IF NOT v_grupo_compativel THEN
