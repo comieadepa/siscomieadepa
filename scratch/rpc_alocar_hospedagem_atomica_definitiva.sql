@@ -109,8 +109,11 @@ BEGIN
     );
   END IF;
 
-  -- Proteção estrita do check-in / check-out DA HOSPEDAGEM (check-in geral do evento NÃO impede alocação de leito)
-  IF v_has_hospedagem AND (v_hospedagem.status IN ('checkin_realizado', 'checkout_realizado') OR v_hospedagem.checkin_at IS NOT NULL OR v_hospedagem.checkout_at IS NOT NULL) THEN
+  -- Proteção estrita do check-in / check-out DA HOSPEDAGEM:
+  -- Só bloqueia se o participante já possuir leito físico atribuído e check-in efetuado.
+  -- Se foi marcado check-in por engano sem possuir cama/alojamento (ex: pelo check-in geral do evento),
+  -- a alocação assistida é permitida para completar a atribuição do leito físico sem corromper o check-in.
+  IF v_has_hospedagem AND v_hospedagem.numero_cama IS NOT NULL AND v_hospedagem.alojamento_id IS NOT NULL AND (v_hospedagem.status IN ('checkin_realizado', 'checkout_realizado') OR v_hospedagem.checkin_at IS NOT NULL OR v_hospedagem.checkout_at IS NOT NULL) THEN
     RETURN jsonb_build_object(
       'success', false,
       'status', 'preservado',
@@ -184,7 +187,8 @@ BEGIN
   v_sexo_insc := LOWER(COALESCE(v_inscricao.sexo, ''));
   v_pub_aloj := LOWER(COALESCE(v_alojamento.publico, ''));
 
-  IF v_pub_aloj = 'masculino' AND v_sexo_insc NOT IN ('m', 'masculino') THEN
+  -- Validação de Sexo considerando publico ou coluna sexo do alojamento
+  IF (v_pub_aloj = 'masculino' OR v_pub_aloj = 'masculino_geral' OR v_pub_aloj = 'jubilados' OR v_alojamento.sexo = 'M') AND v_sexo_insc NOT IN ('m', 'masculino') THEN
     RETURN jsonb_build_object(
       'success', false,
       'status', 'recusado',
@@ -192,7 +196,7 @@ BEGIN
     );
   END IF;
 
-  IF v_pub_aloj = 'feminino' AND v_sexo_insc NOT IN ('f', 'feminino') THEN
+  IF (v_pub_aloj = 'feminino' OR v_alojamento.sexo = 'F') AND v_sexo_insc NOT IN ('f', 'feminino') THEN
     RETURN jsonb_build_object(
       'success', false,
       'status', 'recusado',
@@ -204,24 +208,21 @@ BEGIN
   v_grupo_aloj := LOWER(COALESCE(v_alojamento.grupo_permitido, ''));
 
   v_grupo_compativel := false;
-  IF v_grupo_aloj = '' OR v_grupo_aloj = 'todos' THEN
+  IF (v_pub_aloj = 'feminino' OR v_alojamento.sexo = 'F') AND v_sexo_insc IN ('f', 'feminino') THEN
+    -- Alojamentos femininos oficiais (Rosa e Azul): aceitam exclusivamente participantes femininas
     v_grupo_compativel := true;
-  ELSIF v_pub_aloj = 'feminino' AND v_sexo_insc IN ('f', 'feminino') THEN
-    v_grupo_compativel := true;
-  ELSIF v_pub_aloj = 'masculino' AND v_sexo_insc IN ('m', 'masculino') THEN
-    -- Mapeamento oficial dos 3 setores masculinos
+  ELSIF (v_pub_aloj IN ('masculino', 'masculino_geral', 'jubilados') OR v_alojamento.sexo = 'M') AND v_sexo_insc IN ('m', 'masculino') THEN
+    -- Mapeamento estrito dos 3 setores masculinos oficiais:
     IF v_grupo_aloj ILIKE '%presidente%' OR v_grupo_aloj ILIKE '%jubilado%' THEN
-      -- Prédio Novo e AAME: Pastores Presidentes e Jubilados
+      -- Prédio Novo e AAME: Exclusivo para Pastores Presidentes e Jubilados
       IF v_tipo_insc ILIKE '%presidente%' OR v_tipo_insc ILIKE '%jubilado%' THEN
         v_grupo_compativel := true;
       END IF;
     ELSIF v_grupo_aloj ILIKE '%auxiliar%' OR v_grupo_aloj ILIKE '%juventude%' THEN
-      -- Mário Covas: Pastores Auxiliares, Juventude, Equipe de Apoio e demais participantes masculinos
-      IF v_tipo_insc ILIKE '%auxiliar%' OR v_tipo_insc ILIKE '%juventude%' OR v_tipo_insc ILIKE '%apoio%' OR v_tipo_insc ILIKE '%visitante%' OR v_tipo_insc ILIKE '%evangelista%' OR v_tipo_insc ILIKE '%missionario%' OR v_tipo_insc ILIKE '%presbitero%' THEN
+      -- Mário Covas: Exclusivo para Pastores Auxiliares e Juventude
+      IF v_tipo_insc ILIKE '%auxiliar%' OR v_tipo_insc ILIKE '%juventude%' THEN
         v_grupo_compativel := true;
       END IF;
-    ELSE
-      v_grupo_compativel := true;
     END IF;
   END IF;
 
@@ -421,7 +422,7 @@ BEGIN
     SET alojamento_id = p_alojamento_id,
         tipo_cama = p_tipo_cama,
         numero_cama = v_numero_cama,
-        status = 'confirmada',
+        status = CASE WHEN status = 'checkin_realizado' THEN 'checkin_realizado' ELSE 'confirmada' END,
         prioridade = p_prioridade,
         necessidade_especial = COALESCE(v_inscricao.hosp_necessidade_especial, false),
         descricao_necessidade = v_inscricao.hosp_descricao_necessidade,

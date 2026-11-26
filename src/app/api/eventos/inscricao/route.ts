@@ -1076,12 +1076,15 @@ export async function POST(request: NextRequest) {
         capacidadePorGrupoAgo[gp] = (capacidadePorGrupoAgo[gp] ?? 0) + (aloj.total_vagas ?? 0);
       }
 
-      // Consulta ocupação atual por grupo
+      // Consulta ocupação confirmada + reservas pendentes válidas (não expiradas)
+      // Reservas pendentes de pagamento expiram em 24h caso o pagamento não seja confirmado
+      const limiteExpiracaoPendentes = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
       const { data: hospOcupadas } = await supabase
         .from('evento_hospedagens')
-        .select('id, status, alojamento_id, grupo_hospedagem')
+        .select('id, status, alojamento_id, grupo_hospedagem, created_at')
         .eq('evento_id', evento.id)
-        .in('status', ['solicitada', 'confirmada', 'alocada', 'checkin_realizado', 'checkout_realizado']);
+        .or(`status.in.(confirmada,alocada,checkin_realizado,checkout_realizado),and(status.eq.solicitada,created_at.gte.${limiteExpiracaoPendentes})`);
 
       const alojMap = new Map<string, string>();
       for (const al of alojamentosAtivos ?? []) {

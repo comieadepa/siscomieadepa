@@ -193,6 +193,16 @@ export async function POST(
     if (hospedagem.status === 'checkout_realizado') {
       return NextResponse.json({ error: 'Hospedagem já finalizada (saída realizada).' }, { status: 409 });
     }
+    if (!hospedagem.numero_cama || !hospedagem.alojamento_id) {
+      return NextResponse.json(
+        {
+          error:
+            'Participante não possui cama atribuída. Atribua um leito no mapa de hospedagem antes de realizar o check-in de acomodação.',
+          code: 'LEITO_NAO_ATRIBUIDO',
+        },
+        { status: 422 },
+      );
+    }
     const update = {
       status: 'checkin_realizado',
       checkin_at: now,
