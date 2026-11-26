@@ -23,12 +23,29 @@ interface CampoCpfProps {
   onClose: () => void;
 }
 
-// ─── Sugestões rápidas ─────────────────────────────────────────
+// ─── Atalhos fixos ────────────────────────────────────────────
 const SUGESTOES = [
-  { label: '🙋 Preciso de ajuda',          texto: 'Olá! Preciso de ajuda com informações do evento.' },
-  { label: '🔍 Consultar minha inscrição', texto: 'Quero consultar minha inscrição.' },
-  { label: '📋 Ver programação',           texto: 'Qual é a programação do evento?' },
-  { label: '🛏️ Falar sobre hospedagem',   texto: 'O evento oferece hospedagem?' },
+  {
+    icon: '📋',
+    label: 'Consultar minha inscrição',
+    texto: 'Quero consultar minha inscrição.',
+    cardClass: 'bg-blue-50/90 border-blue-200 text-blue-950 hover:bg-blue-100/90',
+    arrowClass: 'text-blue-500',
+  },
+  {
+    icon: '🛏️',
+    label: 'Consultar minha hospedagem',
+    texto: 'Quero consultar minha hospedagem.',
+    cardClass: 'bg-emerald-50/90 border-emerald-200 text-emerald-950 hover:bg-emerald-100/90',
+    arrowClass: 'text-emerald-600',
+  },
+  {
+    icon: '📅',
+    label: 'Informações sobre o evento',
+    texto: 'Quais são as informações sobre o evento?',
+    cardClass: 'bg-amber-50/90 border-amber-200 text-amber-950 hover:bg-amber-100/90',
+    arrowClass: 'text-amber-600',
+  },
 ];
 
 function MaiaAvatar({ sizeClass, className, isFloating }: { sizeClass: string; className?: string; isFloating?: boolean }) {
@@ -428,16 +445,19 @@ export default function AssistenteWidget({ eventoId, nomeEvento }: AssistenteWid
         {/* ── Área de mensagens ─────────────────────────────── */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden bg-gray-50 px-3 py-3">
 
-          {/* Sugestões rápidas (antes de qualquer troca) */}
+          {/* Atalhos fixos (antes de qualquer troca) */}
           {mensagens.length <= 1 && !enviando && (
-            <div className="mb-3 flex flex-wrap gap-1.5">
+            <div className="mb-3 flex flex-col gap-2 w-full">
               {SUGESTOES.map(s => (
                 <button
                   key={s.label}
+                  type="button"
                   onClick={() => enviar(s.texto)}
-                  className="text-xs bg-white border border-gray-200 hover:border-[#123b63] hover:text-[#123b63] text-gray-600 px-3 py-1.5 rounded-full transition font-medium shadow-sm"
+                  className={`w-full min-h-[44px] flex items-center gap-2.5 rounded-xl border px-3.5 py-2 text-xs sm:text-sm font-medium shadow-sm transition active:scale-[0.99] ${s.cardClass}`}
                 >
-                  {s.label}
+                  <span className="text-base leading-none shrink-0" aria-hidden="true">{s.icon}</span>
+                  <span className="flex-1 text-left leading-snug">{s.label}</span>
+                  <span className={`text-sm font-semibold shrink-0 ${s.arrowClass}`} aria-hidden="true">→</span>
                 </button>
               ))}
             </div>

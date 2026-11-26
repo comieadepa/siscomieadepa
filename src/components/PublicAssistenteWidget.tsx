@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import type { DepartamentoConfig } from '@/lib/public-portal';
 
 export type PublicAssistenteScope = 'global' | 'departamento';
@@ -68,16 +68,28 @@ function MaiaAvatar({ sizeClass, className, isFloating }: { sizeClass: string; c
   );
 }
 
-const SUGESTOES_GERAIS = [
-  'Quais eventos estao com inscricoes abertas?',
-  'Como faco minha inscricao?',
-  'Preciso da segunda via do pagamento',
-];
-
-const SUGESTOES_DEPTO = [
-  'Quais eventos estao abertos?',
-  'Como pago minha inscricao?',
-  'Tem vagas disponiveis?',
+const ATALHOS_FIXOS = [
+  {
+    icon: '📋',
+    label: 'Consultar minha inscrição',
+    texto: 'Quero consultar minha inscrição.',
+    cardClass: 'bg-blue-50/90 border-blue-200 text-blue-950 hover:bg-blue-100/90',
+    arrowClass: 'text-blue-500',
+  },
+  {
+    icon: '🛏️',
+    label: 'Consultar minha hospedagem',
+    texto: 'Quero consultar minha hospedagem.',
+    cardClass: 'bg-emerald-50/90 border-emerald-200 text-emerald-950 hover:bg-emerald-100/90',
+    arrowClass: 'text-emerald-600',
+  },
+  {
+    icon: '📅',
+    label: 'Informações sobre o evento',
+    texto: 'Quais são as informações sobre o evento?',
+    cardClass: 'bg-amber-50/90 border-amber-200 text-amber-950 hover:bg-amber-100/90',
+    arrowClass: 'text-amber-600',
+  },
 ];
 
 export default function PublicAssistenteWidget({ scope, departamento }: Props) {
@@ -99,9 +111,7 @@ export default function PublicAssistenteWidget({ scope, departamento }: Props) {
   const isPointerCoarse = () =>
     typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
 
-  const sugestoes = useMemo(() => {
-    return scope === 'departamento' ? SUGESTOES_DEPTO : SUGESTOES_GERAIS;
-  }, [scope]);
+  const sugestoes = ATALHOS_FIXOS;
 
   const headerSubtitle = scope === 'departamento' && departamento
     ? departamento.nome
@@ -460,14 +470,17 @@ export default function PublicAssistenteWidget({ scope, departamento }: Props) {
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden bg-gray-50 px-3 py-3">
           {mensagens.length <= 1 && !loading && (
-            <div className="mb-3 flex flex-wrap gap-1.5">
+            <div className="mb-3 flex flex-col gap-2 w-full">
               {sugestoes.map(s => (
                 <button
-                  key={s}
-                  onClick={() => enviarPergunta(s)}
-                  className="text-xs bg-white border border-gray-200 hover:border-[#123b63] hover:text-[#123b63] text-gray-600 px-3 py-1.5 rounded-full transition font-medium shadow-sm"
+                  key={s.label}
+                  type="button"
+                  onClick={() => enviarPergunta(s.texto)}
+                  className={`w-full min-h-[44px] flex items-center gap-2.5 rounded-xl border px-3.5 py-2 text-xs sm:text-sm font-medium shadow-sm transition active:scale-[0.99] ${s.cardClass}`}
                 >
-                  {s}
+                  <span className="text-base leading-none shrink-0" aria-hidden="true">{s.icon}</span>
+                  <span className="flex-1 text-left leading-snug">{s.label}</span>
+                  <span className={`text-sm font-semibold shrink-0 ${s.arrowClass}`} aria-hidden="true">→</span>
                 </button>
               ))}
             </div>

@@ -1,11 +1,13 @@
 import type { Metadata, Viewport } from 'next';
 import { APP_URL, PUBLIC_URL } from '@/lib/urls';
+import PublicMobileZoomGuard from '@/components/PublicMobileZoomGuard';
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  viewportFit: 'cover',
 };
 
 const baseUrl = PUBLIC_URL || APP_URL || 'https://siscomieadepa.org';
@@ -32,5 +34,10 @@ export const metadata: Metadata = {
 };
 
 export default function InscricaoLayout({ children }: { children: React.ReactNode }) {
-  return children;
+  return (
+    <>
+      <PublicMobileZoomGuard />
+      {children}
+    </>
+  );
 }
