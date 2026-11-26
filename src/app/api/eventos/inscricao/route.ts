@@ -1076,15 +1076,14 @@ export async function POST(request: NextRequest) {
         capacidadePorGrupoAgo[gp] = (capacidadePorGrupoAgo[gp] ?? 0) + (aloj.total_vagas ?? 0);
       }
 
-      // Consulta ocupação confirmada + reservas pendentes válidas (não expiradas)
-      // Reservas pendentes de pagamento expiram em 24h caso o pagamento não seja confirmado
-      const limiteExpiracaoPendentes = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
+      // Consulta ocupação confirmada + todas as reservas solicitadas pendentes vinculadas a inscrições ativas (não canceladas)
+      // Preserva a reserva enquanto a inscrição e a cobrança existirem, sem expiração prematura antes do cancelamento da cobrança
       const { data: hospOcupadas } = await supabase
         .from('evento_hospedagens')
-        .select('id, status, alojamento_id, grupo_hospedagem, created_at')
+        .select('id, status, alojamento_id, grupo_hospedagem, evento_inscricoes!inner(status_pagamento)')
         .eq('evento_id', evento.id)
-        .or(`status.in.(confirmada,alocada,checkin_realizado,checkout_realizado),and(status.eq.solicitada,created_at.gte.${limiteExpiracaoPendentes})`);
+        .in('status', ['solicitada', 'confirmada', 'alocada', 'checkin_realizado', 'checkout_realizado'])
+        .neq('evento_inscricoes.status_pagamento', 'cancelado');
 
       const alojMap = new Map<string, string>();
       for (const al of alojamentosAtivos ?? []) {
