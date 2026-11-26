@@ -2,12 +2,12 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import PageLayout from '@/components/PageLayout';
 import ModalAemadepa, { MinistroAemadepaInfo, DadosEsposaForm } from '@/components/ModalAemadepa';
 import CartaoAemadepa from '@/components/CartaoAemadepa';
 import FichaAemadepa from '@/components/FichaAemadepa';
-import PainelPedidosAemadepa from '@/components/PainelPedidosAemadepa';
+import PainelPedidosAemadepa, { PainelPedidosAemadepaHandle } from '@/components/PainelPedidosAemadepa';
 import ModalFinanceiroAemadepa from '@/components/ModalFinanceiroAemadepa';
 import { useRequireSupabaseAuth } from '@/hooks/useRequireSupabaseAuth';
 import { authenticatedFetch } from '@/lib/api-client';
@@ -111,6 +111,7 @@ export default function AemadepaPage() {
 
   // Aba ativa: associadas ou pedidos de carteirinhas
   const [abaAtiva, setAbaAtiva] = useState<'associadas' | 'pedidos'>('associadas');
+  const painelPedidosRef = useRef<PainelPedidosAemadepaHandle>(null);
 
   // Função resiliente de cópia de link com fallback (clipboard API -> execCommand -> modal com input selecionável)
   const copiarLinkCadastro = useCallback(async (abrirModalAoFinal = false) => {
@@ -470,10 +471,12 @@ export default function AemadepaPage() {
 
         {abaAtiva === 'pedidos' ? (
           <PainelPedidosAemadepa
+            ref={painelPedidosRef}
             onImprimirCarteirinha={(assoc, ped) => {
               setPedidoCartaoAtivo(ped || null);
               setAssociadaCartao({
                 id: assoc.id,
+                associadaId: assoc.id,
                 ministroId: assoc.id,
                 uniqueId: assoc.uniqueId,
                 ministroNome: assoc.ministroNome,
@@ -682,104 +685,6 @@ export default function AemadepaPage() {
               </div>
             </div>
           </div>
-        )}
-
-        {/* Modal de Cadastro / Edição da Associada AEMADEPA */}
-        <ModalAemadepa
-          isOpen={modalAemadepaAberto}
-          onClose={() => setModalAemadepaAberto(false)}
-          onSaved={() => void carregarDados()}
-          ministro={ministroSelecionadoModal}
-          dadosIniciais={dadosIniciaisModal}
-          todosMinistros={ministrosDisponiveis.length > 0 ? ministrosDisponiveis : todosMinistrosInfo}
-        />
-
-        {/* Modal de Emissão da Carteirinha AEMADEPA */}
-        {associadaCartao && (
-          <CartaoAemadepa
-            associada={{
-              id: associadaCartao.ministroId,
-              uniqueId: associadaCartao.uniqueId,
-              nomeEsposa: associadaCartao.nomeEsposa,
-              cpfEsposa: associadaCartao.cpfEsposa,
-              rgEsposa: associadaCartao.rgEsposa,
-              orgaoEmissorEsposa: associadaCartao.orgaoEmissorEsposa,
-              dataNascimentoEsposa: associadaCartao.dataNascimentoEsposa,
-              nacionalidadeEsposa: associadaCartao.nacionalidadeEsposa,
-              naturalidadeEsposa: associadaCartao.naturalidadeEsposa,
-              nomePaiEsposa: associadaCartao.nomePaiEsposa,
-              nomeMaeEsposa: associadaCartao.nomeMaeEsposa,
-              tituloEleitoralEsposa: associadaCartao.tituloEleitoralEsposa,
-              foneEsposa: associadaCartao.foneEsposa,
-              emailEsposa: associadaCartao.emailEsposa,
-              tipoSanguineoEsposa: associadaCartao.tipoSanguineoEsposa,
-              fotoEsposaUrl: associadaCartao.fotoEsposaUrl,
-              numeroAemadepa: associadaCartao.numeroAemadepa,
-              ministroNome: associadaCartao.ministroNome,
-              ministroMatricula: associadaCartao.ministroMatricula,
-              cargoMinisterial: associadaCartao.cargoMinisterial,
-              campo: associadaCartao.campo,
-              supervisao: associadaCartao.supervisao,
-            }}
-            pedidoId={pedidoCartaoAtivo?.id || (associadaCartao as any).solicitacaoAtiva?.id}
-            statusPedido={pedidoCartaoAtivo?.status || (associadaCartao as any).solicitacaoAtiva?.status || associadaCartao.financeiro?.status}
-            onClose={() => {
-              setAssociadaCartao(null);
-              setPedidoCartaoAtivo(null);
-            }}
-            onStatusAtualizado={() => {
-              void carregarDados();
-            }}
-          />
-        )}
-
-        {/* Modal de Emissão da Ficha Cadastral AEMADEPA */}
-        {associadaFicha && (
-          <FichaAemadepa
-            associada={{
-              id: associadaFicha.ministroId,
-              uniqueId: associadaFicha.uniqueId,
-              nomeEsposa: associadaFicha.nomeEsposa,
-              cpfEsposa: associadaFicha.cpfEsposa,
-              rgEsposa: associadaFicha.rgEsposa,
-              orgaoEmissorEsposa: associadaFicha.orgaoEmissorEsposa,
-              dataNascimentoEsposa: associadaFicha.dataNascimentoEsposa,
-              nacionalidadeEsposa: associadaFicha.nacionalidadeEsposa,
-              naturalidadeEsposa: associadaFicha.naturalidadeEsposa,
-              nomePaiEsposa: associadaFicha.nomePaiEsposa,
-              nomeMaeEsposa: associadaFicha.nomeMaeEsposa,
-              tituloEleitoralEsposa: associadaFicha.tituloEleitoralEsposa,
-              foneEsposa: associadaFicha.foneEsposa,
-              emailEsposa: associadaFicha.emailEsposa,
-              tipoSanguineoEsposa: associadaFicha.tipoSanguineoEsposa,
-              fotoEsposaUrl: associadaFicha.fotoEsposaUrl,
-              numeroAemadepa: associadaFicha.numeroAemadepa,
-              ministroNome: associadaFicha.ministroNome,
-              ministroMatricula: associadaFicha.ministroMatricula,
-              cargoMinisterial: associadaFicha.cargoMinisterial,
-              campo: associadaFicha.campo,
-              supervisao: associadaFicha.supervisao,
-            }}
-            onClose={() => setAssociadaFicha(null)}
-          />
-        )}
-
-        {/* Modal Financeiro & Credencial AEMADEPA */}
-        {associadaFinanceiroModal && (
-          <ModalFinanceiroAemadepa
-            associadaId={associadaFinanceiroModal.associadaId || associadaFinanceiroModal.id}
-            associadaNome={associadaFinanceiroModal.nomeEsposa}
-            associadaCpf={associadaFinanceiroModal.cpfEsposa}
-            ministroNome={associadaFinanceiroModal.ministroNome}
-            temFoto={Boolean(associadaFinanceiroModal.fotoEsposaUrl)}
-            onClose={() => setAssociadaFinanceiroModal(null)}
-            onAtualizarStatus={() => void carregarDados()}
-            onAbrirCredencial={() => {
-              const assoc = associadaFinanceiroModal;
-              setAssociadaFinanceiroModal(null);
-              setAssociadaCartao(assoc);
-            }}
-          />
         )}
 
         {/* Barra de Filtros e Pesquisa */}
@@ -1160,6 +1065,118 @@ export default function AemadepaPage() {
           </div>
         </div>
           </>
+        )}
+
+        {/* =========================================================================
+            MODAIS EM ESCOPO COMPARTILHADO (Acessíveis tanto em 'associadas' quanto em 'pedidos')
+           ========================================================================= */}
+
+        {/* Modal de Cadastro / Edição da Associada AEMADEPA */}
+        <ModalAemadepa
+          isOpen={modalAemadepaAberto}
+          onClose={() => setModalAemadepaAberto(false)}
+          onSaved={() => void carregarDados()}
+          ministro={ministroSelecionadoModal}
+          dadosIniciais={dadosIniciaisModal}
+          todosMinistros={ministrosDisponiveis.length > 0 ? ministrosDisponiveis : todosMinistrosInfo}
+        />
+
+        {/* Modal de Emissão da Carteirinha AEMADEPA */}
+        {associadaCartao && (
+          <CartaoAemadepa
+            associada={{
+              id: associadaCartao.ministroId,
+              associadaId: associadaCartao.associadaId || associadaCartao.id,
+              uniqueId: associadaCartao.uniqueId,
+              nomeEsposa: associadaCartao.nomeEsposa,
+              cpfEsposa: associadaCartao.cpfEsposa,
+              rgEsposa: associadaCartao.rgEsposa,
+              orgaoEmissorEsposa: associadaCartao.orgaoEmissorEsposa,
+              dataNascimentoEsposa: associadaCartao.dataNascimentoEsposa,
+              nacionalidadeEsposa: associadaCartao.nacionalidadeEsposa,
+              naturalidadeEsposa: associadaCartao.naturalidadeEsposa,
+              nomePaiEsposa: associadaCartao.nomePaiEsposa,
+              nomeMaeEsposa: associadaCartao.nomeMaeEsposa,
+              tituloEleitoralEsposa: associadaCartao.tituloEleitoralEsposa,
+              foneEsposa: associadaCartao.foneEsposa,
+              emailEsposa: associadaCartao.emailEsposa,
+              tipoSanguineoEsposa: associadaCartao.tipoSanguineoEsposa,
+              fotoEsposaUrl: associadaCartao.fotoEsposaUrl,
+              numeroAemadepa: associadaCartao.numeroAemadepa,
+              ministroNome: associadaCartao.ministroNome,
+              ministroMatricula: associadaCartao.ministroMatricula,
+              cargoMinisterial: associadaCartao.cargoMinisterial,
+              campo: associadaCartao.campo,
+              supervisao: associadaCartao.supervisao,
+            }}
+            pedidoId={pedidoCartaoAtivo?.id || (associadaCartao as any).solicitacaoAtiva?.id}
+            statusPedido={pedidoCartaoAtivo?.status || (associadaCartao as any).solicitacaoAtiva?.status || associadaCartao.financeiro?.status}
+            onClose={() => {
+              setAssociadaCartao(null);
+              setPedidoCartaoAtivo(null);
+            }}
+            onStatusAtualizado={() => {
+              void carregarDados();
+              void painelPedidosRef.current?.recarregar();
+            }}
+            onFotoAtualizada={(novaFotoUrl: string) => {
+              setAssociadaCartao((prev) => (prev ? { ...prev, fotoEsposaUrl: novaFotoUrl } : null));
+              void carregarDados();
+              void painelPedidosRef.current?.recarregar();
+            }}
+          />
+        )}
+
+        {/* Modal de Emissão da Ficha Cadastral AEMADEPA */}
+        {associadaFicha && (
+          <FichaAemadepa
+            associada={{
+              id: associadaFicha.ministroId,
+              uniqueId: associadaFicha.uniqueId,
+              nomeEsposa: associadaFicha.nomeEsposa,
+              cpfEsposa: associadaFicha.cpfEsposa,
+              rgEsposa: associadaFicha.rgEsposa,
+              orgaoEmissorEsposa: associadaFicha.orgaoEmissorEsposa,
+              dataNascimentoEsposa: associadaFicha.dataNascimentoEsposa,
+              nacionalidadeEsposa: associadaFicha.nacionalidadeEsposa,
+              naturalidadeEsposa: associadaFicha.naturalidadeEsposa,
+              nomePaiEsposa: associadaFicha.nomePaiEsposa,
+              nomeMaeEsposa: associadaFicha.nomeMaeEsposa,
+              tituloEleitoralEsposa: associadaFicha.tituloEleitoralEsposa,
+              foneEsposa: associadaFicha.foneEsposa,
+              emailEsposa: associadaFicha.emailEsposa,
+              tipoSanguineoEsposa: associadaFicha.tipoSanguineoEsposa,
+              fotoEsposaUrl: associadaFicha.fotoEsposaUrl,
+              numeroAemadepa: associadaFicha.numeroAemadepa,
+              ministroNome: associadaFicha.ministroNome,
+              ministroMatricula: associadaFicha.ministroMatricula,
+              cargoMinisterial: associadaFicha.cargoMinisterial,
+              campo: associadaFicha.campo,
+              supervisao: associadaFicha.supervisao,
+            }}
+            onClose={() => setAssociadaFicha(null)}
+          />
+        )}
+
+        {/* Modal Financeiro & Credencial AEMADEPA */}
+        {associadaFinanceiroModal && (
+          <ModalFinanceiroAemadepa
+            associadaId={associadaFinanceiroModal.associadaId || associadaFinanceiroModal.id}
+            associadaNome={associadaFinanceiroModal.nomeEsposa}
+            associadaCpf={associadaFinanceiroModal.cpfEsposa}
+            ministroNome={associadaFinanceiroModal.ministroNome}
+            temFoto={Boolean(associadaFinanceiroModal.fotoEsposaUrl)}
+            onClose={() => setAssociadaFinanceiroModal(null)}
+            onAtualizarStatus={() => {
+              void carregarDados();
+              void painelPedidosRef.current?.recarregar();
+            }}
+            onAbrirCredencial={() => {
+              const assoc = associadaFinanceiroModal;
+              setAssociadaFinanceiroModal(null);
+              setAssociadaCartao(assoc);
+            }}
+          />
         )}
       </div>
     </PageLayout>

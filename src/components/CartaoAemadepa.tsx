@@ -12,6 +12,7 @@ import {
   Layers,
   Printer,
   CheckCircle2,
+  Pencil,
 } from 'lucide-react';
 import { buildUrl, getAppBaseUrl } from '@/lib/urls';
 import { substituirPlaceholders } from '@/lib/cartoes-utils';
@@ -19,10 +20,12 @@ import { createClient } from '@/lib/supabase-client';
 import { loadTemplatesForCurrentUser } from '@/lib/cartoes-templates-sync';
 import { loadOrgNomenclaturasFromSupabaseOrMigrate } from '@/lib/org-nomenclaturas';
 import { authenticatedFetch } from '@/lib/api-client';
+import EditorFotoAemadepa from '@/components/EditorFotoAemadepa';
 
 export interface CartaoAemadepaProps {
   associada: {
     id: string; // id do ministro
+    associadaId?: string;
     uniqueId?: string;
     nomeEsposa: string;
     cpfEsposa?: string;
@@ -49,6 +52,7 @@ export interface CartaoAemadepaProps {
   statusPedido?: string;
   onClose: () => void;
   onStatusAtualizado?: () => void;
+  onFotoAtualizada?: (novaFotoUrl: string) => void;
 }
 
 export default function CartaoAemadepa({
@@ -57,7 +61,16 @@ export default function CartaoAemadepa({
   statusPedido,
   onClose,
   onStatusAtualizado,
+  onFotoAtualizada,
 }: CartaoAemadepaProps) {
+  const [fotoAtual, setFotoAtual] = useState<string | null>(associada.fotoEsposaUrl || null);
+  const [modalEditorFotoAberto, setModalEditorFotoAberto] = useState(false);
+  const [salvandoFoto, setSalvandoFoto] = useState(false);
+
+  useEffect(() => {
+    setFotoAtual(associada.fotoEsposaUrl || null);
+  }, [associada.fotoEsposaUrl]);
+
   const [gerandoPDF, setGerandoPDF] = useState(false);
   const [confirmandoImpressao, setConfirmandoImpressao] = useState(false);
   const [modalReimpressaoAberto, setModalReimpressaoAberto] = useState(false);
@@ -170,8 +183,8 @@ export default function CartaoAemadepa({
     telefone: associada.foneEsposa,
     whatsapp: associada.foneEsposa,
     email: associada.emailEsposa,
-    fotoUrl: associada.fotoEsposaUrl,
-    fotoEsposaUrl: associada.fotoEsposaUrl,
+    fotoUrl: fotoAtual,
+    fotoEsposaUrl: fotoAtual,
     matricula: associada.ministroMatricula || associada.numeroAemadepa || "",
     numeroAemadepa: associada.ministroMatricula || associada.numeroAemadepa || "",
     ministroNome: associada.ministroNome,
@@ -462,7 +475,7 @@ export default function CartaoAemadepa({
             key={el.id}
             style={{
               ...estilo,
-              background: associada.fotoEsposaUrl
+              background: fotoAtual
                 ? '#fff'
                 : 'linear-gradient(to bottom, #fdf2f8, #fce7f3)',
               color: '#be123c',
@@ -471,12 +484,12 @@ export default function CartaoAemadepa({
               justifyContent: 'center',
               overflow: 'hidden',
               borderRadius: `${el.borderRadius || 6}px`,
-              border: associada.fotoEsposaUrl ? '1px solid #fda4af' : '1px solid #f43f5e',
+              border: fotoAtual ? '1px solid #fda4af' : '1px solid #f43f5e',
             }}
           >
-            {associada.fotoEsposaUrl ? (
+            {fotoAtual ? (
               <img
-                src={associada.fotoEsposaUrl}
+                src={fotoAtual}
                 alt="Foto"
                 style={{
                   width: '100%',
@@ -486,6 +499,25 @@ export default function CartaoAemadepa({
               />
             ) : (
               <span style={{ fontSize: `${Math.min(el.largura, el.altura) * 0.4}px` }}>👤</span>
+            )}
+
+            {/* Botão de edição rápida de foto (Exibido apenas na tela de prévia, excluído do PDF) */}
+            {!isPdf && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  if (fotoAtual) {
+                    setModalEditorFotoAberto(true);
+                  }
+                }}
+                disabled={!fotoAtual || salvandoFoto}
+                title={fotoAtual ? 'Ajustar enquadramento e zoom da foto' : 'Sem foto cadastrada para ajustar'}
+                className="absolute right-1.5 bottom-1.5 w-6 h-6 rounded-full bg-rose-700/85 hover:bg-rose-800 text-white flex items-center justify-center shadow-md transition-transform hover:scale-110 active:scale-95 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed border border-white/60 z-10"
+              >
+                <Pencil className="w-3 h-3 text-white" />
+              </button>
             )}
           </div>
         );
@@ -540,6 +572,95 @@ export default function CartaoAemadepa({
   useEffect(() => {
     setStatusAtual(statusPedido);
   }, [statusPedido]);
+
+  // Função para salvar ajuste fino da foto na associada
+  const handleConfirmarAjusteFoto = async (imagemRecortadaBase64: string) => {
+    setSalvandoFoto(true);
+    setErroAcao(null);
+    setSucessoAcao(null);
+
+    const targetMinistroId = associada.id;
+    if (!targetMinistroId) {
+      setErroAcao('ID ministerial da associada não identificado para atualização.');
+      setSalvandoFoto(false);
+      return;
+    }
+
+    try {
+      // 1. Upload da imagem base64 para o Supabase Storage via endpoint oficial
+      let fotoUrlPersistida = imagemRecortadaBase64;
+      try {
+        const blob = await fetch(imagemRecortadaBase64).then((res) => res.blob());
+        const file = new File([blob], `esposa-${targetMinistroId}.jpg`, { type: 'image/jpeg' });
+        const form = new FormData();
+        form.append('file', file);
+        form.append('membroId', targetMinistroId);
+
+        const respUpload = await authenticatedFetch('/api/v1/secretaria/uploads/membro-foto', {
+          method: 'POST',
+          body: form,
+        });
+
+        const jsonUpload = await respUpload.json().catch(() => null as any);
+        if (respUpload.ok && jsonUpload?.url) {
+          fotoUrlPersistida = jsonUpload.url;
+        }
+      } catch (uploadErr) {
+        console.warn('Aviso no upload storage da foto AEMADEPA:', uploadErr);
+      }
+
+      // 2. Persistência na API oficial da AEMADEPA (PUT /api/v1/secretaria/aemadepa)
+      const payloadAemadepa = {
+        associada_id: associada.associadaId || undefined,
+        ministro_id: targetMinistroId,
+        nome: associada.nomeEsposa,
+        cpf: associada.cpfEsposa,
+        rg: associada.rgEsposa || null,
+        orgao_emissor: associada.orgaoEmissorEsposa || null,
+        data_nascimento: associada.dataNascimentoEsposa,
+        nacionalidade: associada.nacionalidadeEsposa || 'BRASILEIRA',
+        naturalidade: associada.naturalidadeEsposa || null,
+        nome_pai: associada.nomePaiEsposa || null,
+        nome_mae: associada.nomeMaeEsposa || null,
+        titulo_eleitoral: associada.tituloEleitoralEsposa || null,
+        fone: associada.foneEsposa || null,
+        email: associada.emailEsposa || null,
+        tipo_sanguineo: associada.tipoSanguineoEsposa || null,
+        foto_url: fotoUrlPersistida,
+        numero_aemadepa: associada.numeroAemadepa || associada.ministroMatricula || null,
+      };
+
+      const resUpdate = await authenticatedFetch('/api/v1/secretaria/aemadepa', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payloadAemadepa),
+      });
+
+      const jsonUpdate = await resUpdate.json().catch(() => null as any);
+      if (!resUpdate.ok || !jsonUpdate?.success) {
+        throw new Error(jsonUpdate?.error || 'Erro ao persistir nova foto da associada.');
+      }
+
+      // 3. Atualiza estado local da imagem no modal CartaoAemadepa
+      setFotoAtual(fotoUrlPersistida);
+      setSucessoAcao('Foto da associada ajustada e persistida com sucesso!');
+      setModalEditorFotoAberto(false);
+
+      // 4. Notifica callbacks de sincronização externos
+      if (onFotoAtualizada) {
+        onFotoAtualizada(fotoUrlPersistida);
+      }
+      if (onStatusAtualizado) {
+        onStatusAtualizado();
+      }
+    } catch (err: any) {
+      console.error('Erro ao salvar ajuste da foto da associada:', err);
+      setErroAcao(err.message || 'Falha ao salvar ajuste da foto. Tente novamente.');
+      // Mantém o modal do editor aberto para não perder os ajustes feitos pelo usuário
+    } finally {
+      setSalvandoFoto(false);
+    }
+  };
 
   // Função para confirmar conclusão da impressão física
   const handleConfirmarImpressao = async (ehReimp: boolean, motivo?: string) => {
@@ -824,6 +945,18 @@ export default function CartaoAemadepa({
           </div>
         </div>
       )}
+
+      {/* Modal Exclusivo de Ajuste da Foto (Reutilizando EditorFotoAemadepa) */}
+      <EditorFotoAemadepa
+        isOpen={modalEditorFotoAberto}
+        imagemOriginal={fotoAtual}
+        onConfirmar={(imagemRecortadaBase64) => {
+          void handleConfirmarAjusteFoto(imagemRecortadaBase64);
+        }}
+        onCancelar={() => {
+          setModalEditorFotoAberto(false);
+        }}
+      />
 
       {/* ÁREA DE IMPRESSÃO OCULTA PARA PDF (Fora da tela visual com precisão de renderização) */}
       {template && (

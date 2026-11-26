@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
 import {
   Printer,
   RefreshCw,
@@ -73,16 +73,19 @@ interface ResumoFinanceiro {
   entregues: number;
 }
 
-interface PainelPedidosAemadepaProps {
+export interface PainelPedidosAemadepaHandle {
+  recarregar: () => Promise<void>;
+}
+
+export interface PainelPedidosAemadepaProps {
   onImprimirCarteirinha: (
     associada: PedidoCarteirinhaItem['associada'],
     pedido?: { id: string; status: string }
   ) => void;
 }
 
-export default function PainelPedidosAemadepa({
-  onImprimirCarteirinha,
-}: PainelPedidosAemadepaProps) {
+const PainelPedidosAemadepa = forwardRef<PainelPedidosAemadepaHandle, PainelPedidosAemadepaProps>(
+  function PainelPedidosAemadepa({ onImprimirCarteirinha }, ref) {
   const [pedidos, setPedidos] = useState<PedidoCarteirinhaItem[]>([]);
   const [resumo, setResumo] = useState<ResumoFinanceiro>({
     totalPedidos: 0,
@@ -130,6 +133,12 @@ export default function PainelPedidosAemadepa({
   useEffect(() => {
     void carregarPedidos();
   }, [carregarPedidos]);
+
+  useImperativeHandle(ref, () => ({
+    recarregar: async () => {
+      await carregarPedidos();
+    },
+  }), [carregarPedidos]);
 
   const atualizarStatus = async (
     id: string,
@@ -422,22 +431,22 @@ export default function PainelPedidosAemadepa({
                         <span
                           className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${
                             p.status === 'pago'
-                              ? 'bg-blue-100 text-blue-800'
+                              ? 'bg-blue-100 text-blue-800 border border-blue-200'
                               : p.status === 'em_impressao'
-                              ? 'bg-indigo-100 text-indigo-800'
+                              ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
                               : p.status === 'impressa'
-                              ? 'bg-purple-100 text-purple-800'
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                               : p.status === 'entregue'
-                              ? 'bg-emerald-100 text-emerald-800'
+                              ? 'bg-teal-100 text-teal-800 border border-teal-200'
                               : p.status === 'cancelada'
-                              ? 'bg-gray-100 text-gray-600'
-                              : 'bg-amber-100 text-amber-800'
+                              ? 'bg-gray-100 text-gray-600 border border-gray-200'
+                              : 'bg-amber-100 text-amber-800 border border-amber-200'
                           }`}
                         >
                           {p.status === 'aguardando_pagamento' && 'Aguardando PIX'}
                           {p.status === 'pago' && 'Pago (Fila)'}
                           {p.status === 'em_impressao' && 'Em Impressão'}
-                          {p.status === 'impressa' && 'Impressa'}
+                          {p.status === 'impressa' && 'Impresso'}
                           {p.status === 'entregue' && 'Entregue'}
                           {p.status === 'cancelada' && 'Cancelada'}
                         </span>
@@ -645,4 +654,6 @@ export default function PainelPedidosAemadepa({
       )}
     </div>
   );
-}
+});
+
+export default PainelPedidosAemadepa;
