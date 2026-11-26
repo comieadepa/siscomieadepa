@@ -1621,7 +1621,8 @@ export default function ConsagracaoPage() {
   };
 
   const handlePrintListaFrequencia = async () => {
-    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true });
+    try {
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true });
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
     const marginX = 10;
@@ -1783,8 +1784,12 @@ export default function ConsagracaoPage() {
       pdf.setTextColor(0, 0, 0);
     });
 
-    const dataArquivo = new Date().toISOString().slice(0, 10);
-    pdf.save(`consagracao-lista-frequencia-${dataArquivo}.pdf`);
+      const dataArquivo = new Date().toISOString().slice(0, 10);
+      pdf.save(`consagracao-lista-frequencia-${dataArquivo}.pdf`);
+    } catch (err: any) {
+      console.error('[Consagração] Erro ao gerar Lista de frequência PDF:', err);
+      alert(`Não foi possível gerar a Lista de frequência: ${err?.message || 'erro inesperado'}`);
+    }
   };
 
   const getDocumentacaoStatus = (registroId: string) => {
