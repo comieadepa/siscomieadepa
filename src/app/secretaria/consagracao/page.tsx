@@ -1748,12 +1748,13 @@ export default function ConsagracaoPage() {
         seq += 1;
         pdf.rect(marginX, currentY, contentWidth, rowHeight);
 
+        const cpfStr = String(item?.cpf ?? '').trim();
         const cells = [
           String(seq),
-          item.numero_processo || '—',
-          item.nome || '—',
-          formatCpf(item.cpf),
-          item.categoria || '—',
+          String(item?.numero_processo ?? '').trim() || '—',
+          String(item?.nome ?? '').trim() || '—',
+          cpfStr ? formatCpf(cpfStr) : '—',
+          String(item?.categoria ?? '').trim() || '—',
           '',
         ];
 
