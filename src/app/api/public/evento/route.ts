@@ -60,17 +60,33 @@ export async function GET(request: NextRequest) {
   let filaEsperaPorGrupo: Record<string, number> = {};
 
   if (evento.departamento === 'AGO' && evento.permite_hospedagem) {
-    const { data: alojamentos } = await supabase
+    const { data: alojamentosRaw } = await supabase
       .from('evento_alojamentos')
-      .select('id, publico, total_vagas, ativo')
+      .select('id, publico, total_vagas, ativo, is_emergencial')
       .eq('evento_id', evento.id)
       .eq('ativo', true);
 
-    const { data: hospedagens } = await supabase
-      .from('evento_hospedagens')
-      .select('id, status, alojamento_id, grupo_hospedagem')
-      .eq('evento_id', evento.id)
-      .in('status', ['alocada', 'confirmada', 'checkin_realizado']);
+    // Isolamento estrito: leitos e alojamentos emergenciais NUNCA integram a capacidade de inscrição pública
+    const alojamentos = (alojamentosRaw ?? []).filter((a: any) => !a.is_emergencial);
+
+    // Consulta hospedagens ativas (confirmada, alocada, checkin_realizado e solicitadas pendentes com inscrição não cancelada)
+    // Preserva consistência integral com o backend de validação de inscrição com paginação completa
+    const hospAtivas: Array<{ id: string; status: string; alojamento_id: string | null; grupo_hospedagem: string | null }> = [];
+    let hospFrom = 0;
+    const HOSP_PAGE_SIZE = 1000;
+    while (true) {
+      const { data, error } = await supabase
+        .from('evento_hospedagens')
+        .select('id, status, alojamento_id, grupo_hospedagem, evento_inscricoes!inner(status_pagamento)')
+        .eq('evento_id', evento.id)
+        .in('status', ['solicitada', 'confirmada', 'alocada', 'checkin_realizado', 'checkout_realizado'])
+        .neq('evento_inscricoes.status_pagamento', 'cancelado')
+        .range(hospFrom, hospFrom + HOSP_PAGE_SIZE - 1);
+      if (error || !data) break;
+      hospAtivas.push(...(data as any));
+      if (data.length < HOSP_PAGE_SIZE) break;
+      hospFrom += HOSP_PAGE_SIZE;
+    }
 
     const PUBLICO_GRUPO: Record<string, string> = {
       presidentes:     'Pastor Presidente / Pastor Jubilado',
@@ -101,7 +117,7 @@ export async function GET(request: NextRequest) {
       alojamentoGrupoMap.set(aloj.id, gp);
     }
 
-    for (const hosp of hospedagens ?? []) {
+    for (const hosp of hospAtivas ?? []) {
       if (hosp.alojamento_id) {
         const gp = alojamentoGrupoMap.get(hosp.alojamento_id) ?? hosp.grupo_hospedagem ?? 'Misto';
         ocupadosPorGrupo[gp] = (ocupadosPorGrupo[gp] ?? 0) + 1;

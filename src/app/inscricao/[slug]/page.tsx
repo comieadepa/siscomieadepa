@@ -407,6 +407,7 @@ export default function InscricaoPublicaPage() {
     } | null;
     opcaoPagamentoUsada?: 'pix' | 'cartao_3x';
     asaasError?: string;
+    hospedagemEsgotada?: boolean;
   } | null>(null);
   const [totalInscritos, setTotalInscritos] = useState(0);
   const [verificando,    setVerificando]    = useState(false);
@@ -984,6 +985,13 @@ export default function InscricaoPublicaPage() {
 
   const statusHospTitular = getStatusHospedagem(mainGroup, podeHospedagem);
 
+  // Efeito para limpar o estado de hospedagem do titular caso as vagas se tornem indisponíveis
+  useEffect(() => {
+    if (!statusHospTitular.disponivel) {
+      if (solicitaHospedagem) setSolicitaHospedagem(false);
+      if (form.hospedagem) setForm(f => ({ ...f, hospedagem: false }));
+    }
+  }, [statusHospTitular.disponivel, solicitaHospedagem, form.hospedagem]);
 
   const cupomTipo = cupomMeta?.tipo ?? null;
   const cupomValor = cupomMeta?.valor ?? 0;
@@ -1358,6 +1366,14 @@ export default function InscricaoPublicaPage() {
     hosp_possui_comorbidade: hospEsposa.hosp_possui_comorbidade,
   });
 
+  // Efeito para limpar o estado de hospedagem da esposa caso as vagas se tornem indisponíveis
+  const statusHospEsposaCheck = getStatusHospedagem(grupoHospedagemEsposaPrevisto, true);
+  useEffect(() => {
+    if (!statusHospEsposaCheck.disponivel && hospEsposa.solicitar) {
+      setHospEsposa(h => ({ ...h, solicitar: false }));
+    }
+  }, [statusHospEsposaCheck.disponivel, hospEsposa.solicitar]);
+
   function termosSuporteTexto() {
     if (!evento?.suporte_whatsapp) return 'Canal de suporte: secretaria do evento.';
     const tel = evento.suporte_whatsapp.replace(/\D/g, '');
@@ -1540,11 +1556,25 @@ export default function InscricaoPublicaPage() {
         if (modoLote) {
           for (let i = 0; i < participantesExtra.length; i++) {
             const pExtra = participantesExtra[i];
+            const tipoExtra = tipos.find(t => t.nome === pExtra.tipo_inscricao);
+            const podeHospExtra = !!evento.permite_hospedagem && (
+              evento.departamento === 'AGO'
+                ? true
+                : (tipoExtra ? !!tipoExtra.inclui_hospedagem : !evento.usar_tipos_inscricao)
+            );
+            const grpExtra = resolveGrupoHospedagemAGO({
+              sexo: pExtra.sexo || null,
+              data_nascimento: formatDmaToYmd(pExtra.data_nascimento) || null,
+              tipo_inscricao: pExtra.tipo_inscricao || null,
+              hosp_necessidade_especial: !!pExtra.hosp_necessidade_especial,
+              hosp_possui_comorbidade: !!pExtra.hosp_possui_comorbidade,
+            });
+            const statusExtra = getStatusHospedagem(grpExtra, podeHospExtra);
             if (!pExtra.hospedagem) {
               semHosp.push({
                 nome: pExtra.nome_inscrito.trim() || `Participante ${i + 2}`,
-                disponivel: true,
-                motivo: null,
+                disponivel: statusExtra.disponivel,
+                motivo: statusExtra.motivo,
               });
             }
           }
@@ -1679,6 +1709,7 @@ export default function InscricaoPublicaPage() {
         pagamento:           json.pagamento ?? null,
         opcaoPagamentoUsada: opcaoPagamento,
         asaasError:          json.asaasError,
+        hospedagemEsgotada:  !!json.hospedagem_esgotada,
       });
     } catch (err: unknown) {
       setErroForm('Erro ao realizar inscrição: ' + (err instanceof Error ? err.message : String(err)));
@@ -1757,6 +1788,17 @@ export default function InscricaoPublicaPage() {
                 : isento ? ' Sua inscrição gratuita foi registrada.' : pago ? ' Seu pagamento foi confirmado.' : ' Complete o pagamento para garantir sua vaga.'}
             </p>
           </div>
+
+          {confirmacao.hospedagemEsgotada && (
+            <div className="mb-5 p-4 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 text-sm">
+              <p className="font-bold flex items-center gap-2">
+                ⚠️ Informação sobre a Hospedagem
+              </p>
+              <p className="text-xs mt-1 leading-relaxed">
+                As vagas para o seu alojamento/grupo esgotaram durante o processo de envio. Sua inscrição no evento foi realizada e confirmada com total sucesso sem hospedagem, sem nenhuma cobrança indevida.
+              </p>
+            </div>
+          )}
 
           {/* Código de inscrição — exibido somente após confirmação do pagamento */}
           {(pago || isento) && (
@@ -2509,38 +2551,26 @@ export default function InscricaoPublicaPage() {
                     </div>
                   )}
 
-                  {!hospedagemInclusa && podeHospedagem && (
-                    <div className={`mb-3 p-3 rounded-xl border ${!statusHospTitular.disponivel ? 'bg-gray-100/80 border-gray-300' : 'bg-gray-50 border-gray-200'}`}>
-                      <label className={`flex items-start gap-3 select-none ${!statusHospTitular.disponivel ? 'cursor-not-allowed opacity-85' : 'cursor-pointer'}`}>
+                  {!hospedagemInclusa && podeHospedagem && statusHospTitular.disponivel && (
+                    <div className="mb-3 p-3 rounded-xl border bg-gray-50 border-gray-200">
+                      <label className="flex items-start gap-3 select-none cursor-pointer">
                         <input
                           type="checkbox"
                           id="solicita_hospedagem"
-                          disabled={!statusHospTitular.disponivel}
-                          checked={statusHospTitular.disponivel && solicitaHospedagem}
-                          onChange={e => {
-                            if (statusHospTitular.disponivel) {
-                              setSolicitaHospedagem(e.target.checked);
-                            }
-                          }}
-                          className="mt-0.5 accent-[#123b63] disabled:cursor-not-allowed"
+                          checked={solicitaHospedagem}
+                          onChange={e => setSolicitaHospedagem(e.target.checked)}
+                          className="mt-0.5 accent-[#123b63]"
                         />
                         <div>
-                          <span className={`text-sm font-semibold ${!statusHospTitular.disponivel ? 'text-gray-500' : 'text-gray-700'}`}>
+                          <span className="text-sm font-semibold text-gray-700">
                             🛏️ Desejo solicitar hospedagem
                           </span>
                           <p className="text-xs text-gray-500 mt-0.5">
                             A solicitação não garante alocação. A organização fará a distribuição conforme disponibilidade.
-                            {statusHospTitular.disponivel && (
-                              <span className="font-medium text-emerald-700 ml-1">
-                                {statusHospTitular.mensagem}
-                              </span>
-                            )}
+                            <span className="font-medium text-emerald-700 ml-1">
+                              {statusHospTitular.mensagem}
+                            </span>
                           </p>
-                          {!statusHospTitular.disponivel && (
-                            <p className="text-xs text-amber-700 font-semibold mt-1.5 flex items-center gap-1.5">
-                              ⚠️ {statusHospTitular.mensagem}
-                            </p>
-                          )}
                         </div>
                       </label>
                     </div>
@@ -2701,37 +2731,28 @@ export default function InscricaoPublicaPage() {
                     {/* Hospedagem da esposa */}
                     {evento.permite_hospedagem && (() => {
                       const statusEsposa = getStatusHospedagem(grupoHospedagemEsposaPrevisto, true);
+                      if (!statusEsposa.disponivel) return null;
                       return (
-                        <div className={`mt-3 p-3 rounded-lg border ${!statusEsposa.disponivel ? 'bg-gray-100/80 border-gray-300' : 'bg-white border-purple-200'}`}>
-                          <label className={`flex items-start gap-3 select-none ${!statusEsposa.disponivel ? 'cursor-not-allowed opacity-85' : 'cursor-pointer'}`}>
+                        <div className="mt-3 p-3 rounded-lg border bg-white border-purple-200">
+                          <label className="flex items-start gap-3 select-none cursor-pointer">
                             <input
                               type="checkbox"
-                              disabled={!statusEsposa.disponivel}
-                              checked={statusEsposa.disponivel && hospEsposa.solicitar}
+                              checked={hospEsposa.solicitar}
                               onChange={e => {
-                                if (statusEsposa.disponivel) {
-                                  setHospEsposa(h => ({ ...h, solicitar: e.target.checked }));
-                                }
+                                setHospEsposa(h => ({ ...h, solicitar: e.target.checked }));
                               }}
-                              className="mt-0.5 accent-purple-700 disabled:cursor-not-allowed"
+                              className="mt-0.5 accent-purple-700"
                             />
                             <div>
-                              <span className={`text-sm font-semibold ${!statusEsposa.disponivel ? 'text-gray-500' : 'text-gray-700'}`}>
+                              <span className="text-sm font-semibold text-gray-700">
                                 🛏️ Desejo solicitar hospedagem para a esposa
                               </span>
                               <p className="text-xs text-gray-500 mt-0.5">
                                 A hospedagem é independente — cada inscrição decide individualmente.
-                                {statusEsposa.disponivel && (
-                                  <span className="font-medium text-purple-800 ml-1">
-                                    {statusEsposa.mensagem}
-                                  </span>
-                                )}
+                                <span className="font-medium text-purple-800 ml-1">
+                                  {statusEsposa.mensagem}
+                                </span>
                               </p>
-                              {!statusEsposa.disponivel && (
-                                <p className="text-xs text-amber-700 font-semibold mt-1.5 flex items-center gap-1.5">
-                                  ⚠️ {statusEsposa.mensagem}
-                                </p>
-                              )}
                             </div>
                           </label>
 
@@ -3036,45 +3057,36 @@ export default function InscricaoPublicaPage() {
                           hosp_possui_comorbidade: !!p.hosp_possui_comorbidade,
                         });
                         const statusExtra = getStatusHospedagem(extraGroup, podeHospedagemExtra);
+                        if (!textoInclusosExtra && (!podeHospedagemExtra || !statusExtra.disponivel)) return null;
 
                         return (
-                          <div className={`sm:col-span-2 rounded-lg border p-3 ${!statusExtra.disponivel ? 'bg-gray-100/80 border-gray-300' : 'bg-amber-50 border-amber-200'}`}>
+                          <div className="sm:col-span-2 rounded-lg border p-3 bg-amber-50 border-amber-200">
                             {textoInclusosExtra && (
                               <div className="mb-2 text-xs font-bold text-emerald-800 flex items-center gap-1.5">
                                 {textoInclusosExtra}
                               </div>
                             )}
 
-                            {!extraHospInclusa && podeHospedagemExtra && (
-                              <label className={`flex items-start gap-3 select-none ${!statusExtra.disponivel ? 'cursor-not-allowed opacity-85' : 'cursor-pointer'}`}>
+                            {!extraHospInclusa && podeHospedagemExtra && statusExtra.disponivel && (
+                              <label className="flex items-start gap-3 select-none cursor-pointer">
                                 <input
                                   type="checkbox"
-                                  disabled={!statusExtra.disponivel}
-                                  checked={statusExtra.disponivel && !!p.hospedagem}
+                                  checked={!!p.hospedagem}
                                   onChange={e => {
-                                    if (statusExtra.disponivel) {
-                                      atualizarParticipante(idx, 'hospedagem', e.target.checked);
-                                    }
+                                    atualizarParticipante(idx, 'hospedagem', e.target.checked);
                                   }}
-                                  className="mt-0.5 accent-[#123b63] disabled:cursor-not-allowed"
+                                  className="mt-0.5 accent-[#123b63]"
                                 />
                                 <div>
-                                  <span className={`text-sm font-semibold ${!statusExtra.disponivel ? 'text-gray-500' : 'text-gray-700'}`}>
+                                  <span className="text-sm font-semibold text-gray-700">
                                     🛏️ Desejo solicitar hospedagem
                                   </span>
                                   <p className="text-xs text-gray-500 mt-0.5">
                                     A solicitação não garante alocação. A organização fará a distribuição conforme disponibilidade.
-                                    {statusExtra.disponivel && (
-                                      <span className="font-medium text-emerald-700 ml-1">
-                                        {statusExtra.mensagem}
-                                      </span>
-                                    )}
+                                    <span className="font-medium text-emerald-700 ml-1">
+                                      {statusExtra.mensagem}
+                                    </span>
                                   </p>
-                                  {!statusExtra.disponivel && (
-                                    <p className="text-xs text-amber-700 font-semibold mt-1.5 flex items-center gap-1.5">
-                                      ⚠️ {statusExtra.mensagem}
-                                    </p>
-                                  )}
                                 </div>
                               </label>
                             )}

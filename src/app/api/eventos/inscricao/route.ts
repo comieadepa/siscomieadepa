@@ -994,7 +994,7 @@ export async function POST(request: NextRequest) {
     // ── Verifica vagas de hospedagem ──────────────────────────
     // AGO: hospedagem sempre opt-in explícito; não herda automaticamente do tipo.
     stage = 'calculo_hospedagem';
-    const querHospedagem = evento.departamento === 'AGO'
+    let querHospedagem = evento.departamento === 'AGO'
       ? !!hospedagem
       : (tipoInclui.hospedagem || !!hospedagem);
 
@@ -1038,6 +1038,8 @@ export async function POST(request: NextRequest) {
       ehLote,
     });
 
+    // Validação de vagas gerais de hospedagem (degradação graciosa: se esgotar, inscreve sem hospedagem)
+    let hospedagemEsgotouAviso = false;
     if (qtdComHospedagem > 0 && evento.limite_hospedagem) {
       const { count: hospCount } = await supabase
         .from('evento_inscricoes')
@@ -1045,139 +1047,158 @@ export async function POST(request: NextRequest) {
         .eq('evento_id', evento.id)
         .eq('hospedagem', true);
       if ((hospCount ?? 0) + qtdComHospedagem > evento.limite_hospedagem) {
-        return buildErrorResponse(409, {
-          error: 'Vagas de hospedagem insuficientes',
-          stage: 'validacao_vagas_hospedagem',
-          payloadResumo: { ...payloadResumo, evento_id: evento.id, hospedagem: querHospedagem },
-        });
+        console.warn('[INSCRICAO] Vagas gerais de hospedagem esgotadas. Confirmando inscrição sem hospedagem.');
+        hospedagemEsgotouAviso = true;
+        querHospedagem = false;
+        if (ehLote && Array.isArray(participantes)) {
+          for (const p of participantes as Record<string, unknown>[]) {
+            p.hospedagem = false;
+          }
+        }
+        if (esposa && typeof esposa === 'object') {
+          (esposa as Record<string, unknown>).hospedagem = false;
+        }
       }
     }
 
     // Validação de capacidade e vagas por grupo para eventos AGO
-    if (evento.departamento === 'AGO' && qtdComHospedagem > 0) {
+    if (evento.departamento === 'AGO' && (querHospedagem || (esposa && (esposa as Record<string, unknown>).hospedagem) || (ehLote && Array.isArray(participantes) && participantes.some(p => (p as Record<string, unknown>).hospedagem)))) {
       if (!evento.permite_hospedagem) {
-        return buildErrorResponse(400, {
-          error: 'Hospedagem não permitida para este evento.',
-          stage: 'validacao_hospedagem_ago_nao_permitida',
-          payloadResumo: { ...payloadResumo, evento_id: evento.id },
-        });
-      }
-
-      // Consulta alojamentos ativos para apurar capacidade configurada por grupo
-      const { data: alojamentosAtivos } = await supabase
-        .from('evento_alojamentos')
-        .select('id, publico, total_vagas, ativo')
-        .eq('evento_id', evento.id)
-        .eq('ativo', true);
-
-      const PUBLICO_GRUPO_AGO: Record<string, string> = {
-        presidentes:     'Pastor Presidente / Pastor Jubilado',
-        jubilados:       'Pastor Presidente / Pastor Jubilado',
-        masculino_geral: 'Pastor Auxiliar / Juventude',
-        feminino:        'Mulheres',
-        misto:           'Misto',
-      };
-
-      const capacidadePorGrupoAgo: Record<string, number> = {
-        'Mulheres': 0,
-        'Pastor Presidente / Pastor Jubilado': 0,
-        'Pastor Auxiliar / Juventude': 0,
-        'Misto': 0,
-      };
-
-      for (const aloj of alojamentosAtivos ?? []) {
-        const gp = PUBLICO_GRUPO_AGO[aloj.publico] ?? 'Misto';
-        capacidadePorGrupoAgo[gp] = (capacidadePorGrupoAgo[gp] ?? 0) + (aloj.total_vagas ?? 0);
-      }
-
-      // Consulta ocupação confirmada + todas as reservas solicitadas pendentes vinculadas a inscrições ativas (não canceladas)
-      // Preserva a reserva enquanto a inscrição e a cobrança existirem, sem expiração prematura antes do cancelamento da cobrança
-      const { data: hospOcupadas } = await supabase
-        .from('evento_hospedagens')
-        .select('id, status, alojamento_id, grupo_hospedagem, evento_inscricoes!inner(status_pagamento)')
-        .eq('evento_id', evento.id)
-        .in('status', ['solicitada', 'confirmada', 'alocada', 'checkin_realizado', 'checkout_realizado'])
-        .neq('evento_inscricoes.status_pagamento', 'cancelado');
-
-      const alojMap = new Map<string, string>();
-      for (const al of alojamentosAtivos ?? []) {
-        const gp = PUBLICO_GRUPO_AGO[al.publico] ?? 'Misto';
-        alojMap.set(al.id, gp);
-      }
-
-      const ocupadasPorGrupoAgo: Record<string, number> = {
-        'Mulheres': 0,
-        'Pastor Presidente / Pastor Jubilado': 0,
-        'Pastor Auxiliar / Juventude': 0,
-        'Misto': 0,
-      };
-
-      for (const h of hospOcupadas ?? []) {
-        const gp = (h.alojamento_id ? alojMap.get(h.alojamento_id) : null) ?? h.grupo_hospedagem ?? 'Misto';
-        ocupadasPorGrupoAgo[gp] = (ocupadasPorGrupoAgo[gp] ?? 0) + 1;
-      }
-
-      // Agrupa solicitações deste pedido por grupo para validar capacidade e disponibilidade
-      const solicitadosPorGrupo: Record<string, number> = {};
-
-      if (querHospedagem && grupoHospedagemAuto) {
-        solicitadosPorGrupo[grupoHospedagemAuto] = (solicitadosPorGrupo[grupoHospedagemAuto] ?? 0) + 1;
-      }
-
-      if (incluir_esposa && esposa) {
-        const espObj = esposa as Record<string, unknown> | undefined;
-        if (espObj?.hospedagem) {
-          const espGrp = resolveGrupoHospedagemAGO({
-            sexo: 'F',
-            data_nascimento: espObj.data_nascimento as string | null,
-            tipo_inscricao: 'Esposa de Pastor Presidente Campo Missionário',
-            hosp_necessidade_especial: !!espObj.hosp_necessidade_especial,
-            hosp_possui_comorbidade: !!espObj.hosp_possui_comorbidade,
-          });
-          if (espGrp) {
-            solicitadosPorGrupo[espGrp] = (solicitadosPorGrupo[espGrp] ?? 0) + 1;
+        querHospedagem = false;
+        hospedagemEsgotouAviso = true;
+        if (ehLote && Array.isArray(participantes)) {
+          for (const p of participantes as Record<string, unknown>[]) {
+            p.hospedagem = false;
           }
         }
-      }
+        if (esposa && typeof esposa === 'object') {
+          (esposa as Record<string, unknown>).hospedagem = false;
+        }
+      } else {
+        // Consulta alojamentos ativos para apurar capacidade configurada por grupo (exclui emergenciais)
+        const { data: alojamentosAtivosRaw } = await supabase
+          .from('evento_alojamentos')
+          .select('id, publico, total_vagas, ativo, is_emergencial')
+          .eq('evento_id', evento.id)
+          .eq('ativo', true);
 
-      if (Array.isArray(participantes)) {
-        for (const p of participantes as Record<string, unknown>[]) {
-          if (p.hospedagem) {
-            const grpExtra = resolveGrupoHospedagemAGO({
-              sexo: (p.sexo as string) || null,
-              data_nascimento: (p.data_nascimento as string) || null,
-              tipo_inscricao: (p.tipo_inscricao as string) || null,
-              hosp_necessidade_especial: !!p.hosp_necessidade_especial,
-              hosp_possui_comorbidade: !!p.hosp_possui_comorbidade,
-            });
-            if (grpExtra) {
-              solicitadosPorGrupo[grpExtra] = (solicitadosPorGrupo[grpExtra] ?? 0) + 1;
+        const alojamentosAtivos = (alojamentosAtivosRaw ?? []).filter((a: any) => !a.is_emergencial);
+
+        const PUBLICO_GRUPO_AGO: Record<string, string> = {
+          presidentes:     'Pastor Presidente / Pastor Jubilado',
+          jubilados:       'Pastor Presidente / Pastor Jubilado',
+          masculino_geral: 'Pastor Auxiliar / Juventude',
+          feminino:        'Mulheres',
+          misto:           'Misto',
+        };
+
+        const capacidadePorGrupoAgo: Record<string, number> = {
+          'Mulheres': 0,
+          'Pastor Presidente / Pastor Jubilado': 0,
+          'Pastor Auxiliar / Juventude': 0,
+          'Misto': 0,
+        };
+
+        for (const aloj of alojamentosAtivos ?? []) {
+          const gp = PUBLICO_GRUPO_AGO[aloj.publico] ?? 'Misto';
+          capacidadePorGrupoAgo[gp] = (capacidadePorGrupoAgo[gp] ?? 0) + (aloj.total_vagas ?? 0);
+        }
+
+        // Consulta ocupação confirmada + todas as reservas solicitadas pendentes vinculadas a inscrições ativas (não canceladas)
+        const hospOcupadas: Array<{ id: string; status: string; alojamento_id: string | null; grupo_hospedagem: string | null }> = [];
+        let hospFrom = 0;
+        const HOSP_PAGE_SIZE = 1000;
+        while (true) {
+          const { data, error } = await supabase
+            .from('evento_hospedagens')
+            .select('id, status, alojamento_id, grupo_hospedagem, evento_inscricoes!inner(status_pagamento)')
+            .eq('evento_id', evento.id)
+            .in('status', ['solicitada', 'confirmada', 'alocada', 'checkin_realizado', 'checkout_realizado'])
+            .neq('evento_inscricoes.status_pagamento', 'cancelado')
+            .range(hospFrom, hospFrom + HOSP_PAGE_SIZE - 1);
+          if (error || !data) break;
+          hospOcupadas.push(...(data as any));
+          if (data.length < HOSP_PAGE_SIZE) break;
+          hospFrom += HOSP_PAGE_SIZE;
+        }
+
+        const alojMap = new Map<string, string>();
+        for (const al of alojamentosAtivos ?? []) {
+          const gp = PUBLICO_GRUPO_AGO[al.publico] ?? 'Misto';
+          alojMap.set(al.id, gp);
+        }
+
+        const ocupadasPorGrupoAgo: Record<string, number> = {
+          'Mulheres': 0,
+          'Pastor Presidente / Pastor Jubilado': 0,
+          'Pastor Auxiliar / Juventude': 0,
+          'Misto': 0,
+        };
+
+        for (const h of hospOcupadas ?? []) {
+          const gp = (h.alojamento_id ? alojMap.get(h.alojamento_id) : null) ?? h.grupo_hospedagem ?? 'Misto';
+          ocupadasPorGrupoAgo[gp] = (ocupadasPorGrupoAgo[gp] ?? 0) + 1;
+        }
+
+        // Verifica disponibilidade para cada participante individualmente (sem barrar a inscrição)
+        // 1. Titular
+        if (querHospedagem && grupoHospedagemAuto) {
+          const cap = capacidadePorGrupoAgo[grupoHospedagemAuto] ?? 0;
+          const ocup = ocupadasPorGrupoAgo[grupoHospedagemAuto] ?? 0;
+          if (cap <= 0 || ocup >= cap) {
+            console.warn(`[INSCRICAO] Vagas esgotadas para grupo ${grupoHospedagemAuto} do titular. Inscrição confirmada sem hospedagem.`);
+            querHospedagem = false;
+            hospedagemEsgotouAviso = true;
+          } else {
+            ocupadasPorGrupoAgo[grupoHospedagemAuto] = ocup + 1;
+          }
+        }
+
+        // 2. Esposa
+        if (incluir_esposa && esposa) {
+          const espObj = esposa as Record<string, unknown> | undefined;
+          if (espObj?.hospedagem) {
+            const espGrp = resolveGrupoHospedagemAGO({
+              sexo: 'F',
+              data_nascimento: espObj.data_nascimento as string | null,
+              tipo_inscricao: 'Esposa de Pastor Presidente Campo Missionário',
+              hosp_necessidade_especial: !!espObj.hosp_necessidade_especial,
+              hosp_possui_comorbidade: !!espObj.hosp_possui_comorbidade,
+            }) || 'Mulheres';
+            const cap = capacidadePorGrupoAgo[espGrp] ?? 0;
+            const ocup = ocupadasPorGrupoAgo[espGrp] ?? 0;
+            if (cap <= 0 || ocup >= cap) {
+              console.warn(`[INSCRICAO] Vagas esgotadas para grupo ${espGrp} da esposa. Inscrição confirmada sem hospedagem.`);
+              espObj.hospedagem = false;
+              hospedagemEsgotouAviso = true;
+            } else {
+              ocupadasPorGrupoAgo[espGrp] = ocup + 1;
             }
           }
         }
-      }
 
-      for (const [grp, qtdDesejada] of Object.entries(solicitadosPorGrupo)) {
-        const cap = capacidadePorGrupoAgo[grp] ?? 0;
-        if (cap <= 0) {
-          return buildErrorResponse(400, {
-            error: `Hospedagem não configurada para o grupo ${grp} neste evento.`,
-            stage: 'validacao_hospedagem_ago_sem_capacidade',
-            code: 'HOSPEDAGEM_NAO_CONFIGURADA_GRUPO',
-            details: `Grupo: ${grp}`,
-            payloadResumo: { ...payloadResumo, evento_id: evento.id, grupo: grp },
-          });
-        }
-        const ocup = ocupadasPorGrupoAgo[grp] ?? 0;
-        const disponivel = Math.max(0, cap - ocup);
-        if (qtdDesejada > disponivel) {
-          return buildErrorResponse(409, {
-            error: `Não há mais vagas de hospedagem disponíveis para o grupo ${grp} (vagas esgotadas).`,
-            stage: 'validacao_hospedagem_ago_lotada',
-            code: 'HOSPEDAGEM_GRUPO_ESGOTADA',
-            details: `Grupo: ${grp}, Solicitadas: ${qtdDesejada}, Disponíveis: ${disponivel}`,
-            payloadResumo: { ...payloadResumo, evento_id: evento.id, grupo: grp },
-          });
+        // 3. Participantes do Lote
+        if (Array.isArray(participantes)) {
+          for (const p of participantes as Record<string, unknown>[]) {
+            if (p.hospedagem) {
+              const grpExtra = resolveGrupoHospedagemAGO({
+                sexo: (p.sexo as string) || null,
+                data_nascimento: (p.data_nascimento as string) || null,
+                tipo_inscricao: (p.tipo_inscricao as string) || null,
+                hosp_necessidade_especial: !!p.hosp_necessidade_especial,
+                hosp_possui_comorbidade: !!p.hosp_possui_comorbidade,
+              }) || 'Misto';
+              const cap = capacidadePorGrupoAgo[grpExtra] ?? 0;
+              const ocup = ocupadasPorGrupoAgo[grpExtra] ?? 0;
+              if (cap <= 0 || ocup >= cap) {
+                console.warn(`[INSCRICAO] Vagas esgotadas para grupo ${grpExtra} de participante do lote. Confirmando sem hospedagem.`);
+                p.hospedagem = false;
+                hospedagemEsgotouAviso = true;
+              } else {
+                ocupadasPorGrupoAgo[grpExtra] = ocup + 1;
+              }
+            }
+          }
         }
       }
     }
@@ -1592,7 +1613,7 @@ export async function POST(request: NextRequest) {
             await alocarLeitoParaInscricao(supabase, insEsposa.id);
           }
         }
-        return NextResponse.json({ inscricaoId: insPastor.id, loteId: lote2.id, inscricoes: 2, statusPagamento: 'isento', pagamento: null });
+        return NextResponse.json({ inscricaoId: insPastor.id, loteId: lote2.id, inscricoes: 2, statusPagamento: 'isento', pagamento: null, hospedagem_esgotada: hospedagemEsgotouAviso });
       }
 
       try {
@@ -1601,10 +1622,10 @@ export async function POST(request: NextRequest) {
         const dueDate2 = dueDateFromNow();
         const pagamento2 = await createEventoPayment({ customerId: customerId2, value: valorTotal2, dueDate: dueDate2, description: `Inscrição Casal CM — ${evento.nome}`, externalReference: `lote:${lote2.id}` });
         await supabase.from('evento_lotes_inscricao').update({ asaas_payment_id: pagamento2.id, invoice_url: pagamento2.invoiceUrl, pix_copia_cola: pagamento2.pixCopiaECola, pix_qr_code: pagamento2.pixQrCode, asaas_due_date: dueDate2 }).eq('id', lote2.id);
-        return NextResponse.json({ inscricaoId: insPastor.id, loteId: lote2.id, inscricoes: 2, statusPagamento: 'pendente', pagamento: { asaasId: pagamento2.id, invoiceUrl: pagamento2.invoiceUrl, pixQrCode: pagamento2.pixQrCode, pixCopiaECola: pagamento2.pixCopiaECola, valor: valorTotal2, vencimento: dueDate2 } });
+        return NextResponse.json({ inscricaoId: insPastor.id, loteId: lote2.id, inscricoes: 2, statusPagamento: 'pendente', pagamento: { asaasId: pagamento2.id, invoiceUrl: pagamento2.invoiceUrl, pixQrCode: pagamento2.pixQrCode, pixCopiaECola: pagamento2.pixCopiaECola, valor: valorTotal2, vencimento: dueDate2 }, hospedagem_esgotada: hospedagemEsgotouAviso });
       } catch (asaasErr) {
         console.error('[INSCRICAO CASAL] ASAAS falhou:', (asaasErr as Error).message);
-        return NextResponse.json({ inscricaoId: insPastor.id, loteId: lote2.id, inscricoes: 2, statusPagamento: 'pendente', pagamento: null, asaasError: `Pagamento online indisponível. Detalhes: ${(asaasErr as Error).message}` });
+        return NextResponse.json({ inscricaoId: insPastor.id, loteId: lote2.id, inscricoes: 2, statusPagamento: 'pendente', pagamento: null, asaasError: `Pagamento online indisponível. Detalhes: ${(asaasErr as Error).message}`, hospedagem_esgotada: hospedagemEsgotouAviso });
       }
     }
 
@@ -2068,7 +2089,7 @@ export async function POST(request: NextRequest) {
       if (cupomUsado) await incrementarCupom(supabase, evento.id, cupomUsado, todos.length);
 
       if (isGratuitoLote) {
-        return NextResponse.json({ loteId: lote.id, inscricoes: todos.length, statusPagamento: 'isento', pagamento: null });
+        return NextResponse.json({ loteId: lote.id, inscricoes: todos.length, statusPagamento: 'isento', pagamento: null, hospedagem_esgotada: hospedagemEsgotouAviso });
       }      try {
         stage = 'criar_asaas_lote';
         const customerId = await createOrFindAsaasCustomer({ nome: nome_inscrito.trim(), email: email?.trim() || null, cpf: cleanCpf(cpf), whatsapp: whatsapp || null });
@@ -2091,7 +2112,7 @@ export async function POST(request: NextRequest) {
           pix_qr_code:      pagamento.pixQrCode,
           asaas_due_date:   dueDateLote,
         }).eq('id', lote.id);
-        return NextResponse.json({ loteId: lote.id, inscricoes: todos.length, statusPagamento: 'pendente', pagamento: { asaasId: pagamento.id, invoiceUrl: pagamento.invoiceUrl, pixQrCode: pagamento.pixQrCode, pixCopiaECola: pagamento.pixCopiaECola, valor: valorTotalLote, vencimento: dueDateLote } });
+        return NextResponse.json({ loteId: lote.id, inscricoes: todos.length, statusPagamento: 'pendente', pagamento: { asaasId: pagamento.id, invoiceUrl: pagamento.invoiceUrl, pixQrCode: pagamento.pixQrCode, pixCopiaECola: pagamento.pixCopiaECola, valor: valorTotalLote, vencimento: dueDateLote }, hospedagem_esgotada: hospedagemEsgotouAviso });
       } catch (asaasErr) {
         const message = asaasErr instanceof Error ? asaasErr.message : String(asaasErr);
         console.error('[INSCRICAO LOTE] ASAAS falhou, lote salvo sem cobranca:', {
@@ -2099,7 +2120,7 @@ export async function POST(request: NextRequest) {
           eventoId: evento.id,
           value: valorTotalLote,
         });
-        return NextResponse.json({ loteId: lote.id, inscricoes: todos.length, statusPagamento: 'pendente', pagamento: null, asaasError: `Pagamento online indisponível. Detalhes: ${message}` });
+        return NextResponse.json({ loteId: lote.id, inscricoes: todos.length, statusPagamento: 'pendente', pagamento: null, asaasError: `Pagamento online indisponível. Detalhes: ${message}`, hospedagem_esgotada: hospedagemEsgotouAviso });
       }
     }
 
@@ -2242,7 +2263,7 @@ export async function POST(request: NextRequest) {
         await alocarLeitoParaInscricao(supabase, inscricao.id);
       }
 
-      return NextResponse.json({ inscricaoId: inscricao.id, statusPagamento: 'isento', pagamento: null });
+      return NextResponse.json({ inscricaoId: inscricao.id, statusPagamento: 'isento', pagamento: null, hospedagem_esgotada: hospedagemEsgotouAviso });
     }
 
     // Cria cobrança ASAAS
@@ -2316,6 +2337,7 @@ export async function POST(request: NextRequest) {
           vencimento:   dueDate,
           ...(pagamento.installment ? { installment: pagamento.installment } : {}),
         },
+        hospedagem_esgotada: hospedagemEsgotouAviso,
       });
     } catch (asaasErr) {
       // ASAAS falhou mas inscrição já foi criada — retorna sem dados de pagamento
@@ -2326,6 +2348,7 @@ export async function POST(request: NextRequest) {
         statusPagamento: 'pendente',
         pagamento:       null,
         asaasError:      `Pagamento online indisponível no momento. Detalhes: ${(asaasErr as Error).message}`,
+        hospedagem_esgotada: hospedagemEsgotouAviso,
       });
     }
   } catch (err: any) {
