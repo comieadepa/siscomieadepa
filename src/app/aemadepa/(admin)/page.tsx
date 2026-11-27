@@ -68,6 +68,7 @@ interface AssociadaAemadepa {
   temEsposaCadastrada: boolean;
   statusMinistro: string;
   associadaId?: string;
+  createdAt?: string;
   financeiro?: {
     status: string;
     formaPagamento?: string | null;
@@ -90,6 +91,7 @@ export default function AemadepaPage() {
   const [paginaAtual, setPaginaAtual] = useState(1);
   const ITENS_POR_PAGINA = 20;
   const [gerandoPdf, setGerandoPdf] = useState(false);
+  const [ordemAlfabeticaAssociadas, setOrdemAlfabeticaAssociadas] = useState(false);
 
   // Estado para modal de edição / cadastro AEMADEPA
   const [modalAemadepaAberto, setModalAemadepaAberto] = useState(false);
@@ -219,6 +221,7 @@ export default function AemadepaPage() {
           emailEsposa: String(item.email || '').trim(),
           tipoSanguineoEsposa: String(item.tipo_sanguineo || '').trim(),
           fotoEsposaUrl: item.foto_url || null,
+          createdAt: item.created_at ? String(item.created_at) : undefined,
           numeroAemadepa: numeroAemadepaEfetivo,
           temEsposaCadastrada: true,
           statusMinistro: String(m.status || 'active').toLowerCase(),
@@ -327,7 +330,7 @@ export default function AemadepaPage() {
   // Filtragem
   const associadasFiltradas = useMemo(() => {
     const q = searchTerm.toLowerCase().trim();
-    return associadas.filter(item => {
+    const resultado = associadas.filter(item => {
       // Filtro status esposa
       if (filtroStatusEsposa === 'com_esposa' && !item.temEsposaCadastrada) return false;
       if (filtroStatusEsposa === 'sem_esposa' && item.temEsposaCadastrada) return false;
@@ -351,7 +354,18 @@ export default function AemadepaPage() {
 
       return true;
     });
-  }, [associadas, searchTerm, filtroStatusEsposa, filtroSupervisao, filtroCampo]);
+    // Ordenação: A→Z pelo nome da esposa ou mais recentes primeiro
+    if (ordemAlfabeticaAssociadas) {
+      resultado.sort((a, b) => a.nomeEsposa.localeCompare(b.nomeEsposa, 'pt-BR'));
+    } else {
+      resultado.sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      });
+    }
+    return resultado;
+  }, [associadas, searchTerm, filtroStatusEsposa, filtroSupervisao, filtroCampo, ordemAlfabeticaAssociadas]);
 
   // Paginação
   const totalPaginas = Math.ceil(associadasFiltradas.length / ITENS_POR_PAGINA) || 1;
@@ -764,6 +778,7 @@ export default function AemadepaPage() {
                   setFiltroStatusEsposa('todos');
                   setFiltroSupervisao('TODOS');
                   setFiltroCampo('TODOS');
+                  setOrdemAlfabeticaAssociadas(false);
                   setPaginaAtual(1);
                 }}
                 disabled={!searchTerm && filtroStatusEsposa === 'todos' && filtroSupervisao === 'TODOS' && filtroCampo === 'TODOS'}
@@ -834,7 +849,18 @@ export default function AemadepaPage() {
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase font-semibold text-gray-600">
                   <th className="px-4 py-3 text-center w-14">Foto</th>
-                  <th className="px-4 py-3">Nome da Esposa</th>
+                  <th className="px-4 py-3">
+                    <div className="flex items-center gap-1.5">
+                      <span>ASSOCIADA (ESPOSA)</span>
+                      <input
+                        type="checkbox"
+                        title="Ordenar de A a Z"
+                        checked={ordemAlfabeticaAssociadas}
+                        onChange={e => { setOrdemAlfabeticaAssociadas(e.target.checked); setPaginaAtual(1); }}
+                        className="cursor-pointer accent-rose-600 w-3.5 h-3.5"
+                      />
+                    </div>
+                  </th>
                   <th className="px-4 py-3">No AEMADEPA</th>
                   <th className="px-4 py-3">Ministro Vinculado</th>
                   <th className="px-4 py-3">Campo / Região</th>

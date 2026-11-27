@@ -108,6 +108,7 @@ const PainelPedidosAemadepa = forwardRef<PainelPedidosAemadepaHandle, PainelPedi
   const [modalRecuperarPix, setModalRecuperarPix] = useState<PedidoCarteirinhaItem | null>(null);
   const [modalEnviarRecibo, setModalEnviarRecibo] = useState<PedidoCarteirinhaItem | null>(null);
   const [baixandoReciboId, setBaixandoReciboId] = useState<string | null>(null);
+  const [ordemAlfabetica, setOrdemAlfabetica] = useState(false);
 
   const carregarPedidos = useCallback(async () => {
     setLoading(true);
@@ -195,16 +196,27 @@ const PainelPedidosAemadepa = forwardRef<PainelPedidosAemadepaHandle, PainelPedi
     }
   };
 
-  const pedidosFiltrados = pedidos.filter((p) => {
-    if (!busca) return true;
-    const termo = busca.toLowerCase();
-    return (
-      p.associada.nomeEsposa.toLowerCase().includes(termo) ||
-      p.associada.ministroNome.toLowerCase().includes(termo) ||
-      p.associada.ministroMatricula.toLowerCase().includes(termo) ||
-      p.associada.campo.toLowerCase().includes(termo)
+  const pedidosFiltrados = (() => {
+    const filtrados = pedidos.filter((p) => {
+      if (!busca) return true;
+      const termo = busca.toLowerCase();
+      return (
+        p.associada.nomeEsposa.toLowerCase().includes(termo) ||
+        p.associada.ministroNome.toLowerCase().includes(termo) ||
+        p.associada.ministroMatricula.toLowerCase().includes(termo) ||
+        p.associada.campo.toLowerCase().includes(termo)
+      );
+    });
+    if (ordemAlfabetica) {
+      return [...filtrados].sort((a, b) =>
+        a.associada.nomeEsposa.localeCompare(b.associada.nomeEsposa, 'pt-BR')
+      );
+    }
+    // Padrão: mais recentes primeiro
+    return [...filtrados].sort(
+      (a, b) => new Date(b.solicitadoEm).getTime() - new Date(a.solicitadoEm).getTime()
     );
-  });
+  })();
 
   // Paginação de exatamente 15 registros por página
   const totalPaginas = Math.ceil(pedidosFiltrados.length / ITENS_POR_PAGINA) || 1;
@@ -306,6 +318,7 @@ const PainelPedidosAemadepa = forwardRef<PainelPedidosAemadepaHandle, PainelPedi
                 e.preventDefault();
                 setBusca('');
                 setStatusFiltro('todos');
+                setOrdemAlfabetica(false);
                 setPaginaAtual(1);
               }}
               disabled={!busca && statusFiltro === 'todos'}
@@ -368,7 +381,18 @@ const PainelPedidosAemadepa = forwardRef<PainelPedidosAemadepaHandle, PainelPedi
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200 text-gray-600 font-extrabold uppercase tracking-wider">
-                <th className="py-3 px-4">Associada (Esposa)</th>
+                <th className="py-3 px-4">
+                  <div className="flex items-center gap-2">
+                    <span>Associada (Esposa)</span>
+                    <input
+                      type="checkbox"
+                      title="Ordenar de A a Z"
+                      checked={ordemAlfabetica}
+                      onChange={e => { setOrdemAlfabetica(e.target.checked); setPaginaAtual(1); }}
+                      className="cursor-pointer accent-rose-600 w-3.5 h-3.5"
+                    />
+                  </div>
+                </th>
                 <th className="py-3 px-4">Pastor Vinculado</th>
                 <th className="py-3 px-4">Via / Valor</th>
                 <th className="py-3 px-4">Status</th>

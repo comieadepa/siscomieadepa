@@ -1039,6 +1039,40 @@ export async function POST(
       );
     }
 
+    // ── Bloqueio de Efetivação se houver Solicitação de Desconto Pendente ──
+    const operacaoIdCheck = (body as any).operacao_id ? String((body as any).operacao_id).trim() : null;
+    if (operacaoIdCheck) {
+      const { data: pendenteOp } = await supabase
+        .from('evento_desconto_autorizacoes')
+        .select('id, status')
+        .eq('evento_id', eventoId)
+        .eq('operacao_id', operacaoIdCheck)
+        .eq('status', 'pendente')
+        .maybeSingle();
+
+      if (pendenteOp) {
+        return NextResponse.json(
+          { error: 'Existe uma solicitação de desconto pendente de deliberação para esta operação. Aguarde a resposta do supervisor ou cancele a solicitação antes de efetivar.' },
+          { status: 409 }
+        );
+      }
+    } else if (cpfLimpo) {
+      const { data: pendenteCpf } = await supabase
+        .from('evento_desconto_autorizacoes')
+        .select('id, status')
+        .eq('evento_id', eventoId)
+        .eq('cpf', cpfLimpo)
+        .eq('status', 'pendente')
+        .maybeSingle();
+
+      if (pendenteCpf) {
+        return NextResponse.json(
+          { error: 'Existe uma solicitação de desconto pendente para este participante. Aguarde o supervisor ou cancele a solicitação para efetivar a inscrição.' },
+          { status: 409 }
+        );
+      }
+    }
+
     // ── Validação e Aplicação de Desconto Autorizado pelo Supervisor ──
     if (desconto_autorizacao_id) {
       const { data: autRow, error: autErr } = await supabase

@@ -24,6 +24,7 @@ interface AutorizacaoRow {
   deliberado_em: string | null;
   utilizado: boolean;
   inscricao_id: string | null;
+  motivo_solicitacao?: string | null;
 }
 
 export default function SupervisorDescontosPage() {
@@ -344,12 +345,22 @@ export default function SupervisorDescontosPage() {
                 <div className="absolute top-0 right-0 w-2 h-full bg-amber-400"></div>
                 <div className="flex items-start justify-between pr-3">
                   <div>
-                    <h3 className="text-sm font-bold text-white uppercase tracking-wide">
-                      {item.nome_inscrito}
-                    </h3>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <h3 className="text-sm font-bold text-white uppercase tracking-wide">
+                        {item.nome_inscrito}
+                      </h3>
+                      {item.inscricao_id && (
+                        <span className="text-[10px] bg-indigo-500/30 text-indigo-200 border border-indigo-500/40 font-bold px-2 py-0.5 rounded-full">
+                          ⚡ Desconto Retroativo
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-purple-300 font-medium">{item.modalidade_nome}</p>
+                    {item.motivo_solicitacao && (
+                      <p className="text-[11px] text-white/60 italic mt-0.5">“{item.motivo_solicitacao}”</p>
+                    )}
                   </div>
-                  <span className="text-[10px] bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded-full border border-amber-500/30">
+                  <span className="text-[10px] bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded-full border border-amber-500/30 flex-shrink-0">
                     Aguardando
                   </span>
                 </div>
@@ -462,10 +473,22 @@ export default function SupervisorDescontosPage() {
             </div>
 
             <div className="bg-black/20 p-3 rounded-xl text-xs space-y-1">
-              <p className="text-white font-bold uppercase">{itemSelecionado.nome_inscrito}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-white font-bold uppercase">{itemSelecionado.nome_inscrito}</p>
+                {itemSelecionado.inscricao_id && (
+                  <span className="text-[9px] bg-indigo-500/30 text-indigo-200 border border-indigo-500/40 font-bold px-1.5 py-0.5 rounded">
+                    Retroativo
+                  </span>
+                )}
+              </div>
               <p className="text-white/60">{itemSelecionado.modalidade_nome}</p>
+              {itemSelecionado.inscricao_id && (
+                <p className="text-[11px] text-amber-300/80 font-medium">
+                  ⚠️ Ao autorizar, o sistema aplicará automaticamente a regularização financeira na inscrição já efetivada.
+                </p>
+              )}
               <div className="flex justify-between pt-1 border-t border-white/5 text-white/80">
-                <span>Valor original da inscrição:</span>
+                <span>Valor registrado/original:</span>
                 <span className="font-bold text-white">{fmtMoeda(valorOriginalModal)}</span>
               </div>
             </div>

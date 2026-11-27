@@ -385,6 +385,14 @@ export default function BalcaoPage() {
   const [cancelandoDesconto, setCancelandoDesconto] = useState(false);
   const [erroDesconto, setErroDesconto] = useState<string | null>(null);
 
+  // ── Estado de Desconto Retroativo ─────────────────────────
+  const [modalRetroativoAberto, setModalRetroativoAberto] = useState(false);
+  const [inscricaoRetroativaSel, setInscricaoRetroativaSel] = useState<InscricaoResumo | null>(null);
+  const [motivoRetroativoInput, setMotivoRetroativoInput] = useState('');
+  const [enviandoRetroativo, setEnviandoRetroativo] = useState(false);
+  const [retroativoMsgSucesso, setRetroativoMsgSucesso] = useState<string | null>(null);
+  const [retroativoMsgErro, setRetroativoMsgErro] = useState<string | null>(null);
+
   // Inclui serviços do tipo selecionado
   const tipoSel = useMemo(
     () => tipos.find(t => t.id === form.tipo_id) ?? null,
@@ -441,6 +449,7 @@ export default function BalcaoPage() {
     return typeof configCM.valor_esposa === 'number' ? configCM.valor_esposa : parseFloat(String(configCM.valor_esposa)) || 0;
   }, [configCM]);
 
+  const temDescontoPendente = descontoAutorizacao?.status === 'pendente';
   const valorDescontoAutorizado = descontoAutorizacao?.status === 'autorizado' ? Number(descontoAutorizacao.valor_desconto) : 0;
   const valorFinal = Math.max(0, valorBase + (incluirEsposa ? (valorEsposaBase ?? 0) : 0) - cupomDesconto - valorDescontoAutorizado);
 
@@ -878,6 +887,64 @@ export default function BalcaoPage() {
       setFechandoCaixaLoading(false);
     }
   };
+
+  // ── Ações de Desconto Retroativo ─────────────────────────
+  function abrirModalRetroativo(ins: InscricaoResumo) {
+    setInscricaoRetroativaSel(ins);
+    setMotivoRetroativoInput('');
+    setRetroativoMsgErro(null);
+    setRetroativoMsgSucesso(null);
+    setModalRetroativoAberto(true);
+  }
+
+  function fecharModalRetroativo() {
+    setModalRetroativoAberto(false);
+    setInscricaoRetroativaSel(null);
+    setMotivoRetroativoInput('');
+    setRetroativoMsgErro(null);
+    setRetroativoMsgSucesso(null);
+  }
+
+  async function enviarSolicitacaoRetroativa() {
+    if (!inscricaoRetroativaSel) return;
+    setEnviandoRetroativo(true);
+    setRetroativoMsgErro(null);
+    setRetroativoMsgSucesso(null);
+
+    try {
+      const vOriginalInscr = Number(inscricaoRetroativaSel.valor_pago ?? inscricaoRetroativaSel.valor_final ?? 0);
+      const res = await fetch(`/api/eventos/${id}/descontos/solicitar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          operacao_id: `retroativo_${inscricaoRetroativaSel.id}_${Date.now()}`,
+          inscricao_id: inscricaoRetroativaSel.id,
+          nome_inscrito: inscricaoRetroativaSel.nome_inscrito,
+          cpf: inscricaoRetroativaSel.cpf,
+          modalidade_nome: inscricaoRetroativaSel.tipo_inscricao || 'Inscrição Balcão',
+          valor_original: vOriginalInscr,
+          operador_nome: caixaSessao?.operador_nome || getEquipeSession()?.nome || 'Operador Balcão',
+          motivo_solicitacao: motivoRetroativoInput.trim() || 'Desconto retroativo concedido presencialmente no balcão.',
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        setRetroativoMsgErro(json.error || 'Erro ao enviar solicitação de desconto retroativo.');
+      } else {
+        setRetroativoMsgSucesso('Solicitação de Desconto Retroativo enviada ao Supervisor! Assim que autorizada, a regularização financeira será aplicada automaticamente.');
+        setTimeout(() => {
+          fecharModalRetroativo();
+          fetchInscricoesLista();
+          carregarCaixaDados();
+        }, 2200);
+      }
+    } catch (err: any) {
+      setRetroativoMsgErro(err.message || 'Falha de conexão ao enviar solicitação.');
+    } finally {
+      setEnviandoRetroativo(false);
+    }
+  }
 
   const iniciarPagamentoPresencial = (ins: InscricaoResumo) => {
     if (ins.status_pagamento !== 'pendente') return;
@@ -3507,7 +3574,7 @@ export default function BalcaoPage() {
                 id="btn-confirmar"
                 type="button"
                 onClick={salvar}
-                disabled={salvando || !form.nome.trim() || !form.supervisao_id}
+                disabled={salvando || !form.nome.trim() || !form.supervisao_id || temDescontoPendente}
                 className="flex-1 sm:flex-none bg-emerald-500 hover:bg-emerald-400 active:scale-95 disabled:opacity-40 text-white font-black px-8 py-3.5 rounded-xl text-base transition"
                 title="Ctrl+Enter"
               >
@@ -3730,6 +3797,16 @@ export default function BalcaoPage() {
                                     title="Reenviar e-mail"
                                   >
                                     {enviandoEmail[ins.id] ? '⏳' : '✉️'}
+                                  </button>
+                                )}
+                                {ins.status_pagamento === 'pago' && Number(ins.valor_pago ?? ins.valor_final ?? 0) > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => abrirModalRetroativo(ins)}
+                                    className="px-2 py-1 text-xs font-bold rounded-md bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 transition flex items-center gap-1"
+                                    title="Conceder desconto retroativo"
+                                  >
+                                    🏷️ Conceder desconto
                                   </button>
                                 )}
                                 <button
@@ -4526,6 +4603,95 @@ export default function BalcaoPage() {
           )}
         </div>
       </div>
+
+      {/* Modal de Desconto Retroativo */}
+{modalRetroativoAberto && inscricaoRetroativaSel && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+    <div className="bg-[#0D2B4E] border border-amber-500/40 w-full max-w-md rounded-2xl shadow-2xl p-6 relative text-white space-y-4">
+      <button
+        type="button"
+        onClick={fecharModalRetroativo}
+        disabled={enviandoRetroativo}
+        className="absolute top-4 right-4 text-white/50 hover:text-white transition text-lg"
+      >
+        ✕
+      </button>
+      
+      <div className="flex items-center gap-2 border-b border-white/10 pb-3">
+        <span className="text-2xl">🏷️</span>
+        <div>
+          <h3 className="text-base font-bold text-white">Conceder Desconto Retroativo</h3>
+          <p className="text-xs text-white/50">Regularização de inscrição já efetivada no balcão</p>
+        </div>
+      </div>
+
+      {retroativoMsgErro && (
+        <div className="bg-red-500/20 border border-red-500/40 text-red-200 p-3 rounded-xl text-xs font-semibold">
+          ⚠️ {retroativoMsgErro}
+        </div>
+      )}
+
+      {retroativoMsgSucesso && (
+        <div className="bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 p-3 rounded-xl text-xs font-semibold">
+          ✅ {retroativoMsgSucesso}
+        </div>
+      )}
+
+      <div className="bg-black/30 rounded-xl p-3 space-y-1.5 text-xs text-white/80 border border-white/5">
+        <div><span className="text-white/40">Participante: </span><strong className="text-white uppercase">{inscricaoRetroativaSel.nome_inscrito}</strong></div>
+        <div><span className="text-white/40">Modalidade: </span><strong className="text-purple-300">{inscricaoRetroativaSel.tipo_inscricao || "Balcão"}</strong></div>
+        <div><span className="text-white/40">Valor Efetivado/Pago: </span><strong className="text-emerald-400 font-bold text-sm">{fmtMoeda(Number(inscricaoRetroativaSel.valor_pago ?? inscricaoRetroativaSel.valor_final ?? 0))}</strong></div>
+        <div><span className="text-white/40">Status Atual: </span><span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300">PAGO</span></div>
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold text-white/70 mb-1">
+          Justificativa / Motivo do Desconto Presencial:
+        </label>
+        <textarea
+          value={motivoRetroativoInput}
+          onChange={e => setMotivoRetroativoInput(e.target.value)}
+          placeholder="Ex: Desconto autorizado presencialmente pela liderança antes da implantação do sistema..."
+          rows={3}
+          disabled={enviandoRetroativo}
+          className="w-full bg-[#0A1A2F] border border-white/20 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-amber-400 transition resize-none"
+        />
+      </div>
+
+      <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-200/90 leading-relaxed">
+        ℹ️ A solicitação será enviada em tempo real para o <strong>Supervisor de Descontos</strong>. O supervisor informará o valor do desconto e, ao autorizar, o sistema aplicará automaticamente a regularização financeira da inscrição.
+      </div>
+
+      <div className="flex gap-2 pt-2">
+        <button
+          type="button"
+          onClick={fecharModalRetroativo}
+          disabled={enviandoRetroativo}
+          className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-2.5 rounded-xl text-xs transition disabled:opacity-40"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          onClick={enviarSolicitacaoRetroativa}
+          disabled={enviandoRetroativo}
+          className="flex-1 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-bold py-2.5 rounded-xl text-xs transition shadow-lg disabled:opacity-50 flex items-center justify-center gap-1.5"
+        >
+          {enviandoRetroativo ? (
+            <>
+              <span className="w-3.5 h-3.5 border-2 border-black/30 border-t-black rounded-full animate-spin"></span>
+              <span>Enviando...</span>
+            </>
+          ) : (
+            <>
+              <span>🚀 Enviar ao Supervisor</span>
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
 
       {/* Modal de Efetivar Pagamento Presencial */}
       {modalPagarPresencialAberto && pagPresencialInscricao && (

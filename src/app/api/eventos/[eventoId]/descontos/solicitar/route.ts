@@ -23,6 +23,7 @@ export async function POST(
       valor_original,
       operador_nome,
       operador_email,
+      inscricao_id,
     } = body;
 
     // 1. Validações básicas de payload
@@ -44,19 +45,48 @@ export async function POST(
     const valorOriginalFix = Math.round(valorOriginalNum * 100) / 100;
     const admin = guard.ctx.supabaseAdmin;
 
-    // 2. Impedir solicitações pendentes duplicadas para a mesma operação
-    const { data: existentePendente } = await admin
+    // Se for solicitação retroativa vinculada a uma inscrição existente
+    if (inscricao_id) {
+      const { data: insDb, error: insErr } = await admin
+        .from('evento_inscricoes')
+        .select('id, nome_inscrito, cpf, valor_pago, valor_original, valor_final, status_pagamento, forma_pagamento, tipo_inscricao, caixa_sessao_id')
+        .eq('id', inscricao_id)
+        .eq('evento_id', eventoId)
+        .maybeSingle();
+
+      if (insErr || !insDb) {
+        return NextResponse.json({ error: 'Inscrição informada para desconto retroativo não foi encontrada.' }, { status: 404 });
+      }
+
+      if (insDb.status_pagamento !== 'pago') {
+        return NextResponse.json({ error: `Desconto retroativo só pode ser aplicado a inscrições com status pago (atual: ${insDb.status_pagamento}).` }, { status: 400 });
+      }
+
+      const valPagoAtual = Number(insDb.valor_pago ?? insDb.valor_final ?? 0);
+      if (valPagoAtual <= 0) {
+        return NextResponse.json({ error: 'Inscrição já está isenta ou com valor pago zerado. Não é aplicável desconto retroativo.' }, { status: 400 });
+      }
+    }
+
+    // 2. Impedir solicitações pendentes duplicadas para a mesma operação ou mesma inscrição
+    let queryPendente = admin
       .from('evento_desconto_autorizacoes')
       .select('id, status, created_at')
       .eq('evento_id', eventoId)
-      .eq('operacao_id', operacao_id.trim())
-      .eq('status', 'pendente')
-      .maybeSingle();
+      .eq('status', 'pendente');
+
+    if (inscricao_id) {
+      queryPendente = queryPendente.or(`operacao_id.eq.${operacao_id.trim()},inscricao_id.eq.${inscricao_id}`);
+    } else {
+      queryPendente = queryPendente.eq('operacao_id', operacao_id.trim());
+    }
+
+    const { data: existentePendente } = await queryPendente.maybeSingle();
 
     if (existentePendente) {
       return NextResponse.json(
         {
-          error: 'Já existe uma solicitação de desconto pendente para esta operação. Aguarde a deliberação ou cancele-a.',
+          error: 'Já existe uma solicitação de desconto pendente para esta operação/inscrição. Aguarde a deliberação ou cancele-a.',
           solicitacao_id: existentePendente.id
         },
         { status: 409 }
@@ -68,10 +98,15 @@ export async function POST(
     const opEmail = operador_email?.trim() || guard.ctx.user?.email || null;
     const opId = guard.ctx.equipe?.id || guard.ctx.user?.id || null;
 
+    // Formatar motivo destacando Desconto Retroativo se for o caso
+    const prefixoRetroativo = inscricao_id ? '[Desconto retroativo] ' : '';
+    const motivoFinal = (prefixoRetroativo + (body.motivo_solicitacao?.trim() || '')).trim() || (inscricao_id ? 'Desconto retroativo balcão' : null);
+
     // 4. Inserir solicitação no banco com suporte resiliente ao schema (solicitante_* e operador_*)
     const insertPayload: Record<string, any> = {
       evento_id: eventoId,
       operacao_id: operacao_id.trim(),
+      inscricao_id: inscricao_id || null,
       nome_inscrito: nome_inscrito.trim().toUpperCase(),
       cpf: cpf ? String(cpf).replace(/\D/g, '') : null,
       email: email ? String(email).trim().toLowerCase() : null,
@@ -86,7 +121,7 @@ export async function POST(
       solicitante_operador_id: opId,
       solicitante_nome: opNome,
       solicitante_email: opEmail,
-      motivo_solicitacao: body.motivo_solicitacao?.trim() || null,
+      motivo_solicitacao: motivoFinal,
       // Campos legados/aliases (se presentes no schema)
       operador_id: opId,
       operador_nome: opNome,
@@ -104,6 +139,7 @@ export async function POST(
       const fallbackPayload: Record<string, any> = {
         evento_id: eventoId,
         operacao_id: operacao_id.trim(),
+        inscricao_id: inscricao_id || null,
         nome_inscrito: nome_inscrito.trim().toUpperCase(),
         cpf: cpf ? String(cpf).replace(/\D/g, '') : null,
         email: email ? String(email).trim().toLowerCase() : null,
@@ -117,7 +153,7 @@ export async function POST(
         solicitante_operador_id: opId,
         solicitante_nome: opNome,
         solicitante_email: opEmail,
-        motivo_solicitacao: body.motivo_solicitacao?.trim() || null,
+        motivo_solicitacao: motivoFinal,
       };
 
       const retryRes = await admin
