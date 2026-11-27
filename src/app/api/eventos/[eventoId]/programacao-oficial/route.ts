@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
-import { createServerClient, createServerClientFromCookies } from '@/lib/supabase-server';
+import { createServerClient, createServerClientFromCookies, createServerClientFromRequest } from '@/lib/supabase-server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -115,8 +115,18 @@ export async function POST(
 ) {
   try {
     const { eventoId } = await context.params;
-    const userClient = await createServerClientFromCookies();
-    const { data: { user } } = await userClient.auth.getUser();
+    let user = null;
+    const authHeader = req.headers.get('authorization') || req.headers.get('Authorization');
+    if (authHeader) {
+      const clientFromReq = createServerClientFromRequest(req);
+      const { data } = await clientFromReq.auth.getUser();
+      user = data.user;
+    }
+    if (!user) {
+      const userClient = await createServerClientFromCookies();
+      const { data } = await userClient.auth.getUser();
+      user = data.user;
+    }
     if (!user) {
       return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
     }
@@ -287,8 +297,18 @@ export async function DELETE(
 ) {
   try {
     const { eventoId } = await context.params;
-    const userClient = await createServerClientFromCookies();
-    const { data: { user } } = await userClient.auth.getUser();
+    let user = null;
+    const authHeader = req.headers.get('authorization') || req.headers.get('Authorization');
+    if (authHeader) {
+      const clientFromReq = createServerClientFromRequest(req);
+      const { data } = await clientFromReq.auth.getUser();
+      user = data.user;
+    }
+    if (!user) {
+      const userClient = await createServerClientFromCookies();
+      const { data } = await userClient.auth.getUser();
+      user = data.user;
+    }
     if (!user) {
       return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
     }
