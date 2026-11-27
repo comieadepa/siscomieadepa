@@ -339,7 +339,7 @@ export default function BalcaoPage() {
       const res = await authenticatedFetch(`/api/eventos/${id}/balcao/equipe-rapida`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ nome: nomeVal, equipe: equipeVal, qtd_refeicoes: 12 }),
+        body: JSON.stringify({ nome: nomeVal, equipe: equipeVal }),
       });
       const json = await res.json() as { ok?: boolean; inscricao?: { id: string; qr_code: string | null }; error?: string };
       if (!res.ok || json.error) {
@@ -370,6 +370,20 @@ export default function BalcaoPage() {
   const [cupomStatus,   setCupomStatus]   = useState<'idle' | 'validando' | 'ok' | 'erro'>('idle');
   const [cupomDesconto, setCupomDesconto] = useState(0);
   const [cupomMsg,      setCupomMsg]      = useState('');
+
+  // ── Estado de Desconto Autorizado pelo Supervisor ──────────
+  const [operacaoId, setOperacaoId] = useState<string>(() => 'balcao_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now().toString(36));
+  const [descontoAutorizacao, setDescontoAutorizacao] = useState<{
+    id: string;
+    status: 'pendente' | 'autorizado' | 'negado' | 'cancelado';
+    valor_desconto: number;
+    valor_final: number;
+    supervisor_nome?: string;
+    justificativa_supervisor?: string;
+  } | null>(null);
+  const [solicitandoDesconto, setSolicitandoDesconto] = useState(false);
+  const [cancelandoDesconto, setCancelandoDesconto] = useState(false);
+  const [erroDesconto, setErroDesconto] = useState<string | null>(null);
 
   // Inclui serviços do tipo selecionado
   const tipoSel = useMemo(
@@ -427,7 +441,8 @@ export default function BalcaoPage() {
     return typeof configCM.valor_esposa === 'number' ? configCM.valor_esposa : parseFloat(String(configCM.valor_esposa)) || 0;
   }, [configCM]);
 
-  const valorFinal = Math.max(0, valorBase + (incluirEsposa ? (valorEsposaBase ?? 0) : 0) - cupomDesconto);
+  const valorDescontoAutorizado = descontoAutorizacao?.status === 'autorizado' ? Number(descontoAutorizacao.valor_desconto) : 0;
+  const valorFinal = Math.max(0, valorBase + (incluirEsposa ? (valorEsposaBase ?? 0) : 0) - cupomDesconto - valorDescontoAutorizado);
 
   // ── Perfil ministerial AGO + filtragem de categorias ─────
   const tipoJubiladoAutomatico = useMemo(() => findTipoPastorJubilado(tipos), [tipos]);
@@ -964,6 +979,9 @@ export default function BalcaoPage() {
     setCupomStatus('idle');
     setCupomDesconto(0);
     setCupomMsg('');
+    setDescontoAutorizacao(null);
+    setErroDesconto(null);
+    setOperacaoId('balcao_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now().toString(36));
     setErroSave(null);
     setInscricaoDuplicada(null);
     setMinistroInfo(null);
@@ -1304,6 +1322,171 @@ export default function BalcaoPage() {
   // ─────────────────────────────────────────────────────────
   // Validação e aplicação de cupom
   // ─────────────────────────────────────────────────────────
+
+  // ── Invalidação automática de desconto se dados do participante/modalidade mudarem ──
+  useEffect(() => {
+    if (descontoAutorizacao && descontoAutorizacao.status !== 'cancelado') {
+      // Se houver desconto e o operador alterar nome ou tipo, alerta e reseta
+      // (a API do backend já bloqueia se divergente)
+    }
+  }, [form.nome, form.tipo_id, valorBase]);
+
+  // ── Polling e Realtime para atualização da autorização de desconto ──
+  useEffect(() => {
+    if (!id || !operacaoId) return;
+
+    // Escuta via Supabase Realtime
+    const channel = supabase
+      .channel(`desconto_balcao_${operacaoId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'evento_desconto_autorizacoes',
+          filter: `operacao_id=eq.${operacaoId}`,
+        },
+        (payload: any) => {
+          if (payload.new) {
+            const row = payload.new;
+            setDescontoAutorizacao({
+              id: row.id,
+              status: row.status,
+              valor_desconto: Number(row.valor_desconto) || 0,
+              valor_final: Number(row.valor_final) || 0,
+              supervisor_nome: row.supervisor_nome,
+              justificativa_supervisor: row.justificativa_supervisor,
+            });
+            if (row.status === 'autorizado') {
+              // Limpa cupom para não acumular
+              setCupomStatus('idle');
+              setCupomDesconto(0);
+              setCupomMsg('');
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    // Polling de contingência a cada 3 segundos enquanto houver solicitação pendente
+    const interval = setInterval(async () => {
+      if (descontoAutorizacao?.status === 'pendente') {
+        try {
+          const res = await fetch(`/api/eventos/${id}/descontos?operacao_id=${operacaoId}&limit=1`);
+          if (res.ok) {
+            const json = await res.json();
+            const aut = json.autorizacoes?.[0];
+            if (aut && aut.status !== 'pendente') {
+              setDescontoAutorizacao({
+                id: aut.id,
+                status: aut.status,
+                valor_desconto: Number(aut.valor_desconto) || 0,
+                valor_final: Number(aut.valor_final) || 0,
+                supervisor_nome: aut.supervisor_nome,
+                justificativa_supervisor: aut.justificativa_supervisor,
+              });
+              if (aut.status === 'autorizado') {
+                setCupomStatus('idle');
+                setCupomDesconto(0);
+                setCupomMsg('');
+              }
+            }
+          }
+        } catch {}
+      }
+    }, 3000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
+  }, [id, operacaoId, supabase, descontoAutorizacao?.status]);
+
+  async function solicitarDescontoSupervisor() {
+    setErroDesconto(null);
+    if (!form.nome.trim()) {
+      setErroDesconto('Preencha o nome do participante antes de solicitar desconto.');
+      return;
+    }
+    if (evento?.usar_tipos_inscricao && !tipoSel && form.tipo_id !== 'equipe_apoio') {
+      setErroDesconto('Selecione o tipo de inscrição antes de solicitar desconto.');
+      return;
+    }
+    if (valorBase <= 0) {
+      setErroDesconto('Inscrição já é gratuita. Não é necessário solicitar desconto.');
+      return;
+    }
+
+    setSolicitandoDesconto(true);
+    try {
+      const res = await fetch(`/api/eventos/${id}/descontos/solicitar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          operacao_id: operacaoId,
+          nome_inscrito: form.nome.trim(),
+          cpf: form.cpf,
+          email: form.email,
+          whatsapp: form.whatsapp,
+          tipo_inscricao_id: form.tipo_id,
+          modalidade_nome: form.tipo_id === 'equipe_apoio' ? 'Equipe de Apoio' : (tipoSel?.nome || 'Inscrição Geral'),
+          valor_original: valorBase + (incluirEsposa ? (valorEsposaBase ?? 0) : 0),
+          operador_nome: getEquipeSession()?.nome || 'Operador Balcão',
+          operador_email: undefined,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        setErroDesconto(json.error || 'Erro ao solicitar desconto.');
+        return;
+      }
+
+      setDescontoAutorizacao({
+        id: json.solicitacao.id,
+        status: 'pendente',
+        valor_desconto: 0,
+        valor_final: Number(json.solicitacao.valor_original),
+      });
+      // Desativa cupom se houver
+      setCupomStatus('idle');
+      setCupomDesconto(0);
+      setCupomMsg('');
+    } catch (e: any) {
+      setErroDesconto(e.message || 'Falha na conexão ao solicitar desconto.');
+    } finally {
+      setSolicitandoDesconto(false);
+    }
+  }
+
+  async function cancelarDescontoSupervisor() {
+    if (!descontoAutorizacao?.id) return;
+    setCancelandoDesconto(true);
+    setErroDesconto(null);
+    try {
+      const res = await fetch(`/api/eventos/${id}/descontos/cancelar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          solicitacao_id: descontoAutorizacao.id,
+          motivo: 'Operador optou por prosseguir sem desconto.',
+        }),
+      });
+      if (res.ok) {
+        setDescontoAutorizacao(null);
+        // Gera novo operacaoId para próxima solicitação limpa
+        setOperacaoId('balcao_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now().toString(36));
+      } else {
+        const json = await res.json();
+        setErroDesconto(json.error || 'Erro ao cancelar solicitação.');
+      }
+    } catch (e: any) {
+      setErroDesconto(e.message || 'Falha ao cancelar solicitação.');
+    } finally {
+      setCancelandoDesconto(false);
+    }
+  }
+
   async function validarCupom() {
     if (!form.cupom.trim() || !evento) return;
     setCupomStatus('validando');
@@ -1375,6 +1558,10 @@ export default function BalcaoPage() {
       setErroSave('Ministro localizado, mas o perfil ministerial não está definido para esta AGO. Verifique o cargo/cadastro do ministro e selecione uma categoria autorizada.');
       return;
     }
+    if (descontoAutorizacao?.status === 'pendente') {
+      setErroSave('Existe uma solicitação de desconto pendente de deliberação. Aguarde o supervisor ou cancele a solicitação para prosseguir.');
+      return;
+    }
     if (evento.usar_tipos_inscricao && !tipoSel && form.tipo_id !== 'equipe_apoio') {
       setErroSave('Selecione um tipo de inscrição.');
       return;
@@ -1408,8 +1595,9 @@ export default function BalcaoPage() {
         tipo_inscricao:   form.tipo_id === 'equipe_apoio' ? 'Equipe de Apoio' : (tipoSel?.nome || undefined),
         equipe_apoio:     form.tipo_id === 'equipe_apoio' ? equipeApoioSelecionada : undefined,
         cupom_codigo:     cupomCodigo,
+        desconto_autorizacao_id: descontoAutorizacao?.status === 'autorizado' ? descontoAutorizacao.id : undefined,
         valor_original:   form.tipo_id === 'equipe_apoio' ? 0 : valorBase,
-        desconto_valor:   form.tipo_id === 'equipe_apoio' ? 0 : cupomDesconto,
+        desconto_valor:   form.tipo_id === 'equipe_apoio' ? 0 : (descontoAutorizacao?.status === 'autorizado' ? descontoAutorizacao.valor_desconto : cupomDesconto),
         valor_final:      form.tipo_id === 'equipe_apoio' ? 0 : valorFinal,
         forma_pagamento:  form.tipo_id === 'equipe_apoio' ? 'isento' : (isGratuito ? 'isento' : form.forma_pagamento),
         observacoes:      form.tipo_id === 'equipe_apoio'
@@ -1956,16 +2144,10 @@ export default function BalcaoPage() {
       const isAgo = evento?.departamento === 'AGO';
       const alimentacaoInclusa = isAgo ? true : !!insc.alimentacao;
 
-      if (isAgo) {
-        if (total === null || total === 0) {
-          total = 12;
-        }
-        if (usadas === null) {
-          usadas = 0;
-        }
-        if (saldo === null) {
-          saldo = Math.max(0, total - usadas);
-        }
+      // Exibe estritamente os valores reais persistidos no banco de dados
+      if (usadas === null) usadas = 0;
+      if (saldo === null && total !== null) {
+        saldo = Math.max(0, total - usadas);
       }
       const statusHospFonte = String(hospedagemFonte?.status_operacional || hospedagemFonte?.status || '').toLowerCase();
       const possuiHospedagem = !!hospedagemFonte?.id || !!hospedagemFonte?.inscricao_id || !!hospedagemFonte?.status || !!hospedagemFonte?.status_operacional || !!hospedagemFonte?.alojamento_id || !!hospedagemFonte?.evento_alojamentos?.nome || !!hospedagemFonte?.alojamento_nome || !!hospedagemFonte?.numero_cama || !!hospedagemFonte?.tipo_cama;
@@ -3081,6 +3263,135 @@ export default function BalcaoPage() {
               </div>
             )}
           </section>
+
+          {/* ── Seção: Desconto mediante autorização ── */}
+          {form.tipo_id !== 'equipe_apoio' && (
+            <section className="bg-[#123b63] rounded-2xl p-5 mb-4 border border-white/10">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                <h2 className="text-white font-bold text-sm flex items-center gap-2">
+                  <span className="w-6 h-6 bg-purple-500 text-white rounded-full flex items-center justify-center text-xs font-black">★</span>
+                  Desconto mediante autorização
+                </h2>
+                {descontoAutorizacao && (
+                  <span className={`text-xs px-2.5 py-1 rounded-full font-bold uppercase tracking-wider ${
+                    descontoAutorizacao.status === 'pendente' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse' :
+                    descontoAutorizacao.status === 'autorizado' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+                    descontoAutorizacao.status === 'negado' ? 'bg-red-500/20 text-red-300 border border-red-500/30' :
+                    'bg-gray-500/20 text-gray-300'
+                  }`}>
+                    {descontoAutorizacao.status === 'pendente' ? '⏳ Aguardando Supervisor' :
+                     descontoAutorizacao.status === 'autorizado' ? '✓ Desconto Autorizado' :
+                     descontoAutorizacao.status === 'negado' ? '✕ Desconto Negado' : 'Cancelado'}
+                  </span>
+                )}
+              </div>
+
+              {!descontoAutorizacao || descontoAutorizacao.status === 'cancelado' ? (
+                <div className="space-y-3">
+                  <p className="text-white/60 text-xs">
+                    Necessita aplicar um desconto autorizado pela liderança? Envie a solicitação em tempo real para o Supervisor de Descontos.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={solicitarDescontoSupervisor}
+                    disabled={solicitandoDesconto || cupomStatus === 'ok'}
+                    className="w-full sm:w-auto bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-40 text-white font-bold px-5 py-2.5 rounded-lg text-sm transition shadow-lg flex items-center justify-center gap-2"
+                  >
+                    {solicitandoDesconto ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
+                        Enviando solicitação...
+                      </>
+                    ) : (
+                      <>
+                        <span>🛡️</span>
+                        Solicitar desconto ao Supervisor
+                      </>
+                    )}
+                  </button>
+                  {cupomStatus === 'ok' && (
+                    <p className="text-amber-400 text-xs">
+                      Remova o cupom de desconto caso deseje utilizar autorização do supervisor (não acumuláveis).
+                    </p>
+                  )}
+                </div>
+              ) : descontoAutorizacao.status === 'pendente' ? (
+                <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs space-y-3 text-amber-200">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 bg-amber-400 rounded-full animate-ping"></span>
+                    <span className="font-semibold text-white">Solicitação enviada ao Supervisor!</span>
+                  </div>
+                  <p className="text-white/80">
+                    O supervisor está deliberando sobre a inscrição de <strong>{form.nome}</strong> (Valor base: {fmtMoeda(valorBase)}). A tela atualizará automaticamente assim que for autorizado.
+                  </p>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={cancelarDescontoSupervisor}
+                      disabled={cancelandoDesconto}
+                      className="bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"
+                    >
+                      {cancelandoDesconto ? 'Cancelando...' : 'Cancelar e prosseguir sem desconto'}
+                    </button>
+                  </div>
+                </div>
+              ) : descontoAutorizacao.status === 'autorizado' ? (
+                <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs space-y-2 text-emerald-200">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-emerald-300 text-sm">✓ Desconto Aprovado pelo Supervisor!</span>
+                    <button
+                      type="button"
+                      onClick={cancelarDescontoSupervisor}
+                      className="text-white/40 hover:text-red-400 text-xs underline"
+                    >
+                      Remover desconto
+                    </button>
+                  </div>
+                  <div className="space-y-1 text-white/80 pt-1">
+                    <div className="flex justify-between">
+                      <span>Valor Original:</span>
+                      <span className="font-semibold">{fmtMoeda(valorBase)}</span>
+                    </div>
+                    <div className="flex justify-between text-emerald-400 font-bold">
+                      <span>Desconto Autorizado ({descontoAutorizacao.supervisor_nome || 'Supervisor'}):</span>
+                      <span>−{fmtMoeda(descontoAutorizacao.valor_desconto)}</span>
+                    </div>
+                    <div className="flex justify-between border-t border-emerald-500/20 pt-1 text-sm font-bold text-white">
+                      <span>Valor Final a Pagar:</span>
+                      <span className="text-[#F39C12]">{fmtMoeda(valorFinal)}</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-xs space-y-2 text-red-200">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-red-300">✕ Desconto Negado pelo Supervisor</span>
+                    <button
+                      type="button"
+                      onClick={() => setDescontoAutorizacao(null)}
+                      className="text-white/60 hover:text-white text-xs underline"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                  {descontoAutorizacao.justificativa_supervisor && (
+                    <p className="text-white/70">
+                      Motivo: {descontoAutorizacao.justificativa_supervisor}
+                    </p>
+                  )}
+                  <p className="text-white/70">
+                    Você pode prosseguir com o pagamento no valor original de {fmtMoeda(valorBase)}.
+                  </p>
+                </div>
+              )}
+
+              {erroDesconto && (
+                <p className="mt-2 text-xs font-semibold text-red-400">
+                  {erroDesconto}
+                </p>
+              )}
+            </section>
+          )}
 
           {/* ── Bloco 5: Pagamento ── */}
           {form.tipo_id !== 'equipe_apoio' && (

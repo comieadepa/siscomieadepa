@@ -77,9 +77,6 @@ export async function POST(
     const body = await request.json() as Record<string, unknown>;
     const nome = String(body.nome ?? '').trim();
     const equipe = String(body.equipe ?? '').trim();
-    const qtdRefeicoes = typeof body.qtd_refeicoes === 'number'
-      ? Math.max(0, body.qtd_refeicoes)
-      : 12;
     const supervisaoId = body.supervisao_id ? String(body.supervisao_id).trim() : null;
 
     // ── Validações mínimas ────────────────────────────────────
@@ -100,6 +97,21 @@ export async function POST(
     if (!evento) {
       return NextResponse.json({ error: 'Evento não encontrado.' }, { status: 404 });
     }
+
+    // Busca configuração específica oficial da categoria 'Equipe de Apoio' do evento
+    const { data: tipoEquipeDb } = await supabase
+      .from('evento_tipos_inscricao')
+      .select('inclui_alimentacao, quantidade_refeicoes')
+      .eq('evento_id', eventoId)
+      .ilike('nome', 'Equipe de Apoio%')
+      .eq('ativo', true)
+      .maybeSingle();
+
+    // Fonte oficial prioritária: configuração da categoria 'Equipe de Apoio' (15 refeições na 126ª AGO)
+    // Blindagem de segurança: não permite sobrescrita arbitrária via frontend/body
+    const qtdRefeicoes = tipoEquipeDb && tipoEquipeDb.inclui_alimentacao !== false
+      ? Math.max(0, Number(tipoEquipeDb.quantidade_refeicoes ?? 0))
+      : (evento.departamento === 'AGO' ? 15 : 0);
 
     // ── Busca primeira supervisão disponível se não informada ─
     let supId = supervisaoId;

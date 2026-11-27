@@ -242,6 +242,7 @@ export async function POST(
       cupom_codigo,
       valor_original,
       desconto_valor,
+      desconto_autorizacao_id,
       valor_final,
       forma_pagamento,
       observacoes,
@@ -338,9 +339,18 @@ export async function POST(
       }
     }
 
-    if ((evento as any).departamento === 'AGO') {
+    if (tipoNome === 'Equipe de Apoio') {
+      const { data: tipoEquipeDb } = await supabase
+        .from('evento_tipos_inscricao')
+        .select('inclui_alimentacao, quantidade_refeicoes')
+        .eq('evento_id', eventoId)
+        .ilike('nome', 'Equipe de Apoio%')
+        .eq('ativo', true)
+        .maybeSingle();
       incluiAlimentacao = true;
-      quantidadeRefeicoes = 12;
+      quantidadeRefeicoes = tipoEquipeDb && tipoEquipeDb.inclui_alimentacao !== false
+        ? Math.max(0, Number(tipoEquipeDb.quantidade_refeicoes ?? 0))
+        : ((evento as any).departamento === 'AGO' ? 15 : 0);
     }
 
     if ((evento as any).departamento === 'AGO') {
@@ -1002,9 +1012,80 @@ export async function POST(
       ? String(cupom_codigo).trim().toUpperCase()
       : null;
     let cupomId: string | null = null;
+    let autorizacaoDescontoObj: any = null;
 
-    // RECALCULO E VALIDAÇÃO DE CUPOM DE DESCONTO (Segurança do Backend)
-    if (cupomCodigo) {
+    // Regra: Não acumular cupom e desconto autorizado nesta primeira versão
+    if (cupomCodigo && desconto_autorizacao_id) {
+      return NextResponse.json(
+        { error: "Não é permitido acumular cupom de desconto e desconto autorizado por supervisor." },
+        { status: 400 }
+      );
+    }
+
+    // ── Validação e Aplicação de Desconto Autorizado pelo Supervisor ──
+    if (desconto_autorizacao_id) {
+      const { data: autRow, error: autErr } = await supabase
+        .from("evento_desconto_autorizacoes")
+        .select("*")
+        .eq("id", desconto_autorizacao_id)
+        .eq("evento_id", eventoId)
+        .single();
+
+      if (autErr || !autRow) {
+        return NextResponse.json({ error: "Autorização de desconto não encontrada para este evento." }, { status: 404 });
+      }
+
+      // Validar status e se já foi utilizado
+      if (autRow.status !== "autorizado") {
+        return NextResponse.json({
+          error: `A solicitação de desconto informada não está autorizada (status atual: ${autRow.status}).`
+        }, { status: 400 });
+      }
+
+      if (autRow.utilizado) {
+        return NextResponse.json({
+          error: "Esta autorização de desconto já foi utilizada em outra inscrição."
+        }, { status: 409 });
+      }
+
+      // Invalidar autorização caso sejam alterados inscrito, modalidade ou valor original
+      const nomeInscritoNorm = String(nome_inscrito || "").trim().toUpperCase();
+      const nomeAutNorm = String(autRow.nome_inscrito || "").trim().toUpperCase();
+      if (nomeInscritoNorm !== nomeAutNorm) {
+        return NextResponse.json({
+          error: `Autorização inválida: o nome do inscrito (${nomeInscritoNorm}) difere do nome autorizado (${nomeAutNorm}).`
+        }, { status: 400 });
+      }
+
+      const modalidadeReqNorm = String(tipoNome || "").trim().toUpperCase();
+      const modalidadeAutNorm = String(autRow.modalidade_nome || "").trim().toUpperCase();
+      if (modalidadeReqNorm !== modalidadeAutNorm) {
+        return NextResponse.json({
+          error: `Autorização inválida: a modalidade (${modalidadeReqNorm}) difere da modalidade autorizada (${modalidadeAutNorm}).`
+        }, { status: 400 });
+      }
+
+      const vOriginalAut = Math.round(Number(autRow.valor_original) * 100) / 100;
+      const vOriginalReq = Math.round(Number(vOriginal) * 100) / 100;
+      if (Math.abs(vOriginalAut - vOriginalReq) > 0.01) {
+        return NextResponse.json({
+          error: `Autorização inválida: o valor original da inscrição (R$ ${vOriginalReq.toFixed(2)}) difere do valor autorizado (R$ ${vOriginalAut.toFixed(2)}).`
+        }, { status: 400 });
+      }
+
+      vDesconto = Math.min(Number(autRow.valor_desconto), vOriginal);
+      autorizacaoDescontoObj = autRow;
+
+      if (!ministroSnapshot) ministroSnapshot = {};
+      (ministroSnapshot as any).desconto_autorizado_supervisor = {
+        autorizacao_id: autRow.id,
+        operador_nome: autRow.operador_nome,
+        supervisor_nome: autRow.supervisor_nome,
+        valor_original: vOriginal,
+        valor_desconto: vDesconto,
+        deliberado_em: autRow.deliberado_em,
+      };
+    } else if (cupomCodigo) {
       // 1. Buscar primeiro na tabela de cupons globais
       const { data: cupomGlobal, error: errGlobal } = await supabase
         .from('evento_cupons')
@@ -1143,9 +1224,9 @@ export async function POST(
         .eq('ativo', true)
         .maybeSingle();
 
-      const refeicoesEsposa = (evento as any).departamento === 'AGO'
-        ? 12
-        : (tipoEsposa?.inclui_alimentacao ? Math.max(0, Number(tipoEsposa?.quantidade_refeicoes ?? 0)) : 0);
+      const refeicoesEsposa = tipoEsposa?.inclui_alimentacao
+        ? Math.max(0, Number(tipoEsposa?.quantidade_refeicoes ?? 0))
+        : ((evento as any).departamento === 'AGO' ? quantidadeRefeicoes : 0);
 
       // const esposaData = esposa as Record<string, unknown>; // já declarado no topo do bloco
       const esposaComorbidade = !!esposaData.hosp_possui_comorbidade;
@@ -1381,6 +1462,38 @@ export async function POST(
     }
 
     const inscricaoId = (inscricao as any).id as string;
+
+    // Vincular atomicamente o desconto utilizado à inscrição definitiva
+    if (autorizacaoDescontoObj?.id) {
+      const { error: vincErr } = await supabase
+        .from('evento_desconto_autorizacoes')
+        .update({
+          utilizado: true,
+          utilizado_em: new Date().toISOString(),
+          inscricao_id: inscricaoId,
+        })
+        .eq('id', autorizacaoDescontoObj.id);
+
+      if (vincErr) {
+        console.error('[BALCAO] Erro ao marcar autorização de desconto como utilizada:', vincErr);
+      }
+    }
+
+    // Vincular atomicamente o desconto utilizado à inscrição definitiva
+    if (autorizacaoDescontoObj?.id) {
+      const { error: vincErr } = await supabase
+        .from('evento_desconto_autorizacoes')
+        .update({
+          utilizado: true,
+          utilizado_em: new Date().toISOString(),
+          inscricao_id: inscricaoId,
+        })
+        .eq('id', autorizacaoDescontoObj.id);
+
+      if (vincErr) {
+        console.error('[BALCAO] Erro ao marcar autorização de desconto como utilizada:', vincErr);
+      }
+    }
 
     await sincronizarFichaMembroPorInscricao(supabase, {
       cpf: cpfLimpo,

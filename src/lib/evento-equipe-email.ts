@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { sendEmail, type EmailAttachment } from '@/services/email';
 import { gerarCartaConviteEquipePdf } from './carta-convite-equipe-pdf';
 
-export type FuncaoEquipeEvento = 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem';
+export type FuncaoEquipeEvento = 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem' | 'supervisor_descontos';
 
 export type EmailAcessoEquipeParams = {
   para: string;

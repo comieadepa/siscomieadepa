@@ -296,13 +296,8 @@ export default function MapaCheckinMobilePage() {
           : l.evento_inscricoes ?? null;
         const hosp = l.hospedagem ?? null;
 
-        // Identifica explicitamente se é leito excedente/indisponível (preservado no banco)
-        const isExcedente = Boolean(
-          l.indisponivel === true ||
-          (l.alojamento_id === 'fbb5d408-e9de-42ee-bfb5-2d4f0d33a0d8' &&
-            !l.inscricao_id &&
-            ['076', '078', '080', '082', '084', '115', '116', '117', '118', '119', '120', '121', '122', '123', '124'].includes(l.numero))
-        );
+        // Identifica explicitamente se é leito indisponível cadastrado como tal no banco
+        const isExcedente = Boolean(l.indisponivel === true);
 
         let estado: 'livre' | 'reservado' | 'entrada' | 'saida' | 'indisponivel' = 'livre';
 

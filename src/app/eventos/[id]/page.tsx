@@ -1421,16 +1421,10 @@ function TabInscritos({ inscricoes, loading, supervisoes, campos, nomeSup, nomeC
       const isAgo = evento?.departamento === 'AGO';
       const alimentacaoInclusa = isAgo ? true : !!insc.alimentacao;
 
-      if (isAgo) {
-        if (total === null || total === 0) {
-          total = 12;
-        }
-        if (usadas === null) {
-          usadas = 0;
-        }
-        if (saldo === null) {
-          saldo = Math.max(0, total - usadas);
-        }
+      // Exibe estritamente os valores reais persistidos no banco de dados
+      if (usadas === null) usadas = 0;
+      if (saldo === null && total !== null) {
+        saldo = Math.max(0, total - usadas);
       }
       const statusHospFonte = String(hospedagemFonte?.status_operacional || hospedagemFonte?.status || '').toLowerCase();
       const possuiHospedagem = !!hospedagemFonte?.id || !!hospedagemFonte?.inscricao_id || !!hospedagemFonte?.status || !!hospedagemFonte?.status_operacional || !!hospedagemFonte?.alojamento_id || !!hospedagemFonte?.evento_alojamentos?.nome || !!hospedagemFonte?.alojamento_nome || !!hospedagemFonte?.numero_cama || !!hospedagemFonte?.tipo_cama;
@@ -4867,7 +4861,25 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
   const [modalConciliacaoOpen, setModalConciliacaoOpen] = useState(false);
 
   // Estados da sub-aba de Fechamentos de Caixa
-  const [subTab, setSubTab] = useState<'transacoes' | 'fechamentos'>('transacoes');
+  const [subTab, setSubTab] = useState<'transacoes' | 'fechamentos' | 'descontos'>('transacoes');
+  const [autorizacoesDesconto, setAutorizacoesDesconto] = useState<any[]>([]);
+  const [carregandoDescontos, setCarregandoDescontos] = useState(false);
+  const [filtroStatusDesconto, setFiltroStatusDesconto] = useState<string>('todos');
+
+  async function carregarAutorizacoesDesconto() {
+    setCarregandoDescontos(true);
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/descontos?limit=200`);
+      if (res.ok) {
+        const json = await res.json();
+        setAutorizacoesDesconto(json.autorizacoes || []);
+      }
+    } catch (e) {
+      console.error('Erro ao buscar autorizações de desconto:', e);
+    } finally {
+      setCarregandoDescontos(false);
+    }
+  }
   const [sessoesCaixa, setSessoesCaixa] = useState<any[]>([]);
   const [carregandoSessoes, setCarregandoSessoes] = useState(false);
 
@@ -4891,6 +4903,9 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
   }
 
   useEffect(() => {
+    if (subTab === 'descontos') {
+      carregarAutorizacoesDesconto();
+    }
     if (subTab === 'fechamentos' && supabase) {
       carregarSessoesCaixa();
     }
@@ -5049,6 +5064,14 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
             }`}
           >
             🔒 Fechamentos de Caixa (Operadores)
+          </button>
+          <button
+            onClick={() => setSubTab('descontos')}
+            className={`pb-3 text-sm font-semibold border-b-2 transition ${
+              subTab === 'descontos' ? 'border-purple-600 text-purple-700 font-bold' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            🛡️ Autorizações de Desconto
           </button>
         </div>
 
@@ -5395,7 +5418,229 @@ function TabFinanceiro({ inscricoes, loading, stats, supervisoes, campos, nomeSu
         }}
       />
 
-      {/* SE FOR TAB FECHAMENTOS */}
+      {/* SE FOR TAB AUTORIZAÇÕES DE DESCONTO */}
+      {subTab === 'descontos' && (() => {
+        const filtrados = autorizacoesDesconto.filter(a => {
+          if (filtroStatusDesconto !== 'todos' && a.status !== filtroStatusDesconto) return false;
+          if (busca) {
+            const b = busca.toLowerCase();
+            return (a.nome_inscrito || '').toLowerCase().includes(b) ||
+                   (a.operador_nome || '').toLowerCase().includes(b) ||
+                   (a.supervisor_nome || '').toLowerCase().includes(b) ||
+                   (a.modalidade_nome || '').toLowerCase().includes(b);
+          }
+          return true;
+        });
+
+        const totalDesconto = filtrados.reduce((acc, a) => acc + (a.status === 'autorizado' ? Number(a.valor_desconto || 0) : 0), 0);
+        const totalFinal = filtrados.reduce((acc, a) => acc + (a.status === 'autorizado' ? Number(a.valor_final || 0) : Number(a.valor_original || 0)), 0);
+        const totalUtilizados = filtrados.filter(a => a.utilizado).length;
+
+        function imprimirRelatorioDescontos() {
+          const win = window.open('', '_blank');
+          if (!win) return;
+          const rowsHtml = filtrados.map(a => `
+            <tr>
+              <td>${a.nome_inscrito}</td>
+              <td>${a.modalidade_nome}</td>
+              <td>${a.status.toUpperCase()}</td>
+              <td style="text-align: right;">R$ ${Number(a.valor_original).toFixed(2)}</td>
+              <td style="text-align: right; color: #16a34a; font-weight: bold;">R$ ${Number(a.valor_desconto).toFixed(2)}</td>
+              <td style="text-align: right; font-weight: bold;">R$ ${Number(a.valor_final).toFixed(2)}</td>
+              <td>${a.operador_nome || '-'}</td>
+              <td>${a.supervisor_nome || '-'}</td>
+              <td>${new Date(a.solicitado_em).toLocaleString('pt-BR')}</td>
+              <td>${a.utilizado ? 'SIM' : 'NÃO'}</td>
+            </tr>
+          `).join('');
+
+          win.document.write(`
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <title>Relatório de Autorizações de Desconto — ${evento?.nome || 'Evento'}</title>
+                <style>
+                  body { font-family: sans-serif; font-size: 11px; padding: 20px; color: #111; }
+                  h1 { font-size: 16px; margin-bottom: 4px; }
+                  p { margin: 2px 0 16px 0; color: #666; font-size: 11px; }
+                  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                  th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+                  th { background: #f4f4f4; font-size: 10px; text-transform: uppercase; }
+                  .totais { margin-top: 16px; font-size: 12px; font-weight: bold; }
+                </style>
+              </head>
+              <body>
+                <h1>Relatório de Autorizações de Desconto</h1>
+                <p>Evento: ${evento?.nome || '-'} | Gerado em: ${new Date().toLocaleString('pt-BR')}</p>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Inscrito</th>
+                      <th>Modalidade</th>
+                      <th>Situação</th>
+                      <th style="text-align: right;">Valor Orig.</th>
+                      <th style="text-align: right;">Desconto</th>
+                      <th style="text-align: right;">Valor Final</th>
+                      <th>Operador</th>
+                      <th>Supervisor</th>
+                      <th>Data/Hora</th>
+                      <th>Utilizado</th>
+                    </tr>
+                  </thead>
+                  <tbody>${rowsHtml}</tbody>
+                </table>
+                <div class="totais">
+                  Total de Solicitações: ${filtrados.length} | Desconto Total Concedido: R$ ${totalDesconto.toFixed(2)} | Inscrições Concluídas: ${totalUtilizados}
+                </div>
+                <script>window.print();</script>
+              </body>
+            </html>
+          `);
+          win.document.close();
+        }
+
+        return (
+          <div className="space-y-4">
+            {/* Cards de Resumo */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                <span className="text-xs text-gray-500 block">Total de Solicitações</span>
+                <span className="text-xl font-bold text-gray-800">{filtrados.length}</span>
+              </div>
+              <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                <span className="text-xs text-gray-500 block">Descontos Autorizados</span>
+                <span className="text-xl font-bold text-emerald-600">{fmtMoeda(totalDesconto)}</span>
+              </div>
+              <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                <span className="text-xs text-gray-500 block">Receita Final Efetiva</span>
+                <span className="text-xl font-bold text-[#F39C12]">{fmtMoeda(totalFinal)}</span>
+              </div>
+              <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                <span className="text-xs text-gray-500 block">Utilizados na Inscrição</span>
+                <span className="text-xl font-bold text-purple-600">{totalUtilizados} <span className="text-xs text-gray-400 font-normal">inscritos</span></span>
+              </div>
+            </div>
+
+            {/* Barra de Filtros e Ações */}
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <input
+                  type="text"
+                  value={busca}
+                  onChange={e => setBusca(e.target.value)}
+                  placeholder="Buscar por inscrito, modalidade ou operador..."
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs w-full sm:w-64 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                />
+                <select
+                  value={filtroStatusDesconto}
+                  onChange={e => setFiltroStatusDesconto(e.target.value)}
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-white text-gray-700"
+                >
+                  <option value="todos">Todos os Status</option>
+                  <option value="pendente">Pendentes</option>
+                  <option value="autorizado">Autorizados</option>
+                  <option value="negado">Negados</option>
+                  <option value="cancelado">Cancelados</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <a
+                  href={`/eventos/${eventoId}/supervisor-descontos`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold hover:bg-purple-100 transition flex items-center gap-1.5"
+                >
+                  <span>📱</span> Abrir Supervisor Mobile
+                </a>
+                <button
+                  type="button"
+                  onClick={imprimirRelatorioDescontos}
+                  className="px-3 py-1.5 bg-[#123b63] text-white rounded-lg text-xs font-bold hover:bg-[#0d2b4e] transition flex items-center gap-1.5"
+                >
+                  <span>🖨️</span> Imprimir Relatório
+                </button>
+              </div>
+            </div>
+
+            {/* Tabela de Autorizações */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
+              {carregandoDescontos ? (
+                <div className="p-8 text-center text-sm text-gray-500">
+                  <span className="animate-spin inline-block mr-2">⏳</span> Carregando autorizações de desconto...
+                </div>
+              ) : filtrados.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-8">Nenhuma autorização de desconto encontrada.</p>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50 text-gray-600 font-semibold">
+                      <th className="text-left px-3 py-2.5">Inscrito</th>
+                      <th className="text-left px-3 py-2.5">Modalidade</th>
+                      <th className="text-center px-3 py-2.5">Status</th>
+                      <th className="text-right px-3 py-2.5">Valor Original</th>
+                      <th className="text-right px-3 py-2.5">Desconto</th>
+                      <th className="text-right px-3 py-2.5">Valor Final</th>
+                      <th className="text-left px-3 py-2.5">Operador</th>
+                      <th className="text-left px-3 py-2.5">Supervisor</th>
+                      <th className="text-left px-3 py-2.5">Data / Hora</th>
+                      <th className="text-center px-3 py-2.5">Efetivado</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filtrados.map(item => (
+                      <tr key={item.id} className="hover:bg-gray-50/80 transition">
+                        <td className="px-3 py-2 font-bold text-gray-800 uppercase">{item.nome_inscrito}</td>
+                        <td className="px-3 py-2 text-gray-600">{item.modalidade_nome}</td>
+                        <td className="px-3 py-2 text-center">
+                          <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] uppercase ${
+                            item.status === 'pendente' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                            item.status === 'autorizado' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                            item.status === 'negado' ? 'bg-red-100 text-red-800 border border-red-300' :
+                            'bg-gray-100 text-gray-600'
+                          }`}>
+                            {item.status}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium text-gray-700">{fmtMoeda(item.valor_original)}</td>
+                        <td className="px-3 py-2 text-right font-bold text-emerald-600">
+                          {item.status === 'autorizado' ? `−${fmtMoeda(item.valor_desconto)}` : '-'}
+                        </td>
+                        <td className="px-3 py-2 text-right font-bold text-gray-900">
+                          {item.status === 'autorizado' ? fmtMoeda(item.valor_final) : fmtMoeda(item.valor_original)}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600">{item.operador_nome || '-'}</td>
+                        <td className="px-3 py-2 text-gray-600">
+                          <div>
+                            <span className="font-semibold block">{item.supervisor_nome || '-'}</span>
+                            {item.justificativa_supervisor && (
+                              <span className="text-[10px] text-gray-400 block">{item.justificativa_supervisor}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
+                          {new Date(item.solicitado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} ({new Date(item.solicitado_em).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })})
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          {item.utilizado ? (
+                            <span className="text-emerald-600 font-bold text-xs" title="Inscrição finalizada com este desconto">✓ Sim</span>
+                          ) : item.status === 'autorizado' ? (
+                            <span className="text-amber-500 text-xs" title="Aguardando finalização pelo operador">Não</span>
+                          ) : (
+                            <span className="text-gray-400 text-xs">-</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+      
+{/* SE FOR TAB FECHAMENTOS */}
       {subTab === 'fechamentos' && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
           {carregandoSessoes ? (
@@ -5820,6 +6065,7 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
         <div className="grid gap-3">
           {([
             { key: 'operador' as const, titulo: 'Operador', url: operadorUrl, desc: 'Entra com e-mail e senha definidos pelo administrador.' },
+            { key: 'supervisor_descontos' as any, titulo: 'Supervisor de Descontos (Mobile)', url: typeof window !== 'undefined' ? `${window.location.origin}/eventos/${eventoId}/supervisor-descontos` : `/eventos/${eventoId}/supervisor-descontos`, desc: 'Painel mobile para autorizar ou negar solicitações de desconto em tempo real.' },
             { key: 'checkin_plenaria' as const, titulo: 'Plenária', url: checkinPlenariaUrl, desc: 'Leitura de QR Code para presença em plenária.' },
             { key: 'checkin_refeitorio' as const, titulo: 'Refeitório', url: checkinRefeitorioUrl, desc: 'Leitura de QR Code para débito de refeições.' },
             ...(evento?.departamento === 'AGO' || (evento as any)?.formato === 'AGO' || evento?.permite_hospedagem ? [
@@ -5896,6 +6142,7 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
               <option value="checkin_hospedagem">Check-in de Hospedagem</option>
               <option value="hospedagem">Hospedagem</option>
               <option value="operador">Operador</option>
+              <option value="supervisor_descontos">Supervisor de Descontos</option>
             </select>
           </div>
 
@@ -6160,6 +6407,7 @@ function TabEquipe({ eventoId, evento, equipe, supabase: _supabase, onRefresh }:
                   <option value="checkin_hospedagem">Check-in de Hospedagem</option>
                   <option value="hospedagem">Hospedagem</option>
                   <option value="operador">Operador</option>
+              <option value="supervisor_descontos">Supervisor de Descontos</option>
                 </select>
               </div>
 

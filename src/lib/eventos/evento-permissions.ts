@@ -211,6 +211,7 @@ const DEFAULT_EVENTO_AREA: Record<EventoRole, EventoArea> = {
 
 export type EventoPermissoes = {
   podeFinanceiro: boolean;
+  podeSupervisorDescontos: boolean;
   podeEditarEvento: boolean;
   podeCriarEquipe: boolean;
   podeConfiguracoes: boolean;
@@ -311,6 +312,7 @@ export function resolveEventoPermissoes(opts: {
 
   return {
     podeFinanceiro: can('financeiro'),
+    podeSupervisorDescontos: can('supervisor_descontos') || role === 'supervisor_descontos',
     podeEditarEvento: isAdmin,
     podeCriarEquipe: can('equipe'),
     podeConfiguracoes: can('configuracoes'),

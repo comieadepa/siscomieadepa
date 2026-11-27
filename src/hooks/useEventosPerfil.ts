@@ -59,6 +59,7 @@ export interface EventosPerfil {
   podeEditarInscricoes: boolean;
   podeRemoverInscricao: boolean;
   podeMoverInscricao: boolean;
+  podeSupervisorDescontos: boolean;
   somenteCheckin: boolean;
   somenteRefeitorio: boolean;
   somenteHospedagem: boolean;
@@ -302,6 +303,7 @@ export function useEventosPerfil(): EventosPerfil {
     podeEditarInscricoes: perms.podeEditarInscricoes,
     podeRemoverInscricao: nivelSistema === 'super',
     podeMoverInscricao: perms.podeMoverInscricao,
+    podeSupervisorDescontos: isGlobal || isDeptAdmin || perms.podeSupervisorDescontos || false,
     somenteCheckin: perms.somenteCheckin,
     somenteRefeitorio: perms.somenteRefeitorio,
     somenteHospedagem: perms.somenteHospedagem,

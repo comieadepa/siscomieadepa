@@ -1418,19 +1418,22 @@ export async function POST(request: NextRequest) {
       // Busca valor da esposa a partir da config
       const valorEsposaBase = valorCmEsposaConfigurado;
 
-      // Busca tipo "Esposa de Pastor Presidente*" para nome e inclui_alimentacao
-      const { data: tipoEsposa } = await supabase
+      // Busca tipo de esposa específico para Campo Missionário primeiro; se não houver, busca "Esposa de Pastor Presidente"
+      const { data: tipoEsposaList } = await supabase
         .from('evento_tipos_inscricao')
         .select('nome, inclui_alimentacao, inclui_hospedagem, quantidade_refeicoes')
         .eq('evento_id', evento.id)
         .ilike('nome', 'Esposa de Pastor Presidente%')
-        .eq('ativo', true)
-        .maybeSingle();
+        .eq('ativo', true);
+
+      const tipoEsposa = (tipoEsposaList ?? []).find(t =>
+        t.nome.toUpperCase().includes('CAMPO MISSION')
+      ) ?? (tipoEsposaList ?? [])[0] ?? null;
 
       const refeicoesPastor = tipoInclui.alimentacao ? tipoRefeicoes : 0;
       const refeicoesEsposa = tipoEsposa?.inclui_alimentacao
         ? Math.max(0, Number(tipoEsposa?.quantidade_refeicoes ?? 0))
-        : 0;
+        : (evento.departamento === 'AGO' ? refeicoesPastor : 0);
 
       const valorTotal2 = valorFinal + valorEsposaBase;
       const codigoLote2 = gerarCodigoLote();

@@ -6,7 +6,7 @@ import { requireEventoPermission } from '@/lib/evento-guard';
 import { logDB } from '@/lib/audit';
 import { enviarEmailAcessoEquipe, getRequestOrigin } from '@/lib/evento-equipe-email';
 
-type FuncaoEquipe = 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem';
+type FuncaoEquipe = 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem' | 'supervisor_descontos';
 
 type EquipeRow = {
   id: string;
@@ -25,14 +25,15 @@ function normalizarFuncao(raw?: string | null): FuncaoEquipe {
   if (raw === 'hospedagem') return 'hospedagem';
   if (raw === 'checkin_hospedagem') return 'checkin_hospedagem';
   if (raw === 'checkin_refeitorio') return 'checkin_refeitorio';
+  if (raw === 'supervisor_descontos') return 'supervisor_descontos';
   return 'checkin';
 }
 
-function exigeSenha(funcao: FuncaoEquipe): boolean {
+function exigeSenha(funcao: any): boolean {
   return funcao === 'operador' || funcao === 'hospedagem';
 }
 
-function isFuncaoCheckinSemSenha(funcao: FuncaoEquipe): boolean {
+function isFuncaoCheckinSemSenha(funcao: any): boolean {
   return funcao === 'checkin' || funcao === 'checkin_refeitorio' || funcao === 'checkin_hospedagem';
 }
 
