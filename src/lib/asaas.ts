@@ -277,48 +277,36 @@ export const createOrFindAsaasCustomer = async (payload: {
     // Ignora falhas de lookup e tenta criar normalmente
   }
 
-  // Sanitiza e valida e-mail
-  let rawEmail = payload.email?.trim() || '';
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const isEmailValid = emailRegex.test(rawEmail);
-  const email = isEmailValid ? rawEmail : `sem-email-${Date.now()}@gestoservus.local`;
+  // Valida e-mail estritamente para envio ao ASAAS.
+  // E-mails com acentos ou caracteres não-ASCII são rejeitados pelo ASAAS com HTTP 400 invalid_email.
+  // Se o e-mail não for válido segundo as normas de gateway, lança erro explícito exigindo correção.
+  const rawEmail = payload.email?.trim() || '';
+  const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+  const isEmailAscii = !/[^\x20-\x7E]/.test(rawEmail);
+  const isEmailValid = isEmailAscii && emailRegex.test(rawEmail);
+
+  if (!isEmailValid) {
+    throw new Error(`Endereço de e-mail inválido para cobrança ("${rawEmail || 'vazio'}"). Por favor, corrija o e-mail informando um endereço válido sem acentos.`);
+  }
+  const email = rawEmail;
 
   // Sanitiza e valida celular/whatsapp
   const rawWhatsapp = payload.whatsapp ? payload.whatsapp.replace(/\D/g, '') : '';
   const isWhatsappValid = rawWhatsapp.length >= 10 && rawWhatsapp.length <= 11;
   const mobilePhone = isWhatsappValid ? rawWhatsapp : undefined;
 
-  try {
-    const customer = await asaasFetch('/customers', {
-      method: 'POST',
-      body: JSON.stringify({
-        name: payload.nome.trim(),
-        email,
-        cpfCnpj: cleanCpf || undefined,
-        mobilePhone,
-      }),
-    });
+  const customer = await asaasFetch('/customers', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: payload.nome.trim(),
+      email,
+      cpfCnpj: cleanCpf || undefined,
+      mobilePhone,
+    }),
+  });
 
-    if (!customer?.id) throw new Error('ASAAS não retornou ID do cliente');
-    return customer.id as string;
-  } catch (err: any) {
-    console.warn('[ASAAS] Falha ao criar cliente com dados completos. Tentando fallback mínimo:', err.message);
-    try {
-      const fallbackCustomer = await asaasFetch('/customers', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: payload.nome.trim(),
-          email: `sem-email-${Date.now()}@gestoservus.local`,
-          cpfCnpj: cleanCpf || undefined,
-        }),
-      });
-      if (!fallbackCustomer?.id) throw new Error('ASAAS não retornou ID do cliente no fallback');
-      return fallbackCustomer.id as string;
-    } catch (fallbackErr: any) {
-      console.error('[ASAAS] Erro persistente na criação do cliente:', fallbackErr.message);
-      throw new Error(`Erro ASAAS ao cadastrar pagador: ${fallbackErr.message}`);
-    }
-  }
+  if (!customer?.id) throw new Error('ASAAS não retornou ID do cliente');
+  return customer.id as string;
 };
 
 /**

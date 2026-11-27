@@ -470,6 +470,10 @@ export async function processSingleWebhookJob(supabase: SupabaseClient, job: any
     } else {
       throw new Error(`REGISTER_MINISTERIAL_HISTORY não suporta entity_type ${entity_type}`);
     }
+  } else if (job_type === 'RESOLVER_CONFLITO_PAGAMENTO_LOTE') {
+    // Job informativo de conflito de duplicidade de lote pago retido para conciliação humana.
+    // Preserva o payload com todos os dados do gateway para recuperação sem disparar efeitos colaterais.
+    console.log(`[WEBHOOK JOBS] Job ${job.id} de conciliação de lote pendente registrado. Aguardando resolução administrativa.`);
   } else {
     throw new Error(`Tipo de job desconhecido: ${job_type}`);
   }

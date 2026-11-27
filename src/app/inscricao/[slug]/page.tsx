@@ -1393,6 +1393,13 @@ export default function InscricaoPublicaPage() {
     if (!evento) return;
     if (!form.nome_inscrito.trim()) return setErroForm('Nome completo é obrigatório.');
     if (!form.cpf.replace(/\D/g, ''))  return setErroForm('CPF é obrigatório.');
+    if (form.email && form.email.trim()) {
+      const emailLimpo = form.email.trim();
+      const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+      if (/[^\x20-\x7E]/.test(emailLimpo) || !emailRegex.test(emailLimpo)) {
+        return setErroForm('Endereço de e-mail inválido. Verifique se digitou corretamente (não utilize acentos ou caracteres especiais).');
+      }
+    }
     if (!form.whatsapp.replace(/\D/g, '')) return setErroForm('WhatsApp/Celular é obrigatório.');
     if (!form.data_nascimento) return setErroForm('Data de nascimento é obrigatória.');
     if (!form.visitante && !form.supervisao_id)           return setErroForm('Selecione a supervisão.');

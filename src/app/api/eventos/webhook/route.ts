@@ -291,9 +291,50 @@ export async function POST(request: NextRequest) {
           },
         });
 
+        // Em caso de conflito cadastral conhecido (ex: CPF duplicado no lote),
+        // persistimos duravelmente o evento financeiro na fila recuperável de webhook_jobs antes de liberar o gateway.
+        // O status do lote e das inscrições NÃO é marcado como pago até conciliação humana/administrativa.
+        if (isConflitoDuplicidade) {
+          console.warn('[EVENTOS WEBHOOK] Conflito cadastral de duplicidade capturado no lote. Persistindo evento financeiro em job recuperável:', loteId);
+          try {
+            await enqueueWebhookJobs(supabase, [{
+              job_type: 'RESOLVER_CONFLITO_PAGAMENTO_LOTE',
+              entity_type: 'lote',
+              entity_id: loteId,
+              external_event_id: eventId,
+              external_payment_id: asaasId,
+              payload: {
+                event,
+                asaasPaymentId: asaasId,
+                loteId,
+                valorRecebido: payment?.value ?? 0,
+                formaPagamento: payment?.billingType ?? null,
+                comprovanteUrl: payment?.transactionReceiptUrl ?? null,
+                erroCode: (loteErr as any).code,
+                erroMensagem: loteErr.message,
+                conflitoCadastral: true,
+                precisaConciliacaoManual: true,
+                registradoEm: new Date().toISOString(),
+              },
+            }]);
+          } catch (jobEnqueueErr: any) {
+            console.error('[EVENTOS WEBHOOK] Falha ao persistir job de reconciliação de lote:', jobEnqueueErr?.message);
+          }
+
+          console.timeEnd("ASAAS_WEBHOOK_TOTAL");
+          return NextResponse.json({
+            received: true,
+            warning: 'CONFLITO_CADASTRO_LOTE',
+            detalhe: loteErr.message,
+            loteId,
+            eventoFinanceiroPersistido: true,
+            precisaRecuperacao: true
+          }, { status: 200 });
+        }
+
         return NextResponse.json({
           error: loteErr.message,
-          code: isConflitoDuplicidade ? 'CONFLITO_CADASTRO_LOTE' : 'ERRO_CONFIRMACAO_LOTE',
+          code: 'ERRO_CONFIRMACAO_LOTE',
           loteId,
           precisaRecuperacao: true
         }, { status: 500 });

@@ -348,6 +348,20 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // ── Validação rigorosa de sintaxe do e-mail (compatibilidade RFC 5322 e Asaas) ──
+    const emailLimpoInput = String(email || '').trim();
+    if (emailLimpoInput) {
+      const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+      if (/[^\x20-\x7E]/.test(emailLimpoInput) || !emailRegex.test(emailLimpoInput)) {
+        return buildErrorResponse(400, {
+          error: 'Endereço de e-mail inválido. Verifique a digitação e remova eventuais acentos ou caracteres especiais.',
+          stage: 'validacao_sintaxe_email',
+          code: 'EMAIL_INVALIDO',
+          payloadResumo,
+        });
+      }
+    }
+
     const supabase = createServerClient();
 
     // ── Busca evento ──────────────────────────────────────────
