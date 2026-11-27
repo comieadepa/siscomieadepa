@@ -14,7 +14,7 @@ import {
   isPerguntaInformacoesGerais,
 } from '@/lib/sara-programacao';
 
-const SAUDACOES = ['oi', 'ola', 'bom dia', 'boa tarde', 'boa noite', 'ajuda'];
+const PALAVRAS_SAUDACAO = ['oi', 'ola', 'opa', 'eae', 'ajuda'];
 const DESPEDIDAS = ['tchau', 'ate', 'obrigado', 'obrigada', 'valeu'];
 const SEM_EVENTOS_MSG = 'No momento nao ha eventos com inscricoes abertas 😊\nAssim que novas inscricoes forem liberadas, elas aparecerao aqui no portal.';
 
@@ -997,9 +997,11 @@ export async function POST(req: NextRequest) {
     const departamento = departamentoFromContext ?? departamentoFromText;
 
     const tokens = pergunta.split(' ').filter(Boolean);
-    const isApenasSaudacao = tokens.length <= 2 && tokens.every(t => SAUDACOES.includes(t));
+    const hasPalavraSaudacao = tokens.some(t => PALAVRAS_SAUDACAO.includes(t)) ||
+      pergunta.startsWith('bom dia') || pergunta.startsWith('boa tarde') || pergunta.startsWith('boa noite');
+    const isApenasSaudacao = hasPalavraSaudacao && tokens.length <= 3 && !hasAny(pergunta, ['noite', 'tarde', 'manha', 'abertura', 'culto', 'evento', 'programacao', 'agenda']);
 
-    if (isApenasSaudacao && !hasAny(pergunta, ['noite', 'tarde', 'manha', 'abertura', 'culto', 'evento'])) {
+    if (isApenasSaudacao) {
       const msg = departamento
         ? `Oi! Posso ajudar com eventos de ${departamento.nome}. Pergunte sobre inscricoes abertas ou pagamentos.`
         : 'Oi! Posso ajudar com inscricoes abertas, pagamentos e duvidas gerais dos eventos.';
