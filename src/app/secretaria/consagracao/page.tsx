@@ -1295,15 +1295,24 @@ export default function ConsagracaoPage() {
     const columnWidths = [22, 18, 57, 28, 40, 42, 33, 37];
     const headers = ['Nº Processo', 'Data', 'Nome', 'CPF', 'Categoria', 'Tipo', 'Telefone', 'Documentação'];
 
-    const toText = (value: unknown) => String(value ?? '—');
+    const toText = (value: unknown) => {
+      if (value === null || value === undefined) return '—';
+      const s = String(value).trim();
+      return s ? s : '—';
+    };
     const fitText = (value: unknown, maxWidth: number) => {
-      const raw = toText(value).replace(/\s+/g, ' ').trim() || '—';
-      if (pdf.getTextWidth(raw) <= maxWidth - 2) return raw;
-      let cut = raw;
-      while (cut.length > 1 && pdf.getTextWidth(`${cut}…`) > maxWidth - 2) {
-        cut = cut.slice(0, -1);
+      const textVal = toText(value);
+      const raw = textVal.replace(/\s+/g, ' ').trim() || '—';
+      try {
+        if (pdf.getTextWidth(raw) <= maxWidth - 2) return raw;
+        let cut = raw;
+        while (cut.length > 1 && pdf.getTextWidth(`${cut}…`) > maxWidth - 2) {
+          cut = cut.slice(0, -1);
+        }
+        return `${cut}…`;
+      } catch {
+        return raw;
       }
-      return `${cut}…`;
     };
 
     const loadLogoDataUrl = async () => {
@@ -1465,15 +1474,24 @@ export default function ConsagracaoPage() {
     const columnWidths = [22, 18, 50, 26, 32, 48, 29, 52];
     const headers = ['Nº Processo', 'Data', 'Nome', 'CPF', 'Categoria', 'Nome da Esposa', 'Telefone', 'Pastor Indicante'];
 
-    const toText = (value: unknown) => String(value ?? '—');
+    const toText = (value: unknown) => {
+      if (value === null || value === undefined) return '—';
+      const s = String(value).trim();
+      return s ? s : '—';
+    };
     const fitText = (value: unknown, maxWidth: number) => {
-      const raw = toText(value).replace(/\s+/g, ' ').trim() || '—';
-      if (pdf.getTextWidth(raw) <= maxWidth - 2) return raw;
-      let cut = raw;
-      while (cut.length > 1 && pdf.getTextWidth(`${cut}…`) > maxWidth - 2) {
-        cut = cut.slice(0, -1);
+      const textVal = toText(value);
+      const raw = textVal.replace(/\s+/g, ' ').trim() || '—';
+      try {
+        if (pdf.getTextWidth(raw) <= maxWidth - 2) return raw;
+        let cut = raw;
+        while (cut.length > 1 && pdf.getTextWidth(`${cut}…`) > maxWidth - 2) {
+          cut = cut.slice(0, -1);
+        }
+        return `${cut}…`;
+      } catch {
+        return raw;
       }
-      return `${cut}…`;
     };
 
     const loadLogoDataUrl = async () => {
@@ -1634,15 +1652,24 @@ export default function ConsagracaoPage() {
     const columnWidths = [12, 24, 68, 28, 38, 107];
     const headers = ['Nº', 'Nº Processo', 'Nome', 'CPF', 'Categoria', 'Assinatura'];
 
-    const toText = (value: unknown) => String(value ?? '—');
+    const toText = (value: unknown) => {
+      if (value === null || value === undefined) return '—';
+      const s = String(value).trim();
+      return s ? s : '—';
+    };
     const fitText = (value: unknown, maxWidth: number) => {
-      const raw = toText(value).replace(/\s+/g, ' ').trim() || '—';
-      if (pdf.getTextWidth(raw) <= maxWidth - 2) return raw;
-      let cut = raw;
-      while (cut.length > 1 && pdf.getTextWidth(`${cut}…`) > maxWidth - 2) {
-        cut = cut.slice(0, -1);
+      const textVal = toText(value);
+      const raw = textVal.replace(/\s+/g, ' ').trim() || '—';
+      try {
+        if (pdf.getTextWidth(raw) <= maxWidth - 2) return raw;
+        let cut = raw;
+        while (cut.length > 1 && pdf.getTextWidth(`${cut}…`) > maxWidth - 2) {
+          cut = cut.slice(0, -1);
+        }
+        return `${cut}…`;
+      } catch {
+        return raw;
       }
-      return `${cut}…`;
     };
 
     const loadLogoDataUrl = async () => {
@@ -1748,13 +1775,18 @@ export default function ConsagracaoPage() {
         seq += 1;
         pdf.rect(marginX, currentY, contentWidth, rowHeight);
 
-        const cpfStr = String(item?.cpf ?? '').trim();
+        const safeSeq = String(seq);
+        const safeProcesso = String(item?.numero_processo ?? '').trim() || '—';
+        const safeNome = String(item?.nome ?? '').trim() || '—';
+        const safeCpf = item?.cpf ? (formatCpf(item.cpf) || '—') : '—';
+        const safeCategoria = String(item?.categoria ?? '').trim() || '—';
+
         const cells = [
-          String(seq),
-          String(item?.numero_processo ?? '').trim() || '—',
-          String(item?.nome ?? '').trim() || '—',
-          cpfStr ? formatCpf(cpfStr) : '—',
-          String(item?.categoria ?? '').trim() || '—',
+          safeSeq,
+          safeProcesso,
+          safeNome,
+          safeCpf,
+          safeCategoria,
           '',
         ];
 
