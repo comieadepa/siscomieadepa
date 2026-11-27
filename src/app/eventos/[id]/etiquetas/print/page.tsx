@@ -29,6 +29,7 @@ interface InscricaoLabel {
   equipe_apoio?: string | null;
   origem: string | null;
   equipe_label?: string | null;
+  ministro_snapshot?: any;
   // AGO-specific (populated only for AGO events)
   ministro_id?: string | null;
   matricula?: string | null;
@@ -72,7 +73,7 @@ export default function EtiquetasPrintPage() {
     async function load() {
       let inscrQuery = supabase
         .from('evento_inscricoes')
-        .select('id,nome_inscrito,cpf,supervisao_id,campo_id,status_pagamento,tipo_inscricao,hospedagem,alimentacao,brinde,qr_code,checkin_realizado,etiqueta_impressa,ministro_id,origem,observacoes,equipe_apoio')
+        .select('id,nome_inscrito,cpf,supervisao_id,campo_id,status_pagamento,tipo_inscricao,hospedagem,alimentacao,brinde,qr_code,checkin_realizado,etiqueta_impressa,ministro_id,origem,observacoes,equipe_apoio,ministro_snapshot')
         .eq('evento_id', id);
 
       if (ids) {
@@ -102,16 +103,59 @@ export default function EtiquetasPrintPage() {
 
       if (inscBase.length > 0) {
         // Enriquecer com dados hospedagem + matrícula
-        const inscIds    = inscBase.map(i => i.id);
-        const ministroIds = [...new Set(inscBase.map(i => i.ministro_id).filter((x): x is string => !!x))];
+        const inscIds = inscBase.map(i => i.id);
 
-        const [hospRes, membersRes] = await Promise.all([
+        // Identificar IDs de ministros: direto de ministro_id ou do snapshot
+        const directMinistroIds = inscBase.map(i => i.ministro_id).filter((x): x is string => !!x);
+        const snapMinistroIds = inscBase.map(i => i.ministro_snapshot?.ministro_id).filter((x): x is string => !!x);
+        const allMinistroIds = [...new Set([...directMinistroIds, ...snapMinistroIds])];
+
+        // Identificar CPFs que ainda precisam de consulta em members caso não haja ministro_id nem matrícula no snapshot
+        const cpfsParaBuscar = [...new Set(
+          inscBase
+            .filter(i => !i.ministro_id && !i.ministro_snapshot?.matricula && i.cpf)
+            .map(i => String(i.cpf).replace(/\D/g, ''))
+            .filter(Boolean)
+        )];
+
+        // Consulta de membros por ID (em lotes de até 100 via API ou direto)
+        const fetchMembersById = async () => {
+          if (allMinistroIds.length === 0) return new Map<string, string>();
+          const idMap = new Map<string, string>();
+          for (let i = 0; i < allMinistroIds.length; i += 100) {
+            const chunk = allMinistroIds.slice(i, i + 100);
+            const { data } = await supabase.from('members').select('id, matricula').in('id', chunk);
+            if (data) {
+              for (const m of data) {
+                if (m.id && m.matricula) idMap.set(m.id, String(m.matricula));
+              }
+            }
+          }
+          return idMap;
+        };
+
+        // Consulta de membros por CPF (em lotes de até 100)
+        const fetchMembersByCpf = async () => {
+          if (cpfsParaBuscar.length === 0) return new Map<string, string>();
+          const cpfMap = new Map<string, string>();
+          for (let i = 0; i < cpfsParaBuscar.length; i += 100) {
+            const chunk = cpfsParaBuscar.slice(i, i + 100);
+            const { data } = await supabase.from('members').select('cpf, matricula').in('cpf', chunk);
+            if (data) {
+              for (const m of data) {
+                if (m.cpf && m.matricula) cpfMap.set(String(m.cpf).replace(/\D/g, ''), String(m.matricula));
+              }
+            }
+          }
+          return cpfMap;
+        };
+
+        const [hospRes, memberIdMap, memberCpfMap] = await Promise.all([
           supabase.from('evento_hospedagens')
             .select('inscricao_id,numero_cama,tipo_cama,status,alojamento_id')
             .in('inscricao_id', inscIds),
-          ministroIds.length > 0
-            ? authenticatedFetch(`/api/v1/members/lookup?ids=${encodeURIComponent(ministroIds.join(','))}&limit=${ministroIds.length}`)
-            : Promise.resolve(null),
+          fetchMembersById(),
+          fetchMembersByCpf(),
         ]);
 
         type HospRow = { inscricao_id: string; numero_cama: string | null; tipo_cama: string | null; status: string; alojamento_id: string | null };
@@ -126,11 +170,6 @@ export default function EtiquetasPrintPage() {
 
         const hospMap   = new Map(hospRows.map(h => [h.inscricao_id, h]));
         const aloMap    = new Map(((aloRes.data ?? []) as { id: string; nome: string }[]).map(a => [a.id, a.nome]));
-        const membersJson = membersRes && 'ok' in membersRes && membersRes.ok
-          ? await membersRes.json().catch(() => null as any)
-          : null;
-        const memberList = (membersJson?.data ?? []) as { id: string; matricula: string | null }[];
-        const memberMap = new Map(memberList.map(m => [m.id, m.matricula]));
 
         const merged = inscBase.map(ins => {
           const hosp = ins.id ? hospMap.get(ins.id) : undefined;
@@ -142,10 +181,20 @@ export default function EtiquetasPrintPage() {
             const m = String(ins.observacoes).match(/\[?Equipe:\s*([^\]\n\r]+)\]?/i);
             if (m && m[1]) equipe_label = m[1].trim().toUpperCase();
           }
+
+          // Resolver matrícula ministerial oficial com fallbacks seguros
+          const targetMinId = ins.ministro_id || ins.ministro_snapshot?.ministro_id;
+          const cpfDigitos = ins.cpf ? String(ins.cpf).replace(/\D/g, '') : '';
+          const matResolvida =
+            (ins.ministro_snapshot?.matricula ? String(ins.ministro_snapshot.matricula) : null) ||
+            (targetMinId ? memberIdMap.get(targetMinId) : null) ||
+            (cpfDigitos ? memberCpfMap.get(cpfDigitos) : null) ||
+            null;
+
           return {
             ...ins,
             equipe_label,
-            matricula:       ins.ministro_id ? (memberMap.get(ins.ministro_id) ?? null) : null,
+            matricula:       matResolvida,
             numero_cama:     hosp?.numero_cama     ?? null,
             tipo_cama:       hosp?.tipo_cama       ?? null,
             hosp_status:     hosp?.status          ?? null,
