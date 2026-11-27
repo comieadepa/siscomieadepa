@@ -39,7 +39,7 @@ export async function GET(
 
   const { data, error } = await supabase
     .from('evento_alojamentos')
-    .select('id,setor_key,origem,nome,publico,sexo,total_vagas,camas_inferiores,camas_superiores,colchonetes,ativo,created_at,is_emergencial,observacoes')
+    .select('id,setor_key,origem,nome,publico,sexo,total_vagas,camas_inferiores,camas_superiores,colchonetes,ativo,created_at')
     .eq('evento_id', eventoId)
     .order('nome');
 

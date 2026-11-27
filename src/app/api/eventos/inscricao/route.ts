@@ -1078,11 +1078,11 @@ export async function POST(request: NextRequest) {
         // Consulta alojamentos ativos para apurar capacidade configurada por grupo (exclui emergenciais)
         const { data: alojamentosAtivosRaw } = await supabase
           .from('evento_alojamentos')
-          .select('id, publico, total_vagas, ativo, is_emergencial')
+          .select('id, publico, total_vagas, ativo')
           .eq('evento_id', evento.id)
           .eq('ativo', true);
 
-        const alojamentosAtivos = (alojamentosAtivosRaw ?? []).filter((a: any) => !a.is_emergencial);
+        const alojamentosAtivos = alojamentosAtivosRaw ?? [];
 
         const PUBLICO_GRUPO_AGO: Record<string, string> = {
           presidentes:     'Pastor Presidente / Pastor Jubilado',

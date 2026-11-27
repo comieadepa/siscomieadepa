@@ -30,9 +30,9 @@ export async function GET(
     const { data: chunk, error } = await supabase
       .from('evento_hospedagem_leitos')
       .select(`
-        id, numero, tipo_leito, posicao, ocupado, created_at, is_emergencial, observacoes,
+        id, numero, tipo_leito, posicao, ocupado, created_at,
         alojamento_id,
-        evento_alojamentos ( id, nome, publico, is_emergencial ),
+        evento_alojamentos ( id, nome, publico ),
         inscricao_id,
         evento_inscricoes ( id, nome_inscrito, cpf, tipo_inscricao, status_pagamento, hosp_possui_comorbidade, hosp_descricao_comorbidade, hosp_necessidade_especial, hosp_descricao_necessidade )
       `)

@@ -62,12 +62,11 @@ export async function GET(request: NextRequest) {
   if (evento.departamento === 'AGO' && evento.permite_hospedagem) {
     const { data: alojamentosRaw } = await supabase
       .from('evento_alojamentos')
-      .select('id, publico, total_vagas, ativo, is_emergencial')
+      .select('id, publico, total_vagas, ativo')
       .eq('evento_id', evento.id)
       .eq('ativo', true);
 
-    // Isolamento estrito: leitos e alojamentos emergenciais NUNCA integram a capacidade de inscrição pública
-    const alojamentos = (alojamentosRaw ?? []).filter((a: any) => !a.is_emergencial);
+    const alojamentos = alojamentosRaw ?? [];
 
     // Consulta hospedagens ativas (confirmada, alocada, checkin_realizado e solicitadas pendentes com inscrição não cancelada)
     // Preserva consistência integral com o backend de validação de inscrição com paginação completa
