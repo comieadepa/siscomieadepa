@@ -996,7 +996,10 @@ export async function POST(req: NextRequest) {
     const departamentoFromText = scope === 'global' ? departamentoFromQuestion(perguntaRaw) : null;
     const departamento = departamentoFromContext ?? departamentoFromText;
 
-    if (hasAny(pergunta, SAUDACOES)) {
+    const tokens = pergunta.split(' ').filter(Boolean);
+    const isApenasSaudacao = tokens.length <= 2 && tokens.every(t => SAUDACOES.includes(t));
+
+    if (isApenasSaudacao && !hasAny(pergunta, ['noite', 'tarde', 'manha', 'abertura', 'culto', 'evento'])) {
       const msg = departamento
         ? `Oi! Posso ajudar com eventos de ${departamento.nome}. Pergunte sobre inscricoes abertas ou pagamentos.`
         : 'Oi! Posso ajudar com inscricoes abertas, pagamentos e duvidas gerais dos eventos.';
