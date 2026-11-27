@@ -304,10 +304,10 @@ export async function alocarLeitoParaInscricaoAGO(
     }
   }
 
-  // 4. Busca os alojamentos ativos (para eventos AGO, consome exclusivamente a projeção oficial sincronizada com a SSOT)
+  // 4. Busca os alojamentos ativos (para eventos AGO, consome exclusivamente a projeção oficial sincronizada com a SSOT e exclui emergenciais)
   let queryAloj = supabase
     .from('evento_alojamentos')
-    .select('id, setor_key, nome, publico, sexo, total_vagas, camas_inferiores, camas_superiores, colchonetes, ativo')
+    .select('id, setor_key, nome, publico, sexo, total_vagas, camas_inferiores, camas_superiores, colchonetes, ativo, is_emergencial')
     .eq('evento_id', evento.id)
     .eq('ativo', true);
 
@@ -315,7 +315,8 @@ export async function alocarLeitoParaInscricaoAGO(
     queryAloj = queryAloj.not('setor_key', 'is', null);
   }
 
-  const { data: alojamentosRaw, error: errAloj } = await queryAloj;
+  const { data: alojamentosRawList, error: errAloj } = await queryAloj;
+  const alojamentosRaw = (alojamentosRawList ?? []).filter((a: any) => !a.is_emergencial);
 
   if (errAloj || !alojamentosRaw || alojamentosRaw.length === 0) {
     const msg = `Nenhum alojamento ativo encontrado para o evento ${evento.id}`;
@@ -376,10 +377,12 @@ export async function alocarLeitoParaInscricaoAGO(
 
   const { data: leitosLivresRawTotal } = await supabase
     .from('evento_hospedagem_leitos')
-    .select('id, alojamento_id, numero, tipo_leito, posicao')
+    .select('id, alojamento_id, numero, tipo_leito, posicao, is_emergencial')
     .eq('evento_id', evento.id)
     .eq('ocupado', false)
     .is('inscricao_id', null);
+
+  const leitosLivresFiltrados = (leitosLivresRawTotal ?? []).filter((l: any) => !l.is_emergencial);
 
   const vagasMap: Record<string, { total: number; inferiores: number; superiores: number; colchonetes: number }> = {};
   for (const aloj of alojamentosAjustados) {
@@ -406,9 +409,9 @@ export async function alocarLeitoParaInscricaoAGO(
   const candidatos = alojamentos
     .filter(a => grupoMatchesAlojamento(grupoHosp, a))
     .sort((a, b) => {
-      // Prioridade 1: quem possui leito físico previamente cadastrado e livre compatível
-      const aTemFisico = (leitosLivresRawTotal ?? []).some((l: any) => l.alojamento_id === a.id);
-      const bTemFisico = (leitosLivresRawTotal ?? []).some((l: any) => l.alojamento_id === b.id);
+      // Prioridade 1: quem possui leito físico previamente cadastrado e livre compatível (excluindo emergenciais)
+      const aTemFisico = (leitosLivresFiltrados ?? []).some((l: any) => l.alojamento_id === a.id);
+      const bTemFisico = (leitosLivresFiltrados ?? []).some((l: any) => l.alojamento_id === b.id);
       if (aTemFisico !== bTemFisico) return aTemFisico ? -1 : 1;
 
       const ratioA = a.total_vagas > 0 ? (a.total_vagas - (a.vagas_livres ?? 0)) / a.total_vagas : 1;
@@ -756,7 +759,7 @@ export async function alocarLeitoParaInscricaoEventoComum(
   let numeroCamaAlocada = '';
   let ultimoErroLeito = '';
 
-  // 8.1. Tentar reutilizar leito cadastrado disponível
+  // 8.1. Tentar reutilizar leito cadastrado disponível (excluindo leitos emergenciais)
   const posicaoDesejada = tipoCama === 'unico' ? 'unico' : tipoCama;
   const { data: leitoLivre } = await supabase
     .from('evento_hospedagem_leitos')
@@ -765,6 +768,7 @@ export async function alocarLeitoParaInscricaoEventoComum(
     .eq('alojamento_id', alojSelecionado.id)
     .eq('posicao', posicaoDesejada)
     .eq('ocupado', false)
+    .neq('is_emergencial', true)
     .is('inscricao_id', null)
     .order('numero', { ascending: true })
     .limit(1)

@@ -1,4 +1,4 @@
-export type CanonicalRole = 'super' | 'administrador' | 'cgadb' | 'comissao' | 'inscricao' | 'financeiro' | 'aemadepa';
+export type CanonicalRole = 'super' | 'administrador' | 'cgadb' | 'comissao' | 'inscricao' | 'financeiro' | 'aemadepa' | 'umadespa';
 
 export type ModuleKey =
   | 'cgadb'
@@ -14,9 +14,10 @@ export type ModuleKey =
   | 'permutas'
   | 'eventos'
   | 'configuracoes'
-  | 'aemadepa';
+  | 'aemadepa'
+  | 'umadespa';
 
-export type ApiKey = 'financeiro' | 'members' | 'employees' | 'documentos' | 'permutas';
+export type ApiKey = 'financeiro' | 'members' | 'employees' | 'documentos' | 'permutas' | 'umadespa';
 
 const CANONICAL_ROLES = new Set<CanonicalRole>([
   'super',
@@ -26,6 +27,7 @@ const CANONICAL_ROLES = new Set<CanonicalRole>([
   'inscricao',
   'financeiro',
   'aemadepa',
+  'umadespa',
 ]);
 
 const ROLE_ALIASES: Record<string, CanonicalRole> = {
@@ -51,6 +53,9 @@ const ROLE_ALIASES: Record<string, CanonicalRole> = {
   financial: 'financeiro',
   aemadepa: 'aemadepa',
   esposas: 'aemadepa',
+  umadespa: 'umadespa',
+  juventude: 'umadespa',
+  mocidade: 'umadespa',
 };
 
 function normalizeKey(value: string): string {
@@ -112,6 +117,7 @@ const MODULE_ACCESS: Record<ModuleKey, CanonicalRole[]> = {
   eventos: ['super', 'inscricao'],
   configuracoes: ['super', 'administrador'],
   aemadepa: ['super', 'administrador', 'aemadepa'],
+  umadespa: ['super', 'administrador', 'umadespa'],
 };
 
 const API_ACCESS: Record<ApiKey, CanonicalRole[]> = {
@@ -120,6 +126,7 @@ const API_ACCESS: Record<ApiKey, CanonicalRole[]> = {
   employees: ['super', 'administrador'],
   documentos: ['super', 'administrador'],
   permutas: ['super', 'administrador', 'financeiro'],
+  umadespa: ['super', 'administrador', 'umadespa'],
 };
 
 export function canAccessModule(role: CanonicalRole | null, moduleKey: ModuleKey): boolean {

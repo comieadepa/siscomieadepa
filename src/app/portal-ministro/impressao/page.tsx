@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Printer, CheckCircle2, AlertCircle, Clock, ExternalLink } from 'lucide-react';
+import MinistroPageHeader from '@/components/MinistroPageHeader';
 
 interface Solicitacao {
   id: string;
@@ -92,11 +93,14 @@ export default function ImpressaoPage() {
   );
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="flex items-center gap-3">
-        <Printer size={24} className="text-[#0D2B4E]" />
-        <h1 className="text-2xl font-bold text-gray-900">Solicitar Impressão da Credencial</h1>
-      </div>
+    <div className="max-w-2xl mx-auto space-y-6 pb-12">
+      <MinistroPageHeader
+        title="2ª Via da Credencial em PVC"
+        subtitle="Solicitação e acompanhamento da confecção do cartão físico oficial."
+        badge="Cartão Físico"
+        icon={Printer}
+        backHref="/app"
+      />
 
       {/* Info */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">

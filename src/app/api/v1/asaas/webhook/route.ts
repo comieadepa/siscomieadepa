@@ -487,6 +487,196 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true, event_ignored: event });
     }
 
+    // ── Carteirinha UMADESPA (Emissão Oficial Juventude) ──────────────────────
+    if (externalRef.startsWith('umadespa_carteirinha:')) {
+      const solicitacaoId = externalRef.replace('umadespa_carteirinha:', '').trim();
+      if (!solicitacaoId) {
+        return NextResponse.json({ error: 'ID da solicitação UMADESPA ausente' }, { status: 400 });
+      }
+
+      // Busca a solicitação no banco
+      const { data: solicitacao, error: solErr } = await supabase
+        .from('umadespa_carteirinhas_solicitacoes')
+        .select('id, associado_id, valor, via, status, asaas_payment_id, pago_em, observacoes')
+        .eq('id', solicitacaoId)
+        .maybeSingle();
+
+      if (solErr || !solicitacao) {
+        console.error('[ASAAS WEBHOOK UMADESPA] Solicitação não encontrada:', {
+          solicitacaoId,
+          error: solErr?.message,
+        });
+        return NextResponse.json({ error: 'Solicitação UMADESPA não encontrada' }, { status: 404 });
+      }
+
+      // Validação de payment ID se já registrado
+      if (solicitacao.asaas_payment_id && solicitacao.asaas_payment_id !== asaasPaymentId) {
+        console.error('[ASAAS WEBHOOK UMADESPA] Payment ID divergente:', {
+          solicitacaoId,
+          cadastrado: solicitacao.asaas_payment_id,
+          recebido: asaasPaymentId,
+        });
+        return NextResponse.json({ error: 'Payment ID divergente' }, { status: 400 });
+      }
+
+      const isPaidEvent =
+        event === 'PAYMENT_CONFIRMED' ||
+        event === 'PAYMENT_RECEIVED' ||
+        event === 'PAYMENT_RECEIVED_IN_CASH';
+      const isCancelEvent =
+        event === 'PAYMENT_DELETED' ||
+        event === 'PAYMENT_CANCELED' ||
+        event === 'PAYMENT_REFUNDED';
+
+      if (isPaidEvent) {
+        // Validação estrita do valor esperado da solicitação
+        const valorRecebido = Number(payment?.value || 0);
+        const valorEsperado = Number(solicitacao.valor || 0);
+        if (Math.abs(valorRecebido - valorEsperado) > 0.05) {
+          console.error('[ASAAS WEBHOOK UMADESPA] Valor divergente do esperado da carteirinha:', {
+            recebido: valorRecebido,
+            esperado: valorEsperado,
+          });
+          return NextResponse.json({ error: 'Valor divergente' }, { status: 422 });
+        }
+
+        // Idempotência: se já está pago, não reprocessa
+        if (['pago', 'em_impressao', 'impressa', 'entregue'].includes(solicitacao.status)) {
+          console.log(
+            `[ASAAS WEBHOOK UMADESPA] Pagamento já confirmado anteriormente para solicitação ${solicitacao.id} (Status atual: ${solicitacao.status}).`
+          );
+          return NextResponse.json({ received: true, status: 'already_processed' });
+        }
+
+        const dataPagamento = paymentDate || new Date().toISOString();
+
+        // Tratamento de Pagamento Tardio: se o pedido estava cancelado,
+        // verifica antes se o associado não abriu um novo pedido ativo nesse ínterim.
+        let novoStatus = 'pago';
+        let obsAdicional = '';
+
+        if (solicitacao.status === 'cancelada') {
+          const { data: outroPedidoAtivo } = await supabase
+            .from('umadespa_carteirinhas_solicitacoes')
+            .select('id, via, status')
+            .eq('associado_id', solicitacao.associado_id)
+            .in('status', ['processando_pagamento', 'aguardando_pagamento', 'pago', 'em_impressao', 'impressa'])
+            .neq('id', solicitacao.id)
+            .maybeSingle();
+
+          if (outroPedidoAtivo) {
+            obsAdicional = ` [PAGAMENTO TARDIO RECEBIDO] Valor quitado via ASAAS (${asaasPaymentId}), porém jovem já possui ${outroPedidoAtivo.via}ª via ativa (${outroPedidoAtivo.status}). Registrar compensação na Secretaria.`;
+            novoStatus = 'cancelada';
+          } else {
+            obsAdicional = ` [PAGAMENTO TARDIO REATIVADO] Pedido reativado pelo webhook após quitação tardia via ASAAS (${asaasPaymentId}).`;
+            novoStatus = 'pago';
+          }
+        }
+
+        // Atualização atômica idempotente com trava condicional
+        const { data: solAtualizada, error: updErr } = await supabase
+          .from('umadespa_carteirinhas_solicitacoes')
+          .update({
+            status: novoStatus,
+            asaas_payment_id: asaasPaymentId,
+            forma_pagamento: 'pix_asaas',
+            pago_em: dataPagamento,
+            observacoes: solicitacao.observacoes ? `${solicitacao.observacoes}${obsAdicional}` : obsAdicional.trim(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', solicitacao.id)
+          .in('status', ['aguardando_pagamento', 'processando_pagamento', 'cancelada'])
+          .select('id')
+          .maybeSingle();
+
+        if (updErr) {
+          console.error('[ASAAS WEBHOOK UMADESPA] Erro ao atualizar status financeiro:', updErr.message);
+          return NextResponse.json({ error: updErr.message }, { status: 500 });
+        }
+
+        // Se nenhuma linha foi atualizada, corrida concorrente já concluiu
+        if (!solAtualizada) {
+          console.log(`[ASAAS WEBHOOK UMADESPA] Solicitação ${solicitacao.id} já transicionada concorrentemente para pago. Ignorando duplicata.`);
+          return NextResponse.json({ received: true, status: 'already_processed_concurrent' });
+        }
+
+        // Auditoria e notificação administrativa em background
+        after(async () => {
+          const asyncClient = createServerClient();
+          void logDB({
+            acao: 'baixa_financeira',
+            modulo: 'secretaria',
+            entidade: 'umadespa_carteirinhas_solicitacoes',
+            entidadeId: solicitacao.id,
+            descricao: `Pagamento de Carteirinha UMADESPA (${solicitacao.via}ª Via) confirmado via ASAAS: R$ ${valorEsperado.toFixed(2)}`,
+            status: 'sucesso',
+            detalhes: {
+              solicitacaoId: solicitacao.id,
+              associadoId: solicitacao.associado_id,
+              via: solicitacao.via,
+              valor: valorRecebido,
+              asaasPaymentId,
+              event,
+              pagoEm: dataPagamento,
+            },
+          });
+
+          // Notificação administrativa para a Secretaria
+          try {
+            const { data: associado } = await asyncClient
+              .from('umadespa_associados')
+              .select('nome')
+              .eq('id', solicitacao.associado_id)
+              .maybeSingle();
+
+            const nomeAssociado = associado?.nome || 'Jovem';
+
+            await asyncClient.from('admin_notifications').insert({
+              type: 'umadespa_carteirinha',
+              title: 'Nova Carteirinha UMADESPA Pronta para Impressão',
+              message: `Pagamento confirmado da ${solicitacao.via}ª via da carteirinha de ${nomeAssociado}. Disponível na fila de impressão UMADESPA.`,
+              data: {
+                solicitacao_id: solicitacao.id,
+                associado_id: solicitacao.associado_id,
+                nome_associado: nomeAssociado,
+                via: solicitacao.via,
+                link: '/umadespa',
+              },
+              is_read: false,
+            });
+          } catch (notifErr: any) {
+            console.error('[ASAAS WEBHOOK UMADESPA] Falha ao registrar notificação administrativa:', notifErr.message);
+          }
+        });
+
+        return NextResponse.json({ received: true, solicitacaoId: solicitacao.id, status: 'pago' });
+      }
+
+      if (isCancelEvent) {
+        if (solicitacao.pago_em || solicitacao.status !== 'aguardando_pagamento') {
+          console.warn(
+            `[ASAAS WEBHOOK UMADESPA] Ignorando evento de cancelamento para solicitação já paga: ${solicitacao.id}`
+          );
+          return NextResponse.json({ received: true, ignored: 'cannot_cancel_paid_order' });
+        }
+
+        await supabase
+          .from('umadespa_carteirinhas_solicitacoes')
+          .update({
+            status: 'cancelada',
+            cancelado_em: new Date().toISOString(),
+            motivo_cancelamento: `Cancelamento via ASAAS: ${event}`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', solicitacao.id)
+          .eq('status', 'aguardando_pagamento');
+
+        return NextResponse.json({ received: true, status: 'cancelada' });
+      }
+
+      return NextResponse.json({ received: true, event_ignored: event });
+    }
+
     // ── Credenciamento CONEC (Anuidade Instituição) ──────────────────────────
     const isConecEvent = externalRef.startsWith('conec_credenciamento:') || externalRef.startsWith('conec:');
     

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { DollarSign, CheckCircle2, AlertCircle } from 'lucide-react';
+import MinistroPageHeader from '@/components/MinistroPageHeader';
 
 interface Contribuicao {
   id: string;
@@ -55,15 +56,14 @@ export default function ContribuicoesPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="flex items-center gap-3">
-        <DollarSign size={24} className="text-[#0D2B4E]" />
-        <h1 className="text-2xl font-bold text-gray-900">Contribuição Estatutária</h1>
-      </div>
-
-      {dados?.campoNome && (
-        <p className="text-sm text-gray-500">Campo: <strong>{dados.campoNome}</strong></p>
-      )}
+    <div className="max-w-2xl mx-auto space-y-6 pb-12">
+      <MinistroPageHeader
+        title="Contribuição Estatutária"
+        subtitle={dados?.campoNome ? `Campo Ministerial: ${dados.campoNome}` : 'Histórico e pagamentos da contribuição pastoral.'}
+        badge="Pastores Presidentes"
+        icon={DollarSign}
+        backHref="/app"
+      />
 
       {/* Status mês atual */}
       {dados?.statusMesAtual && (

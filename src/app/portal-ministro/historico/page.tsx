@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { History } from 'lucide-react';
+import MinistroPageHeader from '@/components/MinistroPageHeader';
 
 interface HistoricoItem {
   id: string;
@@ -47,11 +48,14 @@ export default function HistoricoPage() {
   }, []);
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="flex items-center gap-3">
-        <History size={24} className="text-[#0D2B4E]" />
-        <h1 className="text-2xl font-bold text-gray-900">Histórico Ministerial</h1>
-      </div>
+    <div className="max-w-2xl mx-auto space-y-6 pb-12">
+      <MinistroPageHeader
+        title="Histórico Ministerial"
+        subtitle="Linha do tempo de consagrações, cartas emitidas, deliberações e transferências."
+        badge="Trajetória Ministerial"
+        icon={History}
+        backHref="/app"
+      />
 
       {loading && <div className="text-gray-500">Carregando...</div>}
 

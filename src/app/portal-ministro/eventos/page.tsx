@@ -22,6 +22,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import MinistroPageHeader from '@/components/MinistroPageHeader';
 
 interface EventoData {
   id: string;
@@ -221,19 +222,14 @@ export default function MeusEventosPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-12">
       
-      {/* ── CABEÇALHO ── */}
-      <div>
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-[#0D2B4E] text-xs font-semibold mb-2 border border-blue-100">
-          <Ticket size={14} className="text-[#0D2B4E]" />
-          Participação em Convenções e Congressos
-        </div>
-        <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">
-          Meus Eventos
-        </h1>
-        <p className="text-sm text-gray-500 mt-0.5">
-          Suas inscrições, credenciais, hospedagem e refeições.
-        </p>
-      </div>
+      {/* ── CABEÇALHO HARMONIZADO COM NAVEGAÇÃO DE RETORNO ── */}
+      <MinistroPageHeader
+        title="Meus Eventos"
+        subtitle="Suas inscrições, crachás virtuais, hospedagem e refeições na 126ª AGO e convenções."
+        badge="Convenções & Congressos"
+        icon={Ticket}
+        backHref="/app"
+      />
 
       {/* ── SEÇÃO 1: EVENTO EM DESTAQUE (PRÓXIMO / ATIVO) ── */}
       {eventoDestaque ? (

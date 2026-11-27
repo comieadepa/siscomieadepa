@@ -15,6 +15,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { gerarCertificadoPDF, type CertConfig, type CertDados } from '@/lib/certificado-pdf';
+import MinistroPageHeader from '@/components/MinistroPageHeader';
 
 interface EventoInfo {
   id: string;
@@ -193,19 +194,14 @@ export default function MeusCertificadosPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-12">
       
-      {/* ── CABEÇALHO ── */}
-      <div>
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-[#0D2B4E] text-xs font-semibold mb-2 border border-blue-100">
-          <Award size={14} className="text-[#0D2B4E]" />
-          Documentos & Certificações Ministeriais
-        </div>
-        <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">
-          Meus Certificados
-        </h1>
-        <p className="text-sm text-gray-500 mt-0.5">
-          Certificados oficiais de participação em convenções e eventos da COMIEADEPA.
-        </p>
-      </div>
+      {/* ── CABEÇALHO HARMONIZADO COM NAVEGAÇÃO DE RETORNO ── */}
+      <MinistroPageHeader
+        title="Meus Certificados"
+        subtitle="Certificados oficiais de participação em convenções e eventos da COMIEADEPA."
+        badge="Certificações Ministeriais"
+        icon={Award}
+        backHref="/app"
+      />
 
       {/* ── LISTA DE CERTIFICADOS ── */}
       {certificados.length > 0 ? (

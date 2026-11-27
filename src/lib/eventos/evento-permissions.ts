@@ -4,7 +4,8 @@ export type EventoRole =
   | 'checkin'
   | 'checkin_refeitorio'
   | 'hospedagem'
-  | 'checkin_hospedagem';
+  | 'checkin_hospedagem'
+  | 'supervisor_descontos';
 
 export type EventoArea =
   | 'inscricoes'
@@ -23,7 +24,8 @@ export type EventoArea =
   | 'relatorios'
   | 'relatorios_ago'
   | 'centro_controle'
-  | 'dashboard_executivo';
+  | 'dashboard_executivo'
+  | 'supervisor_descontos';
 
 export type EventoTabId =
   | 'inscritos'
@@ -58,6 +60,7 @@ export const EVENTO_PERMISSIONS: Record<EventoRole, Record<EventoArea, boolean>>
     relatorios_ago: true,
     centro_controle: true,
     dashboard_executivo: true,
+    supervisor_descontos: true,
   },
   operador: {
     inscricoes: true,
@@ -77,6 +80,7 @@ export const EVENTO_PERMISSIONS: Record<EventoRole, Record<EventoArea, boolean>>
     relatorios_ago: false,
     centro_controle: false,
     dashboard_executivo: false,
+    supervisor_descontos: false,
   },
   checkin: {
     inscricoes: false,
@@ -96,6 +100,7 @@ export const EVENTO_PERMISSIONS: Record<EventoRole, Record<EventoArea, boolean>>
     relatorios_ago: false,
     centro_controle: false,
     dashboard_executivo: false,
+    supervisor_descontos: false,
   },
   checkin_refeitorio: {
     inscricoes: false,
@@ -115,6 +120,7 @@ export const EVENTO_PERMISSIONS: Record<EventoRole, Record<EventoArea, boolean>>
     relatorios_ago: false,
     centro_controle: false,
     dashboard_executivo: false,
+    supervisor_descontos: false,
   },
   hospedagem: {
     inscricoes: false,
@@ -134,6 +140,7 @@ export const EVENTO_PERMISSIONS: Record<EventoRole, Record<EventoArea, boolean>>
     relatorios_ago: false,
     centro_controle: false,
     dashboard_executivo: false,
+    supervisor_descontos: false,
   },
   checkin_hospedagem: {
     inscricoes: false,
@@ -153,6 +160,27 @@ export const EVENTO_PERMISSIONS: Record<EventoRole, Record<EventoArea, boolean>>
     relatorios_ago: false,
     centro_controle: false,
     dashboard_executivo: false,
+    supervisor_descontos: false,
+  },
+  supervisor_descontos: {
+    inscricoes: false,
+    checkin: false,
+    refeitorio: false,
+    etiquetas: false,
+    hospedagem: false,
+    hospedagem_checkin: false,
+    equipe: false,
+    configuracoes: false,
+    comunicacao: false,
+    financeiro: false,
+    backup: false,
+    certificados: false,
+    programacao: false,
+    relatorios: false,
+    relatorios_ago: false,
+    centro_controle: false,
+    dashboard_executivo: false,
+    supervisor_descontos: true,
   },
 };
 
@@ -178,6 +206,7 @@ const DEFAULT_EVENTO_AREA: Record<EventoRole, EventoArea> = {
   checkin_refeitorio: 'refeitorio',
   hospedagem: 'hospedagem',
   checkin_hospedagem: 'hospedagem_checkin',
+  supervisor_descontos: 'supervisor_descontos',
 };
 
 export type EventoPermissoes = {

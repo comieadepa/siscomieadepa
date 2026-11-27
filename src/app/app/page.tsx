@@ -10,13 +10,10 @@ import {
   Award,
   MessageSquare,
   Coins,
-  FileText,
-  BookOpen,
   IdCard,
   Headphones,
   Info,
   Home,
-  User,
   X,
   ChevronRight,
   LogOut,
@@ -26,6 +23,7 @@ import {
   Clock
 } from 'lucide-react';
 import { type MinistroData } from '../portal-ministro/ministro-context';
+import MinistroBottomNav from '@/components/MinistroBottomNav';
 
 export default function AplicativoDoMinistroAppPage() {
   const router = useRouter();
@@ -366,7 +364,7 @@ export default function AplicativoDoMinistroAppPage() {
                     </span>
                   </button>
 
-                  {/* 2. Meus Certificados */}
+                  {/* 3. Meus Certificados */}
                   <button
                     onClick={() => handleOpenCard('certificados')}
                     className="flex flex-col items-center justify-center min-h-[116px] p-[10px_6px] rounded-[17px] bg-[rgba(255,255,255,0.94)] border border-[rgba(255,255,255,0.9)] shadow-[0_5px_16px_rgba(15,55,100,0.12)] active:scale-95 transition-all text-center group"
@@ -379,7 +377,20 @@ export default function AplicativoDoMinistroAppPage() {
                     </span>
                   </button>
 
-                  {/* 3. Comunicados da Convenção */}
+                  {/* 4. Histórico Ministerial */}
+                  <button
+                    onClick={() => router.push('/portal-ministro/historico')}
+                    className="flex flex-col items-center justify-center min-h-[116px] p-[10px_6px] rounded-[17px] bg-[rgba(255,255,255,0.94)] border border-[rgba(255,255,255,0.9)] shadow-[0_5px_16px_rgba(15,55,100,0.12)] active:scale-95 transition-all text-center group"
+                  >
+                    <div className="w-[34px] h-[34px] flex items-center justify-center text-[#123B69] group-hover:scale-110 transition-transform">
+                      <Clock size={28} strokeWidth={2.2} />
+                    </div>
+                    <span className="mt-[9px] text-[12px] font-[650] leading-[15px] text-[#10243C] line-clamp-3">
+                      Histórico Ministerial
+                    </span>
+                  </button>
+
+                  {/* 5. Comunicados da Convenção */}
                   <button
                     onClick={() => handleOpenCard('comunicados')}
                     className="relative flex flex-col items-center justify-center min-h-[116px] p-[10px_6px] rounded-[17px] bg-[rgba(255,255,255,0.94)] border border-[rgba(255,255,255,0.9)] shadow-[0_5px_16px_rgba(15,55,100,0.12)] active:scale-95 transition-all text-center group"
@@ -391,11 +402,11 @@ export default function AplicativoDoMinistroAppPage() {
                       <MessageSquare size={28} strokeWidth={2.2} />
                     </div>
                     <span className="mt-[9px] text-[12px] font-[650] leading-[15px] text-[#10243C] line-clamp-3">
-                      Comunicados da Convenção
+                      Comunicados
                     </span>
                   </button>
 
-                  {/* 4. Contribuição Estatutária (Exibida SOMENTE para Pastor Presidente com autorização) */}
+                  {/* 6. Contribuição Estatutária (Exibida SOMENTE para Pastor Presidente titular) */}
                   {ministro?.isPastorPresidente && (
                     <button
                       onClick={() => handleOpenCard('contribuicao')}
@@ -410,33 +421,20 @@ export default function AplicativoDoMinistroAppPage() {
                     </button>
                   )}
 
-                  {/* 5. Processos de Consagração */}
+                  {/* 7. Segunda Via da Credencial Física (PVC) */}
                   <button
-                    onClick={() => handleOpenCard('consagracao')}
-                    className="flex flex-col items-center justify-center min-h-[116px] p-[10px_6px] rounded-[17px] bg-[rgba(255,250,240,0.96)] border border-[#F3DFC1] shadow-[0_5px_16px_rgba(189,135,36,0.15)] active:scale-95 transition-all text-center group"
-                  >
-                    <div className="w-[34px] h-[34px] flex items-center justify-center text-[#BD8724] group-hover:scale-110 transition-transform">
-                      <FileText size={28} strokeWidth={2.2} />
-                    </div>
-                    <span className="mt-[9px] text-[12px] font-[650] leading-[15px] text-[#80530B] line-clamp-3">
-                      Processos de Consagração
-                    </span>
-                  </button>
-
-                  {/* 6. Documentos e Normas */}
-                  <button
-                    onClick={() => handleOpenCard('documentos')}
+                    onClick={() => router.push('/portal-ministro/impressao')}
                     className="flex flex-col items-center justify-center min-h-[116px] p-[10px_6px] rounded-[17px] bg-[rgba(255,255,255,0.94)] border border-[rgba(255,255,255,0.9)] shadow-[0_5px_16px_rgba(15,55,100,0.12)] active:scale-95 transition-all text-center group"
                   >
                     <div className="w-[34px] h-[34px] flex items-center justify-center text-[#123B69] group-hover:scale-110 transition-transform">
-                      <BookOpen size={28} strokeWidth={2.2} />
+                      <ShieldCheck size={28} strokeWidth={2.2} />
                     </div>
                     <span className="mt-[9px] text-[12px] font-[650] leading-[15px] text-[#10243C] line-clamp-3">
-                      Documentos e Normas
+                      2ª Via Cartão PVC
                     </span>
                   </button>
 
-                  {/* 7. Meus Dados Ministeriais */}
+                  {/* 8. Meus Dados Ministeriais */}
                   <button
                     onClick={() => handleOpenCard('dados')}
                     className="flex flex-col items-center justify-center min-h-[116px] p-[10px_6px] rounded-[17px] bg-[rgba(255,255,255,0.94)] border border-[rgba(255,255,255,0.9)] shadow-[0_5px_16px_rgba(15,55,100,0.12)] active:scale-95 transition-all text-center group"
@@ -449,7 +447,7 @@ export default function AplicativoDoMinistroAppPage() {
                     </span>
                   </button>
 
-                  {/* 8. Suporte e Ajuda */}
+                  {/* 9. Suporte e Ajuda */}
                   <button
                     onClick={() => handleOpenCard('suporte')}
                     className="flex flex-col items-center justify-center min-h-[116px] p-[10px_6px] rounded-[17px] bg-[rgba(255,255,255,0.94)] border border-[rgba(255,255,255,0.9)] shadow-[0_5px_16px_rgba(15,55,100,0.12)] active:scale-95 transition-all text-center group"
@@ -462,7 +460,7 @@ export default function AplicativoDoMinistroAppPage() {
                     </span>
                   </button>
 
-                  {/* 9. Sobre o Aplicativo */}
+                  {/* 10. Sobre o Aplicativo */}
                   <button
                     onClick={() => handleOpenCard('sobre')}
                     className="flex flex-col items-center justify-center min-h-[116px] p-[10px_6px] rounded-[17px] bg-[rgba(255,255,255,0.94)] border border-[rgba(255,255,255,0.9)] shadow-[0_5px_16px_rgba(15,55,100,0.12)] active:scale-95 transition-all text-center group"
@@ -474,6 +472,12 @@ export default function AplicativoDoMinistroAppPage() {
                       Sobre o Aplicativo
                     </span>
                   </button>
+
+                  {/*
+                    FUNCIONALIDADES NÃO IMPLEMENTADAS (OCULTADAS VISUALMENTE CONFORME LOTE 2, PRESERVADAS NO CÓDIGO):
+                    - Processos de Consagração: aguardando módulo da Secretaria Geral.
+                    - Documentos e Normas: aguardando repositório de arquivos.
+                  */}
 
                 </div>
               </section>
@@ -598,92 +602,14 @@ export default function AplicativoDoMinistroAppPage() {
           )}
         </main>
 
-        {/* ── NAVEGAÇÃO INFERIOR FIXA (Altura 68px + safe area) ── */}
-        <nav
-          className="absolute bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none"
-        >
-          <div
-            className="w-full max-w-[430px] md:max-w-[600px] pointer-events-auto rounded-t-[20px] shadow-[0_-4px_18px_rgba(7,33,68,0.2)] px-3 flex items-center justify-around"
-            style={{
-              background: 'linear-gradient(110deg, #092A50 0%, #123F72 100%)',
-              height: 'calc(68px + env(safe-area-inset-bottom, 0px))',
-              paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-            }}
-          >
-            {/* 1. Início */}
-            <button
-              onClick={() => setActiveTab('inicio')}
-              className={`flex flex-col items-center justify-center flex-1 py-1 relative transition-colors ${
-                activeTab === 'inicio' ? 'text-[#F4C45B]' : 'text-white/80 hover:text-white'
-              }`}
-            >
-              <Home size={23} strokeWidth={activeTab === 'inicio' ? 2.5 : 2} />
-              <span className="text-[11px] font-semibold mt-0.5 tracking-tight">Início</span>
-              {activeTab === 'inicio' && (
-                <span
-                  className="absolute bottom-0 w-8 h-[3px] rounded-full"
-                  style={{ backgroundColor: '#F4C45B' }}
-                />
-              )}
-            </button>
-
-            {/* 2. Eventos */}
-            <button
-              onClick={() => setActiveTab('eventos')}
-              className={`flex flex-col items-center justify-center flex-1 py-1 relative transition-colors ${
-                activeTab === 'eventos' ? 'text-[#F4C45B]' : 'text-white/80 hover:text-white'
-              }`}
-            >
-              <Calendar size={23} strokeWidth={activeTab === 'eventos' ? 2.5 : 2} />
-              <span className="text-[11px] font-semibold mt-0.5 tracking-tight">Eventos</span>
-              {activeTab === 'eventos' && (
-                <span
-                  className="absolute bottom-0 w-8 h-[3px] rounded-full"
-                  style={{ backgroundColor: '#F4C45B' }}
-                />
-              )}
-            </button>
-
-            {/* 3. Comunicados */}
-            <button
-              onClick={() => setActiveTab('comunicados')}
-              className={`flex flex-col items-center justify-center flex-1 py-1 relative transition-colors ${
-                activeTab === 'comunicados' ? 'text-[#F4C45B]' : 'text-white/80 hover:text-white'
-              }`}
-            >
-              <div className="relative">
-                <FileText size={23} strokeWidth={activeTab === 'comunicados' ? 2.5 : 2} />
-                {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-[7px] h-[7px] rounded-full bg-[#E74747]" />
-                )}
-              </div>
-              <span className="text-[11px] font-semibold mt-0.5 tracking-tight">Comunicados</span>
-              {activeTab === 'comunicados' && (
-                <span
-                  className="absolute bottom-0 w-8 h-[3px] rounded-full"
-                  style={{ backgroundColor: '#F4C45B' }}
-                />
-              )}
-            </button>
-
-            {/* 4. Perfil */}
-            <button
-              onClick={() => setActiveTab('perfil')}
-              className={`flex flex-col items-center justify-center flex-1 py-1 relative transition-colors ${
-                activeTab === 'perfil' ? 'text-[#F4C45B]' : 'text-white/80 hover:text-white'
-              }`}
-            >
-              <User size={23} strokeWidth={activeTab === 'perfil' ? 2.5 : 2} />
-              <span className="text-[11px] font-semibold mt-0.5 tracking-tight">Perfil</span>
-              {activeTab === 'perfil' && (
-                <span
-                  className="absolute bottom-0 w-8 h-[3px] rounded-full"
-                  style={{ backgroundColor: '#F4C45B' }}
-                />
-              )}
-            </button>
-          </div>
-        </nav>
+        {/* ── NAVEGAÇÃO INFERIOR FIXA UNIFICADA ── */}
+        <MinistroBottomNav
+          isPastorPresidente={ministro?.isPastorPresidente}
+          onOpenMenu={() => setMenuOpen(true)}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          unreadCount={unreadCount}
+        />
 
         {/* ── GAVETA LATERAL DESLIZANTE (MENU HAMBÚRGUER) ── */}
         {/* Backdrop animado com fade */}

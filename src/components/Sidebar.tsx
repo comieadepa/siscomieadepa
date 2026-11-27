@@ -21,6 +21,7 @@ import {
   LogOut,
   Settings,
   ShieldCheck,
+  Sparkles,
   Users,
 } from 'lucide-react';
 
@@ -56,8 +57,9 @@ type MenuSection = {
 // Quais menus de topo (por id) cada nível pode ver. 'super' vê tudo.
 const MENU_POR_NIVEL: Record<string, string[]> = {
   super: ['*'],
-  administrador: ['dashboard', 'secretaria', 'aemadepa', 'cgadb', 'comissao', 'patrimonio', 'missoes', 'configuracoes'],
+  administrador: ['dashboard', 'secretaria', 'aemadepa', 'umadespa', 'cgadb', 'comissao', 'patrimonio', 'missoes', 'configuracoes'],
   aemadepa: ['aemadepa'],
+  umadespa: ['umadespa'],
   cgadb: ['cgadb'],
   comissao: ['dashboard', 'secretaria', 'comissao'],
   inscricao: ['eventos'],
@@ -173,6 +175,7 @@ export default function Sidebar({ activeMenu, setActiveMenu }: SidebarProps) {
           ],
         },
         { id: 'aemadepa', label: 'AEMADEPA', icon: HeartHandshake, path: '/aemadepa' },
+        { id: 'umadespa', label: 'UMADESPA', icon: Sparkles, path: '/umadespa' },
         {
           id: 'conec',
           label: 'CONEC',

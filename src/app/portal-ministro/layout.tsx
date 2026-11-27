@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { MinistroContext, type MinistroData } from './ministro-context';
 import MinistroNotificationBell from '@/components/MinistroNotificationBell';
+import MinistroBottomNav from '@/components/MinistroBottomNav';
+import { Smartphone } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/portal-ministro/dashboard', label: 'Início', icon: LayoutDashboard },
@@ -25,6 +27,7 @@ const NAV_ITEMS = [
   { href: '/portal-ministro/eventos', label: 'Meus Eventos', icon: Calendar },
   { href: '/portal-ministro/certificados', label: 'Meus Certificados', icon: Award },
   { href: '/portal-ministro/historico', label: 'Histórico', icon: History },
+  { href: '/portal-ministro/impressao', label: '2ª Via Credencial PVC', icon: Award },
 ];
 
 const NAV_PASTOR = {
@@ -42,7 +45,8 @@ export default function PortalMinistroLayout({ children }: { children: React.Rea
 
   const isPublicAuthRoute =
     pathname.startsWith('/portal-ministro/login') ||
-    pathname.startsWith('/portal-ministro/redefinir-senha');
+    pathname.startsWith('/portal-ministro/redefinir-senha') ||
+    pathname.startsWith('/portal-ministro/confirmar-email');
 
   const isAppRoute = pathname.startsWith('/portal-ministro/app');
 
@@ -181,8 +185,23 @@ export default function PortalMinistroLayout({ children }: { children: React.Rea
       </div>
 
       {/* Navegação */}
-      <div className="flex-1 px-3 py-4 overflow-y-auto">
-        {renderNavLinks(onClose)}
+      <div className="flex-1 px-3 py-4 overflow-y-auto space-y-4">
+        <div>
+          <p className="px-4 text-[10px] uppercase font-bold tracking-wider text-blue-200/60 mb-2">Serviços</p>
+          {renderNavLinks(onClose)}
+        </div>
+
+        {/* Atalho para alternar entre Aplicativo Mobile e Portal */}
+        <div className="pt-2 border-t border-white/10">
+          <Link
+            href="/app"
+            onClick={onClose}
+            className="flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-semibold text-amber-300 hover:bg-white/10 transition-all border border-amber-300/30"
+          >
+            <Smartphone size={16} />
+            <span>Abrir Modo Aplicativo</span>
+          </Link>
+        </div>
       </div>
 
       {/* Sair */}
@@ -289,10 +308,16 @@ export default function PortalMinistroLayout({ children }: { children: React.Rea
             </div>
           </header>
 
-          {/* Conteúdo da página */}
-          <main className="flex-1 p-4 md:p-8">
+          {/* Conteúdo da página (com padding inferior no mobile para compensar a bottom nav fixa) */}
+          <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8">
             {children}
           </main>
+
+          {/* Barra de Navegação Inferior Mobile Unificada */}
+          <MinistroBottomNav
+            isPastorPresidente={ministro.isPastorPresidente}
+            onOpenMenu={() => setSidebarOpen(true)}
+          />
         </div>
       </div>
     </MinistroContext.Provider>

@@ -29,13 +29,39 @@ function maskCpf(v: string): string {
   return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
 }
 
+function sanitizeInternalRedirect(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  // Deve começar com '/', não com '//' nem com '/\' para evitar open redirect
+  if (!trimmed.startsWith('/') || trimmed.startsWith('//') || trimmed.startsWith('/\\')) {
+    return null;
+  }
+  // Bloquear redirecionamentos circulares para a própria página de login
+  if (trimmed.startsWith('/portal-ministro/login')) {
+    return null;
+  }
+  return trimmed;
+}
+
+function getResponsivedDefaultDestination(): string {
+  if (typeof window === 'undefined') return '/portal-ministro/dashboard';
+  // Verifica se está rodando instalado como PWA standalone
+  const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
+    (window.navigator as any).standalone === true;
+  // Detecção de largura ou user-agent mobile
+  const isMobileScreen = window.innerWidth < 768;
+  const isMobileUA = /Android|iPhone|iPad|iPod|Mobile|webOS/i.test(navigator.userAgent);
+
+  return (isPWA || isMobileScreen || isMobileUA) ? '/app' : '/portal-ministro/dashboard';
+}
+
 function PortalMinistroLoginForm() {
   const searchParams = useSearchParams();
   const redirectParam = searchParams?.get('redirect');
   const msgParam = searchParams?.get('msg');
   const modoParam = searchParams?.get('modo');
 
-  const targetDestination = redirectParam && redirectParam.startsWith('/') ? redirectParam : '/app';
+  const safeRedirect = sanitizeInternalRedirect(redirectParam);
 
   const [mode, setMode] = useState<Mode>('login');
 
@@ -124,7 +150,8 @@ function PortalMinistroLoginForm() {
         return;
       }
 
-      window.location.href = targetDestination;
+      const destination = safeRedirect || getResponsivedDefaultDestination();
+      window.location.href = destination;
     } catch {
       setErro('Erro de conexão com o servidor. Tente novamente.');
       setLoading(false);

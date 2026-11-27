@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import MinistroPageHeader from '@/components/MinistroPageHeader';
 import {
   IdCard,
   CheckCircle2,
@@ -176,30 +177,22 @@ export default function CentralCredencialPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-12">
 
-      {/* ── TÍTULO DA PÁGINA ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#0D2B4E] text-white flex items-center justify-center shadow-md">
-            <IdCard size={22} />
+      {/* ── TÍTULO DA PÁGINA HARMONIZADO COM NAVEGAÇÃO DE RETORNO ── */}
+      <MinistroPageHeader
+        title="Central de Credencial"
+        subtitle="Documento Oficial de Identificação Ministerial · COMIEADEPA"
+        badge="Identificação Oficial"
+        icon={IdCard}
+        backHref="/app"
+        action={
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-gray-200 shadow-xs">
+            <div className={`w-2.5 h-2.5 rounded-full ${isAtivoMinisterial ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+            <span className="text-xs font-bold text-gray-700">
+              Ministro {statusMinisterial}
+            </span>
           </div>
-          <div>
-            <h1 className="text-2xl font-black text-gray-900 tracking-tight">
-              Central de Credencial
-            </h1>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              Documento Oficial de Identificação Ministerial · COMIEADEPA
-            </p>
-          </div>
-        </div>
-
-        {/* Badge de Status Ministerial Principal */}
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-gray-200 shadow-sm self-start sm:self-auto">
-          <div className={`w-2.5 h-2.5 rounded-full ${isAtivoMinisterial ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
-          <span className="text-xs font-bold text-gray-700">
-            Ministro {statusMinisterial}
-          </span>
-        </div>
-      </div>
+        }
+      />
 
       {/* ── 1. IDENTIFICAÇÃO DO MINISTRO & STATUS DA CREDENCIAL ── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

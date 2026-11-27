@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 const BUCKET = 'eventos-programacoes';
 const MAX_PDF_BYTES = 4 * 1024 * 1024; // 4MB (compatível com limite serverless da Vercel)
 
-export const PLENARIAS_OFICIAIS = [
+const PLENARIAS_OFICIAIS = [
   { key: 'ministros', nome: 'Plenária dos Ministros' },
   { key: 'aemadepa', nome: 'Plenária da AEMADEPA' },
   { key: 'umadespa', nome: 'Plenária da Juventude — UMADESPA' },

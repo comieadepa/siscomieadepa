@@ -1,7 +1,7 @@
 export type EquipeSession = {
   eventoId: string;
   equipeId: string;
-  tipo: 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem';
+  tipo: 'operador' | 'checkin' | 'checkin_refeitorio' | 'hospedagem' | 'checkin_hospedagem' | 'supervisor_descontos';
   expiraEm: string;
   /** E-mail do operador que autenticou (disponível quando login por e-mail) */
   email?: string;
@@ -36,7 +36,7 @@ export function getEquipeSession(): EquipeSession | null {
       return null;
     }
 
-    if (!['operador', 'checkin', 'checkin_refeitorio', 'hospedagem', 'checkin_hospedagem'].includes(parsed.tipo)) {
+    if (!['operador', 'checkin', 'checkin_refeitorio', 'hospedagem', 'checkin_hospedagem', 'supervisor_descontos'].includes(parsed.tipo)) {
       window.localStorage.removeItem(STORAGE_KEY);
       return null;
     }
