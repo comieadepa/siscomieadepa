@@ -27,7 +27,7 @@ export async function POST(
   // Busca a inscrição para obter evento_id e lote_id
   const { data: ins, error: insError } = await supabaseAdmin
     .from('evento_inscricoes')
-    .select('id, evento_id, lote_id, status_pagamento, cpf')
+    .select('id, evento_id, lote_id, status_pagamento, cpf, tipo_inscricao')
     .eq('id', inscricaoId)
     .single();
 
@@ -41,7 +41,7 @@ export async function POST(
 
   // ── Proteção Anti-Duplicidade na Baixa Manual Individual ──
   if (!ins.lote_id && ins.cpf && ins.evento_id) {
-    const checkDup = await verificarInscricaoConfirmadaPorCpf(supabaseAdmin, ins.evento_id, ins.cpf);
+    const checkDup = await verificarInscricaoConfirmadaPorCpf(supabaseAdmin, ins.evento_id, ins.cpf, ins.tipo_inscricao);
     if (!checkDup.permitido) {
       return NextResponse.json({ error: MSG_INSCRICAO_CONFIRMADA }, { status: 409 });
     }

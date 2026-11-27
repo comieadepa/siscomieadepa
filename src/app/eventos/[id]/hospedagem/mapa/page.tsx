@@ -19,6 +19,7 @@ interface Alojamento {
   total_leitos_fisicos?: number;
   vagas_livres?: number;
   ocupadas?: number;
+  is_emergencial?: boolean;
 }
 
 interface ParticipanteInfo {
@@ -51,6 +52,7 @@ interface LeitoItem {
   tipo_leito: string;
   ocupado: boolean;
   indisponivel?: boolean;
+  is_emergencial?: boolean;
   alojamento_id: string;
   inscricao_id: string | null;
   participante?: ParticipanteInfo | null;
@@ -93,7 +95,7 @@ export default function MapaCheckinMobilePage() {
 
   // Filtros de visualização mobile
   const [filtroEstado, setFiltroEstado] = useState<'todos' | 'livre' | 'reservado' | 'entrada' | 'saida' | 'comorbidade'>('todos');
-  const [filtroPosicao, setFiltroPosicao] = useState<'todas' | 'inferior' | 'superior' | 'colchonete'>('todas');
+  const [filtroPosicao, setFiltroPosicao] = useState<'todas' | 'inferior' | 'superior' | 'colchonete' | 'emergencial'>('todas');
   const [buscaTermo, setBuscaTermo] = useState('');
 
   // Ficha Mobile do Participante (Drawer/Modal)
@@ -103,6 +105,34 @@ export default function MapaCheckinMobilePage() {
   const [confirmandoOperacao, setConfirmandoOperacao] = useState(false);
   const [modalConfirmacaoSaida, setModalConfirmacaoSaida] = useState(false);
   const [feedbackMensagem, setFeedbackMensagem] = useState<{ tipo: 'sucesso' | 'erro' | 'aviso'; texto: string } | null>(null);
+
+  // Estados dos Modais de Hospedagem Emergencial (Exclusivo Administrador)
+  const [modalCriarAlojEmergencial, setModalCriarAlojEmergencial] = useState(false);
+  const [modalAdicionarLeitosEmergenciais, setModalAdicionarLeitosEmergenciais] = useState(false);
+  const [modalAlocarEmergencial, setModalAlocarEmergencial] = useState(false);
+  const [processandoEmergencial, setProcessandoEmergencial] = useState(false);
+
+  // Form states para criação de Alojamento Emergencial
+  const [formAlojNome, setFormAlojNome] = useState('');
+  const [formAlojSexo, setFormAlojSexo] = useState<'M' | 'F' | 'MISTO'>('MISTO');
+  const [formAlojPublico, setFormAlojPublico] = useState('CONTINGÊNCIA ADMINISTRATIVA');
+  const [formAlojInf, setFormAlojInf] = useState(0);
+  const [formAlojSup, setFormAlojSup] = useState(0);
+  const [formAlojColch, setFormAlojColch] = useState(0);
+  const [formAlojPrefixo, setFormAlojPrefixo] = useState('E');
+
+  // Form states para adição de Leitos Emergenciais ao alojamento ativo
+  const [formLeitoInf, setFormLeitoInf] = useState(0);
+  const [formLeitoSup, setFormLeitoSup] = useState(0);
+  const [formLeitoColch, setFormLeitoColch] = useState(0);
+  const [formLeitoPrefixo, setFormLeitoPrefixo] = useState('E');
+
+  // Form states para alocação manual no leito emergencial
+  const [buscaInscricaoEmergencial, setBuscaInscricaoEmergencial] = useState('');
+  const [inscricoesEncontradas, setInscricoesEncontradas] = useState<any[]>([]);
+  const [buscandoInscricoes, setBuscandoInscricoes] = useState(false);
+  const [inscricaoSelecionadaAlocar, setInscricaoSelecionadaAlocar] = useState<any | null>(null);
+  const [obsAlocacaoEmergencial, setObsAlocacaoEmergencial] = useState('');
 
   // Perfil de acesso operacional derivado da sessão legítima ou admin global
   const isPerfilAdminHospedagem = isAdminGeral || equipeSessao?.tipo === 'hospedagem';
@@ -315,6 +345,13 @@ export default function MapaCheckinMobilePage() {
           estado = 'livre';
         }
 
+        // Identifica se o leito é emergencial
+        const isEmerg = Boolean(
+          l.is_emergencial === true ||
+          (l.numero && String(l.numero).toUpperCase().startsWith('E')) ||
+          (l.evento_alojamentos?.nome && String(l.evento_alojamentos.nome).includes('[EMERGENCIAL]'))
+        );
+
         return {
           id: l.id,
           numero: String(l.numero || '000'),
@@ -322,6 +359,7 @@ export default function MapaCheckinMobilePage() {
           tipo_leito: l.tipo_leito || 'beliche',
           ocupado: Boolean(l.ocupado && l.inscricao_id),
           indisponivel: isExcedente,
+          is_emergencial: isEmerg,
           alojamento_id: l.alojamento_id,
           inscricao_id: l.inscricao_id,
           participante: insc,
@@ -359,6 +397,7 @@ export default function MapaCheckinMobilePage() {
         total_leitos_fisicos: countsMap.get(a.id) || 0,
         vagas_livres: a.vagas_livres !== undefined ? Number(a.vagas_livres) : Math.max(0, a.total_vagas - (countsMap.get(a.id) || 0)),
         ocupadas: a.ocupadas !== undefined ? Number(a.ocupadas) : (countsMap.get(a.id) || 0),
+        is_emergencial: Boolean(a.is_emergencial || (a.nome && a.nome.includes('[EMERGENCIAL]'))),
       }));
 
       setAlojamentos(alojsFormatados);
@@ -406,6 +445,8 @@ export default function MapaCheckinMobilePage() {
     const indisponiveis = leitosDoAlojamentoAtivo.filter(l => l.estadoCheckin === 'indisponivel').length;
     const totalFisico = leitosDoAlojamentoAtivo.length;
     const comorbidades = leitosDoAlojamentoAtivo.filter(l => Boolean(l.ocupado && l.participante?.hosp_possui_comorbidade)).length;
+    const leitosEmergenciais = leitosDoAlojamentoAtivo.filter(l => l.is_emergencial).length;
+    const leitosEmergenciaisLivres = leitosDoAlojamentoAtivo.filter(l => l.is_emergencial && l.estadoCheckin === 'livre').length;
 
     // Capacidade oficial SSOT do alojamento ativo
     const capOficial = alojamentoAtivo?.total_vagas ?? operacionais;
@@ -426,6 +467,8 @@ export default function MapaCheckinMobilePage() {
       ocupadosReais,
       leitosLivresFisicos,
       comorbidades,
+      leitosEmergenciais,
+      leitosEmergenciaisLivres,
     };
   }, [leitosDoAlojamentoAtivo, alojamentoAtivo]);
 
@@ -443,6 +486,7 @@ export default function MapaCheckinMobilePage() {
       if (filtroPosicao === 'inferior' && l.posicao !== 'inferior') return false;
       if (filtroPosicao === 'superior' && l.posicao !== 'superior') return false;
       if (filtroPosicao === 'colchonete' && l.tipo_leito !== 'colchonete' && l.posicao !== 'colchonete') return false;
+      if (filtroPosicao === 'emergencial' && !l.is_emergencial) return false;
 
       // Busca por número ou nome
       if (buscaTermo.trim()) {
@@ -562,6 +606,216 @@ export default function MapaCheckinMobilePage() {
       msg = `Para ${acao.toLowerCase()}, utilize o gerenciador avançado de hospedagem no painel do evento.`;
     }
     setFeedbackMensagem({ tipo: 'aviso', texto: msg });
+  }
+
+  // ─── Ações de Contingência e Gestão Emergencial ───────────────────────────
+  async function handleCriarAlojamentoEmergencial(e: React.FormEvent) {
+    e.preventDefault();
+    if (!formAlojNome.trim()) {
+      setFeedbackMensagem({ tipo: 'erro', texto: 'Informe o nome do alojamento emergencial.' });
+      return;
+    }
+    const total = Number(formAlojInf) + Number(formAlojSup) + Number(formAlojColch);
+    if (total <= 0) {
+      setFeedbackMensagem({ tipo: 'erro', texto: 'Informe ao menos 1 leito ou colchonete.' });
+      return;
+    }
+
+    setProcessandoEmergencial(true);
+    setFeedbackMensagem(null);
+
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (equipeSessao?.equipeId) headers['x-evento-equipe-id'] = equipeSessao.equipeId;
+
+      if (isAdminGeral) {
+        try {
+          const { createClient } = await import('@/lib/supabase-client');
+          const supabase = createClient();
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+        } catch {}
+      }
+
+      const res = await fetch(`/api/eventos/${eventoId}/hospedagens/emergencial/alojamento`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          nome: formAlojNome.trim(),
+          sexo: formAlojSexo,
+          publico: formAlojPublico.trim(),
+          camas_inferiores: formAlojInf,
+          camas_superiores: formAlojSup,
+          colchonetes: formAlojColch,
+          prefixo_leito: formAlojPrefixo || 'E',
+        }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Erro ao criar alojamento emergencial.');
+
+      setFeedbackMensagem({
+        tipo: 'sucesso',
+        texto: `🎉 Alojamento Emergencial criado com sucesso com ${json.leitos_criados || total} leitos!`,
+      });
+
+      setModalCriarAlojEmergencial(false);
+      setFormAlojNome('');
+      setFormAlojInf(0);
+      setFormAlojSup(0);
+      setFormAlojColch(0);
+
+      await carregarDadosCompletos();
+    } catch (err: any) {
+      setFeedbackMensagem({ tipo: 'erro', texto: err.message || 'Erro ao criar alojamento emergencial.' });
+    } finally {
+      setProcessandoEmergencial(false);
+    }
+  }
+
+  async function handleAdicionarLeitosEmergenciais(e: React.FormEvent) {
+    e.preventDefault();
+    if (!alojamentoAtivo?.id) {
+      setFeedbackMensagem({ tipo: 'erro', texto: 'Nenhum alojamento selecionado.' });
+      return;
+    }
+    const total = Number(formLeitoInf) + Number(formLeitoSup) + Number(formLeitoColch);
+    if (total <= 0) {
+      setFeedbackMensagem({ tipo: 'erro', texto: 'Informe ao menos 1 leito para adicionar.' });
+      return;
+    }
+
+    setProcessandoEmergencial(true);
+    setFeedbackMensagem(null);
+
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (equipeSessao?.equipeId) headers['x-evento-equipe-id'] = equipeSessao.equipeId;
+
+      if (isAdminGeral) {
+        try {
+          const { createClient } = await import('@/lib/supabase-client');
+          const supabase = createClient();
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+        } catch {}
+      }
+
+      const res = await fetch(`/api/eventos/${eventoId}/hospedagens/emergencial/leitos`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          alojamento_id: alojamentoAtivo.id,
+          camas_inferiores: formLeitoInf,
+          camas_superiores: formLeitoSup,
+          colchonetes: formLeitoColch,
+          prefixo_leito: formLeitoPrefixo || 'E',
+        }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Erro ao adicionar leitos emergenciais.');
+
+      setFeedbackMensagem({
+        tipo: 'sucesso',
+        texto: `🎉 ${json.adicionados || total} leitos emergenciais adicionados com sucesso ao ${alojamentoAtivo.nome}!`,
+      });
+
+      setModalAdicionarLeitosEmergenciais(false);
+      setFormLeitoInf(0);
+      setFormLeitoSup(0);
+      setFormLeitoColch(0);
+
+      await carregarDadosCompletos();
+    } catch (err: any) {
+      setFeedbackMensagem({ tipo: 'erro', texto: err.message || 'Erro ao adicionar leitos emergenciais.' });
+    } finally {
+      setProcessandoEmergencial(false);
+    }
+  }
+
+  async function buscarParticipantesParaAlocacao(termo: string) {
+    if (!termo.trim() || termo.trim().length < 3) {
+      setInscricoesEncontradas([]);
+      return;
+    }
+    setBuscandoInscricoes(true);
+    try {
+      const headers: Record<string, string> = {};
+      if (equipeSessao?.equipeId) headers['x-evento-equipe-id'] = equipeSessao.equipeId;
+
+      if (isAdminGeral) {
+        try {
+          const { createClient } = await import('@/lib/supabase-client');
+          const supabase = createClient();
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+        } catch {}
+      }
+
+      const res = await fetch(`/api/eventos/${eventoId}/hospedagens/buscar-inscricao?q=${encodeURIComponent(termo.trim())}`, {
+        headers,
+      });
+      const json = await res.json().catch(() => ({}));
+      setInscricoesEncontradas(json.inscricoes || []);
+    } catch (err) {
+      console.error('Erro ao buscar inscricoes:', err);
+    } finally {
+      setBuscandoInscricoes(false);
+    }
+  }
+
+  async function handleConfirmarAlocacaoEmergencial() {
+    if (!leitoSelecionado?.id || !inscricaoSelecionadaAlocar?.id) {
+      setFeedbackMensagem({ tipo: 'erro', texto: 'Selecione um participante para alocar.' });
+      return;
+    }
+
+    setProcessandoEmergencial(true);
+    setFeedbackMensagem(null);
+
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (equipeSessao?.equipeId) headers['x-evento-equipe-id'] = equipeSessao.equipeId;
+
+      if (isAdminGeral) {
+        try {
+          const { createClient } = await import('@/lib/supabase-client');
+          const supabase = createClient();
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+        } catch {}
+      }
+
+      const res = await fetch(`/api/eventos/${eventoId}/hospedagens/emergencial/alocar`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          inscricao_id: inscricaoSelecionadaAlocar.id,
+          leito_id: leitoSelecionado.id,
+          observacao: obsAlocacaoEmergencial,
+        }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Erro ao realizar alocação emergencial.');
+
+      setFeedbackMensagem({
+        tipo: 'sucesso',
+        texto: `✅ Participante ${inscricaoSelecionadaAlocar.nome_inscrito} alocado no Leito ${leitoSelecionado.numero}!`,
+      });
+
+      setModalAlocarEmergencial(false);
+      setInscricaoSelecionadaAlocar(null);
+      setObsAlocacaoEmergencial('');
+      setLeitoSelecionado(null);
+
+      await carregarDadosCompletos();
+    } catch (err: any) {
+      setFeedbackMensagem({ tipo: 'erro', texto: err.message || 'Erro ao alocar participante no leito emergencial.' });
+    } finally {
+      setProcessandoEmergencial(false);
+    }
   }
 
   // ─── TELA DE CARREGAMENTO INICIAL ─────────────────────────────────────────
@@ -732,6 +986,43 @@ export default function MapaCheckinMobilePage() {
         </div>
       )}
 
+      {/* ── Barra de Ações Emergenciais (Exclusivo Administrador/Coordenação) ── */}
+      {isPerfilAdminHospedagem && (
+        <section className="bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-200 px-4 py-2.5 shadow-xs">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1">
+              <span>🚨</span>
+              <span>Gestão Emergencial (Contingência)</span>
+            </span>
+            <span className="text-[10px] font-bold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-full border border-amber-300">
+              {statsAlojamento.leitosEmergenciais > 0
+                ? `${statsAlojamento.leitosEmergenciaisLivres} / ${statsAlojamento.leitosEmergenciais} livres`
+                : 'Sem emergencial ativo'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setModalCriarAlojEmergencial(true)}
+              className="py-2 px-2.5 bg-amber-600 hover:bg-amber-700 active:scale-98 text-white rounded-xl text-[11px] font-black flex items-center justify-center gap-1.5 shadow-sm transition"
+            >
+              <span>➕</span>
+              <span className="truncate">Novo Aloj. Emergencial</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setModalAdicionarLeitosEmergenciais(true)}
+              className="py-2 px-2.5 bg-orange-600 hover:bg-orange-700 active:scale-98 text-white rounded-xl text-[11px] font-black flex items-center justify-center gap-1.5 shadow-sm transition"
+            >
+              <span>🛏️</span>
+              <span className="truncate">Add Leitos Emergenciais</span>
+            </button>
+          </div>
+        </section>
+      )}
+
       {/* ── Seletor Suspenso Exclusivo dos Cinco Alojamentos Reais do Banco ── */}
       <section className="bg-white border-b border-gray-200 px-4 py-2.5 shadow-sm">
         <label htmlFor="select-alojamento" className="block text-[10px] font-black uppercase tracking-wider text-gray-500 mb-1">
@@ -775,6 +1066,19 @@ export default function MapaCheckinMobilePage() {
             Inventário: {statsAlojamento.totalFisico} físicos cadastrados ({statsAlojamento.leitosLivresFisicos} livres)
           </span>
         </div>
+
+        {/* Separação de Capacidade Oficial vs Capacidade Emergencial */}
+        {statsAlojamento.leitosEmergenciais > 0 && (
+          <div className="flex items-center justify-between bg-orange-50 border border-orange-200 rounded-lg px-2.5 py-1 text-[11px]">
+            <span className="font-bold text-orange-900 flex items-center gap-1">
+              <span>🚨</span>
+              <span>Capacidade Emergencial Exclusiva:</span>
+            </span>
+            <span className="font-black text-orange-950">
+              {statsAlojamento.leitosEmergenciais} leitos ({statsAlojamento.leitosEmergenciaisLivres} livres)
+            </span>
+          </div>
+        )}
 
         {/* Grade de Legenda com contadores reais */}
         <div className="grid grid-cols-5 gap-1.5">
@@ -859,6 +1163,7 @@ export default function MapaCheckinMobilePage() {
             <option value="inferior">⬇ Inferiores</option>
             <option value="superior">⬆ Superiores</option>
             <option value="colchonete">🛏️ Colchonetes</option>
+            <option value="emergencial">🚨 Emergenciais</option>
           </select>
         </div>
 
@@ -924,6 +1229,9 @@ export default function MapaCheckinMobilePage() {
               if (temComorbidade) {
                 // Card Vermelho para destacar atenção especial da equipe de acolhimento
                 cardStyle = 'bg-red-600 border-2 border-red-700 text-white shadow-md active:bg-red-700 ring-2 ring-red-400/50';
+              } else if (leito.is_emergencial && leito.estadoCheckin === 'livre') {
+                // Identificação visual laranja-claro dos leitos emergenciais livres
+                cardStyle = 'bg-orange-100 hover:bg-orange-200 border-2 border-orange-400 text-orange-950 shadow-sm active:bg-orange-300 ring-1 ring-orange-300';
               } else if (leito.estadoCheckin === 'indisponivel') {
                 cardStyle = 'bg-gray-100 border-2 border-dashed border-gray-300 text-gray-400 shadow-none opacity-60';
               } else if (leito.estadoCheckin === 'livre') {
@@ -1037,12 +1345,36 @@ export default function MapaCheckinMobilePage() {
                 </p>
               </div>
             ) : leitoSelecionado.estadoCheckin === 'livre' ? (
-              <div className="p-4 bg-gray-50 rounded-2xl text-center space-y-2 border border-dashed border-gray-300">
-                <div className="text-2xl">🟢</div>
-                <p className="text-sm font-bold text-gray-800">Leito Físico Livre</p>
-                <p className="text-xs text-gray-500">
-                  Este leito está cadastrado e disponível para alocação no {alojamentoAtivo?.nome}.
-                </p>
+              <div className="p-4 bg-gray-50 rounded-2xl text-center space-y-3 border border-dashed border-gray-300">
+                <div className="text-2xl">{leitoSelecionado.is_emergencial ? '🚨' : '🟢'}</div>
+                <div>
+                  <p className="text-sm font-bold text-gray-800">
+                    {leitoSelecionado.is_emergencial ? 'Leito Emergencial Livre (Contingência)' : 'Leito Físico Livre'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {leitoSelecionado.is_emergencial
+                      ? `Leito reservado exclusivamente para alocação manual administrativa em situações emergenciais no ${alojamentoAtivo?.nome}.`
+                      : `Este leito está cadastrado e disponível para alocação no ${alojamentoAtivo?.nome}.`}
+                  </p>
+                </div>
+
+                {isPerfilAdminHospedagem && (
+                  <div className="pt-2 border-t border-gray-200">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInscricaoSelecionadaAlocar(null);
+                        setBuscaInscricaoEmergencial('');
+                        setInscricoesEncontradas([]);
+                        setModalAlocarEmergencial(true);
+                      }}
+                      className="w-full py-2.5 px-4 bg-orange-600 hover:bg-orange-700 active:scale-98 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 shadow-sm transition"
+                    >
+                      <span>👤</span>
+                      <span>Alocar Participante Neste Leito</span>
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-3.5">
@@ -1275,6 +1607,361 @@ export default function MapaCheckinMobilePage() {
               >
                 {confirmandoOperacao ? 'Registrando...' : 'Confirmar Saída'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL 1: CRIAR ALOJAMENTO EMERGENCIAL ── */}
+      {modalCriarAlojEmergencial && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl shadow-2xl p-5 max-w-sm sm:max-w-md w-full space-y-4 animate-scale-up max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">🚨</span>
+                <div>
+                  <h3 className="text-base font-black text-gray-900 leading-tight">Novo Alojamento Emergencial</h3>
+                  <p className="text-[10px] text-gray-500">Contingência e acolhimento administrativo</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalCriarAlojEmergencial(false)}
+                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 flex items-center justify-center font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCriarAlojamentoEmergencial} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                  Nome do Alojamento <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formAlojNome}
+                  onChange={e => setFormAlojNome(e.target.value)}
+                  placeholder="Ex: ANEXO GINÁSIO / SALA PASTORAL"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl font-bold uppercase focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-1">Sexo Permitido</label>
+                  <select
+                    value={formAlojSexo}
+                    onChange={e => setFormAlojSexo(e.target.value as any)}
+                    className="w-full px-2.5 py-2 border border-gray-300 rounded-xl font-semibold bg-gray-50 focus:outline-none"
+                  >
+                    <option value="MISTO">Misto / Contingência</option>
+                    <option value="M">Masculino</option>
+                    <option value="F">Feminino</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-1">Prefixo dos Leitos</label>
+                  <input
+                    type="text"
+                    maxLength={3}
+                    value={formAlojPrefixo}
+                    onChange={e => setFormAlojPrefixo(e.target.value.toUpperCase())}
+                    placeholder="E"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl font-black uppercase text-center focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-gray-700 mb-1">Público / Grupo Elegível</label>
+                <input
+                  type="text"
+                  value={formAlojPublico}
+                  onChange={e => setFormAlojPublico(e.target.value)}
+                  placeholder="CONTINGÊNCIA ADMINISTRATIVA"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl font-semibold uppercase focus:outline-none"
+                />
+              </div>
+
+              {/* Quantitativo de leitos */}
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 space-y-2">
+                <span className="text-[11px] font-black uppercase tracking-wider text-amber-950 block">
+                  Quantitativo de Leitos Iniciais
+                </span>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-600 mb-0.5">↓ Inferiores</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={formAlojInf}
+                      onChange={e => setFormAlojInf(parseInt(e.target.value, 10) || 0)}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-center font-black bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-600 mb-0.5">↑ Superiores</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={formAlojSup}
+                      onChange={e => setFormAlojSup(parseInt(e.target.value, 10) || 0)}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-center font-black bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-600 mb-0.5">🛏️ Colchonetes</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={formAlojColch}
+                      onChange={e => setFormAlojColch(parseInt(e.target.value, 10) || 0)}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-center font-black bg-white"
+                    />
+                  </div>
+                </div>
+                <div className="text-right text-[11px] font-bold text-amber-900 pt-1">
+                  Total de Vagas: <span className="font-black text-sm">{Number(formAlojInf) + Number(formAlojSup) + Number(formAlojColch)}</span>
+                </div>
+              </div>
+
+              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-[10px] text-blue-900 font-medium">
+                🔒 <strong>Isolamento Garantido:</strong> Este alojamento não altera a disponibilidade comercial pública e os leitos serão reservados exclusivamente para alocação manual administrativa.
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100">
+                <button
+                  type="button"
+                  disabled={processandoEmergencial}
+                  onClick={() => setModalCriarAlojEmergencial(false)}
+                  className="w-full py-2.5 px-3 rounded-xl border border-gray-300 text-gray-700 font-bold text-xs hover:bg-gray-100 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={processandoEmergencial}
+                  className="w-full py-2.5 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 active:scale-98 disabled:opacity-50 text-white font-bold text-xs transition shadow-sm"
+                >
+                  {processandoEmergencial ? 'Criando...' : 'Criar Alojamento'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL 2: ADICIONAR LEITOS EMERGENCIAIS AO ALOJAMENTO ATIVO ── */}
+      {modalAdicionarLeitosEmergenciais && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl shadow-2xl p-5 max-w-sm sm:max-w-md w-full space-y-4 animate-scale-up max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">🛏️</span>
+                <div>
+                  <h3 className="text-base font-black text-gray-900 leading-tight">Adicionar Leitos Emergenciais</h3>
+                  <p className="text-[10px] text-gray-500">Destino: <strong className="text-gray-900">{alojamentoAtivo?.nome || 'Alojamento'}</strong></p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalAdicionarLeitosEmergenciais(false)}
+                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 flex items-center justify-center font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleAdicionarLeitosEmergenciais} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-[11px] font-bold text-gray-700 mb-1">Prefixo da Numeração</label>
+                <input
+                  type="text"
+                  maxLength={3}
+                  value={formLeitoPrefixo}
+                  onChange={e => setFormLeitoPrefixo(e.target.value.toUpperCase())}
+                  placeholder="E"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl font-black uppercase text-center focus:outline-none"
+                />
+                <span className="text-[10px] text-gray-400 mt-0.5 block text-center">
+                  Gera numerações como {formLeitoPrefixo || 'E'}001, {formLeitoPrefixo || 'E'}002 sem colidir com leitos existentes
+                </span>
+              </div>
+
+              {/* Quantitativo */}
+              <div className="bg-orange-50 border border-orange-200 rounded-2xl p-3 space-y-2">
+                <span className="text-[11px] font-black uppercase tracking-wider text-orange-950 block">
+                  Quantidade a Acrescentar
+                </span>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-600 mb-0.5">↓ Inferiores</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={formLeitoInf}
+                      onChange={e => setFormLeitoInf(parseInt(e.target.value, 10) || 0)}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-center font-black bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-600 mb-0.5">↑ Superiores</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={formLeitoSup}
+                      onChange={e => setFormLeitoSup(parseInt(e.target.value, 10) || 0)}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-center font-black bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-600 mb-0.5">🛏️ Colchonetes</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={formLeitoColch}
+                      onChange={e => setFormLeitoColch(parseInt(e.target.value, 10) || 0)}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-center font-black bg-white"
+                    />
+                  </div>
+                </div>
+                <div className="text-right text-[11px] font-bold text-orange-900 pt-1">
+                  Novos Leitos: <span className="font-black text-sm">{Number(formLeitoInf) + Number(formLeitoSup) + Number(formLeitoColch)}</span>
+                </div>
+              </div>
+
+              <div className="p-2.5 bg-orange-100/70 border border-orange-300 rounded-xl text-[10px] text-orange-950 font-medium">
+                💡 <strong>Destaque Visual Laranja-Claro:</strong> Os novos leitos aparecerão no mapa com fundo laranja-claro e indicação emergencial, disponíveis imediatamente para alocação manual dos administradores.
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100">
+                <button
+                  type="button"
+                  disabled={processandoEmergencial}
+                  onClick={() => setModalAdicionarLeitosEmergenciais(false)}
+                  className="w-full py-2.5 px-3 rounded-xl border border-gray-300 text-gray-700 font-bold text-xs hover:bg-gray-100 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={processandoEmergencial}
+                  className="w-full py-2.5 px-3 rounded-xl bg-orange-600 hover:bg-orange-700 active:scale-98 disabled:opacity-50 text-white font-bold text-xs transition shadow-sm"
+                >
+                  {processandoEmergencial ? 'Adicionando...' : 'Adicionar Leitos'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL 3: ALOCAR PARTICIPANTE NO LEITO EMERGENCIAL ── */}
+      {modalAlocarEmergencial && leitoSelecionado && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl shadow-2xl p-5 max-w-sm sm:max-w-md w-full space-y-4 animate-scale-up max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">👤</span>
+                <div>
+                  <h3 className="text-base font-black text-gray-900 leading-tight">Alocação no Leito Emergencial</h3>
+                  <p className="text-[10px] text-gray-500">Leito <strong>{leitoSelecionado.numero}</strong> • {alojamentoAtivo?.nome}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalAlocarEmergencial(false)}
+                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 flex items-center justify-center font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                  Buscar Participante Confirmado (Nome ou CPF)
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={buscaInscricaoEmergencial}
+                    onChange={e => {
+                      setBuscaInscricaoEmergencial(e.target.value);
+                      buscarParticipantesParaAlocacao(e.target.value);
+                    }}
+                    placeholder="Digite ao menos 3 letras ou CPF..."
+                    className="w-full pl-3 pr-8 py-2 border border-gray-300 rounded-xl font-medium focus:ring-2 focus:ring-orange-500 focus:outline-none"
+                  />
+                  {buscandoInscricoes && (
+                    <span className="absolute right-3 top-2.5 text-xs animate-spin">⏳</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Lista de participantes encontrados */}
+              {inscricoesEncontradas.length > 0 && (
+                <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-xl divide-y divide-gray-100 bg-gray-50">
+                  {inscricoesEncontradas.map(insc => (
+                    <button
+                      key={insc.id}
+                      type="button"
+                      onClick={() => setInscricaoSelecionadaAlocar(insc)}
+                      className={`w-full p-2.5 text-left text-xs transition flex flex-col ${
+                        inscricaoSelecionadaAlocar?.id === insc.id ? 'bg-orange-100 font-bold border-l-4 border-orange-600' : 'hover:bg-gray-100'
+                      }`}
+                    >
+                      <span className="font-black text-gray-900">{insc.nome_inscrito}</span>
+                      <span className="text-[10px] text-gray-500">
+                        CPF: {insc.cpf || 'Não inf.'} • {insc.tipo_inscricao || 'Participante'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {inscricaoSelecionadaAlocar && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1">
+                  <span className="text-[10px] font-bold uppercase text-emerald-800 block">Participante Selecionado:</span>
+                  <p className="font-black text-emerald-950 text-sm">{inscricaoSelecionadaAlocar.nome_inscrito}</p>
+                  <p className="text-[11px] text-emerald-800">
+                    CPF: {inscricaoSelecionadaAlocar.cpf || 'Não inf.'} • Categoria: {inscricaoSelecionadaAlocar.tipo_inscricao || 'Geral'}
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[11px] font-bold text-gray-700 mb-1">Observações da Alocação</label>
+                <input
+                  type="text"
+                  value={obsAlocacaoEmergencial}
+                  onChange={e => setObsAlocacaoEmergencial(e.target.value)}
+                  placeholder="Ex: Acolhimento especial, autorização da coordenação"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100">
+                <button
+                  type="button"
+                  disabled={processandoEmergencial}
+                  onClick={() => setModalAlocarEmergencial(false)}
+                  className="w-full py-2.5 px-3 rounded-xl border border-gray-300 text-gray-700 font-bold text-xs hover:bg-gray-100 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={processandoEmergencial || !inscricaoSelecionadaAlocar}
+                  onClick={handleConfirmarAlocacaoEmergencial}
+                  className="w-full py-2.5 px-3 rounded-xl bg-orange-600 hover:bg-orange-700 active:scale-98 disabled:opacity-50 text-white font-bold text-xs transition shadow-sm"
+                >
+                  {processandoEmergencial ? 'Alocando...' : 'Confirmar Alocação'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

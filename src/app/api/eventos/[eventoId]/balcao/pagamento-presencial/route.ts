@@ -51,7 +51,7 @@ export async function POST(
 
   // ── Proteção Anti-Duplicidade por CPF no Pagamento Presencial ──
   if (ins.cpf) {
-    const checkDup = await verificarInscricaoConfirmadaPorCpf(supabase, eventoId, ins.cpf);
+    const checkDup = await verificarInscricaoConfirmadaPorCpf(supabase, eventoId, ins.cpf, ins.tipo_inscricao);
     if (!checkDup.permitido) {
       return NextResponse.json({ error: MSG_INSCRICAO_CONFIRMADA }, { status: 409 });
     }

@@ -394,11 +394,28 @@ export async function POST(
     // CPF limpo
     const cpfLimpo = cpf ? String(cpf).replace(/\D/g, '') : null;
 
+    // Blindagem de Duplicação de Hospedagem (Exceção de CPF na 126ª AGO)
+    // Se o participante já tiver hospedagem concedida/solicitada em outra inscrição do mesmo evento,
+    // não duplicar alocação de leito nem gerar leito duplo.
+    let permitirHospedagemNova = !!hospedagem;
+    if (permitirHospedagemNova && cpfLimpo && (evento as any).departamento === 'AGO') {
+      const { data: hospExistente } = await supabase
+        .from('evento_hospedagens')
+        .select('id, inscricao_id, evento_inscricoes!inner(cpf)')
+        .eq('evento_id', eventoId)
+        .eq('evento_inscricoes.cpf', cpfLimpo)
+        .limit(1);
+
+      if (hospExistente && hospExistente.length > 0) {
+        permitirHospedagemNova = false;
+      }
+    }
+
     // ── Validação Anti-Duplicidade por CPF no Balcão (Regra Definitiva) ──
-    const checkCpfBalcao = await verificarInscricaoConfirmadaPorCpf(supabase, eventoId, String(cpf ?? ''));
+    const checkCpfBalcao = await verificarInscricaoConfirmadaPorCpf(supabase, eventoId, String(cpf ?? ''), tipoNome);
     if (!checkCpfBalcao.permitido) {
       return NextResponse.json(
-        { error: MSG_INSCRICAO_CONFIRMADA },
+        { error: checkCpfBalcao.mensagem || MSG_INSCRICAO_CONFIRMADA },
         { status: 409 },
       );
     }
@@ -1405,7 +1422,7 @@ export async function POST(
       data_nascimento:  data_nascimento || null,
       supervisao_id:    supervisao_id || null,
       campo_id:         campo_id || null,
-      hospedagem:       !!hospedagem,
+      hospedagem:       permitirHospedagemNova,
       alimentacao:      incluiAlimentacao,
       brinde:           !!brinde,
       tipo_inscricao:   tipoNome,
@@ -1508,7 +1525,7 @@ export async function POST(
     }
 
     // Hospedagem AGO
-    if (!!hospedagem && (evento as any).departamento === 'AGO') {
+    if (permitirHospedagemNova && (evento as any).departamento === 'AGO') {
       const prioridade = calcularPrioridadeHospedagem({
         id:                         inscricaoId,
         nome_inscrito:              String(nome_inscrito).trim(),
@@ -1638,7 +1655,7 @@ export async function POST(
     }
 
     if ((statusPag as string) === 'pago' || (statusPag as string) === 'isento') {
-      if ((evento as any).departamento === 'AGO' && !!hospedagem) {
+      if ((evento as any).departamento === 'AGO' && permitirHospedagemNova) {
         await alocarLeitoParaInscricao(supabase, inscricaoId);
       }
     }

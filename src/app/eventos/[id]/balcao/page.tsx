@@ -293,7 +293,7 @@ export default function BalcaoPage() {
   const [ministroEncontrado, setMinistroEncontrado] = useState(false);
   const [nomeMinistro, setNomeMinistro] = useState('');
   // Alerta de CPF já inscrito neste evento
-  const [inscricaoDuplicada, setInscricaoDuplicada] = useState<{ id: string; nome: string } | null>(null);
+  const [inscricaoDuplicada, setInscricaoDuplicada] = useState<{ id: string; nome: string; tipo_inscricao?: string | null; status_pagamento?: string | null } | null>(null);
   const [ministroInfo,             setMinistroInfo]             = useState<MinistroInfo | null>(null);
   const [esposaJubiladoAuto, setEsposaJubiladoAuto] = useState<{ ministroId: string | null; ministroNome: string | null } | null>(null);
   const [aemadepaInfo, setAemadepaInfo] = useState<any | null>(null);
@@ -1070,18 +1070,23 @@ export default function BalcaoPage() {
       cpfLimpo
         ? supabase
             .from('evento_inscricoes')
-            .select('id,nome_inscrito')
+            .select('id,nome_inscrito,tipo_inscricao,status_pagamento')
             .eq('evento_id', id)
             .or('cpf.eq.' + cpfLimpo + ',cpf.eq.' + formatCpf(cpfLimpo))
             .limit(1)
-        : Promise.resolve({ data: [] as { id: string; nome_inscrito: string }[] }),
+        : Promise.resolve({ data: [] as { id: string; nome_inscrito: string; tipo_inscricao?: string | null; status_pagamento?: string | null }[] }),
     ]);
     const lookupJson = lookupRes.ok ? await lookupRes.json().catch(() => null as any) : null;
-    const dupData = (dupRes as { data?: { id: string; nome_inscrito: string }[] }).data ?? [];
+    const dupData = (dupRes as { data?: { id: string; nome_inscrito: string; tipo_inscricao?: string | null; status_pagamento?: string | null }[] }).data ?? [];
     setBuscando(false);
 
     if (dupData && Array.isArray(dupData) && dupData.length > 0) {
-      setInscricaoDuplicada({ id: dupData[0].id, nome: dupData[0].nome_inscrito });
+      setInscricaoDuplicada({
+        id: dupData[0].id,
+        nome: dupData[0].nome_inscrito,
+        tipo_inscricao: dupData[0].tipo_inscricao,
+        status_pagamento: dupData[0].status_pagamento,
+      });
     }
 
     if (usePublicEndpoint) {
@@ -2661,13 +2666,35 @@ export default function BalcaoPage() {
 
             {/* Alerta de CPF já inscrito neste evento */}
             {inscricaoDuplicada && (
-              <div className="mt-3 bg-amber-900/70 border-2 border-amber-500/60 rounded-xl px-4 py-3 flex items-start gap-3">
-                <span className="text-2xl flex-shrink-0">⚠️</span>
+              <div className={`mt-3 border-2 rounded-xl px-4 py-3 flex items-start gap-3 ${
+                (inscricaoDuplicada.tipo_inscricao || '').toUpperCase().includes('EQUIPE')
+                  ? 'bg-blue-950/80 border-blue-500/60'
+                  : 'bg-amber-900/70 border-amber-500/60'
+              }`}>
+                <span className="text-2xl flex-shrink-0">
+                  {(inscricaoDuplicada.tipo_inscricao || '').toUpperCase().includes('EQUIPE') ? 'ℹ️' : '⚠️'}
+                </span>
                 <div className="flex-1">
-                  <p className="text-amber-300 font-black text-sm">CPF já inscrito neste evento</p>
-                  <p className="text-amber-200/80 text-xs mt-0.5">
-                    <strong className="text-amber-100">{inscricaoDuplicada.nome}</strong> já possui inscrição.
-                    Confirme antes de criar uma nova.
+                  <p className={`font-black text-sm ${
+                    (inscricaoDuplicada.tipo_inscricao || '').toUpperCase().includes('EQUIPE')
+                      ? 'text-blue-300'
+                      : 'text-amber-300'
+                  }`}>
+                    {(inscricaoDuplicada.tipo_inscricao || '').toUpperCase().includes('EQUIPE')
+                      ? 'Participante já cadastrado na Equipe de Apoio'
+                      : 'CPF já inscrito neste evento'}
+                  </p>
+                  <p className={`text-xs mt-0.5 ${
+                    (inscricaoDuplicada.tipo_inscricao || '').toUpperCase().includes('EQUIPE')
+                      ? 'text-blue-200/90'
+                      : 'text-amber-200/80'
+                  }`}>
+                    <strong className="text-white">{inscricaoDuplicada.nome}</strong> já possui inscrição como{' '}
+                    <strong className="text-yellow-300">{inscricaoDuplicada.tipo_inscricao || 'Inscrito'}</strong>
+                    {inscricaoDuplicada.status_pagamento ? ` (${inscricaoDuplicada.status_pagamento})` : ''}.
+                    {(inscricaoDuplicada.tipo_inscricao || '').toUpperCase().includes('EQUIPE')
+                      ? ' É permitido prosseguir com a inscrição pagante regular para participação nas plenárias.'
+                      : ' Confirme antes de criar uma nova.'}
                   </p>
                 </div>
                 <button

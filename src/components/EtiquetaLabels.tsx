@@ -32,8 +32,10 @@ export interface EtiquetaInscricao {
   nome_alojamento?: string | null;
   /** Identifica fluxos especiais, ex: 'equipe_rapida' */
   origem?: string | null;
-  /** Nome da equipe extraído de observacoes quando origem='equipe_rapida' */
+  /** Nome da equipe extraído de observacoes ou coluna equipe_apoio */
   equipe_label?: string | null;
+  equipe_apoio?: string | null;
+  observacoes?: string | null;
 }
 
 export interface EtiquetaEvento {
@@ -340,24 +342,36 @@ export function EtiquetaAGO({
   const statusCfg = STATUS_CFG[inscricao.status_pagamento] ?? { label: inscricao.status_pagamento.toUpperCase(), color: '#6b7280' };
   const matricula = inscricao.matricula || '—';
 
+  // Identificação e extração da Equipe de Apoio para a etiqueta da AGO
+  const isEquipeApoio = !!(
+    inscricao.origem === 'equipe_rapida' ||
+    (inscricao.tipo_inscricao && inscricao.tipo_inscricao.toUpperCase().includes('EQUIPE')) ||
+    (inscricao.equipe_apoio && inscricao.equipe_apoio.trim())
+  );
+
+  let nomeEquipe: string | null = null;
+  if (isEquipeApoio) {
+    if (inscricao.equipe_apoio && inscricao.equipe_apoio.trim()) {
+      nomeEquipe = inscricao.equipe_apoio.trim().toUpperCase();
+    } else if (inscricao.equipe_label && inscricao.equipe_label.trim()) {
+      nomeEquipe = inscricao.equipe_label.trim().toUpperCase();
+    } else if (inscricao.observacoes) {
+      const match = String(inscricao.observacoes).match(/\[?Equipe:\s*([^\]\n\r]+)\]?/i);
+      if (match && match[1]) {
+        nomeEquipe = match[1].trim().toUpperCase();
+      }
+    }
+    if (!nomeEquipe) {
+      nomeEquipe = 'APOIO';
+    }
+  }
+
   const W        = isThermal ? '85mm'  : '99.1mm';
   const H        = isThermal ? '30mm'  : '34mm';
   const HEADER_H = '7mm';
   const QR_PX    = isThermal ? 84       : 56;
   const QR_W     = isThermal ? '26mm'   : '20mm';
   const FOOTER_H = '5mm';
-
-  // ── Equipe Rápida: delega para o layout dedicado ─────────────
-  if (inscricao.origem === 'equipe_rapida') {
-    return (
-      <EtiquetaDepartamento
-        inscricao={inscricao}
-        nomeSup=""
-        nomeCampo=""
-        variant={variant}
-      />
-    );
-  }
 
   if (isThermal) {
     return (
@@ -402,11 +416,18 @@ export function EtiquetaAGO({
               </p>
             </div>
 
-            {/* Matrícula, Supervisão e Campo em fonte maior e na mesma linha */}
-            <p style={{ fontSize: '7.5pt', color: '#111827', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.1 }}>
-              <span style={{ fontWeight: 800, color: '#6b7280' }}>MATRÍCULA:</span>{' '}
-              <strong style={{ fontWeight: 900, color: '#0D2B4E' }}>{matricula}</strong>
-            </p>
+            {/* Matrícula (ou Equipe para equipe de apoio), Supervisão e Campo */}
+            {isEquipeApoio ? (
+              <p style={{ fontSize: '7.5pt', color: '#111827', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.1 }}>
+                <span style={{ fontWeight: 800, color: '#6b7280' }}>EQUIPE:</span>{' '}
+                <strong style={{ fontWeight: 900, color: '#0D2B4E' }}>{nomeEquipe}</strong>
+              </p>
+            ) : (
+              <p style={{ fontSize: '7.5pt', color: '#111827', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.1 }}>
+                <span style={{ fontWeight: 800, color: '#6b7280' }}>MATRÍCULA:</span>{' '}
+                <strong style={{ fontWeight: 900, color: '#0D2B4E' }}>{matricula}</strong>
+              </p>
+            )}
 
             <p style={{ fontSize: '7.5pt', color: '#111827', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.1 }}>
               <span style={{ fontWeight: 800, color: '#6b7280' }}>SUPERVISÃO:</span>{' '}
@@ -513,14 +534,14 @@ export function EtiquetaAGO({
             }}>{inscricao.nome_inscrito}</p>
           </div>
 
-          {/* Matrícula + Supervisão */}
+          {/* Matrícula (ou Equipe para equipe de apoio) + Supervisão */}
           <div style={{ display: 'flex', gap: '2.5mm', overflow: 'hidden' }}>
             <div style={{ flexShrink: 0 }}>
               <p style={{ fontSize: '3.8pt', color: '#9ca3af', margin: '0 0 0.2mm', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                MATRÍCULA
+                {isEquipeApoio ? 'EQUIPE' : 'MATRÍCULA'}
               </p>
               <p style={{ fontSize: '5.5pt', fontWeight: 800, color: '#0D2B4E', margin: 0 }}>
-                {matricula}
+                {isEquipeApoio ? nomeEquipe : matricula}
               </p>
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>

@@ -400,11 +400,12 @@ export async function POST(request: NextRequest) {
 
     // ── Valida uso de tipos de inscrição ─────────────────────────────────
     const usaTipos = !!(evento as Record<string, unknown>).usar_tipos_inscricao;
+    const tipoInformadoNome = usaTipos ? ((tipo_inscricao as string | null) ?? null) : null;
 
     const cpfLimpoInput = cpf?.replace(/\D/g, '') || null;
 
     // ── Validação Anti-Duplicidade por CPF no Evento (Regra Definitiva) ──
-    const checkCpf = await verificarInscricaoConfirmadaPorCpf(supabase, evento.id, cpf);
+    const checkCpf = await verificarInscricaoConfirmadaPorCpf(supabase, evento.id, cpf, tipoInformadoNome);
     if (!checkCpf.permitido) {
       return buildErrorResponse(409, {
         error: MSG_INSCRICAO_CONFIRMADA,
@@ -1811,7 +1812,7 @@ export async function POST(request: NextRequest) {
         }
 
         const cpfParticipante = cleanCpf(String(p.cpf ?? ''));
-        const checkPart = await verificarInscricaoConfirmadaPorCpf(supabase, evento.id, cpfParticipante);
+        const checkPart = await verificarInscricaoConfirmadaPorCpf(supabase, evento.id, cpfParticipante, String(tipoParticipante ?? tipoEvento?.nome ?? ''));
         if (!checkPart.permitido) {
           return buildErrorResponse(409, {
             error: `O participante ${idx + 1} (${p.nome_inscrito || 'CPF informado'}) já possui uma inscrição confirmada neste evento.`,

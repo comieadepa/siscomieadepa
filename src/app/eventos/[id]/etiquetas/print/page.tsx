@@ -26,6 +26,7 @@ interface InscricaoLabel {
   checkin_realizado: boolean;
   etiqueta_impressa: boolean;
   observacoes: string | null;
+  equipe_apoio?: string | null;
   origem: string | null;
   equipe_label?: string | null;
   // AGO-specific (populated only for AGO events)
@@ -71,7 +72,7 @@ export default function EtiquetasPrintPage() {
     async function load() {
       let inscrQuery = supabase
         .from('evento_inscricoes')
-        .select('id,nome_inscrito,cpf,supervisao_id,campo_id,status_pagamento,tipo_inscricao,hospedagem,alimentacao,brinde,qr_code,checkin_realizado,etiqueta_impressa,ministro_id,origem,observacoes')
+        .select('id,nome_inscrito,cpf,supervisao_id,campo_id,status_pagamento,tipo_inscricao,hospedagem,alimentacao,brinde,qr_code,checkin_realizado,etiqueta_impressa,ministro_id,origem,observacoes,equipe_apoio')
         .eq('evento_id', id);
 
       if (ids) {
@@ -133,11 +134,13 @@ export default function EtiquetasPrintPage() {
 
         const merged = inscBase.map(ins => {
           const hosp = ins.id ? hospMap.get(ins.id) : undefined;
-          // Extrair nome da equipe de observacoes quando origem='equipe_rapida'
+          // Extrair nome da equipe de observacoes ou coluna equipe_apoio
           let equipe_label: string | null = null;
-          if (ins.origem === 'equipe_rapida' && ins.observacoes) {
-            const m = String(ins.observacoes).match(/^Equipe:\s*(.+)$/i);
-            if (m) equipe_label = m[1].trim();
+          if (ins.equipe_apoio && ins.equipe_apoio.trim()) {
+            equipe_label = ins.equipe_apoio.trim().toUpperCase();
+          } else if (ins.observacoes) {
+            const m = String(ins.observacoes).match(/\[?Equipe:\s*([^\]\n\r]+)\]?/i);
+            if (m && m[1]) equipe_label = m[1].trim().toUpperCase();
           }
           return {
             ...ins,

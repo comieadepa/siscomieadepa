@@ -448,8 +448,11 @@ export async function alocarLeitoParaInscricaoAGO(
   const alojId = sugestao.alojamento_id;
 
   // Requisitos 8 e 9: Execução transacional atômica obrigatória via RPC no Supabase.
-  // Elimina qualquer fallback não atômico: a transação no PostgreSQL é o único caminho autorizado.
-  const { data: rpcRes, error: rpcErr } = await supabase.rpc('alocar_hospedagem_atomica', {
+  // Tentativa primária com o tipo sugerido (ex: superior para preferência jovem)
+  let rpcRes: any = null;
+  let rpcErr: any = null;
+
+  const resPrimario = await supabase.rpc('alocar_hospedagem_atomica', {
     p_evento_id: evento.id,
     p_inscricao_id: inscricaoId,
     p_alojamento_id: alojId,
@@ -457,6 +460,46 @@ export async function alocarLeitoParaInscricaoAGO(
     p_prioridade: prioridade,
     p_origem_alocacao: 'sistema',
   });
+  rpcRes = resPrimario.data;
+  rpcErr = resPrimario.error;
+
+  // Fallback Inteligente: se o tipo preferencial falhar por vagas de subtipo esgotadas e o participante
+  // não tiver restrição médica estrita (ex: cama inferior obrigatória), tenta os tipos alternativos
+  // compatíveis no mesmo alojamento ou nos candidatos ordenados antes de desistir para lista de espera.
+  if (rpcRes && !rpcRes.success && rpcRes.status === 'lista_espera') {
+    const tiposFallback: Array<'inferior' | 'superior' | 'colchonete'> = [];
+    if (!camaInferiorNecessaria) {
+      if (sugestao.tipo_cama === 'superior') {
+        tiposFallback.push('inferior', 'colchonete');
+      } else if (sugestao.tipo_cama === 'colchonete') {
+        tiposFallback.push('inferior', 'superior');
+      } else {
+        tiposFallback.push('superior', 'colchonete');
+      }
+    } else {
+      // Se precisa de inferior e falhou, tenta colchonete antes de lista de espera
+      if (sugestao.tipo_cama === 'inferior') {
+        tiposFallback.push('colchonete');
+      }
+    }
+
+    for (const altTipo of tiposFallback) {
+      console.warn(`[Autoalocacao] [AGO] Tentando fallback para tipo_cama '${altTipo}' no alojamento ${alojId}`);
+      const resAlt = await supabase.rpc('alocar_hospedagem_atomica', {
+        p_evento_id: evento.id,
+        p_inscricao_id: inscricaoId,
+        p_alojamento_id: alojId,
+        p_tipo_cama: altTipo,
+        p_prioridade: prioridade,
+        p_origem_alocacao: 'sistema_fallback',
+      });
+      if (resAlt.data?.success) {
+        rpcRes = resAlt.data;
+        rpcErr = null;
+        break;
+      }
+    }
+  }
 
   if (rpcErr) {
     const msg = `Falha na execução transacional da RPC alocar_hospedagem_atomica: ${rpcErr.message}`;

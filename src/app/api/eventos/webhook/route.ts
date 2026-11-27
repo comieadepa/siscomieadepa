@@ -455,6 +455,7 @@ export async function POST(request: NextRequest) {
         eventoId: ins.evento_id,
         inscricaoId: ins.id,
         cpf: ins.cpf,
+        tipoInscricao: ins.tipo_inscricao,
         asaasPaymentId: asaasId,
         valorRecebido,
       });
