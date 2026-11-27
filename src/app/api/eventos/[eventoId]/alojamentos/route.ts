@@ -39,36 +39,56 @@ export async function GET(
 
   const { data, error } = await supabase
     .from('evento_alojamentos')
-    .select('id,setor_key,origem,nome,publico,sexo,total_vagas,camas_inferiores,camas_superiores,colchonetes,ativo,created_at')
+    .select('id,setor_key,origem,nome,publico,sexo,total_vagas,camas_inferiores,camas_superiores,colchonetes,ativo,created_at,is_emergencial,observacoes')
     .eq('evento_id', eventoId)
     .order('nome');
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Contagem de ocupados via hospedagem leitos (ocupado = true e inscricao_id is not null)
-  const { data: leitosOcupados } = await supabase
-    .from('evento_hospedagem_leitos')
-    .select('alojamento_id, posicao')
-    .eq('evento_id', eventoId)
-    .eq('ocupado', true)
-    .not('inscricao_id', 'is', null);
+  // Contagem de ocupados e total de leitos físicos via paginação para superar o limite de 1000 registros do PostgREST
+  let todosLeitosFisicos: any[] = [];
+  const PAGE_SIZE = 1000;
+  let from = 0;
 
-  const { data: hospOcupadas } = await supabase
-    .from('evento_hospedagens')
-    .select('alojamento_id, tipo_cama')
-    .eq('evento_id', eventoId)
-    .in('status', ['alocada', 'confirmada', 'checkin_realizado']);
+  while (true) {
+    const { data: chunk, error: errChunk } = await supabase
+      .from('evento_hospedagem_leitos')
+      .select('id, alojamento_id, posicao, ocupado, inscricao_id')
+      .eq('evento_id', eventoId)
+      .range(from, from + PAGE_SIZE - 1);
 
-  // Contagem total de leitos físicos cadastrados no inventário do banco
-  const { data: todosLeitosFisicos } = await supabase
-    .from('evento_hospedagem_leitos')
-    .select('id, alojamento_id')
-    .eq('evento_id', eventoId);
+    if (errChunk) return NextResponse.json({ error: errChunk.message }, { status: 500 });
+    if (!chunk || chunk.length === 0) break;
+    todosLeitosFisicos.push(...chunk);
+    if (chunk.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
 
   const countsFisicos = new Map<string, number>();
-  (todosLeitosFisicos ?? []).forEach(l => {
+  todosLeitosFisicos.forEach(l => {
     countsFisicos.set(l.alojamento_id, (countsFisicos.get(l.alojamento_id) || 0) + 1);
   });
+
+  const leitosOcupados = todosLeitosFisicos.filter(l => Boolean(l.ocupado && l.inscricao_id));
+
+  let hospOcupadas: any[] = [];
+  if (leitosOcupados.length === 0) {
+    let fromHosp = 0;
+    while (true) {
+      const { data: chunkHosp, error: errHosp } = await supabase
+        .from('evento_hospedagens')
+        .select('alojamento_id, tipo_cama')
+        .eq('evento_id', eventoId)
+        .in('status', ['alocada', 'confirmada', 'checkin_realizado'])
+        .range(fromHosp, fromHosp + PAGE_SIZE - 1);
+
+      if (errHosp) break;
+      if (!chunkHosp || chunkHosp.length === 0) break;
+      hospOcupadas.push(...chunkHosp);
+      if (chunkHosp.length < PAGE_SIZE) break;
+      fromHosp += PAGE_SIZE;
+    }
+  }
 
   const ocupadosPorAlojamento: Record<string, { total: number; inferiores: number; superiores: number; colchonetes: number }> = {};
 
@@ -84,12 +104,12 @@ export async function GET(
   };
 
   // Se houver leitos reais ocupados, usá-los prioritariamente
-  if ((leitosOcupados ?? []).length > 0) {
-    for (const l of leitosOcupados!) {
+  if (leitosOcupados.length > 0) {
+    for (const l of leitosOcupados) {
       processOcupante(l.alojamento_id, l.posicao === 'unico' ? null : l.posicao);
     }
   } else {
-    for (const h of hospOcupadas ?? []) {
+    for (const h of hospOcupadas) {
       processOcupante(h.alojamento_id, h.tipo_cama);
     }
   }
