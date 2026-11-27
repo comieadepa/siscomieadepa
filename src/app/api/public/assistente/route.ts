@@ -8,6 +8,11 @@ import {
   type DepartamentoConfig,
   type EventoPublico,
 } from '@/lib/public-portal';
+import {
+  ProgramacaoOficialItem,
+  buscarNaProgramacaoOficial,
+  isPerguntaInformacoesGerais,
+} from '@/lib/sara-programacao';
 
 const SAUDACOES = ['oi', 'ola', 'bom dia', 'boa tarde', 'boa noite', 'ajuda'];
 const DESPEDIDAS = ['tchau', 'ate', 'obrigado', 'obrigada', 'valeu'];
@@ -793,7 +798,8 @@ async function responderAlimentacaoInscricao(inscricaoId: string): Promise<Assis
 
 async function responderDetalhesEvento(
   eventoId: string,
-  tipo: 'programacao' | 'descricao' | 'local' | 'geral'
+  tipo: 'programacao' | 'descricao' | 'local' | 'geral',
+  perguntaOriginal?: string
 ): Promise<AssistenteResposta> {
   const supabase = createServerClient();
 
@@ -828,15 +834,12 @@ async function responderDetalhesEvento(
     };
   }
 
-  if (tipo === 'descricao') {
+  // ── Atalho "Quais são as informações sobre o evento?" e tipo "descricao":
+  // Apresentar SOMENTE nome, período e local, seguido da pergunta acolhedora. NÃO reproduzir descrição institucional extensa.
+  if (tipo === 'descricao' || (perguntaOriginal && isPerguntaInformacoesGerais(perguntaOriginal))) {
     let resposta = `*${nomeEvento}*\n📅 ${dataRange}`;
     if (localStr) resposta += `\n📍 ${localStr}`;
-    if (descricao) {
-      resposta += `\n\n${descricao}`;
-    } else {
-      resposta += '\n\nA descricao detalhada ainda nao foi cadastrada pela organizacao.';
-    }
-    if (publicoAlvo) resposta += `\n\n👥 Publico-alvo: ${publicoAlvo}`;
+    resposta += '\n\nQual é a sua dúvida sobre o evento?';
     return { resposta, _ctx: ctx };
   }
 
@@ -845,7 +848,7 @@ async function responderDetalhesEvento(
       .from('evento_programacoes_oficiais')
       .select('plenaria_key, plenaria_nome, arquivo_url, texto_extraido')
       .eq('evento_id', eventoId)
-      .eq('status', 'publicada');
+      .in('status', ['publicada', 'rascunho']);
 
     const { data: progData } = await supabase
       .from('evento_programacao')
@@ -855,13 +858,19 @@ async function responderDetalhesEvento(
       .order('ordem', { ascending: true });
 
     const prog = (progData ?? []) as Array<Record<string, unknown>>;
-    const oficiais = (progOficiais ?? []) as Array<Record<string, unknown>>;
-    let resposta = `Programação de *${nomeEvento}*\n📅 ${dataRange}`;
-    if (localStr) resposta += `\n📍 ${localStr}`;
+    const oficiais = (progOficiais ?? []) as ProgramacaoOficialItem[];
+
+    // 1º: Se o usuário fez uma pergunta e temos programações oficiais extraídas dos PDFs
+    const perguntaAtual = (perguntaOriginal || '').trim();
+    if (oficiais.length > 0 && perguntaAtual) {
+      const respSemantica = buscarNaProgramacaoOficial(perguntaAtual, oficiais, nomeEvento);
+      if (respSemantica) {
+        return { resposta: respSemantica, _ctx: { ...ctx, ultima_intencao: 'consultar_programacao' } };
+      }
+    }
 
     if (oficiais.length > 0) {
       const apiKey = process.env.OPENAI_API_KEY;
-      const perguntaAtual = String((ctx as any)?.ultima_pergunta || '').trim();
       const keys = new Set(oficiais.map(o => String(o.plenaria_key)));
       const faltantes = [
         !keys.has('ministros') && 'Plenária dos Ministros',
@@ -907,6 +916,17 @@ async function responderDetalhesEvento(
         }
       }
 
+      // Se a pergunta era especificamente sobre pregador/horário e não consta nos textos:
+      const pNorm = normalizeText(perguntaAtual);
+      if (hasAny(pNorm, ['pregador', 'preletor', 'quem vai pregar', 'horario'])) {
+        return {
+          resposta: 'Essa informação não consta na programação oficial publicada até o momento.',
+          _ctx: { ...ctx, ultima_intencao: 'consultar_programacao' }
+        };
+      }
+
+      let resposta = `Programação de *${nomeEvento}*\n📅 ${dataRange}`;
+      if (localStr) resposta += `\n📍 ${localStr}`;
       resposta += '\n\n📋 *Programações Oficiais Publicadas:*';
       for (const po of oficiais) {
         const dlUrl = `/api/eventos/${eventoId}/programacao-oficial/download?plenaria_key=${po.plenaria_key}`;
@@ -918,6 +938,9 @@ async function responderDetalhesEvento(
       resposta += '\n\nQual plenária ou atividade você gostaria de consultar em detalhes?';
       return { resposta, _ctx: { ...ctx, ultima_intencao: 'consultar_programacao' } };
     }
+
+    let resposta = `Programação de *${nomeEvento}*\n📅 ${dataRange}`;
+    if (localStr) resposta += `\n📍 ${localStr}`;
 
     if (prog.length === 0) {
       resposta += '\n\nA programação detalhada ainda não foi cadastrada pela organização. Posso te mostrar as informações disponíveis do evento.';
@@ -1095,7 +1118,10 @@ export async function POST(req: NextRequest) {
     const querAlimentacao = hasAny(pergunta, ['alimentacao', 'refeicao', 'refeicoes']);
     const querProgramacao = hasAny(pergunta, [
       'programacao', 'agenda', 'cronograma', 'horario', 'horarios',
-      'atividades', 'palestrante', 'palestrantes',
+      'atividades', 'palestrante', 'palestrantes', 'pregador', 'pregadores',
+      'preletor', 'preletores', 'pregar', 'quem vai pregar', 'culto', 'cultos',
+      'plenaria', 'plenarias', 'abertura', 'abertura oficial',
+      'hoje', 'amanha', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'domingo',
     ]);
     const querDescricaoEvento = !querProgramacao && hasAny(pergunta, [
       'descricao', 'sobre o evento', 'fale sobre', 'detalhes do evento',
@@ -1247,7 +1273,7 @@ export async function POST(req: NextRequest) {
       const tipo = querProgramacao ? 'programacao' : querLocalEvento ? 'local' : querDescricaoEvento ? 'descricao' : 'geral';
 
       if (ctxEventoId) {
-        const resposta = await responderDetalhesEvento(ctxEventoId, tipo);
+        const resposta = await responderDetalhesEvento(ctxEventoId, tipo, perguntaRaw);
         return NextResponse.json(resposta);
       }
 
@@ -1256,7 +1282,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ resposta: buildSemEventosMensagem(departamento) });
       }
       if (eventos.length === 1) {
-        const resposta = await responderDetalhesEvento(eventos[0].id, tipo);
+        const resposta = await responderDetalhesEvento(eventos[0].id, tipo, perguntaRaw);
         return NextResponse.json(resposta);
       }
       const perguntaQual = querProgramacao
@@ -1407,7 +1433,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (ctxEventoId) {
-      const resposta = await responderDetalhesEvento(ctxEventoId, 'geral');
+      const resposta = await responderDetalhesEvento(ctxEventoId, 'geral', perguntaRaw);
       return NextResponse.json(resposta);
     }
 

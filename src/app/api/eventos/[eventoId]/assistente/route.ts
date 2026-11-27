@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
+import {
+  ProgramacaoOficialItem,
+  buscarNaProgramacaoOficial,
+  isPerguntaInformacoesGerais,
+} from '@/lib/sara-programacao';
 
 // ── Helpers ────────────────────────────────────────────────────
 const fmtData = (d: string | null) => {
@@ -310,10 +315,22 @@ function respostaFallback(
   programacao: Record<string, unknown>[],
   inscricao: Record<string, unknown> | null,
   hospedagemInfo: Record<string, unknown> | null = null,
-  tiposInscricao?: Record<string, unknown>[]
+  tiposInscricao?: Record<string, unknown>[],
+  programacoesOficiais?: ProgramacaoOficialItem[]
 ): string {
   const p = normalizeTexto(pergunta);
   const pNoSpace = p.replace(/\s+/g, '');
+
+  // ── Atalho "Quais são as informações sobre o evento?" ou perguntas de informações gerais ────
+  if (isPerguntaInformacoesGerais(pergunta)) {
+    const nomeEv = String(evento.nome || 'Evento');
+    const dataRange = fmtData(evento.data_inicio as string | null) + (evento.data_fim ? ` a ${fmtData(evento.data_fim as string | null)}` : '');
+    const local = [evento.local, evento.cidade].filter(Boolean).join(' - ');
+    let info = `*${nomeEv}*\n📅 ${dataRange}`;
+    if (local) info += `\n📍 ${local}`;
+    info += '\n\nQual é a sua dúvida sobre o evento?';
+    return info;
+  }
 
   const social = detectarMensagemSocial(pergunta);
   if (social === 'saudacao') {
@@ -503,30 +520,44 @@ function respostaFallback(
     return respostaCpfConsulta(evento.nome as string, String(inscricao.cpf || '').replace(/\D/g, ''), inscricao, evento, hospedagemInfo, tiposInscricao);
   }
 
-  // ── Programação ──────────────────────────────────────────────
-  if (hasAny(p, ['programacao', 'agenda', 'horario', 'palestra', 'palestrante', 'culto', 'abertura', 'atividade', 'grade'])) {
-    if (programacao.length === 0) {
-      return 'A programação detalhada ainda não foi cadastrada. Fique atento às novidades!';
+  // ── Programação Oficial e Atividades ──────────────────────────
+  if (hasAny(p, ['programacao', 'agenda', 'horario', 'palestra', 'palestrante', 'preletor', 'preletores', 'pregador', 'pregadores', 'pregar', 'culto', 'abertura', 'atividade', 'grade', 'plenaria', 'ministro', 'aemadepa', 'umadespa', 'hds', 'hoje', 'amanha', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'domingo'])) {
+    // 1º: Consulta programações oficiais extraídas dos PDFs (SSOT da programação)
+    if (programacoesOficiais && programacoesOficiais.length > 0) {
+      const respOficial = buscarNaProgramacaoOficial(pergunta, programacoesOficiais, String(evento.nome || 'Evento'));
+      if (respOficial) {
+        return respOficial;
+      }
     }
-    // Agrupa por data
-    const porDia = new Map<string, Record<string, unknown>[]>();
-    for (const item of programacao) {
-      const dia = item.data as string;
-      if (!porDia.has(dia)) porDia.set(dia, []);
-      porDia.get(dia)!.push(item);
-    }
-    let txt = '📋 *Programação do evento:*\n\n';
-    for (const [dia, itens] of porDia) {
-      txt += `*${fmtData(dia)}*\n`;
-      for (const it of itens) {
-        const hora = fmtHora(it.horario as string | null);
-        txt += `  ${hora ? hora + 'h — ' : ''}${it.titulo}`;
-        if (it.palestrante) txt += ` (${it.palestrante})`;
+
+    // 2º: Tabela legada evento_programacao se houver itens
+    if (programacao.length > 0) {
+      // Agrupa por data
+      const porDia = new Map<string, Record<string, unknown>[]>();
+      for (const item of programacao) {
+        const dia = item.data as string;
+        if (!porDia.has(dia)) porDia.set(dia, []);
+        porDia.get(dia)!.push(item);
+      }
+      let txt = '📋 *Programação do evento:*\n\n';
+      for (const [dia, itens] of porDia) {
+        txt += `*${fmtData(dia)}*\n`;
+        for (const it of itens) {
+          const hora = fmtHora(it.horario as string | null);
+          txt += `  ${hora ? hora + 'h — ' : ''}${it.titulo}`;
+          if (it.palestrante) txt += ` (${it.palestrante})`;
+          txt += '\n';
+        }
         txt += '\n';
       }
-      txt += '\n';
+      return txt.trim();
     }
-    return txt.trim();
+
+    if (hasAny(p, ['pregador', 'preletor', 'horario', 'culto', 'abertura'])) {
+      return 'Essa informação não consta na programação oficial publicada até o momento.';
+    }
+
+    return 'A programação detalhada ainda não foi cadastrada. Fique atento às novidades!';
   }
 
   // ── WhatsApp ─────────────────────────────────────────────────
@@ -585,7 +616,7 @@ export async function POST(
     const supabase = createServerClient();
 
     // ── Busca dados do evento e tipos de inscrição ───────────
-    const [evRes, progRes, tiposRes] = await Promise.all([
+    const [evRes, progRes, tiposRes, progOficiaisRes] = await Promise.all([
       supabase
         .from('eventos')
         .select('id,nome,slug,descricao,departamento,data_inicio,data_fim,local,cidade,valor_inscricao,permite_hospedagem,permite_alimentacao,permite_brinde,link_whatsapp,mensagem_confirmacao,publico_alvo,status,suporte_nome,suporte_whatsapp,configuracoes_ago,usar_tipos_inscricao')
@@ -603,6 +634,11 @@ export async function POST(
         .select('id,nome,valor,inclui_alimentacao,inclui_hospedagem,cortesia,quantidade_refeicoes,limite_vagas,ativo,ordem')
         .eq('evento_id', eventoId)
         .order('ordem', { ascending: true }),
+      supabase
+        .from('evento_programacoes_oficiais')
+        .select('plenaria_key, plenaria_nome, texto_extraido, arquivo_url')
+        .eq('evento_id', eventoId)
+        .in('status', ['publicada', 'rascunho']),
     ]);
 
     if (evRes.error || !evRes.data) {
@@ -612,6 +648,7 @@ export async function POST(
     const evento = evRes.data as Record<string, unknown>;
     const programacao = (progRes.data ?? []) as Record<string, unknown>[];
     const tiposInscricao = (tiposRes.data ?? []) as Record<string, unknown>[];
+    const programacoesOficiais = (progOficiaisRes.data ?? []) as ProgramacaoOficialItem[];
     const intentFinal = intentFromContext ?? inferIntent(pergunta);
 
     // ── Busca inscrição pelo CPF ou Nome (se informado) ────────
@@ -951,7 +988,7 @@ ${contexto}`;
 
     // ── Fallback local ─────────────────────────────────────────
     if (!resposta!) {
-      resposta = respostaFallback(pergunta, evento, programacao, inscricao, hospedagemInfo, tiposInscricao);
+      resposta = respostaFallback(pergunta, evento, programacao, inscricao, hospedagemInfo, tiposInscricao, programacoesOficiais);
       modo = 'fallback';
     }
 
