@@ -1652,21 +1652,43 @@ export default function ConsagracaoPage() {
     const columnWidths = [12, 24, 68, 28, 38, 107];
     const headers = ['Nº', 'Nº Processo', 'Nome', 'CPF', 'Categoria', 'Assinatura'];
 
-    const toText = (value: unknown) => {
-      if (value === null || value === undefined) return '—';
-      const s = String(value).trim();
-      return s ? s : '—';
+    // Converte caracteres Unicode não suportados pela fonte helvetica (Latin-1) para ASCII seguro
+    const toAsciiSafe = (s: string): string =>
+      s.replace(/[\u2013\u2014]/g, '-')   // en-dash, em-dash -> '-'
+       .replace(/[\u2026]/g, '...')        // ellipsis -> '...'
+       .replace(/[\u00C0-\u00FF]/g, (c) => {
+         const map: Record<string, string> = {
+           'À':'A','Á':'A','Â':'A','Ã':'A','Ä':'A','Å':'A','Æ':'AE',
+           'Ç':'C','È':'E','É':'E','Ê':'E','Ë':'E',
+           'Ì':'I','Í':'I','Î':'I','Ï':'I',
+           'Ð':'D','Ñ':'N',
+           'Ò':'O','Ó':'O','Ô':'O','Õ':'O','Ö':'O','Ø':'O',
+           'Ù':'U','Ú':'U','Û':'U','Ü':'U','Ý':'Y',
+           'à':'a','á':'a','â':'a','ã':'a','ä':'a','å':'a','æ':'ae',
+           'ç':'c','è':'e','é':'e','ê':'e','ë':'e',
+           'ì':'i','í':'i','î':'i','ï':'i',
+           'ñ':'n',
+           'ò':'o','ó':'o','ô':'o','õ':'o','ö':'o','ø':'o',
+           'ù':'u','ú':'u','û':'u','ü':'u','ý':'y','ÿ':'y',
+         };
+         return map[c] ?? c;
+       });
+
+    const toText = (value: unknown): string => {
+      if (value === null || value === undefined) return '-';
+      const s = toAsciiSafe(String(value).trim());
+      return s || '-';
     };
     const fitText = (value: unknown, maxWidth: number) => {
       const textVal = toText(value);
-      const raw = textVal.replace(/\s+/g, ' ').trim() || '—';
+      const raw = textVal.replace(/\s+/g, ' ').trim() || '-';
       try {
         if (pdf.getTextWidth(raw) <= maxWidth - 2) return raw;
         let cut = raw;
-        while (cut.length > 1 && pdf.getTextWidth(`${cut}…`) > maxWidth - 2) {
+        while (cut.length > 1 && pdf.getTextWidth(`${cut}...`) > maxWidth - 2) {
           cut = cut.slice(0, -1);
         }
-        return `${cut}…`;
+        return `${cut}...`;
       } catch {
         return raw;
       }
@@ -1731,16 +1753,16 @@ export default function ConsagracaoPage() {
 
         pdf.setFont('helvetica', 'bold');
         pdf.setFontSize(10);
-        pdf.text('COMIEADEPA - CONVENÇÃO INTERESTADUAL DE MINISTROS E IGREJAS', centerStartX + centerWidth / 2, currentY + 4, { align: 'center' });
-        pdf.text('EVANGÉLICAS ASSEMBLEIA DE DEUS NO PARÁ', centerStartX + centerWidth / 2, currentY + 8, { align: 'center' });
+        pdf.text('COMIEADEPA - CONVENCAO INTERESTADUAL DE MINISTROS E IGREJAS', centerStartX + centerWidth / 2, currentY + 4, { align: 'center' });
+        pdf.text('EVANGELICAS ASSEMBLEIA DE DEUS NO PARA', centerStartX + centerWidth / 2, currentY + 8, { align: 'center' });
         pdf.setFont('helvetica', 'normal');
         pdf.setFontSize(8);
         pdf.text('Emails: comieadepa@bol.com.br / Site: www.comieadepa.org', centerStartX + centerWidth / 2, currentY + 12, { align: 'center' });
-        pdf.text('RODOVIA DO MÁRIO COVAS, 2500, 67115-000 / COQUEIRO, ANANINDEUA - PA', centerStartX + centerWidth / 2, currentY + 15.5, { align: 'center' });
+        pdf.text('RODOVIA DO MARIO COVAS, 2500, 67115-000 / COQUEIRO, ANANINDEUA - PA', centerStartX + centerWidth / 2, currentY + 15.5, { align: 'center' });
         pdf.setFont('helvetica', 'bold');
         pdf.setTextColor(0, 102, 204);
         pdf.setFontSize(11);
-        pdf.text('LISTA DE FREQUÊNCIA — CONSAGRAÇÃO', centerStartX + centerWidth / 2, currentY + 21, { align: 'center' });
+        pdf.text('LISTA DE FREQUENCIA - CONSAGRACAO', centerStartX + centerWidth / 2, currentY + 21, { align: 'center' });
         pdf.setTextColor(0, 0, 0);
 
         pdf.setFont('helvetica', 'normal');
@@ -1751,7 +1773,7 @@ export default function ConsagracaoPage() {
         currentY += 29;
       }
 
-      // Cabeçalho da tabela (repetido em todas as páginas)
+      // Cabecalho da tabela (repetido em todas as paginas)
       pdf.setFillColor(243, 244, 246);
       pdf.setDrawColor(180, 180, 180);
       pdf.rect(marginX, currentY, contentWidth, headerHeight, 'FD');
@@ -1776,10 +1798,10 @@ export default function ConsagracaoPage() {
         pdf.rect(marginX, currentY, contentWidth, rowHeight);
 
         const safeSeq = String(seq);
-        const safeProcesso = String(item?.numero_processo ?? '').trim() || '—';
-        const safeNome = String(item?.nome ?? '').trim() || '—';
-        const safeCpf = item?.cpf ? (formatCpf(item.cpf) || '—') : '—';
-        const safeCategoria = String(item?.categoria ?? '').trim() || '—';
+        const safeProcesso = String(item?.numero_processo ?? '').trim() || '-';
+        const safeNome = toAsciiSafe(String(item?.nome ?? '').trim()) || '-';
+        const safeCpf = item?.cpf ? (formatCpf(item.cpf) || '-') : '-';
+        const safeCategoria = toAsciiSafe(String(item?.categoria ?? '').trim()) || '-';
 
         const cells = [
           safeSeq,
@@ -1808,20 +1830,23 @@ export default function ConsagracaoPage() {
         currentY += rowHeight;
       });
 
-      // Rodapé com paginação e total de candidatos
+      // Rodape com paginacao e total de candidatos
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(7.5);
       pdf.setTextColor(100, 100, 100);
       pdf.text(`Total de candidatos listados: ${totalCandidatos}`, marginX, pageHeight - 6);
-      pdf.text(`Página ${pageIndex + 1} de ${paginasFreq.length}`, pageWidth - marginX, pageHeight - 6, { align: 'right' });
+      pdf.text(`Pagina ${pageIndex + 1} de ${paginasFreq.length}`, pageWidth - marginX, pageHeight - 6, { align: 'right' });
       pdf.setTextColor(0, 0, 0);
     });
 
       const dataArquivo = new Date().toISOString().slice(0, 10);
       pdf.save(`consagracao-lista-frequencia-${dataArquivo}.pdf`);
-    } catch (err: any) {
-      console.error('[Consagração] Erro ao gerar Lista de frequência PDF:', err);
-      alert(`Não foi possível gerar a Lista de frequência: ${err?.message || 'erro inesperado'}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error
+        ? err.message
+        : (typeof err === 'string' ? err : JSON.stringify(err));
+      console.error('[Consagracao] Erro ao gerar Lista de frequencia PDF:', err);
+      alert(`Nao foi possivel gerar a Lista de frequencia: ${msg || 'erro inesperado'}`);
     }
   };
 
