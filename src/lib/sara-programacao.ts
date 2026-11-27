@@ -1,13 +1,27 @@
+/**
+ * Módulo de Inteligência Conversacional da SARA
+ * Base de conhecimento, interpretação em linguagem natural,
+ * resolução temporal (América/Belém UTC-3) e respostas fundamentadas nos PDFs oficiais publicados.
+ */
+
 export interface ProgramacaoOficialItem {
   plenaria_key: string;
   plenaria_nome: string;
   arquivo_url?: string | null;
   texto_extraido?: string | null;
+  status?: string;
 }
 
-/**
- * Normaliza texto para busca semântica simples (minúsculas, sem acento, pontuação limpa).
- */
+export interface ContextoConversa {
+  evento_id?: string;
+  evento_nome?: string;
+  ultima_intencao?: string;
+  plenaria_selecionada?: string;
+  dia_selecionado?: string;
+  turno_selecionado?: string;
+  ultima_pergunta?: string;
+}
+
 export function normalizarParaBusca(txt: string): string {
   return (txt || '')
     .toLowerCase()
@@ -18,27 +32,21 @@ export function normalizarParaBusca(txt: string): string {
     .trim();
 }
 
-/**
- * Mapeia dias da semana em português para normalização.
- */
-const DIAS_SEMANA_MAP: Record<string, string> = {
-  domingo: 'domingo',
-  segunda: 'segunda',
-  'segunda feira': 'segunda',
-  terca: 'terca',
-  'terca feira': 'terca',
-  quarta: 'quarta',
-  'quarta feira': 'quarta',
-  quinta: 'quinta',
-  'quinta feira': 'quinta',
-  sexta: 'sexta',
-  'sexta feira': 'sexta',
-  sabado: 'sabado',
+const DIAS_SEMANA_MAP: Record<string, { chave: string; dataIsoAgo: string; dataBrAgo: string }> = {
+  domingo: { chave: 'domingo', dataIsoAgo: '2026-11-29', dataBrAgo: '29/11' },
+  segunda: { chave: 'segunda', dataIsoAgo: '2026-11-30', dataBrAgo: '30/11' },
+  'segunda feira': { chave: 'segunda', dataIsoAgo: '2026-11-30', dataBrAgo: '30/11' },
+  terca: { chave: 'terca', dataIsoAgo: '2026-12-01', dataBrAgo: '01/12' },
+  'terca feira': { chave: 'terca', dataIsoAgo: '2026-12-01', dataBrAgo: '01/12' },
+  quarta: { chave: 'quarta', dataIsoAgo: '2026-12-02', dataBrAgo: '02/12' },
+  'quarta feira': { chave: 'quarta', dataIsoAgo: '2026-12-02', dataBrAgo: '02/12' },
+  quinta: { chave: 'quinta', dataIsoAgo: '2026-12-03', dataBrAgo: '03/12' },
+  'quinta feira': { chave: 'quinta', dataIsoAgo: '2026-12-03', dataBrAgo: '03/12' },
+  sexta: { chave: 'sexta', dataIsoAgo: '2026-12-04', dataBrAgo: '04/12' },
+  'sexta feira': { chave: 'sexta', dataIsoAgo: '2026-12-04', dataBrAgo: '04/12' },
+  sabado: { chave: 'sabado', dataIsoAgo: '2026-12-05', dataBrAgo: '05/12' },
 };
 
-/**
- * Obtém a data e dia da semana atual no horário oficial de Belém (America/Belem).
- */
 export function getHojeBelem(): { dataIso: string; diaSemana: string; dataBr: string } {
   const agora = new Date();
   const belemStr = agora.toLocaleString('en-US', { timeZone: 'America/Belem' });
@@ -56,9 +64,6 @@ export function getHojeBelem(): { dataIso: string; diaSemana: string; dataBr: st
   return { dataIso, diaSemana: diaSemanaNorm, dataBr };
 }
 
-/**
- * Obtém o dia seguinte no horário de Belém.
- */
 export function getAmanhaBelem(): { dataIso: string; diaSemana: string; dataBr: string } {
   const agora = new Date();
   const belemStr = agora.toLocaleString('en-US', { timeZone: 'America/Belem' });
@@ -96,203 +101,364 @@ export function isPerguntaInformacoesGerais(pergunta: string): boolean {
 }
 
 /**
- * Detecta termos temporais ou dias da semana na pergunta.
+ * Filtra estritamente as programações com status 'publicada'.
+ * Nunca utiliza programações em rascunho.
  */
-function extrairReferenciaTemporal(perguntaNorm: string): { termo: string; chaveBusca: string[] } | null {
-  if (perguntaNorm.includes('hoje')) {
-    const hoje = getHojeBelem();
-    return { termo: 'hoje', chaveBusca: [hoje.dataBr.slice(0, 5), hoje.diaSemana] };
-  }
-  if (perguntaNorm.includes('amanha')) {
-    const amanha = getAmanhaBelem();
-    return { termo: 'amanhã', chaveBusca: [amanha.dataBr.slice(0, 5), amanha.diaSemana] };
-  }
-
-  for (const [termo, chave] of Object.entries(DIAS_SEMANA_MAP)) {
-    if (new RegExp(`\\b${termo}\\b`).test(perguntaNorm)) {
-      return { termo, chaveBusca: [chave] };
-    }
-  }
-
-  // Datas específicas no formato DD/MM
-  const matchData = perguntaNorm.match(/\b(\d{1,2})[\/\-](\d{1,2})\b/);
-  if (matchData) {
-    const d = matchData[1].padStart(2, '0');
-    const m = matchData[2].padStart(2, '0');
-    return { termo: `${d}/${m}`, chaveBusca: [`${d}/${m}`] };
-  }
-
-  return null;
+export function filtrarApenasPublicadas(programacoes: ProgramacaoOficialItem[]): ProgramacaoOficialItem[] {
+  return (programacoes || []).filter(p => p.status === 'publicada');
 }
 
 /**
- * Busca inteligente e objetiva no texto extraído das programações oficiais dos PDFs.
+ * Extrai cantores, bandas e grupos de louvor mencionados no texto.
  */
-export function buscarNaProgramacaoOficial(
-  pergunta: string,
-  programacoes: ProgramacaoOficialItem[],
-  nomeEvento: string
-): string | null {
-  if (!programacoes || programacoes.length === 0) {
-    return null;
-  }
+function extrairCantoresELouvor(programacoes: ProgramacaoOficialItem[]): string {
+  const itensEncontrados: { plenaria: string; texto: string }[] = [];
 
-  const pNorm = normalizarParaBusca(pergunta);
-  if (!pNorm) return null;
+  for (const prog of programacoes) {
+    const texto = prog.texto_extraido || '';
+    const linhas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
-  // Filtra por plenária específica se mencionada
-  let progsAlvo = programacoes;
-  if (pNorm.includes('aemadepa') || pNorm.includes('esposa') || pNorm.includes('mulher') || pNorm.includes('irma')) {
-    const aemadepa = programacoes.filter(p => p.plenaria_key === 'aemadepa');
-    if (aemadepa.length > 0) progsAlvo = aemadepa;
-  } else if (pNorm.includes('juventude') || pNorm.includes('umadespa') || pNorm.includes('jovens') || pNorm.includes('hds') || pNorm.includes('filhos de pastores')) {
-    const umad = programacoes.filter(p => p.plenaria_key === 'umadespa');
-    if (umad.length > 0) progsAlvo = umad;
-  } else if (pNorm.includes('ministro') || pNorm.includes('pastor') || pNorm.includes('evangelista')) {
-    const min = programacoes.filter(p => p.plenaria_key === 'ministros');
-    if (min.length > 0) progsAlvo = min;
-  }
+    for (const linha of linhas) {
+      const lNorm = normalizarParaBusca(linha);
+      const temTermoLouvor =
+        lNorm.includes('cantor') ||
+        lNorm.includes('cantora') ||
+        lNorm.includes('louvor') ||
+        lNorm.includes('banda') ||
+        lNorm.includes('coral') ||
+        lNorm.includes('grupo de louvor');
 
-  // Verifica se é pergunta sobre pregador / preletor / culto
-  const querPregador = pNorm.includes('pregador') || pNorm.includes('preletor') || pNorm.includes('pregar') || pNorm.includes('palestrante') || pNorm.includes('ministrante');
-  const querAbertura = pNorm.includes('abertura') || pNorm.includes('inicio') || pNorm.includes('primeira noite');
-  const querHorario = pNorm.includes('horario') || pNorm.includes('que horas') || pNorm.includes('comeca') || pNorm.includes('inicio');
-  const querCulto = pNorm.includes('culto') || pNorm.includes('plenaria') || pNorm.includes('reuniao');
-
-  const refTemporal = extrairReferenciaTemporal(pNorm);
-
-  // 1. Caso específico: Pregador / Horário / Abertura
-  if (querAbertura) {
-    for (const prog of progsAlvo) {
-      const texto = prog.texto_extraido || '';
-      const linhas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      const linhaAbertura = linhas.find(l => normalizarParaBusca(l).includes('abertura'));
-      if (linhaAbertura) {
-        // Pega linhas adjacentes (até 3 linhas seguintes)
-        const idx = linhas.indexOf(linhaAbertura);
-        const trecho = linhas.slice(Math.max(0, idx), Math.min(linhas.length, idx + 4)).join('\n');
-        return `📋 *${prog.plenaria_nome} — Abertura Oficial:*\n\n${trecho}`;
+      if (temTermoLouvor) {
+        itensEncontrados.push({ plenaria: prog.plenaria_nome, texto: linha });
       }
     }
   }
 
-  // 2. Se houver referência temporal (hoje, amanhã, segunda-feira, 30/11 etc.)
-  if (refTemporal) {
-    const resultadosPorPlenaria: string[] = [];
+  if (itensEncontrados.length === 0) {
+    return 'Não constam cantores ou grupos de louvor cadastrados na programação oficial publicada até o momento.';
+  }
 
-    for (const prog of progsAlvo) {
+  // Agrupa e remove duplicações
+  const linhasUnicas = Array.from(new Set(itensEncontrados.map(i => `• ${i.texto} (${i.plenaria})`)));
+  return `🎵 *Cantores e Louvores confirmados na programação oficial:*\n\n${linhasUnicas.join('\n')}`;
+}
+
+/**
+ * Extrai informações específicas sobre Santa Ceia.
+ */
+function extrairSantaCeia(programacoes: ProgramacaoOficialItem[]): string {
+  const ocorrencias: string[] = [];
+
+  for (const prog of programacoes) {
+    const texto = prog.texto_extraido || '';
+    const linhas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+    for (let i = 0; i < linhas.length; i++) {
+      const lNorm = normalizarParaBusca(linhas[i]);
+      if (lNorm.includes('santa ceia') || lNorm.includes('ceia do senhor')) {
+        // Busca contexto do dia anterior ou linhas próximas
+        const contexto = linhas.slice(Math.max(0, i - 2), Math.min(linhas.length, i + 3)).join('\n');
+        ocorrencias.push(`*${prog.plenaria_nome}:*\n${contexto}`);
+      }
+    }
+  }
+
+  if (ocorrencias.length > 0) {
+    return `🍞🍷 *Informações sobre a Santa Ceia na programação oficial:*\n\n${ocorrencias.join('\n\n')}`;
+  }
+
+  return 'Não encontrei menção à data ou horário da Santa Ceia na programação oficial publicada até o momento.';
+}
+
+/**
+ * Motor central de IA / Fallback estruturado de programação oficial.
+ */
+export function responderComInteligenciaConversacional(
+  pergunta: string,
+  programacoesTodas: ProgramacaoOficialItem[],
+  nomeEvento: string,
+  contextoAnterior?: ContextoConversa
+): { resposta: string; _ctx: ContextoConversa } {
+  // Regra 6: Consultar EXCLUSIVAMENTE programações publicadas, nunca rascunhos!
+  const publicadas = filtrarApenasPublicadas(programacoesTodas);
+  const pNorm = normalizarParaBusca(pergunta);
+
+  // Cria contexto acumulado
+  const ctx: ContextoConversa = {
+    evento_nome: nomeEvento,
+    ultima_pergunta: pergunta,
+    ...(contextoAnterior || {}),
+  };
+
+  // Se não há programações publicadas
+  if (publicadas.length === 0) {
+    return {
+      resposta: 'A programação oficial deste evento ainda não foi publicada pela organização.',
+      _ctx: ctx,
+    };
+  }
+
+  // Identifica plenária alvo a partir da pergunta ou do contexto
+  let plenariasAlvo = publicadas;
+  if (pNorm.includes('aemadepa') || pNorm.includes('esposa') || pNorm.includes('mulher') || pNorm.includes('irma')) {
+    ctx.plenaria_selecionada = 'aemadepa';
+  } else if (pNorm.includes('juventude') || pNorm.includes('umadespa') || pNorm.includes('jovens') || pNorm.includes('hds') || pNorm.includes('filhos de pastores')) {
+    ctx.plenaria_selecionada = 'umadespa';
+  } else if (pNorm.includes('ministro') || pNorm.includes('pastor') || pNorm.includes('obreiro')) {
+    ctx.plenaria_selecionada = 'ministros';
+  }
+
+  if (ctx.plenaria_selecionada) {
+    const filtrada = publicadas.filter(p => p.plenaria_key === ctx.plenaria_selecionada);
+    if (filtrada.length > 0) plenariasAlvo = filtrada;
+  }
+
+  // 1. Pergunta sobre Cantores / Louvor / Música
+  if (
+    pNorm.includes('cantor') ||
+    pNorm.includes('cantores') ||
+    pNorm.includes('cantora') ||
+    pNorm.includes('cantoras') ||
+    pNorm.includes('louvor') ||
+    pNorm.includes('banda') ||
+    pNorm.includes('musica')
+  ) {
+    return {
+      resposta: extrairCantoresELouvor(plenariasAlvo),
+      _ctx: { ...ctx, ultima_intencao: 'consultar_louvor' },
+    };
+  }
+
+  // 2. Pergunta sobre Santa Ceia
+  if (pNorm.includes('santa ceia') || pNorm.includes('ceia')) {
+    return {
+      resposta: extrairSantaCeia(plenariasAlvo),
+      _ctx: { ...ctx, ultima_intencao: 'consultar_ceia' },
+    };
+  }
+
+  // 3. Resolução temporal e contextual (dias da semana, hoje, amanhã, e turnos: manhã, tarde, noite)
+  let diaRef: { termo: string; chaves: string[] } | null = null;
+
+  if (pNorm.includes('hoje')) {
+    const hoje = getHojeBelem();
+    diaRef = { termo: 'hoje', chaves: [hoje.dataBr.slice(0, 5), hoje.diaSemana] };
+    ctx.dia_selecionado = hoje.diaSemana;
+  } else if (pNorm.includes('amanha')) {
+    const amanha = getAmanhaBelem();
+    diaRef = { termo: 'amanhã', chaves: [amanha.dataBr.slice(0, 5), amanha.diaSemana] };
+    ctx.dia_selecionado = amanha.diaSemana;
+  } else {
+    for (const [termo, conf] of Object.entries(DIAS_SEMANA_MAP)) {
+      if (new RegExp(`\\b${termo}\\b`).test(pNorm)) {
+        diaRef = { termo, chaves: [conf.chave, conf.dataBrAgo] };
+        ctx.dia_selecionado = conf.chave;
+        break;
+      }
+    }
+  }
+
+  // Se a pergunta atual não cita o dia, mas é uma pergunta de acompanhamento (ex: "e à noite?", "quem vai pregar?")
+  // reaproveita o dia_selecionado do contexto anterior!
+  if (!diaRef && ctx.dia_selecionado) {
+    const conf = DIAS_SEMANA_MAP[ctx.dia_selecionado];
+    if (conf) {
+      diaRef = { termo: ctx.dia_selecionado, chaves: [conf.chave, conf.dataBrAgo] };
+    }
+  }
+
+  // Detecta turno (manhã, tarde, noite)
+  let turnoAlvo: 'manha' | 'tarde' | 'noite' | null = null;
+  if (pNorm.includes('noite') || pNorm.includes('a noite') || pNorm.includes('noturno') || pNorm.includes('culto da noite')) {
+    turnoAlvo = 'noite';
+    ctx.turno_selecionado = 'noite';
+  } else if (pNorm.includes('manha') || pNorm.includes('de manha') || pNorm.includes('pela manha')) {
+    turnoAlvo = 'manha';
+    ctx.turno_selecionado = 'manha';
+  } else if (pNorm.includes('tarde') || pNorm.includes('a tarde') || pNorm.includes('pela tarde')) {
+    turnoAlvo = 'tarde';
+    ctx.turno_selecionado = 'tarde';
+  }
+
+  const querPregador = pNorm.includes('prega') || pNorm.includes('preletor') || pNorm.includes('palestrante') || pNorm.includes('ministrante');
+  const querAbertura = pNorm.includes('abertura');
+
+  // Abertura oficial
+  if (querAbertura) {
+    for (const prog of plenariasAlvo) {
+      const texto = prog.texto_extraido || '';
+      const linhas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const idx = linhas.findIndex(l => normalizarParaBusca(l).includes('abertura'));
+      if (idx >= 0) {
+        const trecho = linhas.slice(Math.max(0, idx - 1), Math.min(linhas.length, idx + 4)).join('\n');
+        return {
+          resposta: `📋 *${prog.plenaria_nome} — Abertura Oficial:*\n\n${trecho}`,
+          _ctx: { ...ctx, ultima_intencao: 'consultar_abertura' },
+        };
+      }
+    }
+  }
+
+  // Se temos um dia de referência (explícito ou do contexto)
+  if (diaRef) {
+    const blocosPorPlenaria: string[] = [];
+
+    for (const prog of plenariasAlvo) {
       const texto = prog.texto_extraido || '';
       if (!texto) continue;
 
       const linhas = texto.split(/\r?\n/);
       let capturando = false;
-      const blocoDia: string[] = [];
+      const linhasDoDia: string[] = [];
 
       for (let i = 0; i < linhas.length; i++) {
         const linha = linhas[i].trim();
         const lNorm = normalizarParaBusca(linha);
 
-        const bateReferencia = refTemporal.chaveBusca.some(ch => lNorm.includes(ch));
-        const ehSeparadorDia = (lNorm.includes('segunda') || lNorm.includes('terca') || lNorm.includes('quarta') || lNorm.includes('quinta') || lNorm.includes('sexta') || lNorm.includes('domingo') || /\d{2}\/\d{2}/.test(lNorm)) && (lNorm.includes('feira') || lNorm.includes('ago') || lNorm.includes('2026') || lNorm.length < 35);
+        const bateDia = diaRef.chaves.some(k => lNorm.includes(k));
+        const ehCabecalhoDia =
+          (lNorm.includes('segunda') || lNorm.includes('terca') || lNorm.includes('quarta') || lNorm.includes('quinta') || lNorm.includes('sexta') || lNorm.includes('domingo') || /\d{2}\/\d{2}/.test(lNorm)) &&
+          (lNorm.includes('feira') || lNorm.includes('ago') || lNorm.includes('2026') || lNorm.length < 35);
 
-        if (bateReferencia && ehSeparadorDia) {
+        if (bateDia && ehCabecalhoDia) {
           capturando = true;
-          blocoDia.push(linha);
+          linhasDoDia.push(linha);
           continue;
         }
 
         if (capturando) {
-          // Se encontrou o próximo dia, para de capturar
-          if (ehSeparadorDia && !bateReferencia) {
+          if (ehCabecalhoDia && !bateDia) {
             break;
           }
           if (linha) {
-            blocoDia.push(linha);
+            linhasDoDia.push(linha);
           }
         }
       }
 
-      if (blocoDia.length > 0) {
-        // Se a pergunta era especificamente sobre pregador/horário/culto dentro desse dia, filtra as linhas mais relevantes
-        if (querPregador || querHorario || querCulto) {
-          const termosRelevantes = querPregador
-            ? ['pregador', 'preletor', 'pr.', 'pastor', 'miss.', 'dr', 'palestra', 'plenaria']
-            : querCulto
-              ? ['culto', 'plenaria', 'abertura', 'ceia', 'noite', 'manha', 'tarde']
-              : ['h', '00', '30', 'manha', 'tarde', 'noite', 'abertura', 'culto'];
-          const linhasRelevantes = blocoDia.filter((l, idx) => {
-            if (idx === 0) return true; // Mantém cabeçalho do dia
-            const ln = normalizarParaBusca(l);
-            return termosRelevantes.some(t => ln.includes(t));
-          });
-          if (linhasRelevantes.length > 1) {
-            resultadosPorPlenaria.push(`*${prog.plenaria_nome}:*\n${linhasRelevantes.join('\n')}`);
+      if (linhasDoDia.length > 0) {
+        // Se foi especificado um turno (ex: "e à noite?")
+        if (turnoAlvo) {
+          let capturandoTurno = false;
+          const linhasTurno: string[] = [];
+          for (const l of linhasDoDia) {
+            const lNorm = normalizarParaBusca(l);
+            const ehOutroTurno =
+              (turnoAlvo !== 'manha' && lNorm === 'manha') ||
+              (turnoAlvo !== 'tarde' && lNorm === 'tarde') ||
+              (turnoAlvo !== 'noite' && lNorm === 'noite');
+
+            if (lNorm === turnoAlvo || (turnoAlvo === 'noite' && lNorm.includes('noite'))) {
+              capturandoTurno = true;
+              linhasTurno.push(l);
+              continue;
+            }
+
+            if (capturandoTurno) {
+              if (ehOutroTurno) break;
+              linhasTurno.push(l);
+            }
+          }
+
+          if (linhasTurno.length > 0) {
+            blocosPorPlenaria.push(`*${prog.plenaria_nome} (${diaRef.termo} — ${turnoAlvo}):*\n${linhasTurno.join('\n')}`);
             continue;
           }
         }
 
-        resultadosPorPlenaria.push(`*${prog.plenaria_nome}:*\n${blocoDia.slice(0, 15).join('\n')}`);
+        // Se pergunta por pregador/preletor do dia
+        if (querPregador) {
+          const termosPregador = ['pregador', 'preletor', 'pr.', 'pastor', 'miss.', 'dr', 'dra', 'palestrante', 'plenaria'];
+          const relevantes = linhasDoDia.filter((l, idx) => {
+            if (idx === 0) return true;
+            const ln = normalizarParaBusca(l);
+            return termosPregador.some(t => ln.includes(t));
+          });
+          if (relevantes.length > 1) {
+            blocosPorPlenaria.push(`*${prog.plenaria_nome}:*\n${relevantes.join('\n')}`);
+            continue;
+          }
+        }
+
+        blocosPorPlenaria.push(`*${prog.plenaria_nome}:*\n${linhasDoDia.slice(0, 18).join('\n')}`);
       }
     }
 
-    if (resultadosPorPlenaria.length > 0) {
-      return `📅 *Programação para ${refTemporal.termo} (${nomeEvento}):*\n\n${resultadosPorPlenaria.join('\n\n')}`;
+    if (blocosPorPlenaria.length > 0) {
+      const turnoMsg = turnoAlvo ? ` — ${turnoAlvo}` : '';
+      return {
+        resposta: `📅 *Programação de ${diaRef.termo}${turnoMsg} (${nomeEvento}):*\n\n${blocosPorPlenaria.join('\n\n')}`,
+        _ctx: { ...ctx, ultima_intencao: 'consultar_programacao' },
+      };
     } else {
-      return `Não encontrei atividades programadas para ${refTemporal.termo} na programação oficial publicada.`;
+      return {
+        resposta: `Não encontrei atividades programadas para ${diaRef.termo} na programação oficial publicada.`,
+        _ctx: { ...ctx, ultima_intencao: 'consultar_programacao' },
+      };
     }
   }
 
-  // 3. Busca por termos específicos de preletores / palavras-chave
+  // 4. Pergunta ampla sobre a programação de uma plenária (ex: "Qual a programação da AEMADEPA?")
+  if (pNorm.includes('programacao') || pNorm.includes('agenda') || pNorm.includes('atividades')) {
+    let resumo = `📋 *Programação Oficial — ${nomeEvento}:*\n`;
+    for (const p of plenariasAlvo) {
+      resumo += `\n*${p.plenaria_nome}*`;
+      if (p.texto_extraido) {
+        const primeirasLinhas = p.texto_extraido
+          .split(/\r?\n/)
+          .map(l => l.trim())
+          .filter(Boolean)
+          .slice(0, 6)
+          .join('\n• ');
+        if (primeirasLinhas) {
+          resumo += `\n• ${primeirasLinhas}\n...`;
+        }
+      }
+    }
+    resumo += '\n\nQual dia, plenária ou turno você deseja consultar em detalhes?';
+    return {
+      resposta: resumo,
+      _ctx: { ...ctx, ultima_intencao: 'consultar_programacao' },
+    };
+  }
+
+  // 5. Busca semântica textual por palavras-chave com relevância
   const palavras = pNorm
     .split(' ')
-    .filter(w => w.length >= 4 && !['qual', 'quem', 'como', 'onde', 'quando', 'sobre', 'evento', 'para', 'pela', 'pelo', 'esta', 'estao', 'programacao', 'oficial'].includes(w));
+    .filter(w => w.length >= 3 && !['qual', 'quem', 'como', 'onde', 'quando', 'sobre', 'evento', 'para', 'pela', 'pelo', 'esta', 'estao', 'programacao', 'oficial', 'quais'].includes(w));
 
   if (palavras.length > 0) {
     const correspondencias: string[] = [];
 
-    for (const prog of progsAlvo) {
+    for (const prog of plenariasAlvo) {
       const texto = prog.texto_extraido || '';
       if (!texto) continue;
 
       const linhas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
       for (let i = 0; i < linhas.length; i++) {
         const lNorm = normalizarParaBusca(linhas[i]);
-        const contemPalavra = palavras.some(pal => lNorm.includes(pal));
+        const achou = palavras.some(pal => lNorm.includes(pal));
 
-        if (contemPalavra) {
-          // Pega a linha e o contexto imediato
-          const contextoLinhas = linhas.slice(Math.max(0, i - 1), Math.min(linhas.length, i + 3));
-          correspondencias.push(`*${prog.plenaria_nome}:*\n${contextoLinhas.join('\n')}`);
+        if (achou) {
+          const contextoTrecho = linhas.slice(Math.max(0, i - 1), Math.min(linhas.length, i + 3));
+          correspondencias.push(`*${prog.plenaria_nome}:*\n${contextoTrecho.join('\n')}`);
           if (correspondencias.length >= 2) break;
         }
       }
     }
 
     if (correspondencias.length > 0) {
-      return `📋 *Informações encontradas na programação oficial:*\n\n${correspondencias.join('\n\n')}`;
+      return {
+        resposta: `📋 *Informações encontradas na programação oficial:*\n\n${correspondencias.join('\n\n')}`,
+        _ctx: { ...ctx, ultima_intencao: 'consultar_programacao' },
+      };
     }
   }
 
-  // 4. Se a pergunta for ampla sobre programação geral
-  if (pNorm.includes('programacao') || pNorm.includes('agenda') || pNorm.includes('cronograma')) {
-    let resumo = `📋 *Programações Oficiais Publicadas — ${nomeEvento}:*\n`;
-    for (const p of programacoes) {
-      resumo += `\n• *${p.plenaria_nome}*`;
-      if (p.texto_extraido) {
-        const primeirasLinhas = p.texto_extraido
-          .split(/\r?\n/)
-          .map(l => l.trim())
-          .filter(Boolean)
-          .slice(0, 3)
-          .join(' | ');
-        if (primeirasLinhas) {
-          resumo += `\n  _${primeirasLinhas}_`;
-        }
-      }
-    }
-    resumo += '\n\nQual dia, plenária ou atividade você gostaria de consultar?';
-    return resumo;
-  }
-
-  return null;
+  // 6. Caso a pergunta não encontre nenhuma correspondência na programação nem no contexto
+  // Regra 4 e 5: Não retornar descrição genérica! Se a informação não existir, informar sua ausência ou pedir esclarecimento.
+  return {
+    resposta: `Não encontrei essa informação na programação oficial publicada da *${nomeEvento}*.\n\nVocê pode me perguntar sobre datas, cultos, pregadores, cantores, plenárias de casais, reuniões da AEMADEPA ou da Juventude (UMADESPA/HDS).`,
+    _ctx: { ...ctx, ultima_intencao: 'esclarecimento' },
+  };
 }

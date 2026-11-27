@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase-server';
 import { parseCampoMissionarioConfig } from '@/lib/ago-regras';
 import {
   ProgramacaoOficialItem,
-  buscarNaProgramacaoOficial,
+  responderComInteligenciaConversacional,
   isPerguntaInformacoesGerais,
 } from '@/lib/sara-programacao';
 
@@ -521,12 +521,12 @@ function respostaFallback(
   }
 
   // ── Programação Oficial e Atividades ──────────────────────────
-  if (hasAny(p, ['programacao', 'agenda', 'horario', 'palestra', 'palestrante', 'preletor', 'preletores', 'pregador', 'pregadores', 'pregar', 'culto', 'abertura', 'atividade', 'grade', 'plenaria', 'ministro', 'aemadepa', 'umadespa', 'hds', 'hoje', 'amanha', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'domingo'])) {
-    // 1º: Consulta programações oficiais extraídas dos PDFs (SSOT da programação)
+  if (hasAny(p, ['programacao', 'agenda', 'horario', 'palestra', 'palestrante', 'preletor', 'preletores', 'pregador', 'pregadores', 'pregar', 'culto', 'abertura', 'atividade', 'grade', 'plenaria', 'ministro', 'aemadepa', 'umadespa', 'hds', 'hoje', 'amanha', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'domingo', 'cantor', 'cantores', 'cantora', 'cantoras', 'louvor', 'banda', 'coral', 'musica', 'santa ceia', 'ceia', 'noite', 'manha', 'tarde'])) {
+    // 1º: Consulta programações oficiais publicadas dos PDFs (SSOT)
     if (programacoesOficiais && programacoesOficiais.length > 0) {
-      const respOficial = buscarNaProgramacaoOficial(pergunta, programacoesOficiais, String(evento.nome || 'Evento'));
-      if (respOficial) {
-        return respOficial;
+      const respInteligente = responderComInteligenciaConversacional(pergunta, programacoesOficiais, String(evento.nome || 'Evento'));
+      if (respInteligente?.resposta) {
+        return respInteligente.resposta;
       }
     }
 
@@ -553,11 +553,7 @@ function respostaFallback(
       return txt.trim();
     }
 
-    if (hasAny(p, ['pregador', 'preletor', 'horario', 'culto', 'abertura'])) {
-      return 'Essa informação não consta na programação oficial publicada até o momento.';
-    }
-
-    return 'A programação detalhada ainda não foi cadastrada. Fique atento às novidades!';
+    return `Não encontrei essa informação na programação oficial publicada da *${evento.nome}*.\n\nVocê pode me perguntar sobre datas, cultos, pregadores, cantores, plenárias de casais, reuniões da AEMADEPA ou da Juventude (UMADESPA/HDS).`;
   }
 
   // ── WhatsApp ─────────────────────────────────────────────────
@@ -636,9 +632,9 @@ export async function POST(
         .order('ordem', { ascending: true }),
       supabase
         .from('evento_programacoes_oficiais')
-        .select('plenaria_key, plenaria_nome, texto_extraido, arquivo_url')
+        .select('plenaria_key, plenaria_nome, texto_extraido, arquivo_url, status')
         .eq('evento_id', eventoId)
-        .in('status', ['publicada', 'rascunho']),
+        .eq('status', 'publicada'),
     ]);
 
     if (evRes.error || !evRes.data) {

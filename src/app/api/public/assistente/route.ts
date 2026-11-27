@@ -10,7 +10,7 @@ import {
 } from '@/lib/public-portal';
 import {
   ProgramacaoOficialItem,
-  buscarNaProgramacaoOficial,
+  responderComInteligenciaConversacional,
   isPerguntaInformacoesGerais,
 } from '@/lib/sara-programacao';
 
@@ -846,9 +846,9 @@ async function responderDetalhesEvento(
   if (tipo === 'programacao') {
     const { data: progOficiais } = await supabase
       .from('evento_programacoes_oficiais')
-      .select('plenaria_key, plenaria_nome, arquivo_url, texto_extraido')
+      .select('plenaria_key, plenaria_nome, arquivo_url, texto_extraido, status')
       .eq('evento_id', eventoId)
-      .in('status', ['publicada', 'rascunho']);
+      .eq('status', 'publicada');
 
     const { data: progData } = await supabase
       .from('evento_programacao')
@@ -860,12 +860,12 @@ async function responderDetalhesEvento(
     const prog = (progData ?? []) as Array<Record<string, unknown>>;
     const oficiais = (progOficiais ?? []) as ProgramacaoOficialItem[];
 
-    // 1º: Se o usuário fez uma pergunta e temos programações oficiais extraídas dos PDFs
+    // 1º: Inteligência conversacional fundamentada nos textos das programações oficiais publicadas
     const perguntaAtual = (perguntaOriginal || '').trim();
     if (oficiais.length > 0 && perguntaAtual) {
-      const respSemantica = buscarNaProgramacaoOficial(perguntaAtual, oficiais, nomeEvento);
-      if (respSemantica) {
-        return { resposta: respSemantica, _ctx: { ...ctx, ultima_intencao: 'consultar_programacao' } };
+      const respInteligente = responderComInteligenciaConversacional(perguntaAtual, oficiais, nomeEvento, ctx);
+      if (respInteligente?.resposta) {
+        return { resposta: respInteligente.resposta, _ctx: { ...ctx, ...respInteligente._ctx } };
       }
     }
 
@@ -914,15 +914,6 @@ async function responderDetalhesEvento(
         } catch {
           // fallback para listagem estruturada
         }
-      }
-
-      // Se a pergunta era especificamente sobre pregador/horário e não consta nos textos:
-      const pNorm = normalizeText(perguntaAtual);
-      if (hasAny(pNorm, ['pregador', 'preletor', 'quem vai pregar', 'horario'])) {
-        return {
-          resposta: 'Essa informação não consta na programação oficial publicada até o momento.',
-          _ctx: { ...ctx, ultima_intencao: 'consultar_programacao' }
-        };
       }
 
       let resposta = `Programação de *${nomeEvento}*\n📅 ${dataRange}`;
@@ -1122,6 +1113,8 @@ export async function POST(req: NextRequest) {
       'preletor', 'preletores', 'pregar', 'quem vai pregar', 'culto', 'cultos',
       'plenaria', 'plenarias', 'abertura', 'abertura oficial',
       'hoje', 'amanha', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'domingo',
+      'cantor', 'cantores', 'cantora', 'cantoras', 'louvor', 'banda', 'coral', 'musica',
+      'santa ceia', 'ceia', 'noite', 'manha', 'tarde',
     ]);
     const querDescricaoEvento = !querProgramacao && hasAny(pergunta, [
       'descricao', 'sobre o evento', 'fale sobre', 'detalhes do evento',
@@ -1433,7 +1426,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (ctxEventoId) {
-      const resposta = await responderDetalhesEvento(ctxEventoId, 'geral', perguntaRaw);
+      // Regra 4: Não retornar descrição genérica quando não reconhecer uma pergunta.
+      // Consulta a programação oficial do evento antes de qualquer fallback de descrição.
+      const resposta = await responderDetalhesEvento(ctxEventoId, 'programacao', perguntaRaw);
       return NextResponse.json(resposta);
     }
 
