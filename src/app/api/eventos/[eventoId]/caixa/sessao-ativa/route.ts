@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
+import { identificarOperadorCaixa } from '@/lib/eventos/operador-caixa';
 
 export async function GET(
   request: NextRequest,
@@ -20,51 +21,19 @@ async function handleSessaoAtiva(
   paramsPromise: Promise<{ eventoId: string }>
 ) {
   const { eventoId } = await paramsPromise;
-  const { searchParams } = new URL(request.url);
   const supabase = createServerClient();
 
-  // 1. Identificar operador/equipe
-  let equipeId = searchParams.get('equipeId') || searchParams.get('equipe_id') || request.headers.get('x-evento-equipe-id');
-
-  // Se for POST, tentar ler também do body
-  if (!equipeId && request.method === 'POST') {
-    try {
-      const body = await request.clone().json();
-      equipeId = body.equipeId || body.equipe_id;
-    } catch {}
-  }
-
-  let equipeUser: any = null;
-
-  if (equipeId) {
-    const { data } = await supabase
-      .from('evento_equipe')
-      .select('id, nome, email, ativo, tipo')
-      .eq('id', equipeId)
-      .eq('evento_id', eventoId)
-      .eq('ativo', true)
-      .maybeSingle();
-    equipeUser = data;
-  }
-
-  // 2. Se não encontrou por equipeId, tentar identificar pelo usuário logado no Supabase
-  if (!equipeUser) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user && user.email) {
-      const { data } = await supabase
-        .from('evento_equipe')
-        .select('id, nome, email, ativo, tipo')
-        .eq('evento_id', eventoId)
-        .eq('email', user.email)
-        .eq('ativo', true)
-        .maybeSingle();
-      equipeUser = data;
-    }
-  }
-
-  if (!equipeUser) {
+  // 1. Identificar operador logado (suporta equipe operacional e acesso administrativo SUPER/ADMIN)
+  const operador = await identificarOperadorCaixa(request, eventoId);
+  if (!operador) {
     return NextResponse.json({ error: 'Operador não identificado ou inativo.' }, { status: 403 });
   }
+
+  const equipeUser = {
+    id: operador.equipeId,
+    nome: operador.nome,
+    email: operador.email,
+  };
 
   // 3. Buscar sessão de caixa aberta para este operador e evento
   const { data: sessaoExistente } = await supabase

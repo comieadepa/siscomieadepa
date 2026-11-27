@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
+import { identificarOperadorCaixa } from '@/lib/eventos/operador-caixa';
 
 export async function POST(
   request: NextRequest,
@@ -14,28 +15,13 @@ export async function POST(
 
   const supabase = createServerClient();
 
-  // 1. Identificar operador/equipe
-  let equipeId = request.headers.get('x-evento-equipe-id');
-
-  if (!equipeId) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user && user.email) {
-      const { data: eq } = await supabase
-        .from('evento_equipe')
-        .select('id, nome')
-        .eq('evento_id', eventoId)
-        .eq('email', user.email)
-        .eq('ativo', true)
-        .maybeSingle();
-      if (eq) {
-        equipeId = eq.id;
-      }
-    }
-  }
-
-  if (!equipeId) {
+  // 1. Identificar operador/equipe (suporta equipe operacional e acesso administrativo SUPER/ADMIN)
+  const operador = await identificarOperadorCaixa(request, eventoId);
+  if (!operador) {
     return NextResponse.json({ error: 'Operador não identificado.' }, { status: 403 });
   }
+
+  const equipeId = operador.equipeId;
 
   // 2. Obter a sessão de caixa ativa
   const { data: sessao, error: sessaoErr } = await supabase

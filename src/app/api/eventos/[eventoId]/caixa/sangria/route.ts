@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
+import { identificarOperadorCaixa } from '@/lib/eventos/operador-caixa';
 
 export async function POST(
   request: NextRequest,
@@ -8,38 +9,17 @@ export async function POST(
   const { eventoId } = await params;
   const supabase = createServerClient();
 
-  // 1. Identificar operador logado (sessão operacional/equipe atual)
-  let equipeId = request.headers.get('x-evento-equipe-id');
-  let equipeUser: any = null;
-
-  if (equipeId) {
-    const { data } = await supabase
-      .from('evento_equipe')
-      .select('id, nome, email, ativo')
-      .eq('id', equipeId)
-      .eq('evento_id', eventoId)
-      .eq('ativo', true)
-      .maybeSingle();
-    equipeUser = data;
-  }
-
-  if (!equipeUser) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user && user.email) {
-      const { data } = await supabase
-        .from('evento_equipe')
-        .select('id, nome, email, ativo')
-        .eq('evento_id', eventoId)
-        .eq('email', user.email)
-        .eq('ativo', true)
-        .maybeSingle();
-      equipeUser = data;
-    }
-  }
-
-  if (!equipeUser) {
+  // 1. Identificar operador logado (suporta equipe operacional e acesso administrativo SUPER/ADMIN)
+  const operador = await identificarOperadorCaixa(request, eventoId);
+  if (!operador) {
     return NextResponse.json({ error: 'Operador não identificado ou inativo.' }, { status: 403 });
   }
+
+  const equipeUser = {
+    id: operador.equipeId,
+    nome: operador.nome,
+    email: operador.email,
+  };
 
   // 2. Ler payload do request body
   let body: any;

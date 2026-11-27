@@ -48,27 +48,55 @@ export async function POST(
     }
 
     const supNome = supervisor_nome?.trim()
+      || guard.ctx.user?.user_metadata?.full_name
       || guard.ctx.user?.user_metadata?.nome
       || guard.ctx.user?.email
       || 'Supervisor de Descontos';
     const supEmail = guard.ctx.user?.email || null;
     const supId = guard.ctx.user?.id || null;
+    const motivoDelib = justificativa?.trim() || null;
 
     if (acao === 'negar') {
-      const { data: negada, error: negErr } = await admin
+      const updateData: Record<string, any> = {
+        status: 'negado',
+        supervisor_id: supId,
+        supervisor_user_id: supId,
+        supervisor_nome: supNome,
+        supervisor_email: supEmail,
+        justificativa_supervisor: motivoDelib,
+        motivo_deliberacao: motivoDelib,
+        deliberado_em: new Date().toISOString(),
+      };
+
+      let { data: negada, error: negErr } = await admin
         .from('evento_desconto_autorizacoes')
-        .update({
-          status: 'negado',
-          supervisor_id: supId,
-          supervisor_nome: supNome,
-          supervisor_email: supEmail,
-          justificativa_supervisor: justificativa?.trim() || null,
-          deliberado_em: new Date().toISOString(),
-        })
+        .update(updateData)
         .eq('id', solicitacao_id)
         .eq('status', 'pendente')
         .select('*')
         .single();
+
+      if (negErr && (negErr.message?.includes('column') || negErr.code === 'PGRST204')) {
+        const fallbackNegada: Record<string, any> = {
+          status: 'negado',
+          supervisor_user_id: supId,
+          supervisor_nome: supNome,
+          supervisor_email: supEmail,
+          motivo_deliberacao: motivoDelib,
+          deliberado_em: new Date().toISOString(),
+        };
+        const retry = await admin
+          .from('evento_desconto_autorizacoes')
+          .update(fallbackNegada)
+          .eq('id', solicitacao_id)
+          .eq('status', 'pendente')
+          .select('*')
+          .single();
+        if (!retry.error && retry.data) {
+          negada = retry.data;
+          negErr = null;
+        }
+      }
 
       if (negErr || !negada) {
         return NextResponse.json({ error: 'Erro ao negar solicitação de desconto.' }, { status: 500 });
@@ -108,22 +136,50 @@ export async function POST(
 
     const valorFinalFix = Math.round((valorOriginal - descontoFix) * 100) / 100;
 
-    const { data: autorizada, error: autErr } = await admin
+    const updateAuthData: Record<string, any> = {
+      status: 'autorizado',
+      valor_desconto: descontoFix,
+      valor_final: valorFinalFix,
+      supervisor_id: supId,
+      supervisor_user_id: supId,
+      supervisor_nome: supNome,
+      supervisor_email: supEmail,
+      justificativa_supervisor: motivoDelib,
+      motivo_deliberacao: motivoDelib,
+      deliberado_em: new Date().toISOString(),
+    };
+
+    let { data: autorizada, error: autErr } = await admin
       .from('evento_desconto_autorizacoes')
-      .update({
-        status: 'autorizado',
-        valor_desconto: descontoFix,
-        valor_final: valorFinalFix,
-        supervisor_id: supId,
-        supervisor_nome: supNome,
-        supervisor_email: supEmail,
-        justificativa_supervisor: justificativa?.trim() || null,
-        deliberado_em: new Date().toISOString(),
-      })
+      .update(updateAuthData)
       .eq('id', solicitacao_id)
       .eq('status', 'pendente')
       .select('*')
       .single();
+
+    if (autErr && (autErr.message?.includes('column') || autErr.code === 'PGRST204')) {
+      const fallbackAuth: Record<string, any> = {
+        status: 'autorizado',
+        valor_desconto: descontoFix,
+        valor_final: valorFinalFix,
+        supervisor_user_id: supId,
+        supervisor_nome: supNome,
+        supervisor_email: supEmail,
+        motivo_deliberacao: motivoDelib,
+        deliberado_em: new Date().toISOString(),
+      };
+      const retryAuth = await admin
+        .from('evento_desconto_autorizacoes')
+        .update(fallbackAuth)
+        .eq('id', solicitacao_id)
+        .eq('status', 'pendente')
+        .select('*')
+        .single();
+      if (!retryAuth.error && retryAuth.data) {
+        autorizada = retryAuth.data;
+        autErr = null;
+      }
+    }
 
     if (autErr || !autorizada) {
       return NextResponse.json({ error: 'Erro ou conflito de concorrência ao autorizar desconto.' }, { status: 500 });

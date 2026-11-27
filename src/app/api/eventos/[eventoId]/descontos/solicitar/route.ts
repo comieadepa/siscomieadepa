@@ -64,14 +64,44 @@ export async function POST(
     }
 
     // 3. Obter dados do operador a partir do contexto de autenticação
-    const opNome = operador_nome?.trim() || guard.ctx.equipe?.id ? 'Operador Balcão' : (guard.ctx.user?.user_metadata?.nome || guard.ctx.user?.email || 'Operador Balcão');
+    const opNome = operador_nome?.trim() || (guard.ctx.equipe?.id ? 'Operador Balcão' : (guard.ctx.user?.user_metadata?.full_name || guard.ctx.user?.user_metadata?.nome || guard.ctx.user?.email || 'Operador Balcão'));
     const opEmail = operador_email?.trim() || guard.ctx.user?.email || null;
-    const opId = guard.ctx.equipe?.id || null;
+    const opId = guard.ctx.equipe?.id || guard.ctx.user?.id || null;
 
-    // 4. Inserir solicitação no banco
-    const { data: novaSolicitacao, error: insertErr } = await admin
+    // 4. Inserir solicitação no banco com suporte resiliente ao schema (solicitante_* e operador_*)
+    const insertPayload: Record<string, any> = {
+      evento_id: eventoId,
+      operacao_id: operacao_id.trim(),
+      nome_inscrito: nome_inscrito.trim().toUpperCase(),
+      cpf: cpf ? String(cpf).replace(/\D/g, '') : null,
+      email: email ? String(email).trim().toLowerCase() : null,
+      whatsapp: whatsapp ? String(whatsapp).replace(/\D/g, '') : null,
+      tipo_inscricao_id: tipo_inscricao_id || null,
+      modalidade_nome: modalidade_nome.trim(),
+      valor_original: valorOriginalFix,
+      valor_desconto: 0.00,
+      valor_final: valorOriginalFix,
+      status: 'pendente',
+      // Campos do schema em produção
+      solicitante_operador_id: opId,
+      solicitante_nome: opNome,
+      solicitante_email: opEmail,
+      motivo_solicitacao: body.motivo_solicitacao?.trim() || null,
+      // Campos legados/aliases (se presentes no schema)
+      operador_id: opId,
+      operador_nome: opNome,
+      operador_email: opEmail,
+    };
+
+    let { data: novaSolicitacao, error: insertErr } = await admin
       .from('evento_desconto_autorizacoes')
-      .insert({
+      .insert(insertPayload)
+      .select('*')
+      .single();
+
+    // Se falhar por coluna não encontrada (ex: cache ou versão do schema), tenta payload canônico puro
+    if (insertErr && (insertErr.message?.includes('column') || insertErr.code === 'PGRST204')) {
+      const fallbackPayload: Record<string, any> = {
         evento_id: eventoId,
         operacao_id: operacao_id.trim(),
         nome_inscrito: nome_inscrito.trim().toUpperCase(),
@@ -84,12 +114,23 @@ export async function POST(
         valor_desconto: 0.00,
         valor_final: valorOriginalFix,
         status: 'pendente',
-        operador_id: opId,
-        operador_nome: opNome,
-        operador_email: opEmail,
-      })
-      .select('*')
-      .single();
+        solicitante_operador_id: opId,
+        solicitante_nome: opNome,
+        solicitante_email: opEmail,
+        motivo_solicitacao: body.motivo_solicitacao?.trim() || null,
+      };
+
+      const retryRes = await admin
+        .from('evento_desconto_autorizacoes')
+        .insert(fallbackPayload)
+        .select('*')
+        .single();
+
+      if (!retryRes.error && retryRes.data) {
+        novaSolicitacao = retryRes.data;
+        insertErr = null;
+      }
+    }
 
     if (insertErr || !novaSolicitacao) {
       console.error('[DESCONTO SOLICITAR] Erro ao gravar solicitação:', insertErr);

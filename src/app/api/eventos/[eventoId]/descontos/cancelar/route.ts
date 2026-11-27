@@ -19,20 +19,45 @@ export async function POST(
     }
 
     const admin = guard.ctx.supabaseAdmin;
+    const descMotivo = motivo ? `Cancelado pelo operador: ${motivo}` : 'Cancelado pelo operador.';
 
-    const { data: cancelada, error } = await admin
+    const cancelPayload: Record<string, any> = {
+      status: 'cancelado',
+      justificativa_supervisor: descMotivo,
+      motivo_deliberacao: descMotivo,
+      deliberado_em: new Date().toISOString(),
+    };
+
+    let { data: cancelada, error } = await admin
       .from('evento_desconto_autorizacoes')
-      .update({
-        status: 'cancelado',
-        justificativa_supervisor: motivo ? `Cancelado pelo operador: ${motivo}` : 'Cancelado pelo operador.',
-        deliberado_em: new Date().toISOString(),
-      })
+      .update(cancelPayload)
       .eq('id', solicitacao_id)
       .eq('evento_id', eventoId)
       .in('status', ['pendente', 'autorizado'])
       .eq('utilizado', false)
       .select('*')
       .single();
+
+    if (error && (error.message?.includes('column') || error.code === 'PGRST204')) {
+      const fallbackCancel: Record<string, any> = {
+        status: 'cancelado',
+        motivo_deliberacao: descMotivo,
+        deliberado_em: new Date().toISOString(),
+      };
+      const retryCancel = await admin
+        .from('evento_desconto_autorizacoes')
+        .update(fallbackCancel)
+        .eq('id', solicitacao_id)
+        .eq('evento_id', eventoId)
+        .in('status', ['pendente', 'autorizado'])
+        .eq('utilizado', false)
+        .select('*')
+        .single();
+      if (!retryCancel.error && retryCancel.data) {
+        cancelada = retryCancel.data;
+        error = null;
+      }
+    }
 
     if (error || !cancelada) {
       return NextResponse.json({
