@@ -3488,7 +3488,21 @@ export default function BalcaoPage() {
           )}
 
           {/* ── Bloco 5: Pagamento ── */}
-          {form.tipo_id !== 'equipe_apoio' && (
+          {form.tipo_id !== 'equipe_apoio' && valorFinal <= 0 && (
+            <section className="bg-emerald-950/40 rounded-2xl p-5 mb-4 border border-emerald-500/30">
+              <h2 className="text-emerald-400 font-bold text-sm mb-2 flex items-center gap-2">
+                <span className="w-6 h-6 bg-emerald-500 text-[#0D2B4E] rounded-full flex items-center justify-center text-xs font-black">✓</span>
+                Isenção Integral Concedida (R$ 0,00)
+              </h2>
+              <p className="text-emerald-200/80 text-xs">
+                {descontoAutorizacao?.status === 'autorizado'
+                  ? `Inscrição com desconto integral de 100% autorizado pelo supervisor (${descontoAutorizacao.supervisor_nome || 'Liderança'}). Nenhuma cobrança ou forma de pagamento será exigida.`
+                  : 'Inscrição com valor final zerado. Nenhuma cobrança ou forma de pagamento será exigida.'}
+              </p>
+            </section>
+          )}
+
+          {form.tipo_id !== 'equipe_apoio' && valorFinal > 0 && (
             <section className="bg-[#123b63] rounded-2xl p-5 mb-4 border border-white/10">
               <h2 className="text-white font-bold text-sm mb-3 flex items-center gap-2">
                 <span className="w-6 h-6 bg-[#F39C12] text-[#0D2B4E] rounded-full flex items-center justify-center text-xs font-black">5</span>
@@ -3499,7 +3513,6 @@ export default function BalcaoPage() {
                   { id: 'dinheiro',     label: '💵 Dinheiro'  },
                   { id: 'pix_manual',   label: '📱 PIX Manual' },
                   { id: 'cartao',       label: '💳 Cartão'    },
-                  { id: 'isento',       label: '🎟️ Isento'    },
                   { id: 'asaas',        label: '🔗 ASAAS'     },
                 ].map(op => (
                   <button
@@ -3557,7 +3570,7 @@ export default function BalcaoPage() {
                   <div className="text-white/50 text-xs bg-white/5 px-2 py-1 rounded-full truncate max-w-[150px]">{tipoSel.nome}</div>
                 )}
               </div>
-              <p className="text-white/30 text-xs mt-1">{form.forma_pagamento === 'asaas' ? 'Cobrança via ASAAS' : form.forma_pagamento === 'isento' ? 'Isento' : 'Pago na hora'}</p>
+              <p className="text-white/30 text-xs mt-1">{valorFinal <= 0 ? (descontoAutorizacao?.status === 'autorizado' ? 'Isenção Integral Autorizada' : 'Gratuito') : form.forma_pagamento === 'asaas' ? 'Cobrança via ASAAS' : 'Pago na hora'}</p>
             </div>
 
             {/* Botões */}

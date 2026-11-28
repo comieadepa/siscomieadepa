@@ -372,6 +372,15 @@ export async function POST(
 
     // Determina forma e status de pagamento
     const formaStr = String(forma_pagamento ?? '');
+
+    // ── Bloqueio de Isenção Direta pelo Operador (Exclusividade via Supervisor) ──
+    // Se o operador enviar 'isento' diretamente sem autorização de desconto que zere o valor, rejeitar!
+    const temDescontoAutorizado = !!(desconto_autorizacao_id);
+    if (formaStr === 'isento' && tipoNome !== 'Equipe de Apoio' && !temDescontoAutorizado) {
+      return NextResponse.json({
+        error: 'A concessão de isenção direta foi descontinuada no Balcão. A gratuidade/isenção integral deve ser concedida exclusivamente através de autorização de desconto de 100% pelo Supervisor.'
+      }, { status: 400 });
+    }
     let vFinal = tipoNome === 'Equipe de Apoio' ? 0 : (typeof valor_final === 'number' ? valor_final : 0);
     let vOriginal = tipoNome === 'Equipe de Apoio' ? 0 : (typeof valor_original === 'number' ? valor_original : 0);
     let vDesconto = tipoNome === 'Equipe de Apoio' ? 0 : (typeof desconto_valor === 'number' ? desconto_valor : 0);
@@ -1239,11 +1248,11 @@ export async function POST(
       vDesconto = 0;
     }
 
-    // Calcular o valor final com o desconto do cupom recalculado
+    // Calcular o valor final com o desconto (cupom ou autorização) recalculado
     vFinal = Math.max(0, vOriginal - vDesconto);
 
-    // Ajustar o estado de gratuidade e pagamentos com base no vFinal recalculado
-    isGratuito = tipoNome === 'Equipe de Apoio' || vFinal <= 0 || formaStr === 'isento' || formaStr === 'equipe_apoio';
+    // Se o valor final for 0 (ex: 100% de desconto autorizado pelo supervisor), é isenção integral legítima
+    isGratuito = tipoNome === 'Equipe de Apoio' || vFinal <= 0 || formaStr === 'equipe_apoio';
     isAsaas = formaStr === 'asaas' && !isGratuito;
     isPresencial = !isAsaas && !isGratuito;
     recalcularPagamento();
